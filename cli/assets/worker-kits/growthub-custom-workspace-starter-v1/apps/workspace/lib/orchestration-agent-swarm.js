@@ -114,6 +114,21 @@ function chooseAdapterIdForSubagent({ subagentConfig, fallbackAdapterId, fallbac
   };
 }
 
+/**
+ * Truthful telemetry extraction (SWARM_RUN_CONTRACT_V1). Tokens / tool counts
+ * come ONLY from the adapter's reported metadata — when the adapter does not
+ * report a number the value is null, never an estimate.
+ */
+function extractAdapterTelemetry(result) {
+  const meta = result?.adapterMeta && typeof result.adapterMeta === "object" ? result.adapterMeta : {};
+  const tokens = Number(meta.tokens);
+  const tools = Number(meta.tools);
+  return {
+    tokens: Number.isFinite(tokens) && tokens >= 0 ? tokens : null,
+    tools: Number.isFinite(tools) && tools >= 0 ? tools : null
+  };
+}
+
 function describeSubagent(node) {
   const cfg = node?.config || {};
   const role = String(cfg.role || node?.label || node?.id || "subagent").trim();
@@ -240,7 +255,8 @@ async function runThroughAdapter({
   envRefsMissing,
   runId,
   name,
-  ranAt
+  ranAt,
+  intelligence
 }) {
   const adapter = getSandboxAdapter(adapterId);
   if (!adapter) {
@@ -281,7 +297,20 @@ async function runThroughAdapter({
       envRefSlugs,
       envRefsMissing,
       workdir,
-      ranAt: ranAt || new Date(startedAt).toISOString()
+      ranAt: ranAt || new Date(startedAt).toISOString(),
+      // local-intelligence speaks the intelligenceSandbox envelope — the
+      // phase prompt travels as userIntent; model/endpoint settings come
+      // from the governed row (slugs/URLs only, never secret values).
+      ...(adapterId === "local-intelligence"
+        ? {
+            intelligenceSandbox: {
+              userIntent: command,
+              localModel: String(intelligence?.localModel || "").trim(),
+              localEndpoint: String(intelligence?.localEndpoint || "").trim(),
+              intelligenceAdapterMode: String(intelligence?.intelligenceAdapterMode || "ollama").trim() || "ollama"
+            }
+          }
+        : {})
     });
   } catch (error) {
     return {
@@ -324,6 +353,7 @@ async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload,
   const command = buildOrchestratorCommand({ orchestratorNode, subagents, inputPayload });
   const env = { ...(executionContext.env || {}), GROWTHUB_SWARM_PHASE: "orchestrator" };
   const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
   const result = await runThroughAdapter({
     adapterId: resolved.adapterId,
     agentHost: resolved.agentHost,
@@ -335,11 +365,13 @@ async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload,
     env,
     envRefSlugs: executionContext.envRefSlugs || [],
     envRefsMissing: executionContext.envRefsMissing || [],
+    intelligence: executionContext.intelligence,
     runId: `${executionContext.runId}_orchestrator`,
     name: `${executionContext.sandboxName || "swarm"}::orchestrator`
   });
   const stdout = redactSecretsFromText(result?.stdout || "");
   const errorText = redactSecretsFromText(result?.error || "");
+  const telemetry = extractAdapterTelemetry(result);
   return {
     status: result?.ok === true && !errorText ? "completed" : "failed",
     error: errorText,
@@ -349,6 +381,11 @@ async function runOrchestratorPhase({ orchestratorNode, subagents, inputPayload,
     output: stdout,
     stderr: redactSecretsFromText(result?.stderr || ""),
     plan: stdout,
+    tokens: telemetry.tokens,
+    tools: telemetry.tools,
+    startedAt: startedAtIso,
+    endedAt: new Date().toISOString(),
+    phaseId: "plan",
     adapterMeta: { ...(result?.adapterMeta || {}), swarmPhase: "orchestrator" }
   };
 }
@@ -371,6 +408,7 @@ async function dispatchSubagentTask({
     fallbackAgentHost: executionContext.agentHost
   });
   if (!resolved.adapterId || resolved.error) {
+    const gateAt = new Date().toISOString();
     return {
       taskId,
       nodeId: taskId,
@@ -383,6 +421,11 @@ async function dispatchSubagentTask({
       stdout: "",
       stderr: "",
       error: resolved.error || "no prompt-capable adapter resolved for subagent",
+      tokens: null,
+      tools: null,
+      startedAt: gateAt,
+      endedAt: gateAt,
+      phaseId: "dispatch",
       adapterMeta: { swarmSubagent: true, reason: "adapter-gate" }
     };
   }
@@ -407,11 +450,13 @@ async function dispatchSubagentTask({
     env,
     envRefSlugs: executionContext.envRefSlugs || [],
     envRefsMissing: executionContext.envRefsMissing || [],
+    intelligence: executionContext.intelligence,
     runId: `${executionContext.runId}_${taskId}`,
     name: `${executionContext.sandboxName || "swarm"}::${taskId}`
   });
   const errorText = redactSecretsFromText(result?.error || "");
   const ok = result?.ok === true && !errorText;
+  const telemetry = extractAdapterTelemetry(result);
   return {
     taskId,
     nodeId: taskId,
@@ -425,6 +470,11 @@ async function dispatchSubagentTask({
     stdout: redactSecretsFromText(result?.stdout || ""),
     stderr: redactSecretsFromText(result?.stderr || ""),
     error: errorText,
+    tokens: telemetry.tokens,
+    tools: telemetry.tools,
+    startedAt: new Date(startedAt).toISOString(),
+    endedAt: new Date().toISOString(),
+    phaseId: "dispatch",
     adapterMeta: { ...(result?.adapterMeta || {}), swarmSubagent: true }
   };
 }
@@ -467,6 +517,7 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
   const command = buildSynthesisCommand({ synthesisNode, swarmConfig, tasks, inputPayload });
   const env = { ...(executionContext.env || {}), GROWTHUB_SWARM_PHASE: "synthesis" };
   const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
   const result = await runThroughAdapter({
     adapterId: resolved.adapterId,
     agentHost: resolved.agentHost,
@@ -478,6 +529,7 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
     env,
     envRefSlugs: executionContext.envRefSlugs || [],
     envRefsMissing: executionContext.envRefsMissing || [],
+    intelligence: executionContext.intelligence,
     runId: `${executionContext.runId}_synthesis`,
     name: `${executionContext.sandboxName || "swarm"}::synthesis`
   });
@@ -485,6 +537,7 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
   const errorText = redactSecretsFromText(result?.error || "");
   const match = stdout.match(OUTCOME_SCORE_RE);
   const parsedOutcomeScore = match ? clamp01(match[1]) : null;
+  const telemetry = extractAdapterTelemetry(result);
   return {
     status: result?.ok === true && !errorText ? "completed" : "failed",
     ranSynthesis: true,
@@ -495,6 +548,11 @@ async function runSynthesisPhase({ synthesisNode, swarmConfig, tasks, inputPaylo
     adapter: resolved.adapterId,
     agentHost: resolved.agentHost || "",
     parsedOutcomeScore,
+    tokens: telemetry.tokens,
+    tools: telemetry.tools,
+    startedAt: startedAtIso,
+    endedAt: new Date().toISOString(),
+    phaseId: "synthesize",
     adapterMeta: { ...(result?.adapterMeta || {}), swarmPhase: "synthesis" }
   };
 }
@@ -723,7 +781,14 @@ async function runAgentSwarmGraphIfPresent({
     networkAllow: executionContext?.networkAllow === true,
     allowList: executionContext?.allowList || [],
     timeoutMs: clampPositiveInt(timeoutMs, DEFAULT_SUBAGENT_TIMEOUT_MS),
-    sandboxName: executionContext?.sandboxName || row?.Name || "swarm"
+    sandboxName: executionContext?.sandboxName || row?.Name || "swarm",
+    // Row-configured local-intelligence settings (model id, endpoint URL,
+    // adapter mode) — configuration only, never secret values.
+    intelligence: {
+      localModel: String(row?.localModel || "").trim(),
+      localEndpoint: String(row?.localEndpoint || "").trim(),
+      intelligenceAdapterMode: String(row?.intelligenceAdapterMode || "").trim() || "ollama"
+    }
   };
 
   const startedAt = Date.now();
@@ -888,6 +953,11 @@ async function runAgentSwarmGraphIfPresent({
         adapter: orchestratorResult.adapter,
         agentHost: orchestratorResult.agentHost,
         durationMs: orchestratorResult.durationMs,
+        tokens: orchestratorResult.tokens ?? null,
+        tools: orchestratorResult.tools ?? null,
+        startedAt: orchestratorResult.startedAt || "",
+        endedAt: orchestratorResult.endedAt || "",
+        phaseId: "plan",
         plan: clampText(orchestratorResult.plan, 4000)
       },
       tasks,
@@ -902,6 +972,11 @@ async function runAgentSwarmGraphIfPresent({
             adapter: synthesisResult.adapter,
             agentHost: synthesisResult.agentHost,
             durationMs: synthesisResult.durationMs,
+            tokens: synthesisResult.tokens ?? null,
+            tools: synthesisResult.tools ?? null,
+            startedAt: synthesisResult.startedAt || "",
+            endedAt: synthesisResult.endedAt || "",
+            phaseId: "synthesize",
             answer: clampText(synthesisResult.output, 4000),
             parsedOutcomeScore: synthesisResult.parsedOutcomeScore
           }
@@ -914,6 +989,7 @@ async function runAgentSwarmGraphIfPresent({
 export {
   runAgentSwarmGraphIfPresent,
   computeRewardTelemetry,
+  extractAdapterTelemetry,
   buildOrchestratorCommand,
   buildSubtaskCommand,
   buildSynthesisCommand,

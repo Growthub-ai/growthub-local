@@ -338,6 +338,8 @@ async function runServerlessScheduler({
 function buildRunResponse({
   runId,
   ranAt,
+  objectId,
+  name,
   runLocality,
   schedulerRegistryId,
   runtime,
@@ -359,6 +361,10 @@ function buildRunResponse({
   const base = {
     runId,
     ranAt,
+    // Identity travels with the persisted record so run-console consumers
+    // (lineage, swarm projection title) don't depend on the row context.
+    objectId: objectId ? String(objectId).trim() : undefined,
+    name: name ? String(name).trim() : undefined,
     runLocality,
     schedulerRegistryId: schedulerRegistryId ? String(schedulerRegistryId).trim() : null,
     runtime,
@@ -665,6 +671,8 @@ async function POST(request) {
   const response = buildRunResponse({
     runId,
     ranAt,
+    objectId,
+    name: rowForRun.Name || name,
     runLocality,
     schedulerRegistryId: runLocality === "serverless" ? schedulerRegistryId : null,
     runtime,

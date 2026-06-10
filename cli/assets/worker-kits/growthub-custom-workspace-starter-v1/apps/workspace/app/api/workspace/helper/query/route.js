@@ -70,6 +70,7 @@ const VALID_INTENTS = [
   "edit_view",
   "repair",
   "explain",
+  "swarm",
 ];
 
 const HELPER_SOURCE_KEY_PREFIX = "helper";

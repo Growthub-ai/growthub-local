@@ -37,7 +37,8 @@ export type WorkspaceHelperIntent =
   | "create_object"
   | "edit_view"
   | "repair"
-  | "explain";
+  | "explain"
+  | "swarm";
 
 export const WORKSPACE_HELPER_INTENT_VALUES: WorkspaceHelperIntent[] = [
   "build_dashboard",
@@ -47,6 +48,7 @@ export const WORKSPACE_HELPER_INTENT_VALUES: WorkspaceHelperIntent[] = [
   "edit_view",
   "repair",
   "explain",
+  "swarm",
 ];
 
 // ---------------------------------------------------------------------------
@@ -70,7 +72,15 @@ export type WorkspaceProposalType =
   | "dataModel.object.update"
   | "dataModel.row.add"
   | "repair.binding"
-  | "explain.object";
+  | "explain.object"
+  // Swarm lane (SWARM_RUN_CONTRACT_V1). A swarm run is a governed
+  // sandbox-environment row in the EXISTING dataModel patch lane — no new
+  // top-level PATCH field. Apply normalizes the intent payload into an
+  // agent-swarm-v1 orchestration graph; execution happens only through
+  // POST /api/workspace/sandbox-run after an explicit human apply.
+  | "swarm.run.propose"
+  | "swarm.workflow.save"
+  | "swarm.run.resume";
 
 export const WORKSPACE_HELPER_PROPOSAL_TYPES: WorkspaceProposalType[] = [
   "dashboard.create",
@@ -83,6 +93,9 @@ export const WORKSPACE_HELPER_PROPOSAL_TYPES: WorkspaceProposalType[] = [
   "dataModel.row.add",
   "repair.binding",
   "explain.object",
+  "swarm.run.propose",
+  "swarm.workflow.save",
+  "swarm.run.resume",
 ];
 
 /**
@@ -100,6 +113,9 @@ export const PROPOSAL_TYPE_TO_PATCH_FIELD: Record<WorkspaceProposalType, "dashbo
   "dataModel.row.add": "dataModel",
   "repair.binding": "dataModel",
   "explain.object": "dataModel",
+  "swarm.run.propose": "dataModel",
+  "swarm.workflow.save": "dataModel",
+  "swarm.run.resume": "dataModel",
 };
 
 // ---------------------------------------------------------------------------

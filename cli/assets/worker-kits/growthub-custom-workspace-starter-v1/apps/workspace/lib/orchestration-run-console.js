@@ -202,6 +202,129 @@ function buildExportsForRecord(record, stdoutText, stderrText, outputText) {
   return { available, external: [] };
 }
 
+/**
+ * Swarm cockpit projection (SWARM_RUN_CONTRACT_V1).
+ *
+ * Pure transformation of a sandbox run record carrying a `swarm` block
+ * (written by the agent-swarm-v1 runtime through sandbox-run) into the
+ * phase/agent tree the helper sidecar cockpit renders. Returns `null` for
+ * non-swarm records so existing runs are untouched.
+ *
+ * Telemetry is truthful: tokens/tools are null when the adapter did not
+ * report them — the UI renders "—", never an estimate. Totals are null when
+ * no agent reported a number.
+ *
+ * Same module rules as the rest of this file: no React, no fetch, no config
+ * writes, no localStorage, no CSS.
+ */
+function deriveSwarmRunProjection(record) {
+  if (!record || typeof record !== "object") return null;
+  const swarm = record.swarm;
+  if (!swarm || typeof swarm !== "object") return null;
+
+  const summary = deriveRunSummary(record);
+  const tasks = Array.isArray(swarm.tasks) ? swarm.tasks.filter((t) => t && typeof t === "object") : [];
+
+  // Truthful counts only: null/undefined (adapter reported nothing) stays
+  // null — clampNumber would coerce null to 0, which would be a fake metric.
+  const toCount = (value) => {
+    if (value == null) return null;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  const toAgent = (entry, fallbackId, fallbackLabel, transcriptParts, logNodeId) => {
+    const tokens = toCount(entry?.tokens);
+    const tools = toCount(entry?.tools);
+    return {
+      id: safeString(entry?.taskId || entry?.nodeId || fallbackId).trim() || fallbackId,
+      label: safeString(entry?.role || entry?.label || fallbackLabel).trim() || fallbackLabel,
+      status: safeString(entry?.status || "unknown").trim() || "unknown",
+      tokens,
+      tools,
+      durationMs: clampNumber(entry?.durationMs) ?? 0,
+      transcript: redactSecretsFromText(
+        transcriptParts.map((part) => safeString(part).trim()).filter(Boolean).join("\n\n")
+      ),
+      logNodeId
+    };
+  };
+
+  const phases = [];
+  const orchestrator = swarm.orchestrator && typeof swarm.orchestrator === "object" ? swarm.orchestrator : null;
+  if (orchestrator) {
+    phases.push({
+      id: "plan",
+      label: "Plan",
+      status: safeString(orchestrator.status || "unknown").trim() || "unknown",
+      agents: [
+        toAgent(
+          orchestrator,
+          "orchestrator",
+          "Orchestrator",
+          [orchestrator.error, orchestrator.plan],
+          "phase-orchestrator"
+        )
+      ]
+    });
+  }
+
+  const dispatchStatus = tasks.length === 0
+    ? "failed"
+    : tasks.every((t) => t.status === "completed")
+      ? "completed"
+      : tasks.some((t) => t.status === "failed")
+        ? "failed"
+        : "info";
+  phases.push({
+    id: "dispatch",
+    label: "Dispatch",
+    status: dispatchStatus,
+    agents: tasks.map((task, index) =>
+      toAgent(
+        task,
+        `task-${index + 1}`,
+        `Agent ${index + 1}`,
+        [task.error, task.stdout, task.stderr],
+        safeString(task.taskId || task.nodeId || `task-${index + 1}`).trim()
+      )
+    )
+  });
+
+  const synthesis = swarm.synthesis && typeof swarm.synthesis === "object" ? swarm.synthesis : null;
+  if (synthesis) {
+    phases.push({
+      id: "synthesize",
+      label: "Synthesize",
+      status: safeString(synthesis.status || "unknown").trim() || "unknown",
+      agents: [
+        toAgent(
+          synthesis,
+          "synthesis",
+          synthesis.label || "Synthesizer",
+          [synthesis.error, synthesis.answer],
+          "phase-synthesis"
+        )
+      ]
+    });
+  }
+
+  const allAgents = phases.flatMap((phase) => phase.agents);
+  const reportedTokens = allAgents.map((a) => a.tokens).filter((n) => n != null);
+  const reportedTools = allAgents.map((a) => a.tools).filter((n) => n != null);
+
+  return {
+    runId: safeString(record.runId).trim(),
+    title: safeString(record.name || record.sandboxName).trim() || "agent-swarm",
+    status: summary.status,
+    elapsedMs: clampNumber(record.durationMs) ?? 0,
+    agentCount: allAgents.length,
+    totalTokens: reportedTokens.length > 0 ? reportedTokens.reduce((sum, n) => sum + n, 0) : null,
+    totalTools: reportedTools.length > 0 ? reportedTools.reduce((sum, n) => sum + n, 0) : null,
+    phases
+  };
+}
+
 function normalizeRunConsoleRecord(record) {
   if (!record || typeof record !== "object") return null;
   const summary = deriveRunSummary(record);
@@ -303,6 +426,7 @@ function normalizeRunConsoleRecord(record) {
     },
     lineage,
     swarm: record.swarm && typeof record.swarm === "object" ? record.swarm : null,
+    swarmRun: deriveSwarmRunProjection(record),
     logTree: buildRunLogTree(record)
   };
 }
@@ -403,6 +527,7 @@ export {
   DEFAULT_EXPORT_TARGETS,
   normalizeRunConsoleRecord,
   deriveRunSummary,
+  deriveSwarmRunProjection,
   deriveRunLifecycle,
   buildRunLogTree,
   buildRunTimeline,

@@ -47,6 +47,10 @@ import {
   isHelperConfigured,
   WorkspaceHelperSetupModal,
 } from "../../components/WorkspaceHelperSetupModal.jsx";
+import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
+import { SidecarExpandView } from "./SidecarExpandView.jsx";
+import { parseSlashInput } from "./helper-commands.js";
+import { summarizeSwarmRunProposal, SWARM_WORKFLOWS_OBJECT_ID } from "@/lib/workspace-swarm-proposal";
 
 // Generic "Tool Call Output" title matches the reference grammar — the
 // user already sees the prompt + assistant response in the chat above,
@@ -191,8 +195,16 @@ function resolveSystemReceipt(message, applyResult) {
 // Resolve where the Open button should navigate based on the proposal
 // shape. Returns null when no navigation makes sense (e.g. explain.object).
 function resolveArtifactTarget(proposal) {
+  // Apply receipts in the swarm lane carry an explicit artifact target.
+  if (proposal?.artifact?.surface === "swarm-run") return proposal.artifact;
   const pl = proposal?.payload || {};
   switch (proposal?.type) {
+    case "swarm.run.propose":
+    case "swarm.workflow.save":
+    case "swarm.run.resume":
+      return pl.name
+        ? { surface: "swarm-run", objectId: SWARM_WORKFLOWS_OBJECT_ID, name: pl.name }
+        : null;
     case "dataModel.object.create":
     case "dataModel.object.update":
       return pl.label || pl.id ? { surface: "data-model", source: pl.label || pl.id } : null;
@@ -321,6 +333,10 @@ function summarizePayload(proposal) {
       return p.objectId ? `binding for: ${p.objectId}` : "";
     case "explain.object":
       return p.target ? `about: ${p.target}` : "informational";
+    case "swarm.run.propose":
+    case "swarm.workflow.save":
+    case "swarm.run.resume":
+      return summarizeSwarmRunProposal(proposal);
     default:
       return "";
   }
@@ -351,6 +367,22 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // "More" dropdown open state for the pill row.
   const [moreOpen, setMoreOpen] = useState(false);
   const moreMenuRef = useRef(null);
+
+  // Sidecar internal view (SWARM_RUN_CONTRACT_V1) — the swarm cockpit lives
+  // INSIDE the helper sidecar, no new route. "chat" is the existing
+  // conversation surface; swarm views render the governed run cockpit;
+  // "tool-output" is the expanded transcript frame.
+  const [activeView, setActiveView] = useState("chat");
+  // Focused workflow row when opened from an apply receipt's Open button.
+  const [swarmFocus, setSwarmFocus] = useState(null);
+  // Expanded transcript agent (tool-output view) + full-width takeover flag.
+  const [expandedAgent, setExpandedAgent] = useState(null);
+  const [expandActive, setExpandActive] = useState(false);
+  const priorViewRef = useRef("swarm-list");
+  // Slash menu — active index; "dismissed" suppresses the menu until the
+  // prompt changes again (Esc behavior).
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
 
   // Setup tab state
   const [connectionStatus, setConnectionStatus] = useState(null);
@@ -464,6 +496,12 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       setThreadId(null);
       setMessages([]);
       setMoreOpen(false);
+      setActiveView("chat");
+      setSwarmFocus(null);
+      setExpandedAgent(null);
+      setExpandActive(false);
+      setSlashIndex(0);
+      setSlashDismissed(false);
     }
   }, [open]);
 
@@ -478,13 +516,27 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [moreOpen]);
 
-  // Escape key
+  // Escape key — expand mode collapses back to the prior sidecar view first;
+  // a second Escape (or Escape outside expand mode) closes the sidecar as
+  // before. Predictable, no scroll trap.
   useEffect(() => {
     if (!open) return undefined;
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    const handler = (e) => {
+      if (e.key !== "Escape") return;
+      if (expandActive) {
+        e.preventDefault();
+        setExpandActive(false);
+        if (activeView === "tool-output") {
+          setActiveView(priorViewRef.current || "swarm-list");
+          setExpandedAgent(null);
+        }
+        return;
+      }
+      onClose();
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, expandActive, activeView]);
 
   // Cmd+Enter at the window level fires apply when there is a result with
   // accepted proposals. The textarea handler stops propagation when the
@@ -818,6 +870,94 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     try { promptRef.current?.focus(); } catch {}
   };
 
+  // Slash menu state derives from the live prompt. The menu only engages
+  // when "/" is the first character (parseSlashInput), never mid-sentence.
+  const slash = slashDismissed ? { active: false, query: "", matches: [] } : parseSlashInput(prompt);
+  const slashActive = slash.active && slash.matches.length > 0 && !streaming && activeView === "chat";
+
+  // Selecting a command never mutates config: read-only commands switch the
+  // sidecar view or seed a prompt; mutating commands seed a governed
+  // proposal request (intent + template) that still travels query → review
+  // → apply. No command calls sandbox-run or PATCH directly.
+  const selectSlashCommand = (cmd) => {
+    setSlashDismissed(false);
+    setSlashIndex(0);
+    if (cmd.view) {
+      setPrompt("");
+      setSwarmFocus(null);
+      setActiveView(cmd.view);
+      return;
+    }
+    if (cmd.intent) onPickIntent(cmd.intent);
+    setPrompt(cmd.promptTemplate ? `${cmd.promptTemplate} ` : "");
+    try { promptRef.current?.focus(); } catch {}
+  };
+
+  const handleSlashKeyDown = (e) => {
+    if (!slashActive) return false;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSlashIndex((i) => (i + 1) % slash.matches.length);
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSlashIndex((i) => (i - 1 + slash.matches.length) % slash.matches.length);
+      return true;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      selectSlashCommand(slash.matches[Math.min(slashIndex, slash.matches.length - 1)]);
+      return true;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setSlashDismissed(true);
+      return true;
+    }
+    return false;
+  };
+
+  // Refresh the page-level workspace config after a sandbox-run stamps run
+  // state onto a row — same onApplied channel the apply flow already uses.
+  const refreshWorkspaceConfig = async () => {
+    try {
+      const res = await fetch("/api/workspace");
+      const data = await res.json();
+      if (data?.workspaceConfig && onApplied) onApplied(data.workspaceConfig);
+    } catch {
+      // Non-fatal — the cockpit's own history polling still reflects the run.
+    }
+  };
+
+  // Open a swarm artifact (apply receipt → Open) inside the sidecar cockpit;
+  // every other artifact surface keeps routing through the page-level handler.
+  const handleOpenArtifact = (target, proposal) => {
+    if (target?.surface === "swarm-run") {
+      setSwarmFocus({ objectId: target.objectId, name: target.name });
+      setActiveView("swarm-detail");
+      return;
+    }
+    if (typeof onOpenArtifact === "function") onOpenArtifact(target, proposal);
+  };
+
+  const handleExpandTranscript = (agent) => {
+    priorViewRef.current = activeView === "tool-output" ? priorViewRef.current : activeView;
+    setExpandedAgent(agent);
+    setActiveView("tool-output");
+    setExpandActive(true);
+  };
+
+  const collapseExpand = () => {
+    setExpandActive(false);
+    setActiveView(priorViewRef.current || "swarm-list");
+    setExpandedAgent(null);
+  };
+
+  const inSwarmView = activeView === "swarm-list" || activeView === "swarm-detail" || activeView === "tool-output";
+
   if (!open) return null;
 
   return (
@@ -830,7 +970,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         role="dialog"
         aria-label="Workspace helper"
         aria-modal="true"
-        style={{ width: panelWidth }}
+        style={{ width: expandActive ? "80vw" : panelWidth }}
       >
         {/* Drag handle */}
         <div
@@ -844,10 +984,28 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
+            {inSwarmView && (
+              <button
+                type="button"
+                className="dm-sidecar-icon-btn"
+                onClick={() => {
+                  if (activeView === "tool-output") { collapseExpand(); return; }
+                  setActiveView("chat");
+                  setSwarmFocus(null);
+                }}
+                aria-label="Back to chat"
+                title="Back to chat"
+                data-swarm-back=""
+              >
+                <ArrowLeft size={14} />
+              </button>
+            )}
             <span className="dm-sidecar-title" data-helper-title="">
-              {threadActive
-                ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                : "Workspace Helper"}
+              {inSwarmView
+                ? "Background tasks"
+                : threadActive
+                  ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                  : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -873,11 +1031,31 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         </div>
 
+        {/* Swarm cockpit views — Background tasks list / detail / expanded
+            transcript. Same sidecar shell, no route change; chat state stays
+            mounted-adjacent and untouched while the user inspects runs. */}
+        {activeTab === "assistant" && inSwarmView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-swarm-view={activeView}>
+            {activeView === "tool-output" && expandedAgent ? (
+              <SidecarExpandView title={expandedAgent.label || "Transcript"} onBack={collapseExpand}>
+                <SwarmAgentTranscript agent={expandedAgent} />
+              </SidecarExpandView>
+            ) : (
+              <SwarmRunCockpit
+                workspaceConfig={workspaceConfig}
+                focus={activeView === "swarm-detail" ? swarmFocus : null}
+                onConfigRefresh={refreshWorkspaceConfig}
+                onExpandTranscript={handleExpandTranscript}
+              />
+            )}
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && (
+        {activeTab === "assistant" && !inSwarmView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble
@@ -911,11 +1089,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                           <ToolCallCard
                             proposal={receipt}
                             content={m.content || ""}
-                            onOpenArtifact={(p) => {
-                              if (typeof onOpenArtifact === "function") {
-                                onOpenArtifact(resolveArtifactTarget(p), p);
-                              }
-                            }}
+                            onOpenArtifact={(p) => handleOpenArtifact(resolveArtifactTarget(p), p)}
                           />
                         </div>
                       );
@@ -1154,6 +1328,24 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               ) : null}
 
               <div className="dm-helper-composer-input">
+                {slashActive && (
+                  <div className="dm-helper-pill-menu dm-helper-slash-menu" role="listbox" data-helper-slash-menu="">
+                    {slash.matches.map((cmd, i) => (
+                      <button
+                        key={cmd.name}
+                        type="button"
+                        className={`dm-helper-pill-menu-item${i === Math.min(slashIndex, slash.matches.length - 1) ? " active" : ""}`}
+                        role="option"
+                        aria-selected={i === slashIndex}
+                        data-helper-slash-item={cmd.name}
+                        onClick={() => selectSlashCommand(cmd)}
+                      >
+                        <span className="dm-helper-slash-name">{cmd.name}</span>
+                        <span className="dm-field-hint">{cmd.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea
                   id="helper-prompt"
                   ref={promptRef}
@@ -1161,13 +1353,20 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   rows={threadActive ? 2 : 3}
                   placeholder={threadActive
                     ? 'Continue the conversation…'
-                    : 'Ask, search or make anything…'}
+                    : 'Type / for commands, or ask anything…'}
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    setSlashDismissed(false);
+                    setSlashIndex(0);
+                  }}
                   disabled={streaming}
                   data-helper-prompt=""
                   aria-label="Helper prompt"
                   onKeyDown={(e) => {
+                    // Slash menu intercepts navigation/selection keys while
+                    // open; Cmd+Enter submission below stays intact.
+                    if (handleSlashKeyDown(e)) return;
                     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                       e.preventDefault();
                       // Stop the window-level apply handler from firing on the
