@@ -1,184 +1,82 @@
 "use client";
 
 /**
- * useSwarmRuns / useSwarmRunStream — cockpit data layer.
+ * Cockpit data layer — EXISTING routes only, zero background traffic.
  *
- *   useSwarmRuns()        — polls the run-list projection (Running/Finished)
- *   useSwarmRunStream(id) — NDJSON reader with reconnect; reduces events
- *                           into live run detail so dots advance on
- *                           agent.start / agent.end without waiting for the
- *                           next list poll
+ *   GET  /api/workspace               — one fetch when the drawer opens
+ *                                       (config + source records → runs)
+ *   POST /api/workspace/sandbox-run   — the existing governed runner;
+ *                                       the in-flight POST is the live
+ *                                       "running" signal, no polling
+ *
+ * Nothing fires while the cockpit is docked. Refresh is explicit (drawer
+ * open, after a launch resolves, or the Refresh control).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
+import { projectSwarmRuns, projectSwarmWorkflows } from "@/lib/swarm-cockpit-projection.js";
 
-const LIST_POLL_MS = 2000;
-
-function useSwarmRuns(enabled) {
-  const [data, setData] = useState({ running: [], finished: [] });
+function useSwarmWorkspace() {
+  const [runs, setRuns] = useState([]);
+  const [workflows, setWorkflows] = useState([]);
+  const [launches, setLaunches] = useState([]); // optimistic in-flight runs
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await fetch("/api/workspace/swarm-runs", { cache: "no-store" });
+      const response = await fetch("/api/workspace", { cache: "no-store" });
       const payload = await response.json();
-      if (payload?.ok) {
-        setData({ running: payload.running || [], finished: payload.finished || [] });
-        setError("");
-      }
+      const workspaceConfig = payload?.workspaceConfig || payload?.config || payload || {};
+      const workspaceSourceRecords = payload?.workspaceSourceRecords || {};
+      setRuns(projectSwarmRuns({ workspaceConfig, workspaceSourceRecords }));
+      setWorkflows(projectSwarmWorkflows(workspaceConfig));
+      setError("");
     } catch (err) {
-      setError(err?.message || "failed to load swarm runs");
+      setError(err?.message || "failed to load workspace");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!enabled) return undefined;
-    refresh();
-    const timer = setInterval(refresh, LIST_POLL_MS);
-    return () => clearInterval(timer);
-  }, [enabled, refresh]);
-
-  return { ...data, error, refresh };
-}
-
-/** Reduce one NDJSON event into the detail-shaped run object. */
-function reduceEvent(run, event) {
-  if (!run) return run;
-  switch (event.type) {
-    case "run.start":
-      return { ...run, status: "running", startedAt: event.at };
-    case "phase.start":
-      return {
-        ...run,
-        phases: [...(run.phases || []), { id: event.phaseId, label: event.label, status: "running", agents: [] }]
-      };
-    case "phase.end":
-      return {
-        ...run,
-        phases: (run.phases || []).map((phase) =>
-          phase.id === event.phaseId ? { ...phase, status: event.status } : phase
-        )
-      };
-    case "agent.start":
-      return {
-        ...run,
-        phases: (run.phases || []).map((phase) =>
-          phase.id === event.phaseId
-            ? {
-                ...phase,
-                agents: [...(phase.agents || []), {
-                  id: event.agentId,
-                  label: event.label,
-                  status: "running",
-                  tokens: null,
-                  toolUses: null,
-                  durationMs: null
-                }]
-              }
-            : phase
-        )
-      };
-    case "agent.end":
-      return {
-        ...run,
-        phases: (run.phases || []).map((phase) =>
-          phase.id === event.phaseId
-            ? {
-                ...phase,
-                agents: (phase.agents || []).map((agent) =>
-                  agent.id === event.agentId
-                    ? { ...agent, status: event.status, tokens: event.tokens, toolUses: event.toolUses, durationMs: event.durationMs }
-                    : agent
-                )
-              }
-            : phase
-        )
-      };
-    case "run.end":
-      return { ...run, status: event.status, durationMs: event.durationMs, totals: event.totals || run.totals };
-    case "goal.evaluation.end":
-      return { ...run, goal: { ...(run.goal || {}), status: event.status, lastScore: event.score, lastReason: event.reason } };
-    default:
-      return run;
-  }
-}
-
-function useSwarmRunStream(runId) {
-  const [run, setRun] = useState(null);
-  const abortRef = useRef(null);
-
-  useEffect(() => {
-    if (!runId) {
-      setRun(null);
-      return undefined;
-    }
-    let cancelled = false;
-
-    async function loadDetail() {
-      try {
-        const response = await fetch(`/api/workspace/swarm-runs/${runId}`, { cache: "no-store" });
-        const payload = await response.json();
-        if (!cancelled && payload?.ok) setRun(payload.run);
-        return payload?.run;
-      } catch {
-        return null;
-      }
-    }
-
-    async function streamEvents(retries) {
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        const response = await fetch(`/api/workspace/swarm-runs/${runId}/events`, {
-          signal: controller.signal,
-          cache: "no-store"
-        });
-        if (!response.ok || !response.body) return;
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (!cancelled) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const line of lines) {
-            const text = line.trim();
-            if (!text) continue;
-            try {
-              const event = JSON.parse(text);
-              if (event.type && event.type !== "heartbeat") {
-                setRun((current) => reduceEvent(current, event));
-              }
-            } catch {
-              // Ignore unparseable lines — forward-compatible stream rule.
-            }
-          }
-        }
-      } catch {
-        if (!cancelled && retries > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const detail = await loadDetail();
-          const terminal = detail && ["done", "error", "stopped"].includes(detail.status);
-          if (!terminal) await streamEvents(retries - 1);
-        }
-      }
-    }
-
-    loadDetail().then((detail) => {
-      if (cancelled) return;
-      const terminal = detail && ["done", "error", "stopped"].includes(detail.status);
-      if (!terminal) streamEvents(5);
-    });
-
-    return () => {
-      cancelled = true;
-      if (abortRef.current) abortRef.current.abort();
+  const launch = useCallback(async (workflow) => {
+    const launchId = `launch-${Date.now().toString(36)}`;
+    const optimistic = {
+      runId: launchId,
+      name: workflow.name,
+      runKind: "workflow",
+      description: workflow.description || "",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      durationMs: null,
+      totals: { agents: 0, tokens: 0, toolUses: 0 },
+      error: "",
+      phases: [],
+      workflowRef: workflow.workflowRef
     };
-  }, [runId]);
+    setLaunches((current) => [optimistic, ...current]);
+    try {
+      const response = await fetch("/api/workspace/sandbox-run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          objectId: workflow.workflowRef.objectId,
+          name: workflow.workflowRef.rowId
+        })
+      });
+      const payload = await response.json();
+      if (!payload?.ok && payload?.error) setError(payload.error);
+    } catch (err) {
+      setError(err?.message || "launch failed");
+    } finally {
+      setLaunches((current) => current.filter((entry) => entry.runId !== launchId));
+      await refresh();
+    }
+  }, [refresh]);
 
-  return run;
+  return { runs, workflows, launches, error, loading, refresh, launch };
 }
 
-export { useSwarmRuns, useSwarmRunStream };
+export { useSwarmWorkspace };

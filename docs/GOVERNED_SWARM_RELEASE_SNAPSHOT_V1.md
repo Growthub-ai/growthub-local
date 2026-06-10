@@ -1,57 +1,55 @@
 # Governed Swarm Release Snapshot V1
 
-Agent Swarm Cockpit Extension — post-0.14 governed creation. This snapshot
-freezes what shipped on branch `feat/agent-swarm-cockpit-v1`.
+Agent Swarm Cockpit — branch `feat/agent-swarm-cockpit-v1`.
 
-## What shipped
+## Design (final): zero new routes, zero new authority
 
-**Spine (Phase A)** — a swarm run is a governed object:
-`propose → receipt → run/phase/agent graph nodes → NDJSON stream`.
+The cockpit is a **pure read projection over the existing surface**. No
+swarm-specific endpoints exist; nothing polls in the background.
 
-- `apps/workspace/lib/swarm-run-events.js` — run store, graph transitions,
-  event journal, projections, caps, budgets, resume journal.
-- `apps/workspace/lib/swarm-receipts.js` — proposed/approved/completed
-  receipts in the workspace-helper receipt sidecar (result hash included).
-- `apps/workspace/lib/swarm-plan-runner.js` — plain-JS plan runner
-  (phase/agent/parallel/pipeline) dispatching through the sandbox adapter
-  registry only.
-- `apps/workspace/lib/swarm-run-launcher.js` — plan mode + workflow mode
-  (agent-swarm-v1 graphs via the additive `onSwarmEvent` hook).
-- Routes: `swarm-runs` (propose/start/clear, detail, stop, NDJSON events),
-  `swarm-workflows` (save, loops, approval memory, command registry).
-- Contract: `packages/api-contract/src/swarm-run.ts`
-  (`SWARM_RUN_CONTRACT_VERSION = 1`), `docs/SWARM_RUN_CONTRACT_V1.md`.
+| Need | Existing surface used |
+| --- | --- |
+| Run history + workflows | `GET /api/workspace` (config + source records, one fetch when the drawer opens) |
+| Launch a swarm run | `POST /api/workspace/sandbox-run` (the existing governed runner; the in-flight POST is the live "running" signal) |
+| Per-row history | `GET /api/workspace/sandbox-run?objectId&name` |
 
-**Cockpit UI (Phases B–C)** — 1:1 Background-tasks parity:
-Running/Finished + Clear, run cards (dot · name · stop ▢ · kind ·
-elapsed · agents · tokens · description strip), collapsible phase groups
-with per-agent dot strips, Agent/Tokens/Tools/Time tables (blank — never
-0 — for unreported values), drill-in output in a tool-output frame,
-compact inline run chip, status line, `docked | slideout | expanded`
-view modes with Esc/Enter/arrow keyboard nav.
+Swarm runs are sandbox-run records whose payload carries the `swarm` +
+`logTree` blocks already produced by `lib/orchestration-agent-swarm.js`
+(untouched). `lib/swarm-cockpit-projection.js` (pure, no fetch, no React)
+maps those records onto the cockpit tree: run → phases (Plan / Dispatch /
+Synthesize) → agents with label / tokens (estimated) / tools (blank when
+unreported) / time.
 
-**Command surfaces (Phase D)** — one registry feeding the slash menu and
-the Cmd-K palette; mutating commands resolve to governed proposals, reads
-and navigation resolve directly; saved workflows appear as `/<name>`.
+## Network contract (hard rule)
 
-**Primitives (Phase E)** — goal condition + evaluator (OUTCOME_SCORE,
-structural-fallback honesty), outcome rubric + max-iterations revision
-loop with `outcome_evaluation_*` stream events, self-paced loops
-(duration×4, 60s–3600s, approval-memory gated), saved workflows.
+- Docked: **zero requests.**
+- Drawer open: one `GET /api/workspace`; refresh is explicit (↻).
+- Launch: one `POST /api/workspace/sandbox-run`; on resolve, one refresh.
 
-**Hardening (Phase F)** — ≤16 concurrent agents, ≤64 agents/run, token
-budgets with rendered burn, resume via `resumeFromRunId` journal replay,
-per-workflow approval memory with honest `remembered: true` receipts.
+## UI (Background-tasks parity)
+
+`app/components/swarm/` — `SwarmCockpit` drawer
+(`docked | slideout | expanded`, Esc collapses a level), Workflows section
+with Run, Running/Finished sections, `SwarmRunCard`, `SwarmPhaseGroup`,
+`SwarmDotStrip`, `SwarmAgentRow` (Agent/Tokens/Tools/Time, blank — never
+0 — for unreported values), drill-in output in a mono tool-output frame,
+`SwarmRunChip`, `SwarmStatusLine`, `CommandKPalette` (Cmd-K + slash; commands
+derived client-side from loaded workflows + static navigation; launches go
+through sandbox-run). Styling reuses the `dm-` grammar; grey/blue only.
+
+## Smoke seed (opt-in script, never auto-run)
+
+`scripts/seed-swarm-smoke.mjs` (`npm run seed:swarm-smoke`) mutates only
+the workspace it is executed in: seeds a `swarm-smoke-sandbox` row with an
+agent-swarm-v1 graph, a `smoke-metrics` object, a live `Swarm Smoke QA`
+dashboard with widgets, and a clearly-labeled seeded run fixture — every
+blank-workspace activation driver reads complete, so QA skips onboarding.
+`--live` executes the seeded workflow through the existing sandbox-run
+route. The kit template itself ships unmodified.
 
 ## Authority boundary (unchanged)
 
-The AWaC boundary from `GOVERNED_WORKSPACE_TOPOLOGY_V1.md` holds: the swarm
-runtime never writes `growthub.config.json`; receipts and saved state live
-in the source-records sidecar; agents dispatch only through the registered
-sandbox adapter registry; secrets never enter prompts or stored outputs.
-
-## Verification
-
-- `node --check` across every new/edited JS module — clean.
-- Run-store unit exercise (propose → phases → agents → finish → projection
-  + resume journal + budget gate) — see snapshot notes in the PR.
+The AWaC boundary from `GOVERNED_WORKSPACE_TOPOLOGY_V1.md` holds:
+`growthub.config.json` writes flow only through existing governed routes;
+agents dispatch only through the registered sandbox adapter registry;
+secrets never enter prompts or stored outputs.

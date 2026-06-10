@@ -3,30 +3,42 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Command surface — one registry, two triggers:
- *   Cmd-K / Ctrl-K  — global palette
- *   typing "/"       — same palette in slash mode (filter starts populated)
+ * Command surface — one local registry, two triggers:
+ *   Cmd-K / Ctrl-K — global palette
+ *   "/ commands"    — same palette in slash mode
  *
- * Arrow keys move, Enter invokes, Tab completes the args hint, Esc closes.
- * Mutating commands resolve to governed proposals (the cockpit's propose →
- * approve path); reads and navigation resolve directly.
+ * Commands are derived client-side from data the drawer already loaded
+ * (swarm workflows from GET /api/workspace) plus static navigation. No
+ * dedicated command route exists; launches go through the existing
+ * POST /api/workspace/sandbox-run.
  */
-export function CommandKPalette({ open, mode, onClose, onInvoke }) {
-  const [commands, setCommands] = useState([]);
+
+const STATIC_COMMANDS = [
+  { name: "data-model", scope: "chat", resolve: "navigate", description: "Open the data model cockpit", href: "/data-model" },
+  { name: "workflows", scope: "chat", resolve: "navigate", description: "Open the workflows surface", href: "/workflows" },
+  { name: "workspace-lens", scope: "chat", resolve: "navigate", description: "Open the workspace lens", href: "/workspace-lens" }
+];
+
+export function CommandKPalette({ open, mode, workflows, onClose, onInvoke }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
+
+  const commands = useMemo(() => [
+    ...(workflows || []).map((workflow) => ({
+      name: workflow.name,
+      scope: "swarm",
+      resolve: "launch",
+      description: workflow.description || `Run swarm workflow ${workflow.label}`,
+      workflow
+    })),
+    ...STATIC_COMMANDS
+  ], [workflows]);
 
   useEffect(() => {
     if (!open) return;
     setQuery(mode === "slash" ? "/" : "");
     setActiveIndex(0);
-    fetch("/api/workspace/swarm-workflows", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (payload?.ok) setCommands(payload.commands || []);
-      })
-      .catch(() => {});
     const timer = setTimeout(() => inputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
   }, [open, mode]);
@@ -57,11 +69,6 @@ export function CommandKPalette({ open, mode, onClose, onInvoke }) {
 
   if (!open) return null;
 
-  const invoke = (command) => {
-    const args = query.replace(/^\/?\S+\s*/, "").trim();
-    onInvoke?.(command, args);
-  };
-
   const onKeyDown = (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -75,11 +82,11 @@ export function CommandKPalette({ open, mode, onClose, onInvoke }) {
     } else if (event.key === "Enter") {
       event.preventDefault();
       const command = filtered.flat[activeIndex];
-      if (command) invoke(command);
+      if (command) onInvoke?.(command);
     } else if (event.key === "Tab") {
       event.preventDefault();
       const command = filtered.flat[activeIndex];
-      if (command) setQuery(`/${command.name} ${command.argsHint || ""}`.trimEnd() + " ");
+      if (command) setQuery(`/${command.name} `);
     }
   };
 
@@ -111,10 +118,9 @@ export function CommandKPalette({ open, mode, onClose, onInvoke }) {
                     type="button"
                     className={`sw-palette__item${index === activeIndex ? " sw-palette__item--active" : ""}`}
                     onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => invoke(command)}
+                    onClick={() => onInvoke?.(command)}
                   >
                     <span className="sw-palette__name">/{command.name}</span>
-                    {command.argsHint && <span className="sw-palette__args">{command.argsHint}</span>}
                     <span className="sw-palette__desc">{command.description}</span>
                   </button>
                 );

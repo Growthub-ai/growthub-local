@@ -7,9 +7,7 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "next lint",
-    "seed:swarm-smoke": "node scripts/seed-swarm-smoke.mjs",
-    "seed:swarm-smoke:live": "node scripts/seed-swarm-smoke.mjs --live"
+    "lint": "next lint"
   },
   "dependencies": {
     "@nangohq/node": "^0.70.4",
