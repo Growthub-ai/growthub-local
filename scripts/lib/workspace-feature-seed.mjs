@@ -248,6 +248,45 @@ export const HELPER_SANDBOX_OBJECT = {
   binding: { mode: "manual", source: "Workspace Helper Sandbox" },
 };
 
+// Continued-training ledger seed — `model-training` custom object rows are
+// stamped by `growthub intelligence export` with the identical
+// lastRunId/lastSourceId/lastResponse discipline sandbox-run uses. The
+// pure deriver lives in the kit at lib/training-ledger.js.
+export const TRAINING_COLUMNS = [
+  "Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description",
+];
+
+export const TRAINING_EXPORT_SUMMARY = {
+  recordCount: 4,
+  surfaces: { helper: 2, selfEval: 1, swarm: 1 },
+  escalations: 1,
+  rewardMean: 0.82,
+  path: "~/growthub-worker-kit-exports/training/feature-seed.jsonl",
+};
+
+export const TRAINING_OBJECT = {
+  id: "model-training",
+  label: "Model Training",
+  source: "Model Training",
+  objectType: "model-training",
+  icon: "Terminal",
+  columns: TRAINING_COLUMNS,
+  rows: [{
+    Name: "workspace-local",
+    status: "exported",
+    baseModel: "gemma3",
+    localModel: "gemma3:4b",
+    lastExportAt: SEED_TIMESTAMP,
+    lastExportId: "exp_feature_seed_baseline",
+    lastSourceId: "training:model-training:workspace-local",
+    lastExportSummary: JSON.stringify(TRAINING_EXPORT_SUMMARY),
+    description: "Feature-work seed — continued-training ledger baseline.",
+  }],
+  binding: { mode: "manual", source: "Model Training" },
+  relations: [],
+  fieldSettings: { hidden: [], order: TRAINING_COLUMNS },
+};
+
 export const SEED_CANVAS_WIDGETS = [
   { id: "widget-ops-notes", kind: "rich-text", title: "Ops Notes", position: { x: 0, y: 0, w: 4, h: 4 }, config: { text: "Feature-work seed ready.", binding: { mode: "manual", source: "Manual text", rows: [] } } },
   { id: "widget-registry-view", kind: "view", title: "API Registry", position: { x: 4, y: 0, w: 5, h: 4 }, sourceObjectId: "api-registry-probe", config: { source: "API Registry", layout: "Table", columns: ["integrationId", "status", "endpoint"], rows: [{ integrationId: PRIMARY_REGISTRY_ID, status: "connected", endpoint: "/run" }], binding: { mode: "manual", source: "API Registry", rows: [] } } },
@@ -257,6 +296,18 @@ export const SEED_CANVAS_WIDGETS = [
 export const SEED_SOURCE_RECORDS = {
   [DATA_SOURCE_OBJECT_ID]: { recordCount: 1, fetchedAt: SEED_TIMESTAMP, records: [{ id: "rec-1", label: "Probe record", registryId: PRIMARY_REGISTRY_ID }] },
   [DATA_SOURCE_SOURCE_ID]: { recordCount: 1, fetchedAt: SEED_TIMESTAMP, records: [{ id: "rec-1", label: "Probe record" }] },
+  // Continued-training export ledger entry — same sidecar key discipline as
+  // helper:apply:receipts and sandbox:<objectId>:<slug>.
+  "training:model-training:workspace-local": {
+    recordCount: 1,
+    fetchedAt: SEED_TIMESTAMP,
+    records: [{
+      exportId: "exp_feature_seed_baseline",
+      at: SEED_TIMESTAMP,
+      modelId: "gemma3:4b",
+      ...TRAINING_EXPORT_SUMMARY,
+    }],
+  },
 };
 
 export function buildFeatureWorkspaceSeed(baseConfig = {}) {
@@ -274,7 +325,7 @@ export function buildFeatureWorkspaceSeed(baseConfig = {}) {
       ...baseConfig,
       dashboards,
       canvas: { ...(baseConfig.canvas || {}), widgets: SEED_CANVAS_WIDGETS },
-      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT, HELPER_SANDBOX_OBJECT] },
+      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT, HELPER_SANDBOX_OBJECT, TRAINING_OBJECT] },
     },
     sourceRecords: SEED_SOURCE_RECORDS,
     envLocal: SEED_ENV_LOCAL,

@@ -48,6 +48,7 @@ import {
   WorkspaceHelperSetupModal,
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
+import TrainingLedger from "./TrainingLedger.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -975,6 +976,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   };
 
   const inSwarmView = activeView === "swarm-list" || activeView === "swarm-detail" || activeView === "tool-output";
+  // Training ledger view (/training) — same sidecar shell and back-to-chat
+  // grammar as the swarm cockpit; read-only by registry contract.
+  const inTrainingView = activeView === "training";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1009,7 +1013,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {inSwarmView && (
+            {(inSwarmView || inTrainingView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1028,9 +1032,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             <span className="dm-sidecar-title" data-helper-title="">
               {inSwarmView
                 ? "Background tasks"
-                : threadActive
-                  ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                  : "Workspace Helper"}
+                : inTrainingView
+                  ? "Training"
+                  : threadActive
+                    ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                    : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -1090,7 +1096,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && (
+        {/* Training ledger view — same shell as the swarm cockpit, read-only. */}
+        {activeTab === "assistant" && inTrainingView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-training-view="">
+            <TrainingLedger />
+          </div>
+        )}
+
+        {activeTab === "assistant" && !inSwarmView && !inTrainingView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble

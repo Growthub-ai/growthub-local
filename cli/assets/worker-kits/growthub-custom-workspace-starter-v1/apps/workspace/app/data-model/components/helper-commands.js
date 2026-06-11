@@ -41,6 +41,14 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    name: "/training",
+    label: "Training",
+    description: "Open your model training ledger — read-only, no writes",
+    scope: "workspace",
+    mutates: false,
+    view: "training"
+  },
+  {
     name: "/swarm",
     label: "Swarm",
     description: "Propose a governed agent swarm — you review and apply before any run",
