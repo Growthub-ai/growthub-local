@@ -229,7 +229,10 @@ export function deriveCustomModelNodeOption({ workspaceConfig, workspaceSourceRe
       label: `${m.name} · ${m.localModel}`,
       evidenceState: m.evidenceState,
     })),
-    externalTarget: external ? { id: external.id, label: external.label, requiredEnv: external.requiredEnv, authRef: external.authRef, endpoint: external.endpoint, method: external.method } : null,
+    // Informational only: the thin-adapter target describing HOW to register
+    // an external custom-model endpoint (env-ref names). Binding always goes
+    // through a real registry row — never an invented config field.
+    externalTarget: external ? { id: external.id, label: external.label, requiredEnv: external.requiredEnv } : null,
   };
 }
 
@@ -238,23 +241,12 @@ export function deriveCustomModelNodeOption({ workspaceConfig, workspaceSourceRe
  * custom model. Pure — the canvas applies it through its existing
  * updateGraphNode path; nothing here writes config.
  */
-export function buildCustomModelNodeConfig({ workspaceConfig, registryId, external } = {}) {
-  if (external && external.baseUrlEnvRef) {
-    return {
-      nodeKind: "custom-model",
-      label: "Custom model (external)",
-      subtitle: `external · ${external.baseUrlEnvRef}`,
-      config: {
-        registryId: "", integrationId: "",
-        baseUrl: "", baseUrlEnvRef: String(external.baseUrlEnvRef),
-        endpoint: "/chat/completions", method: "POST",
-        authRef: String(external.authRef || "MODEL_RUNTIME_KEY"),
-        queryParams: {}, bodyTemplate: "",
-        requestHeadersMetadata: { authHeaderName: "Authorization", authPrefix: "Bearer ", contentType: "application/json" },
-        timeoutMs: 30000,
-      },
-    };
-  }
+export function buildCustomModelNodeConfig({ workspaceConfig, registryId } = {}) {
+  // Bonded registry rows ONLY — every config field written here is a field
+  // the api-registry-call runtime already executes. External custom models
+  // are supported the already-governed way: register the endpoint as a
+  // real API Registry row (env-ref auth via the cockpit), then bind it
+  // here like any other custom model. No invented config fields.
   const row = registryRowsOf(workspaceConfig).find((r) => String(r.integrationId || "") === String(registryId || ""));
   if (!row) return null;
   return {

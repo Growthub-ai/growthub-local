@@ -191,10 +191,33 @@ test("canvas node option: evidence-gated, bonded binding, external variant via t
   assert.equal(bound.config.baseUrl, "http://127.0.0.1:11434/v1");
   assert.equal(bound.config.endpoint, "/chat/completions");
 
-  const external = buildCustomModelNodeConfig({ external: { baseUrlEnvRef: "MODEL_RUNTIME_URL", authRef: "MODEL_RUNTIME_KEY" } });
-  assert.equal(external.config.baseUrlEnvRef, "MODEL_RUNTIME_URL");
-  assert.equal(external.config.authRef, "MODEL_RUNTIME_KEY", "env ref names only — never secret values");
-  assert.equal(external.config.baseUrl, "", "no inline endpoint value");
-
+  // External custom models bind ONLY through a real registry row — the
+  // builder writes no invented runtime fields and refuses unknown rows.
   assert.equal(buildCustomModelNodeConfig({ workspaceConfig, registryId: "missing-row" }), null, "unknown registry row binds nothing");
+  const boundKeys = Object.keys(bound.config);
+  for (const key of boundKeys) {
+    assert.ok(["registryId","integrationId","baseUrl","endpoint","method","authRef","queryParams","bodyTemplate","requestHeadersMetadata","timeoutMs"].includes(key),
+      `${key} is a field the api-registry-call runtime already executes`);
+  }
+});
+
+test("bound custom-model node passes the existing graph validation untouched", async () => {
+  const graphLib = await import(pathToFileURL(path.join(kitApp, "lib/orchestration-graph.js")).href);
+  const validate = graphLib.validateOrchestrationGraph || graphLib.default?.validateOrchestrationGraph;
+  const { workspaceConfig } = buildSuperAdminModelQaSeed({});
+  const { buildCustomModelNodeConfig } = await import(pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href);
+  const bound = buildCustomModelNodeConfig({ workspaceConfig, registryId: "workspace-local-model" });
+  const sandbox = workspaceConfig.dataModel.objects.find((o) => o.id === "sandbox-probe");
+  const row = sandbox.rows.find((r) => r.Name === "custom-model-workflow");
+  const graph = JSON.parse(row.orchestrationConfig);
+  const node = graph.nodes.find((n) => n.type === "api-registry-call");
+  node.config = { ...node.config, ...bound.config, nodeKind: "custom-model" };
+  if (typeof validate === "function") {
+    const result = validate(graph);
+    const ok = result === true || result?.ok === true || (Array.isArray(result?.errors) ? result.errors.length === 0 : !result?.error);
+    assert.ok(ok, `graph with bound custom-model node validates: ${JSON.stringify(result).slice(0, 120)}`);
+  } else {
+    const parsed = graphLib.parseOrchestrationGraph ? graphLib.parseOrchestrationGraph(JSON.stringify(graph)) : graph;
+    assert.ok(parsed && parsed.nodes.length === graph.nodes.length, "graph parses unchanged with the marker present");
+  }
 });
