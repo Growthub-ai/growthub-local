@@ -49,8 +49,9 @@ import {
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import TrainingLedger from "./TrainingLedger.jsx";
+import CustomModelsLedger from "./CustomModelsLedger.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
-import { parseSlashInput } from "./helper-commands.js";
+import { parseSlashInput, HELPER_COMMANDS, deriveVisibleHelperCommands } from "./helper-commands.js";
 import {
   deriveHelperWidgetCausationState,
   summarizeSwarmRunProposal,
@@ -886,7 +887,15 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   // Slash menu state derives from the live prompt. The menu only engages
   // when "/" is the first character (parseSlashInput), never mid-sentence.
-  const slash = slashDismissed ? { active: false, query: "", matches: [] } : parseSlashInput(prompt);
+  const customModelsEvidence = Boolean(
+    (workspaceConfig?.dataModel?.objects || []).some((o) =>
+      (o?.objectType === "model-training" && (o.rows || []).some((r) => r?.localModel || r?.modelVersion))
+      || (o?.objectType === "api-registry" && (o.rows || []).some((r) => r?.kind === "custom-model" || r?.capabilityType === "custom-model-inference" || String(r?.capabilities || "").includes("chat-completions")))),
+  );
+  const visibleCommandNames = new Set(
+    deriveVisibleHelperCommands(HELPER_COMMANDS, { "custom-models": customModelsEvidence }).map((c) => c.name),
+  );
+  const slash = slashDismissed ? { active: false, query: "", matches: [] } : parseSlashInput(prompt, visibleCommandNames);
   const slashActive = slash.active && slash.matches.length > 0 && !streaming && activeView === "chat";
 
   // Selecting a command never mutates config: read-only commands switch the
@@ -979,6 +988,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // Training ledger view (/training) — same sidecar shell and back-to-chat
   // grammar as the swarm cockpit; read-only by registry contract.
   const inTrainingView = activeView === "training";
+  const inModelsView = activeView === "custom-models";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1013,7 +1023,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {(inSwarmView || inTrainingView) && (
+            {(inSwarmView || inTrainingView || inModelsView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1034,6 +1044,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 ? "Background tasks"
                 : inTrainingView
                   ? "Training"
+                  : inModelsView
+                    ? "Custom Models"
                   : threadActive
                     ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
                     : "Workspace Helper"}
@@ -1096,6 +1108,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
+        {/* Custom models cockpit — same shell, read-first. */}
+        {activeTab === "assistant" && inModelsView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-custom-models-view="">
+            <CustomModelsLedger workspaceConfig={workspaceConfig} />
+          </div>
+        )}
+
         {/* Training ledger view — same shell as the swarm cockpit, read-only. */}
         {activeTab === "assistant" && inTrainingView && (
           <div className="dm-sidecar-body dm-swarm-body" data-training-view="">
@@ -1103,7 +1122,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
-        {activeTab === "assistant" && !inSwarmView && !inTrainingView && (
+        {activeTab === "assistant" && !inSwarmView && !inTrainingView && !inModelsView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble
