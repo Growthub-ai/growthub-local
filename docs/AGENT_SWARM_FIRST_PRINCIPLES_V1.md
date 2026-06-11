@@ -123,6 +123,19 @@ node scripts/export-seed-workspace.mjs --no-dev   # export → seed → validate
 
 Exports `growthub-custom-workspace-starter-v1` to `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}/feature-work-<ts>/`, seeds a super-admin-ready state (activation 5/5, API-registry cockpit score 100), and validates with the exported kit's own `validateWorkspaceConfig`. Swarm rows are then created inside that export through the governed loop — never by hand-editing seed files mid-session. Contract: `scripts/export-seed-workspace.md`.
 
+## Live evidence (executed in a temp export, 2026-06-11)
+
+The full loop was exercised against a freshly seeded temp export (`export-seed-workspace.mjs --no-dev`, then booted with `next dev --webpack`), with a mock OpenAI-compatible endpoint as the `local-intelligence` target:
+
+1. **Governed PATCH** set the seeded helper row's execution target (`intelligenceAdapterMode: custom-openai-compatible`) — status 200 through the existing `dataModel` lane.
+2. **`helper/apply`** accepted a four-agent ping/echo `swarm.run.propose` (max concurrency 4) and returned the receipt: `artifact: { surface: "swarm-run", objectId: "swarm-workflows", name: "live-ping-echo-smoke" }`, summary `4 agents · concurrency: 4 · adapter: local-intelligence`. Nothing executed at apply time.
+3. **`POST /api/workspace/sandbox-run`** executed the row: `ok: true · adapter: orchestration-agent-swarm · persisted: true · sourceId: sandbox:swarm-workflows:live-ping-echo-smoke`.
+4. **Reward**: `evaluated-v1`, `score 0.98` — `parallel 1.0 · finish 1.0 · outcome 0.95` (outcome parsed from the synthesizer's `OUTCOME_SCORE` line), under the documented `0.25/0.35/0.40` weights.
+5. **Persistence**: row stamped `status: connected`, `lastRunId`, `lastSourceId`, `lastTested`; one source-record history entry returned by the executor's `GET`.
+6. **Projection**: the exported kit's own `deriveSwarmRunProjection` produced the cockpit shape — `Plan → Ping → Echo → Synthesize`, 6 agents (orchestrator + 4 subagents + synthesis), 378 total tokens, all adapter-reported.
+
+Independently, the repo's canonical probe (`scripts/e2e-workspace-sandbox-api-probe.mjs`) passed against its own booted copy in the same session: swarm graph round-trip, dispatch through a registered stub adapter, 2 tasks, reward `evaluated-v1 (0.964)`, all assertions green.
+
 ## Behaviors pinned by tests
 
 - `scripts/unit-swarm-proposal.test.mjs` (12) — validation gates, credential rejection, adapter gating, invalid model-authored graphs discarded, row normalization, upsert semantics.
