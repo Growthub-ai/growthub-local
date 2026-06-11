@@ -94,7 +94,7 @@ test("deriver complete only when row export and source record match", () => {
       [CLAIM_ROW.lastSourceId]: { recordCount: 3, records: [{ exportId: "exp_1", recordCount: 3, surfaces: { helper: 3 }, escalations: 0 }] },
     },
   });
-  assert.equal(matched.eligibility.state, "complete");
+  assert.equal(matched.eligibility.state, "exported");
   assert.equal(matched.models[0].evidence, "linked");
   assert.equal(matched.coverage.exports, 1);
   assert.equal(matched.coverage.records, 3);
@@ -134,7 +134,7 @@ test("deriver flags missing evidence when lastSourceId is absent on a claiming r
 test("backward compatibility — config-only callers keep pre-evidence behavior", () => {
   const state = deriveTrainingLedgerState({ workspaceConfig: configWithRows([CLAIM_ROW]) });
   assert.equal(state.models[0].evidence, "unverified");
-  assert.equal(state.eligibility.state, "complete");
+  assert.equal(state.eligibility.state, "exported");
   assert.equal(state.coverage.exports, 1);
 });
 
@@ -155,7 +155,7 @@ test("feature seed materializes a ledger the deriver scores complete with eviden
   const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   assert.equal(state.present, true);
-  assert.equal(state.eligibility.state, "complete");
+  assert.equal(state.eligibility.state, "complete", "enriched seed closes the full loop");
   assert.equal(state.missingEvidence, false);
   assert.equal(state.models[0].evidence, "linked");
   assert.equal(state.coverage.exports, 1);
@@ -384,4 +384,47 @@ test("version row bonds to its registry record and surfaces only tuned-tag-valid
   const missingCfg = { dataModel: { objects: [cfg.dataModel.objects[0]] } };
   const missingState = deriveTrainingLedgerState({ workspaceConfig: missingCfg });
   assert.equal(missingState.models[0].bondedRegistry.status, "missing");
+});
+
+test("seven-state ladder promotes only on new evidence; seed reaches complete with full identity chain", () => {
+  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
+  assert.equal(state.eligibility.state, "complete", "seed QA workspace closes the loop");
+  const chain = state.identityChain;
+  assert.equal(chain.modelTrainingRowId, "workspace-local");
+  assert.ok(chain.lastExportId, "exportId link");
+  assert.equal(chain.trainingSourceId, "training:model-training:workspace-local");
+  assert.equal(chain.modelVersion, "workspace-local-tuned-v1");
+  assert.equal(chain.apiRegistryId, "workspace-local-model");
+  assert.equal(chain.apiTestProof, true, "tuned-tag invocation proof present");
+  assert.equal(chain.sandboxObjectId, "sandbox-probe");
+  assert.equal(chain.sandboxRunId, "run_seed_model_smoke");
+  assert.ok(chain.modelOutputHash, "output hash derived from validated snippet");
+
+  // Demotion checks — removing evidence drops the state, never row-only completion.
+  const noRun = JSON.parse(JSON.stringify(workspaceConfig));
+  for (const o of noRun.dataModel.objects) if (o.objectType === "sandbox-environment") for (const r of o.rows) if (r.Name === "custom-model-workflow") { r.lastRunId = ""; r.lastResponse = ""; }
+  assert.equal(deriveTrainingLedgerState({ workspaceConfig: noRun, workspaceSourceRecords: sourceRecords }).eligibility.state, "sandbox-ready");
+
+  const noSandbox = JSON.parse(JSON.stringify(workspaceConfig));
+  for (const o of noSandbox.dataModel.objects) if (o.objectType === "sandbox-environment") o.rows = o.rows.filter((r) => r.Name !== "custom-model-workflow");
+  assert.equal(deriveTrainingLedgerState({ workspaceConfig: noSandbox, workspaceSourceRecords: sourceRecords }).eligibility.state, "verified");
+
+  const baseTag = JSON.parse(JSON.stringify(noSandbox));
+  for (const o of baseTag.dataModel.objects) if (o.objectType === "api-registry") for (const r of o.rows) if (r.integrationId === "workspace-local-model") r.lastResponse = String(r.lastResponse).replaceAll("workspace-local-tuned-v1", "gemma3:4b");
+  assert.equal(deriveTrainingLedgerState({ workspaceConfig: baseTag, workspaceSourceRecords: sourceRecords }).eligibility.state, "deployed", "base-model response demotes verified → deployed");
+
+  const noRegistry = JSON.parse(JSON.stringify(baseTag));
+  for (const o of noRegistry.dataModel.objects) if (o.objectType === "api-registry") o.rows = o.rows.filter((r) => r.integrationId !== "workspace-local-model");
+  const demoted = deriveTrainingLedgerState({ workspaceConfig: noRegistry, workspaceSourceRecords: sourceRecords });
+  assert.equal(demoted.eligibility.state, "exported", "missing registry row demotes deployed → exported");
+});
+
+test("seed invocation proof record exists and never claims production fine-tune", () => {
+  const { sourceRecords } = buildFeatureWorkspaceSeed({});
+  const proof = sourceRecords["model-invocation:workspace-local-model:seed"];
+  assert.ok(proof, "invocation source-record proof present");
+  assert.equal(proof.records[0].status, 200);
+  assert.equal(proof.records[0].modelVersion, "ft-2026-06-10-v1");
+  assert.match(proof.records[0].note, /seed qa evidence/i, "mock proof is explicitly labeled");
 });

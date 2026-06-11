@@ -75,17 +75,28 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
       {/* Eligibility — the one low-entropy awareness line (causation driver). */}
       <div className="dm-helper-toolcall dm-swarm-card" data-training-eligibility={state.eligibility.state}>
         <div className="dm-helper-toolcall-title dm-swarm-card-title">
-          {state.eligibility.state === "complete"
-            ? "Corpus exported"
-            : state.eligibility.state === "eligible"
-              ? "Export eligible"
-              : "Gathering evidence"}
+          {{
+            blocked: "Gathering evidence",
+            eligible: "Export eligible",
+            exported: "Corpus exported",
+            deployed: "Endpoint registered",
+            verified: "Model verified",
+            "sandbox-ready": "Sandbox ready",
+            complete: "Trained model runnable",
+          }[state.eligibility.state] || state.eligibility.state}
         </div>
         <div className="dm-helper-stream dm-swarm-card-desc">{state.eligibility.next}</div>
         <div className="dm-run-console__hint">
           {state.coverage.exports} verified exports · {state.coverage.records} records · {state.coverage.escalations} escalation diagnoses
         </div>
         <div className="dm-run-console__hint">{surfaceLine(state.coverage.surfaces)}</div>
+        {state.identityChain && state.identityChain.apiRegistryId ? (
+          <div className="dm-run-console__hint" data-training-chain="" data-chain-proof={state.identityChain.apiTestProof ? "true" : "false"}>
+            chain: {state.identityChain.modelTrainingRowId} → {state.identityChain.lastExportId || "—"} → {state.identityChain.modelVersion || "—"} → {state.identityChain.apiRegistryId}
+            {state.identityChain.sandboxRunId ? ` → ${state.identityChain.sandboxObjectId}/${state.identityChain.sandboxRunId}` : ""}
+            {state.identityChain.modelOutputHash ? ` → #${state.identityChain.modelOutputHash}` : ""}
+          </div>
+        ) : null}
         {pipeline.present ? (
           <div className="dm-run-console__hint" data-training-pipeline="">
             {pipeline.graded} curated traces (score ≥ {pipeline.minScore}) · {pipeline.unexported} awaiting export

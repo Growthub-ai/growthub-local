@@ -172,30 +172,55 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
   const claims = models.filter((m) => m.evidence !== "none");
   const missingEvidence = verifiable && claims.some((m) => m.evidence === "missing");
 
-  let eligibility;
-  if (!object || models.length === 0) {
-    eligibility = {
-      state: "blocked",
-      next: "No training ledger yet — do governed work (helper applies, swarm runs), then export traces.",
-    };
-  } else if (claims.length === 0) {
-    eligibility = {
-      state: "eligible",
-      next: "Training traces accumulate from governed work — run `growthub intelligence export` to create the first corpus.",
-    };
-  } else if (missingEvidence && coverage.exports === 0) {
-    eligibility = {
-      state: "eligible",
-      next: "Export row exists but source-record evidence is missing — rerun `growthub intelligence export`.",
-    };
-  } else {
-    eligibility = {
-      state: "complete",
-      next: "Latest corpus exported — hand the JSONL to your fine-tune loop, then select the tuned localModel.",
-    };
+  // Seven-state evidence ladder — every promotion requires NEW evidence;
+  // a row stamp alone never advances past "exported". Sandbox linkage is
+  // resolved through the same governed objects (schedulerRegistryId /
+  // orchestration graphs) and run proof through sandbox-run row stamps.
+  const allObjects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const exportedOk = claims.length > 0 && (verifiable ? coverage.exports > 0 : true);
+  const deployedModel = models.find((m) => m.bondedRegistry && m.bondedRegistry.status !== "missing") || null;
+  const verifiedModel = models.find((m) => m.bondedRegistry?.validated) || null;
+  let sandboxLink = null;
+  if (verifiedModel) {
+    const rid = verifiedModel.bondedRegistry.registryId;
+    for (const o of allObjects) {
+      if (o?.objectType !== "sandbox-environment") continue;
+      for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
+        const graph = String(r?.orchestrationConfig || "");
+        if (String(r?.schedulerRegistryId || "") === rid || graph.includes(`"registryId": "${rid}"`) || graph.includes(`"registryId":"${rid}"`)) {
+          sandboxLink = { objectId: String(o.id || ""), rowName: String(r?.Name || ""), runId: String(r?.lastRunId || ""), runOk: /"ok"\s*:\s*true|"exitCode"\s*:\s*0/.test(String(r?.lastResponse || "")) };
+        }
+      }
+    }
   }
 
-  return { present: Boolean(object), models, coverage, eligibility, missingEvidence };
+  let state = "blocked";
+  let next = "Gather governed traces.";
+  if (object && models.length > 0) { state = "eligible"; next = "Export corpus."; }
+  if (exportedOk) { state = "exported"; next = "Deploy/register model endpoint."; }
+  if (missingEvidence && coverage.exports === 0 && !deployedModel) { state = "eligible"; next = "Export row exists but source-record evidence is missing — rerun `growthub intelligence export`."; }
+  if (deployedModel) { state = "deployed"; next = "Test model endpoint."; }
+  if (verifiedModel) { state = "verified"; next = "Create sandbox workflow."; }
+  if (sandboxLink) { state = "sandbox-ready"; next = "Run sandbox smoke."; }
+  if (sandboxLink && sandboxLink.runId && sandboxLink.runOk) { state = "complete"; next = "Ready: latest trained model is verified and runnable."; }
+  const eligibility = { state, next };
+
+  // Identity chain — the exact proof spine; every link evidence-resolved or "".
+  const chainModel = verifiedModel || deployedModel || models[models.length - 1] || null;
+  const djb2 = (str) => { let h = 5381; for (let i = 0; i < str.length; i += 1) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0; return h.toString(16); };
+  const identityChain = chainModel ? {
+    modelTrainingRowId: chainModel.name,
+    lastExportId: chainModel.lastExportId,
+    trainingSourceId: chainModel.lastSourceId,
+    modelVersion: chainModel.localModel,
+    apiRegistryId: chainModel.bondedRegistry?.registryId || "",
+    apiTestProof: Boolean(chainModel.bondedRegistry?.validated),
+    sandboxObjectId: sandboxLink?.objectId || "",
+    sandboxRunId: sandboxLink?.runId || "",
+    modelOutputHash: chainModel.bondedRegistry?.validated?.snippet ? djb2(chainModel.bondedRegistry.validated.snippet) : "",
+  } : null;
+
+  return { present: Boolean(object), models, coverage, eligibility, missingEvidence, identityChain };
 }
 
 /**

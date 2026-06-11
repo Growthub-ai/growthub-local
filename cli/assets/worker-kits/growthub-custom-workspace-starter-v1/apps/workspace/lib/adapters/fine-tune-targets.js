@@ -82,6 +82,9 @@ export function scaffoldHandoffRows({ slug, version, target, modelTag, datasetRe
   const versionRow = {
     Name: `${slug}-v${version}`,
     status: "prepared",
+    modelVersion: `ft-${at.slice(0, 10)}-v${version}`,
+    apiRegistryId: integrationId,
+    deployedEndpoint: `${target.baseUrl}${target.endpoint}`,
     baseModel: "",
     localModel: modelTag,
     lastExportAt: at,
