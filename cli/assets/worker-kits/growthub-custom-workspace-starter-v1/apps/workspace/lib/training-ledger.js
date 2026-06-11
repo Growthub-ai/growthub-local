@@ -30,6 +30,23 @@ export const TRAINING_OBJECT_ID = "model-training";
 export const TRAINING_OBJECT_TYPE = "model-training";
 export const TRAINING_SOURCE_PREFIX = "training:";
 
+/**
+ * Distillation Pipeline V1 anchors (helpers/{harvest-cursor-traces,
+ * grade-raw-pairs,upload-graded-traces,export-training-traces}.mjs).
+ * `training-traces` rows are written by Phase 2.5 with
+ * {sessionDate, inputPrompt, agentOutput, qualityScore, reason, exported}
+ * and consumed by Phase 3 (qualityScore >= minScore && exported !== "true").
+ */
+export const TRACES_OBJECT_ID = "training-traces";
+/** Phase-2.5/3 default curation floor (critic-grader 1–5 scale). */
+export const DEFAULT_MIN_SCORE = 4;
+/**
+ * Minimum curated examples before a fine-tune run is worth starting.
+ * OpenAI's supervised fine-tuning API enforces 10 examples as the hard
+ * floor; local QLoRA practice (Unsloth) treats ~10 as the same minimum.
+ */
+export const MIN_FINETUNE_TRACES = 10;
+
 /** Safe JSON parse for row-stamped summaries; returns null, never throws. */
 export function parseExportSummary(value) {
   if (!value || typeof value !== "string") return null;
@@ -154,4 +171,179 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
   }
 
   return { present: Boolean(object), models, coverage, eligibility, missingEvidence };
+}
+
+/**
+ * Distillation pipeline state — pure derivation over the `training-traces`
+ * object that Pipeline V1 Phases 2.5/3 read and write. No new semantics:
+ * "graded" and "unexported" use exactly the Phase-3 eligibility predicate.
+ */
+export function deriveDistillationPipelineState({ workspaceConfig, minScore = DEFAULT_MIN_SCORE } = {}) {
+  const objects = workspaceConfig?.dataModel?.objects;
+  const object = Array.isArray(objects) ? objects.find((o) => o?.id === TRACES_OBJECT_ID) : null;
+  const rows = Array.isArray(object?.rows) ? object.rows : [];
+
+  let graded = 0;
+  let unexported = 0;
+  let exportedCount = 0;
+  for (const row of rows) {
+    const qualifies = Number(row?.qualityScore) >= minScore
+      && String(row?.inputPrompt || "").trim()
+      && String(row?.agentOutput || "").trim();
+    if (!qualifies) continue;
+    graded += 1;
+    if (String(row?.exported || "false").toLowerCase() === "true") exportedCount += 1;
+    else unexported += 1;
+  }
+
+  return {
+    present: Boolean(object),
+    total: rows.length,
+    graded,
+    unexported,
+    exportedCount,
+    minScore,
+    threshold: MIN_FINETUNE_TRACES,
+    ready: graded >= MIN_FINETUNE_TRACES,
+    remaining: Math.max(0, MIN_FINETUNE_TRACES - graded),
+  };
+}
+
+function hasActiveLocalModel(workspaceConfig) {
+  const objects = workspaceConfig?.dataModel?.objects;
+  if (!Array.isArray(objects)) return { active: false, localModel: "" };
+  for (const object of objects) {
+    if (object?.objectType !== "sandbox-environment") continue;
+    const rows = Array.isArray(object?.rows) ? object.rows : [];
+    for (const row of rows) {
+      if (String(row?.adapter || "") === "local-intelligence" && String(row?.localModel || "").trim()) {
+        return { active: true, localModel: String(row.localModel).trim() };
+      }
+    }
+  }
+  return { active: false, localModel: "" };
+}
+
+function hasRegisteredModelEndpoint(workspaceConfig, slug) {
+  const objects = workspaceConfig?.dataModel?.objects;
+  if (!Array.isArray(objects)) return false;
+  for (const object of objects) {
+    if (object?.objectType !== "api-registry") continue;
+    const rows = Array.isArray(object?.rows) ? object.rows : [];
+    for (const row of rows) {
+      const integrationId = String(row?.integrationId || "");
+      const baseUrl = String(row?.baseUrl || "");
+      // Convention: register the tuned model as `<ledger-row>-model`, or any
+      // row pointing at a local OpenAI-compatible runtime (Ollama :11434).
+      if (integrationId === `${slug}-model` || baseUrl.includes(":11434")) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Fine-tune handoff cockpit — the same causation-driver pattern as the API
+ * Registry creation spine: workspace evidence in, ordered steps out, each
+ * `complete | eligible | pending`, each with the exact shipping command.
+ * Every step maps 1:1 to Distillation Pipeline V1 + the documented
+ * fine-tune loop (NATIVE_INTELLIGENCE_LOCAL_ADAPTER_ARCHITECTURE §31.2):
+ * collect → curate → gather threshold → export SFT JSONL → QLoRA fine-tune
+ * → activate localModel → register the endpoint as an API Registry row.
+ */
+export function deriveTrainingHandoffState({
+  workspaceConfig,
+  workspaceSourceRecords,
+  minScore = DEFAULT_MIN_SCORE,
+  slug = "workspace-local",
+} = {}) {
+  const pipeline = deriveDistillationPipelineState({ workspaceConfig, minScore });
+  const ledger = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords });
+  const corpusLinked = ledger.models.some((m) => m.evidence === "linked" || m.evidence === "unverified");
+  const model = hasActiveLocalModel(workspaceConfig);
+  const registered = hasRegisteredModelEndpoint(workspaceConfig, slug);
+
+  const sftExportCommand = [
+    "node helpers/export-training-traces.mjs \\",
+    "  --workspace http://localhost:3000 \\",
+    `  --traces-object ${TRACES_OBJECT_ID} \\`,
+    `  --min-score ${minScore} \\`,
+    "  --out ./distillation/unsloth-batch.jsonl",
+  ].join("\n");
+
+  const steps = [
+    {
+      id: "collect",
+      label: "Collect traces",
+      status: pipeline.present && pipeline.total > 0 ? "complete" : "eligible",
+      hint: pipeline.present && pipeline.total > 0
+        ? `${pipeline.total} rows in ${TRACES_OBJECT_ID}`
+        : "Harvest agent transcripts into governed rows (Pipeline V1 Phases 1–2.5).",
+      command: "node helpers/harvest-cursor-traces.mjs --in <transcripts> --out ./distillation/raw-pairs.jsonl",
+    },
+    {
+      id: "curate",
+      label: "Curate (critic-graded)",
+      status: pipeline.graded > 0 ? "complete" : pipeline.total > 0 ? "eligible" : "pending",
+      hint: pipeline.graded > 0
+        ? `${pipeline.graded} rows at qualityScore ≥ ${minScore}`
+        : `Grade pairs via the critic-grader sandbox row, upload rows ≥ ${minScore}.`,
+      command: "node helpers/grade-raw-pairs.mjs --in ./distillation/raw-pairs.jsonl --out ./distillation/graded.jsonl",
+    },
+    {
+      id: "gather",
+      label: `Reach ${MIN_FINETUNE_TRACES} curated traces`,
+      status: pipeline.ready ? "complete" : pipeline.graded > 0 ? "eligible" : "pending",
+      hint: pipeline.ready
+        ? `${pipeline.graded} curated — fine-tune floor met`
+        : `${pipeline.graded} of ${MIN_FINETUNE_TRACES} — ${pipeline.remaining} more curated traces needed.`,
+    },
+    {
+      id: "export-sft",
+      label: "Export SFT JSONL",
+      status: pipeline.exportedCount > 0 && pipeline.unexported === 0
+        ? "complete"
+        : pipeline.unexported > 0 ? "eligible" : "pending",
+      hint: pipeline.unexported > 0
+        ? `${pipeline.unexported} curated rows awaiting export (Unsloth {instruction,input,output}).`
+        : pipeline.exportedCount > 0
+          ? `${pipeline.exportedCount} rows exported and deduped`
+          : "Runs once curated rows exist.",
+      command: sftExportCommand,
+    },
+    {
+      id: "corpus",
+      label: "Export governed-evidence corpus",
+      status: corpusLinked ? "complete" : "eligible",
+      hint: corpusLinked
+        ? "Ledger stamp linked to training:* evidence"
+        : "Preference-pair corpus (applied/skipped, rewards, self-eval).",
+      command: "growthub intelligence export --workspace <apps/workspace>",
+    },
+    {
+      id: "finetune",
+      label: "Fine-tune (external QLoRA)",
+      status: pipeline.exportedCount > 0 || corpusLinked ? "eligible" : "pending",
+      hint: "Unsloth/QLoRA over the exported JSONL; Unsloth emits the Ollama Modelfile for the result. No training runs in this workspace.",
+    },
+    {
+      id: "activate",
+      label: "Activate tuned localModel",
+      status: model.active ? "complete" : "pending",
+      hint: model.active
+        ? `localModel ${model.localModel}`
+        : "Load weights (ollama create from the generated Modelfile), then select the concrete localModel in Local Intelligence.",
+      command: "ollama create <slug>-tuned -f ./Modelfile",
+    },
+    {
+      id: "register",
+      label: "Register model endpoint",
+      status: registered ? "complete" : model.active ? "eligible" : "pending",
+      hint: registered
+        ? "API Registry row present — the tuned model is invocable as a governed source"
+        : `Register the local endpoint (e.g. http://127.0.0.1:11434/v1) as API Registry row \`${slug}-model\` via /register-api.`,
+    },
+  ];
+
+  const completedCount = steps.filter((s) => s.status === "complete").length;
+  return { steps, completedCount, totalCount: steps.length, pipeline, slug, minScore };
 }

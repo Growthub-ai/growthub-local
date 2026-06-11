@@ -30,7 +30,14 @@ const kitApp = path.join(
 const { HELPER_COMMANDS, HELPER_COMMAND_ALLOWED_KEYS } = await import(
   pathToFileURL(path.join(kitApp, "app/data-model/components/helper-commands.js")).href
 );
-const { deriveTrainingLedgerState, parseExportSummary, TRAINING_OBJECT_TYPE } = await import(
+const {
+  deriveTrainingLedgerState,
+  deriveDistillationPipelineState,
+  deriveTrainingHandoffState,
+  parseExportSummary,
+  TRAINING_OBJECT_TYPE,
+  MIN_FINETUNE_TRACES,
+} = await import(
   pathToFileURL(path.join(kitApp, "lib/training-ledger.js")).href
 );
 const { TRAINING_OBJECT, TRAINING_EXPORT_SUMMARY, buildFeatureWorkspaceSeed } = await import(
@@ -176,4 +183,102 @@ test("summary parsing never throws and rejects non-objects", () => {
   assert.equal(parseExportSummary('"a string"'), null);
   assert.equal(parseExportSummary("[1,2]"), null);
   assert.deepEqual(parseExportSummary('{"recordCount":2}'), { recordCount: 2 });
+});
+
+// ---------------------------------------------------------------------------
+// Distillation pipeline + handoff cockpit + scaffold (continuum add-ons)
+// ---------------------------------------------------------------------------
+
+const { FINE_TUNE_TARGETS, defaultFineTuneTarget, scaffoldHandoffRows } = await import(
+  pathToFileURL(path.join(kitApp, "lib/adapters/fine-tune-targets.js")).href
+);
+
+function tracesConfig(rows, extraObjects = []) {
+  return { dataModel: { objects: [{ id: "training-traces", objectType: "training-traces", rows }, ...extraObjects] } };
+}
+
+const CURATED_ROW = { sessionDate: "2026-06-10T00:00:00.000Z", inputPrompt: "Build ops dashboard", agentOutput: "Proposed dashboard.", qualityScore: "5", reason: "merged", exported: "false" };
+
+test("pipeline deriver applies the exact Phase-3 predicate", () => {
+  const state = deriveDistillationPipelineState({
+    workspaceConfig: tracesConfig([
+      CURATED_ROW,
+      { ...CURATED_ROW, exported: "true" },
+      { ...CURATED_ROW, qualityScore: "2" },
+      { ...CURATED_ROW, inputPrompt: "  " },
+    ]),
+  });
+  assert.equal(state.present, true);
+  assert.equal(state.total, 4);
+  assert.equal(state.graded, 2, "score>=4 with non-empty input/output");
+  assert.equal(state.unexported, 1);
+  assert.equal(state.exportedCount, 1);
+  assert.equal(state.ready, false);
+  assert.equal(state.remaining, MIN_FINETUNE_TRACES - 2);
+});
+
+test("pipeline deriver absent object reports not-present without throwing", () => {
+  const state = deriveDistillationPipelineState({ workspaceConfig: { dataModel: { objects: [] } } });
+  assert.equal(state.present, false);
+  assert.equal(state.total, 0);
+  assert.equal(state.ready, false);
+});
+
+test("handoff cockpit derives step statuses from evidence only", () => {
+  const rows = Array.from({ length: 12 }, (_, i) => ({ ...CURATED_ROW, inputPrompt: `task ${i}` }));
+  const cfg = tracesConfig(rows, [
+    { objectType: "sandbox-environment", rows: [{ adapter: "local-intelligence", localModel: "gemma3:4b" }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", baseUrl: "http://127.0.0.1:11434/v1" }] },
+  ]);
+  const state = deriveTrainingHandoffState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  const byId = Object.fromEntries(state.steps.map((s) => [s.id, s.status]));
+  assert.equal(byId.collect, "complete");
+  assert.equal(byId.curate, "complete");
+  assert.equal(byId.gather, "complete", "12 curated >= floor of 10");
+  assert.equal(byId["export-sft"], "eligible", "unexported rows pending");
+  assert.equal(byId.activate, "complete", "localModel set on local-intelligence row");
+  assert.equal(byId.register, "complete", "registry row matches convention");
+  assert.equal(state.totalCount, state.steps.length);
+});
+
+test("handoff cockpit register step pending without model, eligible with model only", () => {
+  const base = tracesConfig([CURATED_ROW]);
+  const none = deriveTrainingHandoffState({ workspaceConfig: base, workspaceSourceRecords: {} });
+  assert.equal(none.steps.find((s) => s.id === "register").status, "pending");
+
+  const withModel = deriveTrainingHandoffState({
+    workspaceConfig: tracesConfig([CURATED_ROW], [
+      { objectType: "sandbox-environment", rows: [{ adapter: "local-intelligence", localModel: "gemma3:4b" }] },
+    ]),
+    workspaceSourceRecords: {},
+  });
+  assert.equal(withModel.steps.find((s) => s.id === "register").status, "eligible");
+});
+
+test("fine-tune targets: ollama-local is the first-party default; remote needs env refs", () => {
+  const def = defaultFineTuneTarget();
+  assert.equal(def.id, "ollama-local");
+  assert.equal(def.baseUrl, "http://127.0.0.1:11434/v1");
+  assert.deepEqual(def.requiredEnv, []);
+  const remote = FINE_TUNE_TARGETS.find((t) => t.id === "openai-compatible-remote");
+  assert.ok(remote.requiredEnv.includes("MODEL_RUNTIME_URL"));
+  assert.equal(remote.authRef, "MODEL_RUNTIME_KEY", "credentials resolve via env ref, never inline");
+});
+
+test("scaffoldHandoffRows produces registry + version rows in existing column shapes", () => {
+  const { registryRow, versionRow, integrationId } = scaffoldHandoffRows({
+    slug: "workspace-local", version: 2, target: defaultFineTuneTarget(),
+    modelTag: "workspace-local-tuned-v2", datasetRecords: 14, datasetPath: "unsloth-dataset-v2.jsonl",
+    now: "2026-06-11T15:00:00.000Z",
+  });
+  assert.equal(integrationId, "workspace-local-model");
+  assert.equal(registryRow.integrationId, "workspace-local-model");
+  assert.equal(registryRow.baseUrl, "http://127.0.0.1:11434/v1");
+  assert.equal(registryRow.endpoint, "/chat/completions");
+  assert.equal(registryRow.connectorKind, "http");
+  assert.equal(versionRow.Name, "workspace-local-v2");
+  const summary = JSON.parse(versionRow.lastExportSummary);
+  assert.equal(summary.recordCount, 14);
+  assert.equal(summary.registryId, "workspace-local-model");
+  assert.equal(summary.version, 2);
 });

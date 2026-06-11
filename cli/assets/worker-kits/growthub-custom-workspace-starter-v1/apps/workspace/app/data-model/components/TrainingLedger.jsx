@@ -19,7 +19,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { deriveTrainingLedgerState } from "../../../lib/training-ledger.js";
+import { deriveTrainingLedgerState, deriveDistillationPipelineState } from "../../../lib/training-ledger.js";
+import TrainingHandoffModal from "./TrainingHandoffModal.jsx";
 
 function formatWhen(iso) {
   if (!iso) return "—";
@@ -45,6 +46,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   const [workspaceConfig, setWorkspaceConfig] = useState(providedConfig || null);
   const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState(providedRecords || null);
   const [error, setError] = useState("");
+  const [handoffOpen, setHandoffOpen] = useState(false);
 
   useEffect(() => {
     if (providedConfig) return;
@@ -64,6 +66,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   }, [providedConfig]);
 
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords });
+  const pipeline = deriveDistillationPipelineState({ workspaceConfig });
 
   return (
     <div data-training-ledger="">
@@ -83,7 +86,29 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
           {state.coverage.exports} verified exports · {state.coverage.records} records · {state.coverage.escalations} escalation diagnoses
         </div>
         <div className="dm-run-console__hint">{surfaceLine(state.coverage.surfaces)}</div>
+        {pipeline.present ? (
+          <div className="dm-run-console__hint" data-training-pipeline="">
+            {pipeline.graded} curated traces (score ≥ {pipeline.minScore}) · {pipeline.unexported} awaiting export
+            {pipeline.ready ? " · fine-tune floor met" : ` · ${pipeline.remaining} more to reach ${pipeline.threshold}`}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="dm-btn-ghost"
+          data-training-handoff-open=""
+          onClick={() => setHandoffOpen(true)}
+        >
+          Continue to fine-tune
+        </button>
       </div>
+
+      <TrainingHandoffModal
+        open={handoffOpen}
+        onClose={() => setHandoffOpen(false)}
+        workspaceConfig={workspaceConfig}
+        workspaceSourceRecords={workspaceSourceRecords}
+        onApplied={(fresh) => setWorkspaceConfig(fresh)}
+      />
 
       {/* One card per tracked model — same card grammar as background tasks. */}
       {state.models.map((model) => {
