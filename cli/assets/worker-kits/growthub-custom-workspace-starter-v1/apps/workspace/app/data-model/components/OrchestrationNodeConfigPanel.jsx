@@ -642,6 +642,11 @@ export function OrchestrationNodeConfigPanel({
                   onChange={(e) => {
                     const value = e.target.value;
                     if (!value) return;
+                    if (value === "__external__") {
+                      const built = buildCustomModelNodeConfig({ external: { baseUrlEnvRef: "MODEL_RUNTIME_URL", authRef: option.externalTarget?.authRef } });
+                      if (built) onConfigChange({ ...built.config, nodeKind: "custom-model" });
+                      return;
+                    }
                     const built = buildCustomModelNodeConfig({ workspaceConfig, registryId: value });
                     if (built) onConfigChange({ ...built.config, nodeKind: "custom-model" });
                   }}
@@ -650,6 +655,7 @@ export function OrchestrationNodeConfigPanel({
                   {option.models.map((m) => (
                     <option key={m.registryId} value={m.registryId}>{m.label} ({m.evidenceState})</option>
                   ))}
+                  {option.externalTarget ? <option value="__external__">External endpoint ({option.externalTarget.requiredEnv.join(", ")})</option> : null}
                 </select>
                 {boundKind ? (
                   <a className="dm-btn-ghost" href="/data-model" data-custom-model-open-test="">Open test</a>
