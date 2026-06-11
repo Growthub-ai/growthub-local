@@ -204,3 +204,69 @@ export function buildCapabilityManifest(model, { workspaceConfig } = {}) {
 }
 
 export { TRAINING_OBJECT_TYPE };
+
+// ---------------------------------------------------------------------------
+// Canvas node option — first-class custom-model binding for the
+// orchestration graph's api-registry-call node. Evidence-gated by the SAME
+// deriver the /custom-models command uses: the option exists only when the
+// workspace has a bonded custom model. The external-endpoint variant rides
+// the existing thin adapter target (env refs only — never inline secrets).
+// The node stays the proven executable type; `nodeKind: "custom-model"` is
+// a first-class marker, not a new runtime.
+// ---------------------------------------------------------------------------
+
+import { FINE_TUNE_TARGETS } from "./adapters/fine-tune-targets.js";
+
+export function deriveCustomModelNodeOption({ workspaceConfig, workspaceSourceRecords } = {}) {
+  const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords });
+  const bindable = state.models.filter((m) => m.apiRegistryId);
+  const external = FINE_TUNE_TARGETS.find((t) => t.id === "openai-compatible-remote") || null;
+  return {
+    available: bindable.length > 0,
+    models: bindable.map((m) => ({
+      registryId: m.apiRegistryId,
+      modelTag: m.localModel,
+      label: `${m.name} · ${m.localModel}`,
+      evidenceState: m.evidenceState,
+    })),
+    externalTarget: external ? { id: external.id, label: external.label, requiredEnv: external.requiredEnv, authRef: external.authRef, endpoint: external.endpoint, method: external.method } : null,
+  };
+}
+
+/**
+ * Build the api-registry-call config patch that bonds a graph node to a
+ * custom model. Pure — the canvas applies it through its existing
+ * updateGraphNode path; nothing here writes config.
+ */
+export function buildCustomModelNodeConfig({ workspaceConfig, registryId, external } = {}) {
+  if (external && external.baseUrlEnvRef) {
+    return {
+      nodeKind: "custom-model",
+      label: "Custom model (external)",
+      subtitle: `external · ${external.baseUrlEnvRef}`,
+      config: {
+        registryId: "", integrationId: "",
+        baseUrl: "", baseUrlEnvRef: String(external.baseUrlEnvRef),
+        endpoint: "/chat/completions", method: "POST",
+        authRef: String(external.authRef || "MODEL_RUNTIME_KEY"),
+        queryParams: {}, bodyTemplate: "",
+        requestHeadersMetadata: { authHeaderName: "Authorization", authPrefix: "Bearer ", contentType: "application/json" },
+        timeoutMs: 30000,
+      },
+    };
+  }
+  const row = registryRowsOf(workspaceConfig).find((r) => String(r.integrationId || "") === String(registryId || ""));
+  if (!row) return null;
+  return {
+    nodeKind: "custom-model",
+    label: "Fine-tuned model",
+    subtitle: `${row.integrationId} · ${row.method || "POST"} ${row.endpoint || ""}`,
+    config: {
+      registryId: String(row.integrationId), integrationId: String(row.integrationId),
+      baseUrl: String(row.baseUrl || ""), endpoint: String(row.endpoint || ""), method: String(row.method || "POST"),
+      authRef: String(row.authRef || ""), queryParams: {}, bodyTemplate: "",
+      requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" },
+      timeoutMs: 30000,
+    },
+  };
+}

@@ -171,3 +171,30 @@ test("original feature seed stays pristine — no model/training contamination",
   const again = buildFeatureWorkspaceSeed({});
   assert.equal(again.workspaceConfig.dataModel.objects.length, base.workspaceConfig.dataModel.objects.length, "composing the QA seed leaves the original builder unchanged");
 });
+
+test("canvas node option: evidence-gated, bonded binding, external variant via thin adapter", async () => {
+  const { deriveCustomModelNodeOption, buildCustomModelNodeConfig } = await import(
+    pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
+  );
+  const empty = deriveCustomModelNodeOption({ workspaceConfig: { dataModel: { objects: [] } } });
+  assert.equal(empty.available, false, "no custom model → node option unavailable");
+
+  const { workspaceConfig } = buildSuperAdminModelQaSeed({});
+  const option = deriveCustomModelNodeOption({ workspaceConfig });
+  assert.equal(option.available, true);
+  assert.equal(option.models[0].registryId, "workspace-local-model");
+  assert.equal(option.externalTarget.requiredEnv.includes("MODEL_RUNTIME_URL"), true);
+
+  const bound = buildCustomModelNodeConfig({ workspaceConfig, registryId: "workspace-local-model" });
+  assert.equal(bound.nodeKind, "custom-model");
+  assert.equal(bound.config.integrationId, "workspace-local-model");
+  assert.equal(bound.config.baseUrl, "http://127.0.0.1:11434/v1");
+  assert.equal(bound.config.endpoint, "/chat/completions");
+
+  const external = buildCustomModelNodeConfig({ external: { baseUrlEnvRef: "MODEL_RUNTIME_URL", authRef: "MODEL_RUNTIME_KEY" } });
+  assert.equal(external.config.baseUrlEnvRef, "MODEL_RUNTIME_URL");
+  assert.equal(external.config.authRef, "MODEL_RUNTIME_KEY", "env ref names only — never secret values");
+  assert.equal(external.config.baseUrl, "", "no inline endpoint value");
+
+  assert.equal(buildCustomModelNodeConfig({ workspaceConfig, registryId: "missing-row" }), null, "unknown registry row binds nothing");
+});

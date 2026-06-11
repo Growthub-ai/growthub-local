@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { deriveCustomModelNodeOption, buildCustomModelNodeConfig } from "../../../lib/custom-models-ledger.js";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -620,6 +622,47 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "configuration" && type === "api-registry-call" && (
         <div className="dm-orchestration-config__pane">
+          {/* Custom model binding — first-class, evidence-gated by the same
+              deriver as /custom-models. Visible ONLY when the workspace has
+              a bonded custom model; the external-endpoint variant rides the
+              existing thin adapter target (env refs only). One click bonds
+              this executable node to the tuned model's registry record —
+              nodeKind marks it, the runtime stays untouched. */}
+          {(() => {
+            const option = deriveCustomModelNodeOption({ workspaceConfig });
+            if (!option.available) return null;
+            const boundKind = String(node?.config?.nodeKind || "") === "custom-model";
+            return (
+              <div className="dm-orchestration-config__field" data-custom-model-binding={boundKind ? "bound" : "available"}>
+                <span><Sparkles size={12} aria-hidden="true" /> Custom model</span>
+                <select
+                  disabled={disabled}
+                  value={boundKind ? String(node?.config?.registryId || "") : ""}
+                  data-custom-model-select=""
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) return;
+                    if (value === "__external__") {
+                      const built = buildCustomModelNodeConfig({ external: { baseUrlEnvRef: "MODEL_RUNTIME_URL", authRef: option.externalTarget?.authRef } });
+                      if (built) onConfigChange({ ...built.config, nodeKind: "custom-model" });
+                      return;
+                    }
+                    const built = buildCustomModelNodeConfig({ workspaceConfig, registryId: value });
+                    if (built) onConfigChange({ ...built.config, nodeKind: "custom-model" });
+                  }}
+                >
+                  <option value="">{boundKind ? "rebind…" : "bind a custom model…"}</option>
+                  {option.models.map((m) => (
+                    <option key={m.registryId} value={m.registryId}>{m.label} ({m.evidenceState})</option>
+                  ))}
+                  {option.externalTarget ? <option value="__external__">External endpoint ({option.externalTarget.requiredEnv.join(", ")})</option> : null}
+                </select>
+                {boundKind ? (
+                  <a className="dm-btn-ghost" href="/data-model" data-custom-model-open-test="">Open test</a>
+                ) : null}
+              </div>
+            );
+          })()}
           {registryConnected && (
             <span className="dm-orchestration-config__badge is-connected">Connected</span>
           )}
