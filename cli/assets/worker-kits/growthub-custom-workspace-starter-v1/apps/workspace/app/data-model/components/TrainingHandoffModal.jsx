@@ -39,6 +39,7 @@ import {
   TRAINING_OBJECT_ID,
   TRAINING_OBJECT_TYPE,
   deriveHandoffRecovery,
+  deriveProgressStages,
 } from "../../../lib/training-ledger.js";
 import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows } from "../../../lib/adapters/fine-tune-targets.js";
 
@@ -67,7 +68,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
   const [minScore, setMinScore] = useState(DEFAULT_MIN_SCORE);
   const [excluded, setExcluded] = useState(() => new Set());
   const [targetId, setTargetId] = useState(FINE_TUNE_TARGETS[0].id);
-  const [progress, setProgress] = useState({ pct: 0, stage: "" });
+  const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [recovery, setRecovery] = useState(null);
@@ -81,8 +82,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
 
   if (!open || typeof document === "undefined") return null;
 
-  const tick = (pct, stage) => new Promise((resolve) => {
-    setProgress({ pct, stage });
+  const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
+    setProgress({ pct, stage, stageId: stageId || "", converted });
     setTimeout(resolve, 0);
   });
 
@@ -93,7 +94,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
     let stage = "validate";
     try {
       // validate — Phase-3 predicate already applied; re-assert the floor.
-      await tick(5, `Validating ${selected.length} curated traces`);
+      await tick(5, `Validating ${selected.length} curated traces`, "validate");
       if (!floorMet) throw new Error(`fine-tune floor not met: ${selected.length}/${MIN_FINETUNE_TRACES}`);
 
       // convert — chunked, causation-derived progress over real rows.
@@ -103,7 +104,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       for (let i = lines.length; i < selected.length; i += chunk) {
         for (const { row } of selected.slice(i, i + chunk)) lines.push(toJsonlLine(row));
         await tick(10 + Math.round((Math.min(i + chunk, selected.length) / selected.length) * 55),
-          `Converting ${Math.min(i + chunk, selected.length)}/${selected.length} to Unsloth JSONL`);
+          `Converting ${Math.min(i + chunk, selected.length)}/${selected.length} to Unsloth JSONL`, "convert", Math.min(i + chunk, selected.length));
       }
 
       // package — real file download (browser-native, no new routes).
@@ -113,7 +114,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
         .filter((r) => /^.+-v\d+$/.test(String(r?.Name || ""))).length;
       stage = "package";
       const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
-      await tick(72, `Packaging ${datasetPath}`);
+      await tick(72, `Packaging ${datasetPath}`, "package", selected.length);
       if (!resume.datasetDownloaded) {
         const blob = new Blob(lines, { type: "application/jsonl" });
         const url = URL.createObjectURL(blob);
@@ -128,7 +129,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       // apply — one governed PATCH: exported stamps (Phase-3 parity) +
       // versioned model row + api-registry row from the chosen target.
       stage = "apply";
-      await tick(82, "Applying governed rows (exported stamps · version row · registry row)");
+      await tick(82, "Applying governed rows (exported stamps · version row · registry row)", "apply", selected.length);
       const modelTag = `workspace-local-tuned-v${version}`;
       const { registryRow, versionRow, integrationId } = scaffoldHandoffRows({
         slug: "workspace-local", version, target, modelTag,
@@ -165,7 +166,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
 
       // verify — readback through the same GET the ledger uses.
       stage = "verify";
-      await tick(94, "Verifying readback");
+      await tick(94, "Verifying readback", "verify", selected.length);
       const check = await fetch("/api/workspace", { cache: "no-store" });
       const fresh = await check.json();
       const reg = (fresh?.workspaceConfig?.dataModel?.objects || [])
@@ -174,7 +175,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
         .find((r) => r?.integrationId === integrationId);
       if (!reg) throw new Error("registry row not present after apply");
 
-      await tick(100, "Complete");
+      await tick(100, "Complete", "verify", selected.length);
       setResult({ datasetPath, records: selected.length, integrationId, modelTag, version });
       if (typeof onApplied === "function" && applied?.workspaceConfig) onApplied(applied.workspaceConfig);
       setPanel("done");
@@ -219,6 +220,16 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
         </div>
 
         <div className="dm-orch-modal-body">
+          {/* Persistent spine — the cockpit checklist sits above the form in
+              every panel (registry-cockpit posture): one condensed row per
+              step, status-dotted, no chrome. */}
+          <div className="dm-helper-toolcall-row" data-handoff-spine="" style={{ flexWrap: "wrap", gap: 8 }}>
+            {handoff.steps.map((step) => (
+              <span key={step.id} className="dm-run-console__hint" data-spine-step={step.id} data-spine-status={step.status}>
+                <span className="dm-run-console__tree-dot" aria-hidden="true" />{step.id}:{step.status === "complete" ? "✓" : step.status}
+              </span>
+            ))}
+          </div>
           {error ? <div className="dm-helper-error">{error}</div> : null}
 
           {panel === "checklist" && (
@@ -297,6 +308,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                 <div style={{ borderBottom: "2px solid currentColor", width: `${progress.pct}%`, transition: "width 120ms linear" }} aria-hidden="true" />
                 <div className="dm-helper-stream dm-swarm-card-desc">{progress.stage}</div>
               </div>
+              {deriveProgressStages({ stage: progress.stageId, pct: progress.pct, converted: progress.converted, total: selected.length }).map((st) => (
+                <div key={st.id} className="dm-helper-toolcall-row dm-swarm-phase-head" data-progress-stage={st.id} data-progress-status={st.status}>
+                  <span className="dm-helper-toolcall-title">{st.id}</span>
+                  <span className="dm-run-console__hint">{st.status}{st.detail ? ` · ${st.detail}` : ""}</span>
+                </div>
+              ))}
             </div>
           )}
 

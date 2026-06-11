@@ -106,7 +106,31 @@ function deriveRowEvidence(row, workspaceSourceRecords, verifiable) {
 export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords } = {}) {
   const object = trainingObject(workspaceConfig);
   const rows = Array.isArray(object?.rows) ? object.rows : [];
-  const verifiable = Boolean(workspaceSourceRecords) && typeof workspaceSourceRecords === "object";
+  const verifiable = Boolean(workspaceSourceRecords) && typeof(workspaceSourceRecords) === "object";
+
+  // Registry bonding — a version row whose summary carries registryId is
+  // bonded to that api-registry record; when the record's lastResponse
+  // names this version's tuned tag, the validated real-world output is
+  // surfaced on the version row (invocation success + actual content).
+  const registryRows = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+    .filter((o) => o?.objectType === "api-registry")
+    .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []));
+  const bondRegistry = (summary, localModel) => {
+    const registryId = String(summary?.registryId || "").trim();
+    if (!registryId) return null;
+    const reg = registryRows.find((r) => String(r?.integrationId || "") === registryId);
+    if (!reg) return { registryId, status: "missing", validated: null };
+    let validated = null;
+    try {
+      const resp = JSON.parse(String(reg.lastResponse || "null"));
+      const tag = String(resp?.model || "");
+      if (localModel && tag === localModel) {
+        const content = resp?.choices?.[0]?.message?.content;
+        validated = { model: tag, snippet: typeof content === "string" ? content.slice(0, 160) : "", at: String(reg.lastTested || "") };
+      }
+    } catch { /* unvalidated */ }
+    return { registryId, status: String(reg.status || ""), validated };
+  };
 
   const models = rows.map((row) => {
     const evidence = deriveRowEvidence(row, workspaceSourceRecords, verifiable);
@@ -121,6 +145,7 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
       summary: parseExportSummary(row?.lastExportSummary),
       evidence: evidence.status,
       sidecarRecord: evidence.record,
+      bondedRegistry: bondRegistry(parseExportSummary(row?.lastExportSummary), String(row?.localModel || "").trim()),
     };
   });
 
@@ -488,4 +513,29 @@ export function deriveHandoffRecovery({ stage, message = "", online = true, read
         : "Runs after apply.",
   });
   return { items, retryable: !quota || datasetDownloaded, stage, offline };
+}
+
+
+/**
+ * Atomic progress stages for the prepare operation — the swarm-cockpit
+ * phase-row pattern applied to the handoff: one deterministic row per
+ * atomic step, each with its own status and causation-derived delta, so
+ * the user sees exactly which safeguarded step is executing while the
+ * single bar above tracks the whole. Pure function of the live progress
+ * state; the same stages the recovery deriver classifies failures by.
+ */
+export const HANDOFF_STAGES = ["validate", "convert", "package", "apply", "verify"];
+
+export function deriveProgressStages({ stage = "", pct = 0, converted = 0, total = 0 } = {}) {
+  const order = HANDOFF_STAGES.indexOf(stage);
+  return HANDOFF_STAGES.map((id, i) => {
+    const status = pct >= 100 ? "complete" : i < order ? "complete" : i === order ? "active" : "pending";
+    let detail = "";
+    if (id === "validate") detail = total ? `${total} curated traces` : "";
+    if (id === "convert") detail = total ? `${Math.min(converted, total)}/${total} rows → Unsloth JSONL` : "";
+    if (id === "package") detail = "dataset saved to device";
+    if (id === "apply") detail = "one atomic governed PATCH: exported stamps · version row · registry row";
+    if (id === "verify") detail = "readback must show the registry record";
+    return { id, status, detail };
+  });
 }

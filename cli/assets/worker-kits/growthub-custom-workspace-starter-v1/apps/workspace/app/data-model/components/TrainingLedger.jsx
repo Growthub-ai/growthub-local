@@ -136,6 +136,15 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
                 {model.evidence !== "missing" && summary?.path ? (
                   <div className="dm-run-console__hint">{summary.path}</div>
                 ) : null}
+                {model.bondedRegistry ? (
+                  <div className="dm-run-console__hint" data-training-bonded={model.bondedRegistry.registryId} data-training-validated={model.bondedRegistry.validated ? "true" : "false"}>
+                    {model.bondedRegistry.validated
+                      ? `invocation validated · ${model.bondedRegistry.registryId} · "${model.bondedRegistry.validated.snippet}"`
+                      : model.bondedRegistry.status === "missing"
+                        ? `bonded registry record ${model.bondedRegistry.registryId} not found — rerun the handoff`
+                        : `bonded to ${model.bondedRegistry.registryId} (${model.bondedRegistry.status || "untested"}) — run the registry test to validate the tuned response`}
+                  </div>
+                ) : null}
               </>
             )}
           </div>

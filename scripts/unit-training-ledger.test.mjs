@@ -337,3 +337,51 @@ test("recovery checklist derives personalized items from real failure evidence",
   const landed = deriveHandoffRecovery({ stage: "verify", message: "timeout", online: true, readbackOk: true, registryPresent: true });
   assert.equal(landed.items.find((i) => i.id === "apply").status, "complete", "atomic PATCH already landed — retry skips to verify");
 });
+
+test("progress stages derive deterministically per atomic step (swarm phase-row pattern)", async () => {
+  const { deriveProgressStages, HANDOFF_STAGES } = await import(
+    pathToFileURL(path.join(kitApp, "lib/training-ledger.js")).href
+  );
+  assert.deepEqual(HANDOFF_STAGES, ["validate", "convert", "package", "apply", "verify"]);
+  const mid = deriveProgressStages({ stage: "apply", pct: 82, converted: 11, total: 11 });
+  const byId = Object.fromEntries(mid.map((s) => [s.id, s.status]));
+  assert.equal(byId.validate, "complete");
+  assert.equal(byId.convert, "complete");
+  assert.equal(byId.package, "complete");
+  assert.equal(byId.apply, "active");
+  assert.equal(byId.verify, "pending");
+  assert.match(mid.find((s) => s.id === "apply").detail, /atomic governed PATCH/);
+  const done = deriveProgressStages({ stage: "verify", pct: 100, converted: 11, total: 11 });
+  assert.ok(done.every((s) => s.status === "complete"), "100% marks every atomic step complete");
+});
+
+test("version row bonds to its registry record and surfaces only tuned-tag-validated output", () => {
+  const validated = JSON.stringify({ model: "workspace-local-tuned-v1", choices: [{ message: { content: "Hello from your fine-tuned model." } }] });
+  const cfg = {
+    dataModel: { objects: [
+      { objectType: TRAINING_OBJECT_TYPE, rows: [{
+        Name: "workspace-local-v1", localModel: "workspace-local-tuned-v1",
+        lastExportId: "ft_1", lastSourceId: "",
+        lastExportSummary: JSON.stringify({ recordCount: 11, registryId: "workspace-local-model", version: 1 }),
+      }] },
+      { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", status: "connected", lastTested: "2026-06-11T17:00:00.000Z", lastResponse: validated }] },
+    ] },
+  };
+  const state = deriveTrainingLedgerState({ workspaceConfig: cfg });
+  const bonded = state.models[0].bondedRegistry;
+  assert.equal(bonded.registryId, "workspace-local-model");
+  assert.equal(bonded.status, "connected");
+  assert.ok(bonded.validated, "tuned-tag response validates");
+  assert.match(bonded.validated.snippet, /fine-tuned model/);
+
+  // base-model response never shows as validated output on the version row
+  const baseCfg = JSON.parse(JSON.stringify(cfg));
+  baseCfg.dataModel.objects[1].rows[0].lastResponse = validated.replace("workspace-local-tuned-v1", "gemma3:4b");
+  const baseState = deriveTrainingLedgerState({ workspaceConfig: baseCfg });
+  assert.equal(baseState.models[0].bondedRegistry.validated, null);
+
+  // missing registry record is surfaced, not silently dropped
+  const missingCfg = { dataModel: { objects: [cfg.dataModel.objects[0]] } };
+  const missingState = deriveTrainingLedgerState({ workspaceConfig: missingCfg });
+  assert.equal(missingState.models[0].bondedRegistry.status, "missing");
+});
