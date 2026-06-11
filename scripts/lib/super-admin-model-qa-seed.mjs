@@ -6,11 +6,8 @@
  *
  *   - training-traces governed object (Pipeline V1 row shape) — present in
  *     growthub.config.json IMMEDIATELY on export for instant QA
- *   - model-training ledger row enriched to the post-fine-tune linked state
- *   - custom model API Registry row (tested-row evidence shape, tuned tag)
- *   - custom-model-workflow sandbox row (api-registry-call graph + run
- *     proof carrying a REAL outputHash)
- *   - training:* export record + model-invocation:* proof record
+ *   - model-training ledger row in pre-handoff state
+ *   - training:* export record
  *
  * All mock proof is explicitly labeled seed QA evidence — it proves
  * plumbing and derivations; production claims require a real fine-tune's
@@ -39,7 +36,7 @@ export const TRAINING_EXPORT_SUMMARY = {
   escalations: 1,
   rewardMean: 0.82,
   path: "~/growthub-worker-kit-exports/training/feature-seed.jsonl",
-  registryId: MODEL_REGISTRY_ID,
+  registryId: "",
   version: 1,
 };
 
@@ -52,19 +49,19 @@ export const TRAINING_OBJECT = {
   columns: TRAINING_COLUMNS,
   rows: [{
     Name: "workspace-local",
-    status: "verified",
+    status: "exported",
     baseModel: "gemma3",
-    localModel: MODEL_TUNED_TAG,
-    modelVersion: "ft-2026-06-10-v1",
-    apiRegistryId: MODEL_REGISTRY_ID,
-    deployedEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
-    lastSandboxObjectId: "sandbox-probe",
-    lastSandboxRunId: "run_seed_model_smoke",
+    localModel: "",
+    modelVersion: "",
+    apiRegistryId: "",
+    deployedEndpoint: "",
+    lastSandboxObjectId: "",
+    lastSandboxRunId: "",
     lastExportAt: SEED_TIMESTAMP,
     lastExportId: "exp_feature_seed_baseline",
     lastSourceId: "training:model-training:workspace-local",
     lastExportSummary: JSON.stringify(TRAINING_EXPORT_SUMMARY),
-    description: "Seed QA evidence — continued-training ledger baseline (replace with real export stamps).",
+    description: "Seed QA evidence — training export baseline. Custom Models stays hidden until a real tuned model is linked, tested, and invoked.",
   }],
   binding: { mode: "manual", source: "Model Training" },
   relations: [],
@@ -161,31 +158,39 @@ export function buildSuperAdminModelQaSeed(baseConfig = {}) {
   const seed = JSON.parse(JSON.stringify({ workspaceConfig: base.workspaceConfig, sourceRecords: base.sourceRecords }));
   seed.envLocal = base.envLocal;
 
-  for (const object of seed.workspaceConfig.dataModel.objects) {
-    if (object.objectType === "api-registry") object.rows.push({ ...MODEL_REGISTRY_ROW });
-    if (object.id === "sandbox-probe") object.rows.push({ ...MODEL_SANDBOX_ROW });
+  applySuperAdminModelQaEvidence(seed.workspaceConfig, seed.sourceRecords);
+  return seed;
+}
+
+export function applySuperAdminModelQaEvidence(workspaceConfig, sourceRecords = {}) {
+  const objects = workspaceConfig?.dataModel?.objects;
+  if (!Array.isArray(objects)) throw new Error("workspaceConfig.dataModel.objects is required");
+
+  const withoutExisting = objects.filter((object) => (
+    object?.id !== TRAINING_OBJECT.id
+    && object?.id !== TRACES_OBJECT.id
+  ));
+  workspaceConfig.dataModel.objects = withoutExisting;
+
+  for (const object of workspaceConfig.dataModel.objects) {
+    if (object.objectType === "api-registry") {
+      const rows = Array.isArray(object.rows) ? object.rows : [];
+      object.rows = rows.filter((row) => row?.integrationId !== MODEL_REGISTRY_ID);
+    }
+    if (object.id === "sandbox-probe") {
+      const rows = Array.isArray(object.rows) ? object.rows : [];
+      object.rows = rows.filter((row) => row?.Name !== MODEL_SANDBOX_ROW.Name);
+    }
   }
-  seed.workspaceConfig.dataModel.objects.push(
+  workspaceConfig.dataModel.objects.push(
     JSON.parse(JSON.stringify(TRAINING_OBJECT)),
     JSON.parse(JSON.stringify(TRACES_OBJECT)),
   );
 
-  seed.sourceRecords["training:model-training:workspace-local"] = {
+  sourceRecords["training:model-training:workspace-local"] = {
     recordCount: 1,
     fetchedAt: SEED_TIMESTAMP,
-    records: [{ exportId: "exp_feature_seed_baseline", at: SEED_TIMESTAMP, modelId: MODEL_TUNED_TAG, ...TRAINING_EXPORT_SUMMARY }],
+    records: [{ exportId: "exp_feature_seed_baseline", at: SEED_TIMESTAMP, modelId: "", ...TRAINING_EXPORT_SUMMARY, registryId: "" }],
   };
-  seed.sourceRecords["model-invocation:workspace-local-model:seed"] = {
-    recordCount: 1,
-    fetchedAt: SEED_TIMESTAMP,
-    records: [{
-      invocationId: "inv_seed_1",
-      registryId: MODEL_REGISTRY_ID,
-      modelVersion: "ft-2026-06-10-v1",
-      status: 200,
-      response: JSON.parse(MODEL_INVOCATION_RESPONSE),
-      note: "Seed QA evidence — replace with real test-source proof for production claims.",
-    }],
-  };
-  return seed;
+  return { workspaceConfig, sourceRecords };
 }

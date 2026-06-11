@@ -514,6 +514,7 @@ export function deriveHandoffRecovery({ stage, message = "", online = true, read
   const items = [];
   items.push({
     id: "connection",
+    label: "Connection",
     status: offline ? "blocked" : "complete",
     description: offline
       ? "Connection to the workspace was lost (e.g. Wi-Fi dropped). The dev server must be reachable — reconnect, confirm the app URL loads, then retry."
@@ -521,6 +522,7 @@ export function deriveHandoffRecovery({ stage, message = "", online = true, read
   });
   items.push({
     id: "dataset",
+    label: "Dataset",
     status: datasetDownloaded ? "complete" : quota ? "blocked" : stage === "package" ? "blocked" : "active",
     description: datasetDownloaded
       ? "Dataset file already saved — retry resumes without re-downloading."
@@ -530,6 +532,7 @@ export function deriveHandoffRecovery({ stage, message = "", online = true, read
   });
   items.push({
     id: "apply",
+    label: "Apply",
     status: registryPresent === true ? "complete" : refused ? "blocked" : "active",
     description: registryPresent === true
       ? "Governed apply already landed (single atomic PATCH) — retry skips straight to verification."
@@ -539,6 +542,7 @@ export function deriveHandoffRecovery({ stage, message = "", online = true, read
   });
   items.push({
     id: "verify",
+    label: "Verify",
     status: readbackOk === true ? "complete" : readbackOk === false ? "blocked" : "active",
     description: readbackOk === true
       ? "Readback verified."

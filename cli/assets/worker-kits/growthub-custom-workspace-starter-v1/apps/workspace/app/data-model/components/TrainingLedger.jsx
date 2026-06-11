@@ -29,17 +29,38 @@ function formatWhen(iso) {
   return new Date(t).toISOString().replace("T", " ").slice(0, 16);
 }
 
-function surfaceLine(surfaces) {
-  const entries = Object.entries(surfaces || {}).filter(([, n]) => n > 0);
-  if (!entries.length) return "no traces yet";
-  return entries.map(([k, n]) => `${k} ${n}`).join(" · ");
+function activeModelLabel(models, workspaceConfig) {
+  const concrete = models.find((model) => model.localModel)?.localModel;
+  if (concrete) return concrete;
+  const base = models.find((model) => model.baseModel)?.baseModel;
+  if (base) return base;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "sandbox-environment") continue;
+    const row = (Array.isArray(object.rows) ? object.rows : []).find((candidate) => String(candidate?.localModel || "").trim());
+    if (row) return String(row.localModel).trim();
+  }
+  return "Not selected";
 }
 
-function evidenceLine(model) {
-  if (model.evidence === "linked") return `source record linked · ${model.lastSourceId}`;
-  if (model.evidence === "missing") return "source record missing — rerun `growthub intelligence export`";
-  if (model.evidence === "unverified") return "source record not verified in this view";
-  return null;
+function modelOptionsFromDataModel(workspaceConfig) {
+  const options = new Set();
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const object of objects) {
+    const rows = Array.isArray(object?.rows) ? object.rows : [];
+    if (object?.objectType === "model-training") {
+      for (const row of rows) {
+        if (String(row?.baseModel || "").trim()) options.add(String(row.baseModel).trim());
+        if (String(row?.localModel || "").trim()) options.add(String(row.localModel).trim());
+      }
+    }
+    if (object?.objectType === "sandbox-environment") {
+      for (const row of rows) {
+        if (String(row?.localModel || "").trim()) options.add(String(row.localModel).trim());
+      }
+    }
+  }
+  return [...options];
 }
 
 export default function TrainingLedger({ workspaceConfig: providedConfig, workspaceSourceRecords: providedRecords }) {
@@ -47,6 +68,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState(providedRecords || null);
   const [error, setError] = useState("");
   const [handoffOpen, setHandoffOpen] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState("");
 
   useEffect(() => {
     // Evidence parity with the page: config-only callers still fetch records.
@@ -68,50 +90,152 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
 
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords });
   const pipeline = deriveDistillationPipelineState({ workspaceConfig });
+  const sourceOptions = state.models
+    .map((model) => {
+      const sourceId = String(model.lastSourceId || "").trim();
+      const summary = model.sidecarRecord || model.summary || {};
+      const sourcePath = String(summary.path || "").trim();
+      if (!sourceId && !sourcePath) return null;
+      const label = sourcePath ? sourcePath.split("/").filter(Boolean).pop() || sourcePath : sourceId;
+      return { value: sourceId || label, label, sourceId, model };
+    })
+    .filter(Boolean);
+  const selectedSource = sourceOptions.find((option) => option.value === selectedSourceId) || sourceOptions[0] || null;
+  const primaryModel = selectedSource?.model || state.models[0] || {};
+  const summary = primaryModel.sidecarRecord || primaryModel.summary || {};
+  const curatedTraces = pipeline.graded;
+  const readinessTarget = pipeline.threshold || 10;
+  const nextMilestone = curatedTraces < 10 ? 10 : curatedTraces < 25 ? 25 : curatedTraces < 40 ? 40 : 50;
+  const priorMilestone = nextMilestone === 10 ? 0 : nextMilestone === 25 ? 10 : nextMilestone === 40 ? 25 : 40;
+  const readinessProgress = curatedTraces >= 50
+    ? 100
+    : Math.max(0, Math.min(100, Math.round(((curatedTraces - priorMilestone) / (nextMilestone - priorMilestone)) * 100)));
+  const modelLabel = activeModelLabel(state.models, workspaceConfig);
+  const modelOptions = modelOptionsFromDataModel(workspaceConfig);
+  const canAdvance = pipeline.ready;
+  const updateModelSelection = async (nextModel) => {
+    if (!nextModel || !workspaceConfig?.dataModel) return;
+    const objects = (workspaceConfig.dataModel.objects || []).map((object) => {
+      if (object?.objectType !== "model-training") return object;
+      return {
+        ...object,
+        rows: (object.rows || []).map((row, index) => (
+          index === 0
+            ? { ...row, baseModel: nextModel, localModel: row.localModel || "" }
+            : row
+        )),
+      };
+    });
+    const res = await fetch("/api/workspace", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataModel: { ...workspaceConfig.dataModel, objects } }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data?.error || "Model selection update failed.");
+      return;
+    }
+    setWorkspaceConfig(data.workspaceConfig);
+    setError("");
+  };
 
   return (
     <div data-training-ledger="">
       {error ? <div className="dm-helper-error">{error}</div> : null}
 
-      {/* Eligibility — the one low-entropy awareness line (causation driver). */}
-      <div className="dm-helper-toolcall dm-swarm-card" data-training-eligibility={state.eligibility.state}>
-        <div className="dm-helper-toolcall-title dm-swarm-card-title">
-          {{
-            blocked: "Gathering evidence",
-            eligible: "Export eligible",
-            exported: "Corpus exported",
-            deployed: "Endpoint registered",
-            verified: "Model verified",
-            "sandbox-ready": "Sandbox ready",
-            complete: "Trained model runnable",
-          }[state.eligibility.state] || state.eligibility.state}
-        </div>
-        <div className="dm-helper-stream dm-swarm-card-desc">{state.eligibility.next}</div>
-        <div className="dm-run-console__hint">
-          {state.coverage.exports} verified exports · {state.coverage.records} records · {state.coverage.escalations} escalation diagnoses
-        </div>
-        <div className="dm-run-console__hint">{surfaceLine(state.coverage.surfaces)}</div>
-        {state.identityChain && state.identityChain.apiRegistryId ? (
-          <div className="dm-run-console__hint" data-training-chain="" data-chain-proof={state.identityChain.apiTestProof ? "true" : "false"}>
-            chain: {state.identityChain.modelTrainingRowId} → {state.identityChain.lastExportId || "—"} → {state.identityChain.modelVersion || "—"} → {state.identityChain.apiRegistryId}
-            {state.identityChain.sandboxRunId ? ` → ${state.identityChain.sandboxObjectId}/${state.identityChain.sandboxRunId}` : ""}
-            {state.identityChain.modelOutputHash ? ` → output #${state.identityChain.modelOutputHash}` : state.identityChain.snippetHash ? ` → snippet #${state.identityChain.snippetHash}` : ""}
+      <div className="training-stats-card" data-training-eligibility={state.eligibility.state}>
+        <div className="training-stats-head">
+          <div>
+            <div className="training-stats-title">Distillation Stats</div>
+            <div className="training-stats-subtitle">{formatWhen(primaryModel.lastExportAt)}</div>
           </div>
-        ) : null}
-        {pipeline.present ? (
-          <div className="dm-run-console__hint" data-training-pipeline="">
-            {pipeline.graded} curated traces (score ≥ {pipeline.minScore}) · {pipeline.unexported} awaiting export
-            {pipeline.ready ? " · fine-tune floor met" : ` · ${pipeline.remaining} more to reach ${pipeline.threshold}`}
+        </div>
+
+        <div className="training-section training-config-section">
+          <div className="training-section-title">Configuration</div>
+          <label className="training-field-row">
+            <span>Model</span>
+            <select
+              className="training-model-select"
+              value={modelLabel === "Not selected" ? "" : modelLabel}
+              onChange={(event) => updateModelSelection(event.target.value)}
+              disabled={modelOptions.length === 0}
+              aria-label="Training model"
+            >
+              {modelOptions.length === 0 ? <option value="">Not selected</option> : null}
+              {modelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label className="training-field-row">
+            <span>Training data</span>
+            <select
+              className="training-model-select"
+              value={selectedSource?.value || ""}
+              onChange={(event) => setSelectedSourceId(event.target.value)}
+              aria-label="Training data"
+            >
+              {sourceOptions.length === 0 ? <option value="">No export selected</option> : null}
+              {sourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <div className="training-progress-block">
+          <div className="training-progress-meta">
+            <span>Next Training Milestone</span>
+            <strong>{curatedTraces >= 50 ? `${curatedTraces}+` : `${curatedTraces} / ${nextMilestone}`}</strong>
           </div>
-        ) : null}
-        <button
-          type="button"
-          className="dm-btn-ghost"
-          data-training-handoff-open=""
-          onClick={() => setHandoffOpen(true)}
-        >
-          Continue to fine-tune
-        </button>
+          <div className={`training-progress-track${pipeline.ready ? " is-ready" : ""}`} aria-label={`Training depth ${curatedTraces} toward ${nextMilestone} qualified traces`}>
+            <span style={{ width: `${readinessProgress}%` }} />
+          </div>
+          <div className="training-progress-marks">
+            <span>{priorMilestone === 0 ? "start" : priorMilestone}</span>
+            <span>{nextMilestone}{nextMilestone === readinessTarget ? " fine-tune gate" : " next"}</span>
+          </div>
+          <div className="training-readiness-grid">
+            <span>
+              <strong>{curatedTraces}</strong>
+              <small>qualified traces</small>
+            </span>
+            <span>
+              <strong>{readinessTarget}</strong>
+              <small>fine-tune gate</small>
+            </span>
+            <span>
+              <strong>{nextMilestone}</strong>
+              <small>next milestone</small>
+            </span>
+          </div>
+        </div>
+
+        <div className="training-section">
+          <div className="training-section-title">Training Quality</div>
+          <div className="training-chip-row">
+            <span className="training-chip">Escalations: <strong>{state.coverage.escalations}</strong></span>
+            <span className="training-chip">Reward Mean: <strong>{Number.isFinite(summary.rewardMean) ? summary.rewardMean : "—"}</strong></span>
+          </div>
+        </div>
+
+        <div className="training-action-row">
+          <div className="training-action-help-wrap">
+            <button
+              type="button"
+              className="training-action-primary"
+              data-training-handoff-open=""
+              disabled={!canAdvance}
+              onClick={() => setHandoffOpen(true)}
+              aria-describedby="training-action-help"
+            >
+              Train Custom Model
+            </button>
+            <div className="training-action-help" id="training-action-help" role="tooltip">
+              <strong>Train Custom Model</strong>
+              <span>Uses the selected training data and model setting to prepare a governed fine-tune handoff.</span>
+              <span>The model is not marked custom or verified until the real training run and endpoint test write evidence back to the Data Model.</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <TrainingHandoffModal
@@ -121,47 +245,6 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
         workspaceSourceRecords={workspaceSourceRecords}
         onApplied={(fresh) => setWorkspaceConfig(fresh)}
       />
-
-      {/* One card per tracked model — same card grammar as background tasks. */}
-      {state.models.map((model) => {
-        const summary = model.sidecarRecord || model.summary;
-        const evidence = evidenceLine(model);
-        return (
-          <div className="dm-helper-toolcall dm-swarm-card" key={model.name} data-training-model={model.name} data-training-evidence={model.evidence}>
-            <div className="dm-helper-toolcall-title dm-swarm-card-title">{model.name || "(unnamed model)"}</div>
-            <div className="dm-run-console__hint">
-              {model.localModel ? `localModel ${model.localModel}` : "no concrete model selected"}
-              {model.baseModel ? ` · base ${model.baseModel}` : ""}
-              {model.status ? ` · ${model.status}` : ""}
-            </div>
-            {model.evidence === "none" ? (
-              <div className="dm-helper-stream dm-swarm-card-desc">No exports yet for this model.</div>
-            ) : (
-              <>
-                <div className="dm-helper-stream dm-swarm-card-desc">
-                  Last export {formatWhen(model.lastExportAt)}
-                  {model.evidence !== "missing" && summary
-                    ? ` · ${Number(summary.recordCount) || 0} records${Number.isFinite(summary.rewardMean) ? ` · reward mean ${summary.rewardMean}` : ""}`
-                    : ""}
-                </div>
-                {evidence ? <div className="dm-run-console__hint">{evidence}</div> : null}
-                {model.evidence !== "missing" && summary?.path ? (
-                  <div className="dm-run-console__hint">{summary.path}</div>
-                ) : null}
-                {model.bondedRegistry ? (
-                  <div className="dm-run-console__hint" data-training-bonded={model.bondedRegistry.registryId} data-training-validated={model.bondedRegistry.validated ? "true" : "false"}>
-                    {model.bondedRegistry.validated
-                      ? `invocation validated · ${model.bondedRegistry.registryId} · "${model.bondedRegistry.validated.snippet}"`
-                      : model.bondedRegistry.status === "missing"
-                        ? `bonded registry record ${model.bondedRegistry.registryId} not found — rerun the handoff`
-                        : `bonded to ${model.bondedRegistry.registryId} (${model.bondedRegistry.status || "untested"}) — run the registry test to validate the tuned response`}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }

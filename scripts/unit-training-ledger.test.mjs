@@ -10,8 +10,8 @@
  *   - export claims are only complete when the row's lastExportId matches
  *     a record in the training:* sidecar entry at lastSourceId; claims
  *     without sidecar evidence surface as missing, never as complete
- *   - the feature seed materializes a ledger the deriver scores complete
- *     with evidence linked
+ *   - the feature seed materializes a ledger the deriver scores exported
+ *     with evidence linked, without fake tuned-model proof
  *
  * Run with:  node --test scripts/unit-training-ledger.test.mjs
  */
@@ -154,13 +154,17 @@ test("deriver does not crash on malformed lastExportSummary", () => {
   assert.equal(state.coverage.records, 2);
 });
 
-test("feature seed materializes a ledger the deriver scores complete with evidence linked", () => {
+test("feature seed materializes an exported ledger with evidence linked", () => {
   const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   assert.equal(state.present, true);
-  assert.equal(state.eligibility.state, "complete", "enriched seed closes the full loop");
+  assert.equal(state.eligibility.state, "exported", "seed stops before fake tuned-model proof");
   assert.equal(state.missingEvidence, false);
   assert.equal(state.models[0].evidence, "linked");
+  assert.equal(state.models[0].baseModel, "gemma3");
+  assert.equal(state.models[0].localModel, "");
+  assert.equal(state.identityChain.apiRegistryId, "");
+  assert.equal(state.identityChain.apiTestProof, false);
   assert.equal(state.coverage.exports, 1);
   assert.equal(state.coverage.records, TRAINING_EXPORT_SUMMARY.recordCount);
   assert.equal(state.coverage.escalations, TRAINING_EXPORT_SUMMARY.escalations);
@@ -389,46 +393,25 @@ test("version row bonds to its registry record and surfaces only tuned-tag-valid
   assert.equal(missingState.models[0].bondedRegistry.status, "missing");
 });
 
-test("seven-state ladder promotes only on new evidence; seed reaches complete with full identity chain", () => {
+test("seven-state ladder keeps seed exported until real model evidence exists", () => {
   const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
-  assert.equal(state.eligibility.state, "complete", "seed QA workspace closes the loop");
+  assert.equal(state.eligibility.state, "exported", "seed QA workspace does not fake a tuned model");
   const chain = state.identityChain;
   assert.equal(chain.modelTrainingRowId, "workspace-local");
   assert.ok(chain.lastExportId, "exportId link");
   assert.equal(chain.trainingSourceId, "training:model-training:workspace-local");
-  assert.equal(chain.modelVersion, "workspace-local-tuned-v1");
-  assert.equal(chain.apiRegistryId, "workspace-local-model");
-  assert.equal(chain.apiTestProof, true, "tuned-tag invocation proof present");
-  assert.equal(chain.sandboxObjectId, "sandbox-probe");
-  assert.equal(chain.sandboxRunId, "run_seed_model_smoke");
-  assert.equal(chain.modelOutputHash, "seed-out-7f3a91", "REAL output hash from run proof, never a snippet digest");
-  assert.ok(chain.snippetHash, "snippet digest carried separately");
-
-  // Demotion checks — removing evidence drops the state, never row-only completion.
-  const noRun = JSON.parse(JSON.stringify(workspaceConfig));
-  for (const o of noRun.dataModel.objects) if (o.objectType === "sandbox-environment") for (const r of o.rows) if (r.Name === "custom-model-workflow") { r.lastRunId = ""; r.lastResponse = ""; }
-  assert.equal(deriveTrainingLedgerState({ workspaceConfig: noRun, workspaceSourceRecords: sourceRecords }).eligibility.state, "sandbox-ready");
-
-  const noSandbox = JSON.parse(JSON.stringify(workspaceConfig));
-  for (const o of noSandbox.dataModel.objects) if (o.objectType === "sandbox-environment") o.rows = o.rows.filter((r) => r.Name !== "custom-model-workflow");
-  assert.equal(deriveTrainingLedgerState({ workspaceConfig: noSandbox, workspaceSourceRecords: sourceRecords }).eligibility.state, "verified");
-
-  const baseTag = JSON.parse(JSON.stringify(noSandbox));
-  for (const o of baseTag.dataModel.objects) if (o.objectType === "api-registry") for (const r of o.rows) if (r.integrationId === "workspace-local-model") r.lastResponse = String(r.lastResponse).replaceAll("workspace-local-tuned-v1", "gemma3:4b");
-  assert.equal(deriveTrainingLedgerState({ workspaceConfig: baseTag, workspaceSourceRecords: sourceRecords }).eligibility.state, "deployed", "base-model response demotes verified → deployed");
-
-  const noRegistry = JSON.parse(JSON.stringify(baseTag));
-  for (const o of noRegistry.dataModel.objects) if (o.objectType === "api-registry") o.rows = o.rows.filter((r) => r.integrationId !== "workspace-local-model");
-  const demoted = deriveTrainingLedgerState({ workspaceConfig: noRegistry, workspaceSourceRecords: sourceRecords });
-  assert.equal(demoted.eligibility.state, "exported", "missing registry row demotes deployed → exported");
+  assert.equal(chain.modelVersion, "");
+  assert.equal(chain.apiRegistryId, "");
+  assert.equal(chain.apiTestProof, false);
+  assert.equal(chain.sandboxObjectId, "");
+  assert.equal(chain.sandboxRunId, "");
+  assert.equal(chain.modelOutputHash, "");
+  assert.equal(chain.snippetHash, "");
 });
 
-test("seed invocation proof record exists and never claims production fine-tune", () => {
+test("seed invocation proof is absent until a real tuned-model run exists", () => {
   const { sourceRecords } = buildSuperAdminModelQaSeed({});
   const proof = sourceRecords["model-invocation:workspace-local-model:seed"];
-  assert.ok(proof, "invocation source-record proof present");
-  assert.equal(proof.records[0].status, 200);
-  assert.equal(proof.records[0].modelVersion, "ft-2026-06-10-v1");
-  assert.match(proof.records[0].note, /seed qa evidence/i, "mock proof is explicitly labeled");
+  assert.equal(proof, undefined);
 });

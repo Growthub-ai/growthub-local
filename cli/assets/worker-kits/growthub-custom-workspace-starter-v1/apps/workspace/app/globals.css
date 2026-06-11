@@ -9216,6 +9216,313 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-card-kind { font-weight: 600; }
 .dm-swarm-card-desc { font-size: 12px; padding: 7px 9px; }
 
+/* Training sidecar — Distillation Stats. Minimal, model-first, no code blocks. */
+.training-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.training-stats-head,
+.training-model-row,
+.training-progress-meta,
+.training-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.training-stats-title {
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 650;
+  color: #111827;
+  letter-spacing: 0;
+}
+.training-stats-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #6b7280;
+}
+.training-model-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-model-select:disabled {
+  color: #9ca3af;
+  background: #f9fafb;
+}
+.training-path-row,
+.training-path-pill {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6b7280;
+  font-size: 11.5px;
+}
+.training-progress-block {
+  display: grid;
+  gap: 7px;
+}
+.training-progress-meta {
+  font-size: 12px;
+  color: #4b5563;
+}
+.training-progress-meta strong {
+  color: #111827;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.training-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+.training-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8b8f96;
+  transition: width 160ms ease, background 160ms ease;
+}
+.training-progress-track.is-ready span { background: #16a34a; }
+.training-progress-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.training-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.training-readiness-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.training-readiness-grid strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.15;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-readiness-grid small {
+  color: #6b7280;
+  font-size: 10.5px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.training-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #eef0f2;
+}
+.training-config-section {
+  padding-top: 0;
+  border-top: 0;
+}
+.training-section-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: #111827;
+}
+.training-field-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.42fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.training-field-row > span {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+}
+.training-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.training-chip,
+.training-path-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+.training-chip strong {
+  color: #111827;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.training-path-pill {
+  justify-content: flex-start;
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.training-action-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.training-action-help-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.training-action-help {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  display: none;
+  width: min(340px, 72vw);
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #374151;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.training-action-help strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #111827;
+  font-size: 12px;
+}
+.training-action-help span {
+  display: block;
+  margin-top: 6px;
+}
+.training-action-help-wrap:hover .training-action-help,
+.training-action-help-wrap:focus-within .training-action-help {
+  display: block;
+}
+.training-action-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid #d1d5db;
+}
+.training-action-primary {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+  cursor: pointer;
+}
+.training-action-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dm-orch-modal[data-training-handoff] {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dm-orch-modal[data-training-handoff] .dm-orch-modal-body {
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.dm-orch-modal[data-training-handoff] .dm-orch-modal-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.training-handoff-head h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #111827;
+}
+.training-handoff-summary,
+.training-handoff-process {
+  display: grid;
+  gap: 8px;
+}
+.training-handoff-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.training-handoff-summary div,
+.training-handoff-process div {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #fafafa;
+}
+.training-handoff-summary strong,
+.training-handoff-process strong {
+  color: #111827;
+  font-size: 13px;
+}
+.training-handoff-summary span,
+.training-handoff-process span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.training-handoff-trace-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
 /* Phase groups — dm-helper-toolcall card + dm-helper-toolcall-row head. */
 .dm-swarm-phases { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
 .dm-swarm-phase { display: flex; flex-direction: column; }

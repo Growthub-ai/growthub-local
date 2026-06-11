@@ -30,6 +30,62 @@ const { buildFeatureWorkspaceSeed } = await import(
   pathToFileURL(path.join(repoRoot, "scripts/lib/workspace-feature-seed.mjs")).href
 );
 
+function buildCompletedModelWorkspace() {
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+  const objects = workspaceConfig.dataModel.objects;
+  const training = objects.find((o) => o.id === "model-training");
+  const row = training.rows[0];
+  row.localModel = "workspace-local-tuned-v1";
+  row.modelVersion = "workspace-local-tuned-v1";
+  row.apiRegistryId = "workspace-local-model";
+  row.deployedEndpoint = "http://127.0.0.1:11434/v1/chat/completions";
+  row.lastSandboxObjectId = "sandbox-probe";
+  row.lastSandboxRunId = "run_seed_model_smoke";
+  row.lastExportSummary = JSON.stringify({
+    ...JSON.parse(row.lastExportSummary),
+    registryId: "workspace-local-model",
+  });
+
+  let registry = objects.find((o) => o.objectType === "api-registry");
+  if (!registry) {
+    registry = { id: "api-registry", objectType: "api-registry", rows: [] };
+    objects.push(registry);
+  }
+  registry.rows.push({
+    integrationId: "workspace-local-model",
+    authRef: "",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    endpoint: "/chat/completions",
+    method: "POST",
+    status: "connected",
+    lastTested: "2026-06-10T00:00:00.000Z",
+    lastResponse: JSON.stringify({
+      model: "workspace-local-tuned-v1",
+      choices: [{ message: { content: "completed model fixture" } }],
+    }),
+    capabilities: "chat-completions",
+    executionLane: "sandbox-local",
+    kind: "custom-model",
+  });
+
+  let sandbox = objects.find((o) => o.id === "sandbox-probe");
+  if (!sandbox) {
+    sandbox = { id: "sandbox-probe", objectType: "sandbox-environment", rows: [] };
+    objects.push(sandbox);
+  }
+  sandbox.rows.push({
+    Name: "custom-model-workflow",
+    schedulerRegistryId: "workspace-local-model",
+    lastRunId: "run_seed_model_smoke",
+    lastResponse: JSON.stringify({ ok: true, exitCode: 0, outputHash: "seed-out-7f3a91" }),
+    orchestrationConfig: JSON.stringify({ nodes: [{ config: { registryId: "workspace-local-model" } }] }),
+  });
+  sourceRecords["model-invocation:workspace-local-model:seed"] = {
+    records: [{ status: 200, modelVersion: "workspace-local-tuned-v1", note: "completed fixture proof" }],
+  };
+  return { workspaceConfig, sourceRecords };
+}
+
 test("/custom-models is registered read-only, governed, and evidence-gated", () => {
   const cmd = HELPER_COMMANDS.find((c) => c.name === "/custom-models");
   assert.ok(cmd, "command present");
@@ -53,19 +109,24 @@ test("command hidden without evidence, visible with it; other commands unaffecte
   assert.equal(slash.matches.find((c) => c.name === "/custom-models"), undefined, "slash menu respects the gate");
 });
 
-test("deriver: commandVisible false on empty workspace, true from seed evidence", () => {
+test("deriver: commandVisible false on empty/export-only workspace, true from completed model evidence", () => {
   const empty = deriveCustomModelsState({ workspaceConfig: { dataModel: { objects: [] } }, workspaceSourceRecords: {} });
   assert.equal(empty.commandVisible, false);
   assert.equal(empty.available, false);
 
   const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
-  const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
+  const exportOnly = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
+  assert.equal(exportOnly.commandVisible, false);
+  assert.equal(exportOnly.available, false);
+
+  const completed = buildCompletedModelWorkspace();
+  const state = deriveCustomModelsState({ workspaceConfig: completed.workspaceConfig, workspaceSourceRecords: completed.sourceRecords });
   assert.equal(state.commandVisible, true);
   assert.equal(state.available, true);
 });
 
-test("seed model card resolves registry, sandbox, hash, endpoint mode, and complete state", () => {
-  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+test("completed model card resolves registry, sandbox, hash, endpoint mode, and complete state", () => {
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const model = state.models.find((m) => m.id === "workspace-local");
   assert.ok(model);
@@ -82,7 +143,7 @@ test("seed model card resolves registry, sandbox, hash, endpoint mode, and compl
 });
 
 test("base-model response demotes; failed run demotes; row claims never verify", () => {
-  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const base = JSON.parse(JSON.stringify(workspaceConfig));
   for (const o of base.dataModel.objects) if (o.objectType === "api-registry") for (const r of o.rows) if (r.integrationId === "workspace-local-model") r.lastResponse = String(r.lastResponse).replaceAll("workspace-local-tuned-v1", "gemma3:4b");
   const demoted = deriveCustomModelsState({ workspaceConfig: base, workspaceSourceRecords: sourceRecords });
@@ -95,7 +156,7 @@ test("base-model response demotes; failed run demotes; row claims never verify",
 });
 
 test("capability manifest is deterministic, complete, and secret-free", () => {
-  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const manifest = buildCapabilityManifest(state.models[0], { workspaceConfig });
   assert.equal(manifest.schema, "growthub-custom-model-capability-v1");
@@ -125,7 +186,7 @@ test("generic chat-completions registry row alone never exposes /custom-models",
 });
 
 test("regex false-positive cannot mark a run complete — proof is parsed, malformed demotes", () => {
-  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const tricked = JSON.parse(JSON.stringify(workspaceConfig));
   for (const o of tricked.dataModel.objects) if (o.objectType === "sandbox-environment") for (const r of o.rows) if (r.Name === "custom-model-workflow") {
     r.lastResponse = 'the log mentions "ok": true and "exitCode": 0 but this is not JSON{';
@@ -135,7 +196,7 @@ test("regex false-positive cannot mark a run complete — proof is parsed, malfo
 });
 
 test("exact deep links: workflow link carries object, row, and run params", () => {
-  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const links = state.models[0].links;
   assert.equal(links.workflow, "/workflows?object=sandbox-probe&row=custom-model-workflow&run=run_seed_model_smoke");

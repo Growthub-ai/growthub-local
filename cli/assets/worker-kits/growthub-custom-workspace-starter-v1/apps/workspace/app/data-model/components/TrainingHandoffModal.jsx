@@ -54,7 +54,6 @@ function eligibleTraceRows(workspaceConfig, minScore) {
     .map((row, index) => ({ row, index }))
     .filter(({ row }) =>
       Number(row?.qualityScore) >= minScore
-      && String(row?.exported || "false").toLowerCase() !== "true"
       && String(row?.inputPrompt || "").trim()
       && String(row?.agentOutput || "").trim());
 }
@@ -126,10 +125,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
         setResume({ datasetDownloaded: true, datasetPath, lines });
       }
 
-      // apply — one governed PATCH: exported stamps (Phase-3 parity) +
+      // apply — one governed PATCH: idempotent exported stamps (Phase-3 parity) +
       // versioned model row + api-registry row from the chosen target.
       stage = "apply";
-      await tick(82, "Applying governed rows (exported stamps · version row · registry row)", "apply", selected.length);
+      await tick(82, "Applying governed rows (training data · version row · registry row)", "apply", selected.length);
       const modelTag = `workspace-local-tuned-v${version}`;
       const { registryRow, versionRow, integrationId } = scaffoldHandoffRows({
         slug: "workspace-local", version, target, modelTag,
@@ -154,6 +153,26 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
           objectType: TRAINING_OBJECT_TYPE, icon: "Terminal", columns: TRAINING_COLUMNS,
           rows: [versionRow], binding: { mode: "manual", source: "Model Training" },
           relations: [], fieldSettings: { hidden: [], order: TRAINING_COLUMNS },
+        });
+      }
+      if (!objects.some((o) => o?.objectType === "api-registry")) {
+        objects.push({
+          id: "api-registry",
+          label: "API Registry",
+          source: "API Registry",
+          objectType: "api-registry",
+          icon: "Code",
+          columns: [
+            "integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse",
+            "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane",
+          ],
+          rows: [registryRow],
+          binding: { mode: "manual", source: "API Registry" },
+          relations: [],
+          fieldSettings: { hidden: [], order: [
+            "integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse",
+            "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane",
+          ] },
         });
       }
       const res = await fetch("/api/workspace", {
@@ -212,39 +231,34 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
   return createPortal((
     <div className="dm-orch-modal-backdrop" role="presentation" onClick={onClose}>
       <div className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Fine-tune handoff" data-training-handoff="" onClick={(e) => e.stopPropagation()}>
-        <div className="dm-orch-modal-head">
-          <span className="dm-helper-toolcall-title">
-            {panel === "curate" ? "Curate dataset" : panel === "prepare" ? "Preparing fine-tune" : panel === "recover" ? "Recover handoff" : panel === "done" ? "Handoff prepared" : `Fine-tune handoff · ${handoff.score}/100`}
-          </span>
+        <div className="dm-orch-modal-head training-handoff-head">
+          <div>
+            <p>Custom model training</p>
+            <h2>
+              {panel === "curate" ? "Review training data" : panel === "prepare" ? "Preparing handoff" : panel === "recover" ? "Recovery" : panel === "done" ? "Handoff ready" : "Train custom model"}
+            </h2>
+          </div>
           <button type="button" className="dm-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close">Close</button>
         </div>
 
         <div className="dm-orch-modal-body">
-          {/* Persistent spine — the cockpit checklist sits above the form in
-              every panel (registry-cockpit posture): one condensed row per
-              step, status-dotted, no chrome. */}
-          <div className="dm-helper-toolcall-row" data-handoff-spine="" style={{ flexWrap: "wrap", gap: 8 }}>
-            {handoff.steps.map((step) => (
-              <span key={step.id} className="dm-run-console__hint" data-spine-step={step.id} data-spine-status={step.status}>
-                <span className="dm-run-console__tree-dot" aria-hidden="true" />{step.id}:{step.status === "complete" ? "✓" : step.status}
-              </span>
-            ))}
+          <div className="training-handoff-summary">
+            <div><strong>{selected.length}</strong><span>qualified traces</span></div>
+            <div><strong>{MIN_FINETUNE_TRACES}</strong><span>minimum</span></div>
+            <div><strong>{target.label}</strong><span>target</span></div>
           </div>
           {error ? <div className="dm-helper-error">{error}</div> : null}
 
           {panel === "checklist" && (
             <div className="dm-orch-modal-list">
-              {handoff.steps.map((step) => (
-                <div key={step.id} className="dm-helper-toolcall dm-swarm-card" data-handoff-step={step.id} data-handoff-status={step.status}>
-                  <div className="dm-helper-toolcall-row">
-                    <span className="dm-helper-toolcall-title">{step.label}</span>
-                    <span className="dm-run-console__hint">{step.status}</span>
-                  </div>
-                  <div className="dm-helper-stream dm-swarm-card-desc">{step.description}</div>
-                </div>
-              ))}
+              <div className="training-handoff-process">
+                <div><strong>1. Distill</strong><span>Select high-quality traces from real workspace activity.</span></div>
+                <div><strong>2. Package</strong><span>Create a fine-tune dataset and versioned training record.</span></div>
+                <div><strong>3. Train</strong><span>Run the fine-tune in your local model tool.</span></div>
+                <div><strong>4. Verify</strong><span>Register and test the endpoint before it becomes a custom model.</span></div>
+              </div>
               <button type="button" className="dm-btn-ghost" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
-                {candidates.length > 0 ? `Prepare fine-tune dataset (${candidates.length} curated traces)` : "No unexported curated traces yet"}
+                {candidates.length > 0 ? `Review ${candidates.length} traces` : "No qualified traces yet"}
               </button>
             </div>
           )}
@@ -272,6 +286,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                   {target.requiredEnv.length ? ` · target env: ${target.requiredEnv.join(", ")}` : ""}
                 </div>
               </div>
+              <div className="training-handoff-trace-list">
               {candidates.map(({ row, index }) => (
                 <div key={index} className="dm-helper-toolcall dm-swarm-card" data-handoff-trace={index}>
                   <div className="dm-helper-toolcall-row">
@@ -293,19 +308,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                   {row.reason ? <div className="dm-run-console__hint">{row.reason}</div> : null}
                 </div>
               ))}
+              </div>
               {/* Review summary — the explicit-confirm review step: every
                   row this apply will write, stated before the click. */}
               {floorMet ? (
                 <div className="dm-helper-toolcall dm-swarm-card" data-handoff-review="">
                   <div className="dm-helper-toolcall-title dm-swarm-card-title">Review before apply</div>
                   <div className="dm-run-console__hint">{selected.length} traces · min score {minScore} · target {target.label}</div>
-                  <div className="dm-run-console__hint">will stamp {selected.length} trace rows exported · create 1 model-training version row · create 1 API Registry row · no secrets included</div>
+                  <div className="dm-run-console__hint">will use {selected.length} qualified traces · create 1 model-training version row · create 1 API Registry row · no secrets included</div>
                   <div className="dm-helper-stream dm-swarm-card-desc">This prepares the dataset and scaffolding only — fine-tuning runs externally and the endpoint is NOT verified until its test returns your tuned model tag.</div>
                 </div>
               ) : null}
               <button type="button" className="dm-btn-ghost" data-handoff-confirm="" disabled={!floorMet} onClick={runPrepare}>
                 {floorMet
-                  ? `Final check passed — prepare ${selected.length} records → ${target.label}`
+                  ? `Prepare handoff`
                   : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
               </button>
             </div>
@@ -332,7 +348,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
               {recovery.items.map((item) => (
                 <div key={item.id} className="dm-helper-toolcall dm-swarm-card" data-recover-item={item.id} data-recover-status={item.status}>
                   <div className="dm-helper-toolcall-row">
-                    <span className="dm-helper-toolcall-title">{item.id}</span>
+                    <span className="dm-helper-toolcall-title">{item.label || item.id}</span>
                     <span className="dm-run-console__hint">{item.status}</span>
                   </div>
                   <div className="dm-helper-stream dm-swarm-card-desc">{item.description}</div>
@@ -362,9 +378,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
           {panel === "curate" || panel === "done" ? (
             <button type="button" className="dm-btn-ghost" onClick={() => setPanel("checklist")}>Back to checklist</button>
           ) : null}
-          <span className="dm-run-console__hint" style={{ marginLeft: "auto" }}>
-            Governed PATCH only · no training runs in this workspace
-          </span>
+          <span className="dm-run-console__hint" style={{ marginLeft: "auto" }}>No training runs until you start it locally.</span>
         </div>
       </div>
     </div>
