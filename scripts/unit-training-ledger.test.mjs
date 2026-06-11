@@ -41,7 +41,10 @@ const {
 } = await import(
   pathToFileURL(path.join(kitApp, "lib/training-ledger.js")).href
 );
-const { TRAINING_OBJECT, TRAINING_EXPORT_SUMMARY, buildFeatureWorkspaceSeed } = await import(
+const { TRAINING_OBJECT, TRAINING_EXPORT_SUMMARY, buildSuperAdminModelQaSeed } = await import(
+  pathToFileURL(path.join(repoRoot, "scripts/lib/super-admin-model-qa-seed.mjs")).href
+);
+const { buildFeatureWorkspaceSeed } = await import(
   pathToFileURL(path.join(repoRoot, "scripts/lib/workspace-feature-seed.mjs")).href
 );
 
@@ -152,7 +155,7 @@ test("deriver does not crash on malformed lastExportSummary", () => {
 });
 
 test("feature seed materializes a ledger the deriver scores complete with evidence linked", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   assert.equal(state.present, true);
   assert.equal(state.eligibility.state, "complete", "enriched seed closes the full loop");
@@ -165,7 +168,7 @@ test("feature seed materializes a ledger the deriver scores complete with eviden
 });
 
 test("seed row and sidecar record cross-reference exactly", () => {
-  const { sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { sourceRecords } = buildSuperAdminModelQaSeed({});
   const row = TRAINING_OBJECT.rows[0];
   assert.equal(TRAINING_OBJECT.id, "model-training");
   assert.equal(TRAINING_OBJECT.objectType, "model-training");
@@ -387,7 +390,7 @@ test("version row bonds to its registry record and surfaces only tuned-tag-valid
 });
 
 test("seven-state ladder promotes only on new evidence; seed reaches complete with full identity chain", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   assert.equal(state.eligibility.state, "complete", "seed QA workspace closes the loop");
   const chain = state.identityChain;
@@ -422,7 +425,7 @@ test("seven-state ladder promotes only on new evidence; seed reaches complete wi
 });
 
 test("seed invocation proof record exists and never claims production fine-tune", () => {
-  const { sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { sourceRecords } = buildSuperAdminModelQaSeed({});
   const proof = sourceRecords["model-invocation:workspace-local-model:seed"];
   assert.ok(proof, "invocation source-record proof present");
   assert.equal(proof.records[0].status, 200);

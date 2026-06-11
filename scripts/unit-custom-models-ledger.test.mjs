@@ -23,6 +23,9 @@ const { HELPER_COMMANDS, deriveVisibleHelperCommands, parseSlashInput, isGoverne
 const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode } = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
+const { buildSuperAdminModelQaSeed } = await import(
+  pathToFileURL(path.join(repoRoot, "scripts/lib/super-admin-model-qa-seed.mjs")).href
+);
 const { buildFeatureWorkspaceSeed } = await import(
   pathToFileURL(path.join(repoRoot, "scripts/lib/workspace-feature-seed.mjs")).href
 );
@@ -55,14 +58,14 @@ test("deriver: commandVisible false on empty workspace, true from seed evidence"
   assert.equal(empty.commandVisible, false);
   assert.equal(empty.available, false);
 
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   assert.equal(state.commandVisible, true);
   assert.equal(state.available, true);
 });
 
 test("seed model card resolves registry, sandbox, hash, endpoint mode, and complete state", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const model = state.models.find((m) => m.id === "workspace-local");
   assert.ok(model);
@@ -79,7 +82,7 @@ test("seed model card resolves registry, sandbox, hash, endpoint mode, and compl
 });
 
 test("base-model response demotes; failed run demotes; row claims never verify", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const base = JSON.parse(JSON.stringify(workspaceConfig));
   for (const o of base.dataModel.objects) if (o.objectType === "api-registry") for (const r of o.rows) if (r.integrationId === "workspace-local-model") r.lastResponse = String(r.lastResponse).replaceAll("workspace-local-tuned-v1", "gemma3:4b");
   const demoted = deriveCustomModelsState({ workspaceConfig: base, workspaceSourceRecords: sourceRecords });
@@ -92,7 +95,7 @@ test("base-model response demotes; failed run demotes; row claims never verify",
 });
 
 test("capability manifest is deterministic, complete, and secret-free", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const manifest = buildCapabilityManifest(state.models[0], { workspaceConfig });
   assert.equal(manifest.schema, "growthub-custom-model-capability-v1");
@@ -122,7 +125,7 @@ test("generic chat-completions registry row alone never exposes /custom-models",
 });
 
 test("regex false-positive cannot mark a run complete — proof is parsed, malformed demotes", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const tricked = JSON.parse(JSON.stringify(workspaceConfig));
   for (const o of tricked.dataModel.objects) if (o.objectType === "sandbox-environment") for (const r of o.rows) if (r.Name === "custom-model-workflow") {
     r.lastResponse = 'the log mentions "ok": true and "exitCode": 0 but this is not JSON{';
@@ -132,7 +135,7 @@ test("regex false-positive cannot mark a run complete — proof is parsed, malfo
 });
 
 test("exact deep links: workflow link carries object, row, and run params", () => {
-  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const { workspaceConfig, sourceRecords } = buildSuperAdminModelQaSeed({});
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const links = state.models[0].links;
   assert.equal(links.workflow, "/workflows?object=sandbox-probe&row=custom-model-workflow&run=run_seed_model_smoke");
@@ -152,4 +155,19 @@ test("scale: 25 models derive and filter correctly", () => {
   assert.ok(state.filters.endpointModes.length >= 2, "local + hosted + unknown modes derived");
   const local = state.models.filter((m) => m.endpointMode === "local");
   assert.ok(local.length > 0 && local.length < 25, "mode filter partitions the set");
+});
+
+
+test("original feature seed stays pristine — no model/training contamination", () => {
+  const base = buildFeatureWorkspaceSeed({});
+  const types = base.workspaceConfig.dataModel.objects.map((o) => o.objectType);
+  assert.ok(!types.includes("model-training"), "original seed has no model-training object");
+  assert.ok(!base.workspaceConfig.dataModel.objects.some((o) => o.id === "training-traces"), "original seed has no traces object");
+  const regIds = base.workspaceConfig.dataModel.objects.filter((o) => o.objectType === "api-registry").flatMap((o) => o.rows).map((r) => r.integrationId);
+  assert.ok(!regIds.includes("workspace-local-model"), "original registry rows untouched");
+  assert.ok(!Object.keys(base.sourceRecords).some((k) => k.startsWith("training:") || k.startsWith("model-invocation:")), "original sidecar untouched");
+  // And the QA clone never mutates the original module state:
+  buildSuperAdminModelQaSeed({});
+  const again = buildFeatureWorkspaceSeed({});
+  assert.equal(again.workspaceConfig.dataModel.objects.length, base.workspaceConfig.dataModel.objects.length, "composing the QA seed leaves the original builder unchanged");
 });

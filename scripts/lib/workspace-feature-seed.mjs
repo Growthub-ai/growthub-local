@@ -122,36 +122,6 @@ export const API_REGISTRY_OBJECT = {
   fieldSettings: { hidden: [], order: API_REGISTRY_COLUMNS },
 };
 
-// Custom-model invocation proof — the exact response shape an OpenAI-
-// compatible runtime returns, carrying the TUNED model tag (never the
-// base). Seed QA evidence: proves the plumbing/derivations; a real
-// fine-tune must produce its own proof before production claims.
-export const MODEL_REGISTRY_ID = "workspace-local-model";
-export const MODEL_TUNED_TAG = "workspace-local-tuned-v1";
-export const MODEL_INVOCATION_RESPONSE = JSON.stringify({
-  id: "chatcmpl-seed-1",
-  model: MODEL_TUNED_TAG,
-  choices: [{ message: { role: "assistant", content: "Hello from your fine-tuned workspace model (seed QA evidence)." } }],
-});
-
-API_REGISTRY_OBJECT.rows.push({
-  integrationId: MODEL_REGISTRY_ID,
-  authRef: "",
-  baseUrl: "http://127.0.0.1:11434/v1",
-  endpoint: "/chat/completions",
-  method: "POST",
-  status: "connected",
-  lastTested: SEED_TIMESTAMP,
-  lastResponse: MODEL_INVOCATION_RESPONSE,
-  entityTypes: "chat-completions",
-  description: "Seed QA evidence — fine-tuned workspace model endpoint (replace with your real tuned model's tested row).",
-  connectorKind: "http",
-  resolverTemplateId: "custom-http",
-  schemaVersion: "growthub-resolver-template-v1",
-  capabilities: "chat-completions",
-  executionLane: "sandbox-local",
-});
-
 export const DATA_SOURCE_OBJECT = {
   id: DATA_SOURCE_OBJECT_ID,
   label: "Probe Scheduler Source",
@@ -256,46 +226,6 @@ export const SANDBOX_OBJECT = {
   fieldSettings: { hidden: [], order: SANDBOX_COLUMNS },
 };
 
-// Custom-model sandbox workflow — same graph grammar as registry-workflow,
-// bound to the model endpoint row; run evidence stamped (seed QA).
-SANDBOX_OBJECT.rows.push({
-  Name: "custom-model-workflow",
-  lifecycleStatus: "live",
-  version: "1",
-  runLocality: "local",
-  schedulerRegistryId: "workspace-local-model",
-  runtime: "node",
-  adapter: "local-process",
-  agentHost: "",
-  envRefs: "",
-  networkAllow: "false",
-  allowList: "",
-  instructions: "Invoke the fine-tuned workspace model via its API Registry row.",
-  command: "",
-  timeoutMs: "30000",
-  status: "tested",
-  lastTested: SEED_TIMESTAMP,
-  lastRunId: "run_seed_model_smoke",
-  lastSourceId: "sandbox:sandbox-probe:custom-model-workflow",
-  lastResponse: JSON.stringify({ ok: true, exitCode: 0, stdout: "model invocation ok", outputHash: "seed-out-7f3a91", durationMs: 240, ranAt: SEED_TIMESTAMP }),
-  resolverTemplateId: "custom-http",
-  connectorKind: "http",
-  executionLane: "sandbox-local",
-  orchestrationConfig: JSON.stringify({
-    version: 1,
-    provider: "growthub-native",
-    nodes: [
-      { id: "input", type: "input", label: "Prompt", subtitle: "Chat prompt", config: { inputMode: "manual", samplePayload: { prompt: "Summarize today" }, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } },
-      { id: "model-call", type: "api-registry-call", label: "Fine-tuned model", subtitle: "workspace-local-model · POST /chat/completions", config: { registryId: "workspace-local-model", integrationId: "workspace-local-model", baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", method: "POST", authRef: "", queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000 } },
-      { id: "result", type: "tool-result", label: "Result", subtitle: "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested" } },
-    ],
-    edges: [
-      { from: "input", to: "model-call", passes: "payload" },
-      { from: "model-call", to: "result", passes: "provider-response" },
-    ],
-  }, null, 2),
-});
-
 export const HELPER_SANDBOX_OBJECT = {
   id: "workspace-helper-sandbox",
   label: "Workspace Helper Sandbox",
@@ -318,81 +248,6 @@ export const HELPER_SANDBOX_OBJECT = {
   binding: { mode: "manual", source: "Workspace Helper Sandbox" },
 };
 
-// Continued-training ledger seed — `model-training` custom object rows are
-// stamped by `growthub intelligence export` with the identical
-// lastRunId/lastSourceId/lastResponse discipline sandbox-run uses. The
-// pure deriver lives in the kit at lib/training-ledger.js.
-export const TRAINING_COLUMNS = [
-  "Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description",
-];
-
-export const TRAINING_EXPORT_SUMMARY = {
-  recordCount: 4,
-  surfaces: { helper: 2, selfEval: 1, swarm: 1 },
-  escalations: 1,
-  rewardMean: 0.82,
-  path: "~/growthub-worker-kit-exports/training/feature-seed.jsonl",
-};
-
-export const TRAINING_OBJECT = {
-  id: "model-training",
-  label: "Model Training",
-  source: "Model Training",
-  objectType: "model-training",
-  icon: "Terminal",
-  columns: TRAINING_COLUMNS,
-  rows: [{
-    Name: "workspace-local",
-    status: "exported",
-    baseModel: "gemma3",
-    localModel: "gemma3:4b",
-    lastExportAt: SEED_TIMESTAMP,
-    lastExportId: "exp_feature_seed_baseline",
-    lastSourceId: "training:model-training:workspace-local",
-    lastExportSummary: JSON.stringify(TRAINING_EXPORT_SUMMARY),
-    description: "Feature-work seed — continued-training ledger baseline.",
-  }],
-  binding: { mode: "manual", source: "Model Training" },
-  relations: [],
-  fieldSettings: { hidden: [], order: TRAINING_COLUMNS },
-};
-
-export const TRACES_COLUMNS = ["sessionDate", "inputPrompt", "agentOutput", "qualityScore", "reason", "exported"];
-export const TRACES_OBJECT = {
-  id: "training-traces",
-  label: "Training Traces",
-  source: "Training Traces",
-  objectType: "training-traces",
-  icon: "Terminal",
-  columns: TRACES_COLUMNS,
-  rows: [
-    ...Array.from({ length: 11 }, (_, i) => ({
-      sessionDate: SEED_TIMESTAMP,
-      inputPrompt: `Seed QA governed task ${i + 1}`,
-      agentOutput: `Completed governed change ${i + 1} via helper apply.`,
-      qualityScore: "5",
-      reason: "critic-graded (seed QA evidence)",
-      exported: "true",
-    })),
-    { sessionDate: SEED_TIMESTAMP, inputPrompt: "What is the weather", agentOutput: "Out of scope.", qualityScore: "2", reason: "no executed work", exported: "false" },
-  ],
-  binding: { mode: "manual", source: "Training Traces" },
-  relations: [],
-  fieldSettings: { hidden: [], order: TRACES_COLUMNS },
-};
-
-// Enrich the ledger row to the post-fine-tune linked state (identity chain).
-Object.assign(TRAINING_OBJECT.rows[0], {
-  status: "verified",
-  localModel: MODEL_TUNED_TAG,
-  modelVersion: "ft-2026-06-10-v1",
-  apiRegistryId: MODEL_REGISTRY_ID,
-  deployedEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
-  lastSandboxObjectId: "sandbox-probe",
-  lastSandboxRunId: "run_seed_model_smoke",
-  lastExportSummary: JSON.stringify({ ...TRAINING_EXPORT_SUMMARY, registryId: MODEL_REGISTRY_ID, version: 1 }),
-});
-
 export const SEED_CANVAS_WIDGETS = [
   { id: "widget-ops-notes", kind: "rich-text", title: "Ops Notes", position: { x: 0, y: 0, w: 4, h: 4 }, config: { text: "Feature-work seed ready.", binding: { mode: "manual", source: "Manual text", rows: [] } } },
   { id: "widget-registry-view", kind: "view", title: "API Registry", position: { x: 4, y: 0, w: 5, h: 4 }, sourceObjectId: "api-registry-probe", config: { source: "API Registry", layout: "Table", columns: ["integrationId", "status", "endpoint"], rows: [{ integrationId: PRIMARY_REGISTRY_ID, status: "connected", endpoint: "/run" }], binding: { mode: "manual", source: "API Registry", rows: [] } } },
@@ -402,30 +257,6 @@ export const SEED_CANVAS_WIDGETS = [
 export const SEED_SOURCE_RECORDS = {
   [DATA_SOURCE_OBJECT_ID]: { recordCount: 1, fetchedAt: SEED_TIMESTAMP, records: [{ id: "rec-1", label: "Probe record", registryId: PRIMARY_REGISTRY_ID }] },
   [DATA_SOURCE_SOURCE_ID]: { recordCount: 1, fetchedAt: SEED_TIMESTAMP, records: [{ id: "rec-1", label: "Probe record" }] },
-  // Continued-training export ledger entry — same sidecar key discipline as
-  // helper:apply:receipts and sandbox:<objectId>:<slug>.
-  "model-invocation:workspace-local-model:seed": {
-    recordCount: 1,
-    fetchedAt: SEED_TIMESTAMP,
-    records: [{
-      invocationId: "inv_seed_1",
-      registryId: "workspace-local-model",
-      modelVersion: "ft-2026-06-10-v1",
-      status: 200,
-      response: JSON.parse(MODEL_INVOCATION_RESPONSE),
-      note: "Seed QA evidence — replace with real test-source proof for production claims.",
-    }],
-  },
-  "training:model-training:workspace-local": {
-    recordCount: 1,
-    fetchedAt: SEED_TIMESTAMP,
-    records: [{
-      exportId: "exp_feature_seed_baseline",
-      at: SEED_TIMESTAMP,
-      modelId: "gemma3:4b",
-      ...TRAINING_EXPORT_SUMMARY,
-    }],
-  },
 };
 
 export function buildFeatureWorkspaceSeed(baseConfig = {}) {
@@ -443,7 +274,7 @@ export function buildFeatureWorkspaceSeed(baseConfig = {}) {
       ...baseConfig,
       dashboards,
       canvas: { ...(baseConfig.canvas || {}), widgets: SEED_CANVAS_WIDGETS },
-      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT, HELPER_SANDBOX_OBJECT, TRAINING_OBJECT, TRACES_OBJECT] },
+      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT, HELPER_SANDBOX_OBJECT] },
     },
     sourceRecords: SEED_SOURCE_RECORDS,
     envLocal: SEED_ENV_LOCAL,
