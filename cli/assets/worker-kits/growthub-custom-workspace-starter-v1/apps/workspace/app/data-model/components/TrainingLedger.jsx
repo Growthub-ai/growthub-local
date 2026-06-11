@@ -49,7 +49,8 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   const [handoffOpen, setHandoffOpen] = useState(false);
 
   useEffect(() => {
-    if (providedConfig) return;
+    // Evidence parity with the page: config-only callers still fetch records.
+    if (providedConfig && providedRecords) return;
     let cancelled = false;
     (async () => {
       try {
@@ -94,7 +95,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
           <div className="dm-run-console__hint" data-training-chain="" data-chain-proof={state.identityChain.apiTestProof ? "true" : "false"}>
             chain: {state.identityChain.modelTrainingRowId} → {state.identityChain.lastExportId || "—"} → {state.identityChain.modelVersion || "—"} → {state.identityChain.apiRegistryId}
             {state.identityChain.sandboxRunId ? ` → ${state.identityChain.sandboxObjectId}/${state.identityChain.sandboxRunId}` : ""}
-            {state.identityChain.modelOutputHash ? ` → #${state.identityChain.modelOutputHash}` : ""}
+            {state.identityChain.modelOutputHash ? ` → output #${state.identityChain.modelOutputHash}` : state.identityChain.snippetHash ? ` → snippet #${state.identityChain.snippetHash}` : ""}
           </div>
         ) : null}
         {pipeline.present ? (

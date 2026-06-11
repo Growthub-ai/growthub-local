@@ -50,6 +50,7 @@ import {
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import TrainingLedger from "./TrainingLedger.jsx";
 import CustomModelsLedger from "./CustomModelsLedger.jsx";
+import { deriveCustomModelsState } from "../../../lib/custom-models-ledger.js";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput, HELPER_COMMANDS, deriveVisibleHelperCommands } from "./helper-commands.js";
 import {
@@ -887,11 +888,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   // Slash menu state derives from the live prompt. The menu only engages
   // when "/" is the first character (parseSlashInput), never mid-sentence.
-  const customModelsEvidence = Boolean(
-    (workspaceConfig?.dataModel?.objects || []).some((o) =>
-      (o?.objectType === "model-training" && (o.rows || []).some((r) => r?.localModel || r?.modelVersion))
-      || (o?.objectType === "api-registry" && (o.rows || []).some((r) => r?.kind === "custom-model" || r?.capabilityType === "custom-model-inference" || String(r?.capabilities || "").includes("chat-completions")))),
-  );
+  // ONE evidence engine: command visibility comes from the canonical
+  // custom-models deriver — no second inline scan, no drift.
+  const customModelsEvidence = deriveCustomModelsState({ workspaceConfig }).commandVisible;
   const visibleCommandNames = new Set(
     deriveVisibleHelperCommands(HELPER_COMMANDS, { "custom-models": customModelsEvidence }).map((c) => c.name),
   );

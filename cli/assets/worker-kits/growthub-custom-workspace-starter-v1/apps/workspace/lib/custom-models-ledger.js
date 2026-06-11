@@ -38,11 +38,21 @@ function sandboxLinkFor(workspaceConfig, registryId) {
       const graph = String(r?.orchestrationConfig || "");
       if (String(r?.schedulerRegistryId || "") === registryId
         || graph.includes(`"registryId": "${registryId}"`) || graph.includes(`"registryId":"${registryId}"`)) {
+        // Parsed proof only — regex over response strings can false-positive
+        // on payload text. Malformed JSON demotes, never throws.
+        let runOk = false;
+        let outputHash = "";
+        try {
+          const parsed = JSON.parse(String(r?.lastResponse || "null"));
+          runOk = parsed?.ok === true || Number(parsed?.exitCode) === 0;
+          outputHash = typeof parsed?.outputHash === "string" ? parsed.outputHash : "";
+        } catch { runOk = false; }
         return {
           objectId: String(o.id || ""),
           rowName: String(r?.Name || ""),
           runId: String(r?.lastRunId || ""),
-          runOk: /"ok"\s*:\s*true|"exitCode"\s*:\s*0/.test(String(r?.lastResponse || "")),
+          runOk,
+          outputHash,
         };
       }
     }
@@ -118,7 +128,17 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
       lastInvocationSourceId: invocationProofs.find((k) => k.includes(registryId)) || "",
       lastSandboxObjectId: sandbox?.objectId || "",
       lastSandboxRunId: sandbox?.runId || "",
-      lastOutputHash: m.bondedRegistry?.validated?.snippet ? djb2(m.bondedRegistry.validated.snippet) : "",
+      // Honest hashing: modelOutputHash only when run/source evidence
+      // carries a REAL output hash; the response-snippet digest is named
+      // snippetHash and never masquerades as output proof.
+      modelOutputHash: sandbox?.outputHash || "",
+      snippetHash: m.bondedRegistry?.validated?.snippet ? djb2(m.bondedRegistry.validated.snippet) : "",
+      links: {
+        workflow: sandbox ? `/workflows?object=${encodeURIComponent(sandbox.objectId)}&row=${encodeURIComponent(sandbox.rowName)}${sandbox.runId ? `&run=${encodeURIComponent(sandbox.runId)}` : ""}` : "",
+        dataModel: "/data-model",
+        registry: "/data-model",
+        training: "/training",
+      },
       evidenceState,
       nextAction,
       canTest: Boolean(registryRow),

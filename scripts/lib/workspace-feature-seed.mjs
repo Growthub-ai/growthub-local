@@ -277,7 +277,7 @@ SANDBOX_OBJECT.rows.push({
   lastTested: SEED_TIMESTAMP,
   lastRunId: "run_seed_model_smoke",
   lastSourceId: "sandbox:sandbox-probe:custom-model-workflow",
-  lastResponse: JSON.stringify({ ok: true, exitCode: 0, stdout: "model invocation ok", durationMs: 240, ranAt: SEED_TIMESTAMP }),
+  lastResponse: JSON.stringify({ ok: true, exitCode: 0, stdout: "model invocation ok", outputHash: "seed-out-7f3a91", durationMs: 240, ranAt: SEED_TIMESTAMP }),
   resolverTemplateId: "custom-http",
   connectorKind: "http",
   executionLane: "sandbox-local",

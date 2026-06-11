@@ -188,7 +188,14 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
       for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
         const graph = String(r?.orchestrationConfig || "");
         if (String(r?.schedulerRegistryId || "") === rid || graph.includes(`"registryId": "${rid}"`) || graph.includes(`"registryId":"${rid}"`)) {
-          sandboxLink = { objectId: String(o.id || ""), rowName: String(r?.Name || ""), runId: String(r?.lastRunId || ""), runOk: /"ok"\s*:\s*true|"exitCode"\s*:\s*0/.test(String(r?.lastResponse || "")) };
+          let runOk = false;
+          let outputHash = "";
+          try {
+            const parsed = JSON.parse(String(r?.lastResponse || "null"));
+            runOk = parsed?.ok === true || Number(parsed?.exitCode) === 0;
+            outputHash = typeof parsed?.outputHash === "string" ? parsed.outputHash : "";
+          } catch { runOk = false; }
+          sandboxLink = { objectId: String(o.id || ""), rowName: String(r?.Name || ""), runId: String(r?.lastRunId || ""), runOk, outputHash };
         }
       }
     }
@@ -217,7 +224,9 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
     apiTestProof: Boolean(chainModel.bondedRegistry?.validated),
     sandboxObjectId: sandboxLink?.objectId || "",
     sandboxRunId: sandboxLink?.runId || "",
-    modelOutputHash: chainModel.bondedRegistry?.validated?.snippet ? djb2(chainModel.bondedRegistry.validated.snippet) : "",
+    // modelOutputHash = REAL output proof only; snippetHash = response digest.
+    modelOutputHash: sandboxLink?.outputHash || "",
+    snippetHash: chainModel.bondedRegistry?.validated?.snippet ? djb2(chainModel.bondedRegistry.validated.snippet) : "",
   } : null;
 
   return { present: Boolean(object), models, coverage, eligibility, missingEvidence, identityChain };

@@ -399,7 +399,8 @@ test("seven-state ladder promotes only on new evidence; seed reaches complete wi
   assert.equal(chain.apiTestProof, true, "tuned-tag invocation proof present");
   assert.equal(chain.sandboxObjectId, "sandbox-probe");
   assert.equal(chain.sandboxRunId, "run_seed_model_smoke");
-  assert.ok(chain.modelOutputHash, "output hash derived from validated snippet");
+  assert.equal(chain.modelOutputHash, "seed-out-7f3a91", "REAL output hash from run proof, never a snippet digest");
+  assert.ok(chain.snippetHash, "snippet digest carried separately");
 
   // Demotion checks — removing evidence drops the state, never row-only completion.
   const noRun = JSON.parse(JSON.stringify(workspaceConfig));

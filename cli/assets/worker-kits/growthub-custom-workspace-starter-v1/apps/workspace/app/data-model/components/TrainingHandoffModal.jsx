@@ -214,7 +214,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       <div className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Fine-tune handoff" data-training-handoff="" onClick={(e) => e.stopPropagation()}>
         <div className="dm-orch-modal-head">
           <span className="dm-helper-toolcall-title">
-            {panel === "curate" ? "Curate dataset" : panel === "prepare" ? "Preparing fine-tune" : panel === "recover" ? "Recover handoff" : panel === "done" ? "Handoff complete" : `Fine-tune handoff · ${handoff.score}/100`}
+            {panel === "curate" ? "Curate dataset" : panel === "prepare" ? "Preparing fine-tune" : panel === "recover" ? "Recover handoff" : panel === "done" ? "Handoff prepared" : `Fine-tune handoff · ${handoff.score}/100`}
           </span>
           <button type="button" className="dm-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close">Close</button>
         </div>
@@ -293,6 +293,16 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                   {row.reason ? <div className="dm-run-console__hint">{row.reason}</div> : null}
                 </div>
               ))}
+              {/* Review summary — the explicit-confirm review step: every
+                  row this apply will write, stated before the click. */}
+              {floorMet ? (
+                <div className="dm-helper-toolcall dm-swarm-card" data-handoff-review="">
+                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Review before apply</div>
+                  <div className="dm-run-console__hint">{selected.length} traces · min score {minScore} · target {target.label}</div>
+                  <div className="dm-run-console__hint">will stamp {selected.length} trace rows exported · create 1 model-training version row · create 1 API Registry row · no secrets included</div>
+                  <div className="dm-helper-stream dm-swarm-card-desc">This prepares the dataset and scaffolding only — fine-tuning runs externally and the endpoint is NOT verified until its test returns your tuned model tag.</div>
+                </div>
+              ) : null}
               <button type="button" className="dm-btn-ghost" data-handoff-confirm="" disabled={!floorMet} onClick={runPrepare}>
                 {floorMet
                   ? `Final check passed — prepare ${selected.length} records → ${target.label}`
@@ -338,9 +348,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
           {panel === "done" && result && (
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card" data-handoff-done="">
-                <div className="dm-helper-toolcall-title">v{result.version} prepared · {result.records} records</div>
+                <div className="dm-helper-toolcall-title">Dataset prepared · registry row scaffolded — NOT yet verified</div>
                 <div className="dm-helper-stream dm-swarm-card-desc">
-                  Dataset downloaded as {result.datasetPath}. Registry row `{result.integrationId}` scaffolded — open the API Registry cockpit to run the streamed smoke test once the tuned model is live.
+                  v{result.version}: {result.records} records downloaded as {result.datasetPath}; registry row `{result.integrationId}` created. What remains external: run the fine-tune, deploy the returned model, then test the endpoint — verification happens only when the test response carries your tuned tag.
                 </div>
                 <div className="dm-run-console__hint">Fine-tune (external, §31.2): run Unsloth/QLoRA over {result.datasetPath}, load weights via the generated Modelfile (`ollama create {result.modelTag}`), then select {result.modelTag} in Local Intelligence.</div>
               </div>

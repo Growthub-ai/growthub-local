@@ -27,28 +27,29 @@ function exportManifest(model, workspaceConfig) {
 
 function ActionMenu({ model, workspaceConfig }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState("");
   const item = (label, onClick, href) => href
-    ? <a key={label} className="dm-btn-ghost" href={href} style={{ display: "block" }}>{label}</a>
-    : <button key={label} type="button" className="dm-btn-ghost" style={{ display: "block", width: "100%", textAlign: "left" }} onClick={() => { setOpen(false); onClick(); }}>{label}</button>;
+    ? <a key={label} className="dm-btn-ghost" href={href} style={{ display: "block" }} role="menuitem">{label}</a>
+    : <button key={label} type="button" className="dm-btn-ghost" style={{ display: "block", width: "100%", textAlign: "left" }} role="menuitem" onClick={onClick}>{label}</button>;
+  // Truthful labels only: nothing here mutates — duplicate/delete are
+  // two-step inline confirmations that NAVIGATE to Data Model, the edit
+  // authority. No browser alert/confirm dialogs.
+  const twoStep = (id, label, destination) => confirming === id
+    ? item(`Confirm — finalize in Data Model`, () => { window.location.href = destination; })
+    : item(label, () => setConfirming(id));
   return (
     <span style={{ position: "relative" }} data-model-actions={model.id}>
-      <button type="button" className="dm-btn-ghost" aria-label={`Actions for ${model.name}`} aria-expanded={open} onClick={() => setOpen(!open)}>⋮</button>
+      <button type="button" className="dm-btn-ghost" aria-label={`Actions for ${model.name}`} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => { setOpen(!open); setConfirming(""); }}
+        onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setConfirming(""); } }}>⋮</button>
       {open ? (
         <span className="dm-helper-toolcall" role="menu" style={{ position: "absolute", right: 0, zIndex: 5, display: "block", maxHeight: 220, overflowY: "auto" }}>
-          {model.canExport ? item("Export finalized version", () => exportManifest(model, workspaceConfig)) : null}
-          {item("Duplicate (confirm in Data Model)", () => {
-            if (window.confirm(`Duplicate ${model.name}? You will finalize the copy in Data Model.`)
-              && window.confirm("Confirm again — the duplicate is only saved after you apply it in Data Model.")) {
-              window.location.href = "/data-model";
-            }
-          })}
-          {item("Open API Registry row", null, "/data-model")}
-          {item("Open Workflow Canvas", null, "/workflows")}
-          {item("Open Data Model row", null, "/data-model")}
-          {item("Delete via Data Model", () => {
-            window.alert("Deletion is governed: open the row in Data Model and confirm there. Nothing is deleted from this view.");
-            window.location.href = "/data-model";
-          })}
+          {model.canExport ? item("Export capability manifest", () => { setOpen(false); exportManifest(model, workspaceConfig); }) : null}
+          {item("Open API Registry test", null, model.links.registry)}
+          {model.links.workflow ? item("Open Workflow Canvas", null, model.links.workflow) : null}
+          {item("Open model row", null, model.links.dataModel)}
+          {twoStep("duplicate", "Duplicate in Data Model", model.links.dataModel)}
+          {twoStep("delete", "Delete in Data Model", model.links.dataModel)}
         </span>
       ) : null}
     </span>
@@ -64,7 +65,9 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
   const [modeFilter, setModeFilter] = useState("");
 
   useEffect(() => {
-    if (providedConfig) return;
+    // Evidence parity: a config-only caller (the sidecar) must still fetch
+    // source records — the sidecar and page may never derive different truth.
+    if (providedConfig && providedRecords) return;
     let cancelled = false;
     (async () => {
       try {
@@ -122,9 +125,12 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
             <span className="dm-helper-toolcall-title dm-swarm-card-title">{model.name}</span>
             {/* Test routes to the canonical API Registry cockpit for this
                 row — proof is written there, never faked from this view. */}
+            {/* "Open test" — this NAVIGATES to the canonical registry
+                cockpit where the real test runs and writes proof; it does
+                not invoke anything from here, so it never says "Test". */}
             {model.canTest
-              ? <a className="dm-btn-ghost" href="/data-model" data-model-test="">Test</a>
-              : <a className="dm-btn-ghost" href="/training" data-model-test="">Open Training</a>}
+              ? <a className="dm-btn-ghost" href={model.links.registry} data-model-test="">Open test</a>
+              : <a className="dm-btn-ghost" href={model.links.training} data-model-test="">Open Training</a>}
             <ActionMenu model={model} workspaceConfig={workspaceConfig} />
           </div>
           <div className="dm-run-console__hint">
@@ -135,7 +141,7 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
             {model.apiRegistryId ? `registry ${model.apiRegistryId}` : "no registry row"}
             {model.lastVerifiedAt ? ` · verified ${model.lastVerifiedAt.slice(0, 16).replace("T", " ")}` : ""}
             {model.lastSandboxRunId ? ` · run ${model.lastSandboxRunId}` : ""}
-            {model.lastOutputHash ? ` · #${model.lastOutputHash}` : ""}
+            {model.modelOutputHash ? ` · output #${model.modelOutputHash}` : model.snippetHash ? ` · snippet #${model.snippetHash}` : ""}
           </div>
           <div className="dm-helper-stream dm-swarm-card-desc">Next: {model.nextAction}</div>
         </div>

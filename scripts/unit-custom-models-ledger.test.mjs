@@ -70,7 +70,8 @@ test("seed model card resolves registry, sandbox, hash, endpoint mode, and compl
   assert.equal(model.endpointMode, "local");
   assert.equal(model.lastSandboxObjectId, "sandbox-probe");
   assert.equal(model.lastSandboxRunId, "run_seed_model_smoke");
-  assert.ok(model.lastOutputHash);
+  assert.equal(model.modelOutputHash, "seed-out-7f3a91", "REAL output hash from run proof");
+  assert.ok(model.snippetHash, "snippet digest present and separately named");
   assert.equal(model.evidenceState, "complete");
   assert.equal(model.nextAction, "Run again");
   assert.equal(model.canTest, true);
@@ -110,4 +111,45 @@ test("endpoint mode derivation: local vs hosted vs serverless vs unknown", () =>
   assert.equal(deriveEndpointMode({ baseUrl: "https://models.example.com" }), "hosted");
   assert.equal(deriveEndpointMode({ baseUrl: "http://10.0.0.5", executionLane: "sandbox-serverless" }), "serverless");
   assert.equal(deriveEndpointMode(null), "unknown");
+});
+
+test("generic chat-completions registry row alone never exposes /custom-models", () => {
+  const cfg = { dataModel: { objects: [
+    { objectType: "api-registry", rows: [{ integrationId: "some-llm-proxy", capabilities: "chat-completions", baseUrl: "https://api.example.com" }] },
+  ] } };
+  const state = deriveCustomModelsState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  assert.equal(state.commandVisible, false, "untagged, unbonded chat row is not custom-model evidence");
+});
+
+test("regex false-positive cannot mark a run complete — proof is parsed, malformed demotes", () => {
+  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const tricked = JSON.parse(JSON.stringify(workspaceConfig));
+  for (const o of tricked.dataModel.objects) if (o.objectType === "sandbox-environment") for (const r of o.rows) if (r.Name === "custom-model-workflow") {
+    r.lastResponse = 'the log mentions "ok": true and "exitCode": 0 but this is not JSON{';
+  }
+  const state = deriveCustomModelsState({ workspaceConfig: tricked, workspaceSourceRecords: sourceRecords });
+  assert.equal(state.models[0].evidenceState, "sandbox-ready", "string mentions of ok/exitCode never count; malformed demotes, never throws");
+});
+
+test("exact deep links: workflow link carries object, row, and run params", () => {
+  const { workspaceConfig, sourceRecords } = buildFeatureWorkspaceSeed({});
+  const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
+  const links = state.models[0].links;
+  assert.equal(links.workflow, "/workflows?object=sandbox-probe&row=custom-model-workflow&run=run_seed_model_smoke");
+  assert.equal(links.training, "/training");
+});
+
+test("scale: 25 models derive and filter correctly", () => {
+  const objects = [
+    { objectType: "model-training", rows: Array.from({ length: 25 }, (_, i) => ({
+      Name: `model-${i}`, localModel: `tuned-${i}`, lastExportId: `e${i}`,
+      lastExportSummary: JSON.stringify({ registryId: i % 2 ? `reg-${i}` : "" }),
+    })) },
+    { objectType: "api-registry", rows: Array.from({ length: 12 }, (_, i) => ({ integrationId: `reg-${i * 2 + 1}`, baseUrl: i % 2 ? "https://m.example.com" : "http://127.0.0.1:11434/v1" })) },
+  ];
+  const state = deriveCustomModelsState({ workspaceConfig: { dataModel: { objects } }, workspaceSourceRecords: {} });
+  assert.equal(state.models.length, 25);
+  assert.ok(state.filters.endpointModes.length >= 2, "local + hosted + unknown modes derived");
+  const local = state.models.filter((m) => m.endpointMode === "local");
+  assert.ok(local.length > 0 && local.length < 25, "mode filter partitions the set");
 });
