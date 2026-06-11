@@ -34,6 +34,7 @@ const {
   deriveTrainingLedgerState,
   deriveDistillationPipelineState,
   deriveTrainingHandoffState,
+  deriveHandoffRecovery,
   parseExportSummary,
   TRAINING_OBJECT_TYPE,
   MIN_FINETUNE_TRACES,
@@ -235,7 +236,7 @@ test("handoff cockpit derives step statuses from evidence only", () => {
   assert.equal(byId.collect, "complete");
   assert.equal(byId.curate, "complete");
   assert.equal(byId.gather, "complete", "12 curated >= floor of 10");
-  assert.equal(byId["export-sft"], "eligible", "unexported rows pending");
+  assert.equal(byId["export-sft"], "active", "unexported rows actionable");
   assert.equal(byId.activate, "complete", "localModel set on local-intelligence row");
   assert.equal(byId.register, "complete", "registry row matches convention");
   assert.equal(state.totalCount, state.steps.length);
@@ -252,7 +253,7 @@ test("handoff cockpit register step pending without model, eligible with model o
     ]),
     workspaceSourceRecords: {},
   });
-  assert.equal(withModel.steps.find((s) => s.id === "register").status, "eligible");
+  assert.equal(withModel.steps.find((s) => s.id === "register").status, "active");
 });
 
 test("fine-tune targets: ollama-local is the first-party default; remote needs env refs", () => {
@@ -281,4 +282,58 @@ test("scaffoldHandoffRows produces registry + version rows in existing column sh
   assert.equal(summary.recordCount, 14);
   assert.equal(summary.registryId, "workspace-local-model");
   assert.equal(summary.version, 2);
+});
+
+test("handoff cockpit mirrors the registry-cockpit contract: milestone score + closure steps", () => {
+  const rows = Array.from({ length: 12 }, (_, i) => ({ ...CURATED_ROW, inputPrompt: `task ${i}`, exported: "true" }));
+  const cfg = tracesConfig(rows, [
+    { objectType: "sandbox-environment", rows: [
+      { adapter: "local-intelligence", localModel: "gemma3:4b" },
+      { Name: "model-sbx", schedulerRegistryId: "workspace-local-model" },
+    ]},
+    { objectType: "api-registry", rows: [{
+      integrationId: "workspace-local-model", baseUrl: "http://127.0.0.1:11434/v1", status: "connected",
+      lastResponse: JSON.stringify({ model: "workspace-local-tuned-v1", choices: [{ message: { content: "hi" } }] }),
+    }]},
+    { objectType: "model-training", rows: [{ Name: "workspace-local-v1", localModel: "workspace-local-tuned-v1", lastExportId: "ft_1" }] },
+  ]);
+  const state = deriveTrainingHandoffState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  const byId = Object.fromEntries(state.steps.map((s) => [s.id, s.status]));
+  assert.equal(byId.integrate, "complete", "sandbox row references the registry id");
+  assert.equal(byId.prove, "complete", "lastResponse model tag matches the tuned version row");
+  assert.equal(state.complete, true);
+  assert.equal(state.score, 100, "milestone score reaches 100 only at full closure");
+  for (const step of state.steps) {
+    assert.ok(["complete", "active", "pending"].includes(step.status), `${step.id} uses cockpit vocabulary`);
+    assert.equal(typeof step.description, "string");
+  }
+});
+
+test("prove step never completes on a base-model response", () => {
+  const cfg = tracesConfig([CURATED_ROW], [
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", status: "connected", lastResponse: JSON.stringify({ model: "gemma3:4b" }) }] },
+    { objectType: "model-training", rows: [{ Name: "workspace-local-v1", localModel: "workspace-local-tuned-v1" }] },
+  ]);
+  const state = deriveTrainingHandoffState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  const prove = state.steps.find((s) => s.id === "prove");
+  assert.equal(prove.status, "active", "base-model tag must not satisfy the tuned-weights proof");
+  assert.equal(state.complete, false);
+});
+
+test("recovery checklist derives personalized items from real failure evidence", () => {
+  const offline = deriveHandoffRecovery({ stage: "apply", message: "Failed to fetch", online: false, readbackOk: false, datasetDownloaded: true });
+  assert.equal(offline.items.find((i) => i.id === "connection").status, "blocked");
+  assert.equal(offline.items.find((i) => i.id === "dataset").status, "complete", "saved dataset survives the outage");
+  assert.equal(offline.retryable, true);
+
+  const quota = deriveHandoffRecovery({ stage: "package", message: "QuotaExceededError: no space", online: true, datasetDownloaded: false });
+  assert.equal(quota.items.find((i) => i.id === "dataset").status, "blocked");
+  assert.equal(quota.retryable, false, "storage must be freed before retry");
+
+  const refused = deriveHandoffRecovery({ stage: "apply", message: "governed PATCH refused: 400 unknown fields", online: true, readbackOk: true, registryPresent: false });
+  assert.equal(refused.items.find((i) => i.id === "apply").status, "blocked");
+  assert.match(refused.items.find((i) => i.id === "apply").description, /atomic/i);
+
+  const landed = deriveHandoffRecovery({ stage: "verify", message: "timeout", online: true, readbackOk: true, registryPresent: true });
+  assert.equal(landed.items.find((i) => i.id === "apply").status, "complete", "atomic PATCH already landed — retry skips to verify");
 });

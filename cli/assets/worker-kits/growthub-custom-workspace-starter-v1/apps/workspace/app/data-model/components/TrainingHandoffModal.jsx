@@ -38,6 +38,7 @@ import {
   TRACES_OBJECT_ID,
   TRAINING_OBJECT_ID,
   TRAINING_OBJECT_TYPE,
+  deriveHandoffRecovery,
 } from "../../../lib/training-ledger.js";
 import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows } from "../../../lib/adapters/fine-tune-targets.js";
 
@@ -69,6 +70,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
   const [progress, setProgress] = useState({ pct: 0, stage: "" });
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [recovery, setRecovery] = useState(null);
+  const [resume, setResume] = useState({ datasetDownloaded: false, datasetPath: "", lines: null });
 
   const handoff = deriveTrainingHandoffState({ workspaceConfig, workspaceSourceRecords, minScore });
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
@@ -86,15 +89,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
   async function runPrepare() {
     setPanel("prepare");
     setError("");
+    setRecovery(null);
+    let stage = "validate";
     try {
       // validate — Phase-3 predicate already applied; re-assert the floor.
       await tick(5, `Validating ${selected.length} curated traces`);
       if (!floorMet) throw new Error(`fine-tune floor not met: ${selected.length}/${MIN_FINETUNE_TRACES}`);
 
       // convert — chunked, causation-derived progress over real rows.
-      const lines = [];
+      stage = "convert";
+      const lines = resume.lines || [];
       const chunk = 25;
-      for (let i = 0; i < selected.length; i += chunk) {
+      for (let i = lines.length; i < selected.length; i += chunk) {
         for (const { row } of selected.slice(i, i + chunk)) lines.push(toJsonlLine(row));
         await tick(10 + Math.round((Math.min(i + chunk, selected.length) / selected.length) * 55),
           `Converting ${Math.min(i + chunk, selected.length)}/${selected.length} to Unsloth JSONL`);
@@ -105,18 +111,23 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
         .filter((o) => o?.objectType === TRAINING_OBJECT_TYPE)
         .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
         .filter((r) => /^.+-v\d+$/.test(String(r?.Name || ""))).length;
-      const datasetPath = `unsloth-dataset-v${version}.jsonl`;
+      stage = "package";
+      const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
       await tick(72, `Packaging ${datasetPath}`);
-      const blob = new Blob(lines, { type: "application/jsonl" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = datasetPath;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (!resume.datasetDownloaded) {
+        const blob = new Blob(lines, { type: "application/jsonl" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = datasetPath;
+        a.click();
+        URL.revokeObjectURL(url);
+        setResume({ datasetDownloaded: true, datasetPath, lines });
+      }
 
       // apply — one governed PATCH: exported stamps (Phase-3 parity) +
       // versioned model row + api-registry row from the chosen target.
+      stage = "apply";
       await tick(82, "Applying governed rows (exported stamps · version row · registry row)");
       const modelTag = `workspace-local-tuned-v${version}`;
       const { registryRow, versionRow, integrationId } = scaffoldHandoffRows({
@@ -153,6 +164,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       const applied = await res.json();
 
       // verify — readback through the same GET the ledger uses.
+      stage = "verify";
       await tick(94, "Verifying readback");
       const check = await fetch("/api/workspace", { cache: "no-store" });
       const fresh = await check.json();
@@ -167,8 +179,32 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       if (typeof onApplied === "function" && applied?.workspaceConfig) onApplied(applied.workspaceConfig);
       setPanel("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPanel("curate");
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      // Best-effort evidence readback so the recovery checklist derives
+      // from reality (atomic PATCH: either all rows landed or none did).
+      let readbackOk = null;
+      let registryPresent = null;
+      try {
+        const probe = await fetch("/api/workspace", { cache: "no-store" });
+        const data = await probe.json();
+        readbackOk = Boolean(data?.workspaceConfig);
+        registryPresent = (data?.workspaceConfig?.dataModel?.objects || [])
+          .filter((o) => o?.objectType === "api-registry")
+          .flatMap((o) => o.rows || [])
+          .some((r) => String(r?.integrationId || "") === "workspace-local-model");
+      } catch {
+        readbackOk = false;
+      }
+      setRecovery(deriveHandoffRecovery({
+        stage,
+        message,
+        online: typeof navigator === "undefined" ? true : navigator.onLine,
+        readbackOk,
+        registryPresent,
+        datasetDownloaded: resume.datasetDownloaded,
+      }));
+      setPanel("recover");
     }
   }
 
@@ -177,7 +213,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
       <div className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Fine-tune handoff" data-training-handoff="" onClick={(e) => e.stopPropagation()}>
         <div className="dm-orch-modal-head">
           <span className="dm-helper-toolcall-title">
-            {panel === "curate" ? "Curate dataset" : panel === "prepare" ? "Preparing fine-tune" : panel === "done" ? "Handoff complete" : `Fine-tune handoff · ${handoff.completedCount}/${handoff.totalCount}`}
+            {panel === "curate" ? "Curate dataset" : panel === "prepare" ? "Preparing fine-tune" : panel === "recover" ? "Recover handoff" : panel === "done" ? "Handoff complete" : `Fine-tune handoff · ${handoff.score}/100`}
           </span>
           <button type="button" className="dm-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close">Close</button>
         </div>
@@ -193,7 +229,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                     <span className="dm-helper-toolcall-title">{step.label}</span>
                     <span className="dm-run-console__hint">{step.status}</span>
                   </div>
-                  <div className="dm-helper-stream dm-swarm-card-desc">{step.hint}</div>
+                  <div className="dm-helper-stream dm-swarm-card-desc">{step.description}</div>
                 </div>
               ))}
               <button type="button" className="dm-btn-ghost" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
@@ -261,6 +297,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig, w
                 <div style={{ borderBottom: "2px solid currentColor", width: `${progress.pct}%`, transition: "width 120ms linear" }} aria-hidden="true" />
                 <div className="dm-helper-stream dm-swarm-card-desc">{progress.stage}</div>
               </div>
+            </div>
+          )}
+
+          {panel === "recover" && recovery && (
+            <div className="dm-orch-modal-list" data-handoff-recover="">
+              {recovery.items.map((item) => (
+                <div key={item.id} className="dm-helper-toolcall dm-swarm-card" data-recover-item={item.id} data-recover-status={item.status}>
+                  <div className="dm-helper-toolcall-row">
+                    <span className="dm-helper-toolcall-title">{item.id}</span>
+                    <span className="dm-run-console__hint">{item.status}</span>
+                  </div>
+                  <div className="dm-helper-stream dm-swarm-card-desc">{item.description}</div>
+                </div>
+              ))}
+              <button type="button" className="dm-btn-ghost" data-handoff-retry="" disabled={!recovery.retryable} onClick={runPrepare}>
+                {recovery.retryable ? "Retry — resumes from where it stopped" : "Resolve blocked items above, then reopen"}
+              </button>
+              <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")}>Back to curation</button>
             </div>
           )}
 

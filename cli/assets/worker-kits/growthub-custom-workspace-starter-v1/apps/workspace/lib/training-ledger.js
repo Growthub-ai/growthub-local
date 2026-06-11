@@ -274,8 +274,8 @@ export function deriveTrainingHandoffState({
     {
       id: "collect",
       label: "Collect traces",
-      status: pipeline.present && pipeline.total > 0 ? "complete" : "eligible",
-      hint: pipeline.present && pipeline.total > 0
+      status: pipeline.present && pipeline.total > 0 ? "complete" : "active",
+      description: pipeline.present && pipeline.total > 0
         ? `${pipeline.total} rows in ${TRACES_OBJECT_ID}`
         : "Harvest agent transcripts into governed rows (Pipeline V1 Phases 1–2.5).",
       command: "node helpers/harvest-cursor-traces.mjs --in <transcripts> --out ./distillation/raw-pairs.jsonl",
@@ -283,8 +283,8 @@ export function deriveTrainingHandoffState({
     {
       id: "curate",
       label: "Curate (critic-graded)",
-      status: pipeline.graded > 0 ? "complete" : pipeline.total > 0 ? "eligible" : "pending",
-      hint: pipeline.graded > 0
+      status: pipeline.graded > 0 ? "complete" : pipeline.total > 0 ? "active" : "pending",
+      description: pipeline.graded > 0
         ? `${pipeline.graded} rows at qualityScore ≥ ${minScore}`
         : `Grade pairs via the critic-grader sandbox row, upload rows ≥ ${minScore}.`,
       command: "node helpers/grade-raw-pairs.mjs --in ./distillation/raw-pairs.jsonl --out ./distillation/graded.jsonl",
@@ -292,8 +292,8 @@ export function deriveTrainingHandoffState({
     {
       id: "gather",
       label: `Reach ${MIN_FINETUNE_TRACES} curated traces`,
-      status: pipeline.ready ? "complete" : pipeline.graded > 0 ? "eligible" : "pending",
-      hint: pipeline.ready
+      status: pipeline.ready ? "complete" : pipeline.graded > 0 ? "active" : "pending",
+      description: pipeline.ready
         ? `${pipeline.graded} curated — fine-tune floor met`
         : `${pipeline.graded} of ${MIN_FINETUNE_TRACES} — ${pipeline.remaining} more curated traces needed.`,
     },
@@ -302,8 +302,8 @@ export function deriveTrainingHandoffState({
       label: "Export SFT JSONL",
       status: pipeline.exportedCount > 0 && pipeline.unexported === 0
         ? "complete"
-        : pipeline.unexported > 0 ? "eligible" : "pending",
-      hint: pipeline.unexported > 0
+        : pipeline.unexported > 0 ? "active" : "pending",
+      description: pipeline.unexported > 0
         ? `${pipeline.unexported} curated rows awaiting export (Unsloth {instruction,input,output}).`
         : pipeline.exportedCount > 0
           ? `${pipeline.exportedCount} rows exported and deduped`
@@ -313,8 +313,8 @@ export function deriveTrainingHandoffState({
     {
       id: "corpus",
       label: "Export governed-evidence corpus",
-      status: corpusLinked ? "complete" : "eligible",
-      hint: corpusLinked
+      status: corpusLinked ? "complete" : "active",
+      description: corpusLinked
         ? "Ledger stamp linked to training:* evidence"
         : "Preference-pair corpus (applied/skipped, rewards, self-eval).",
       command: "growthub intelligence export --workspace <apps/workspace>",
@@ -322,14 +322,14 @@ export function deriveTrainingHandoffState({
     {
       id: "finetune",
       label: "Fine-tune (external QLoRA)",
-      status: pipeline.exportedCount > 0 || corpusLinked ? "eligible" : "pending",
-      hint: "Unsloth/QLoRA over the exported JSONL; Unsloth emits the Ollama Modelfile for the result. No training runs in this workspace.",
+      status: pipeline.exportedCount > 0 || corpusLinked ? "active" : "pending",
+      description: "Unsloth/QLoRA over the exported JSONL; Unsloth emits the Ollama Modelfile for the result. No training runs in this workspace.",
     },
     {
       id: "activate",
       label: "Activate tuned localModel",
       status: model.active ? "complete" : "pending",
-      hint: model.active
+      description: model.active
         ? `localModel ${model.localModel}`
         : "Load weights (ollama create from the generated Modelfile), then select the concrete localModel in Local Intelligence.",
       command: "ollama create <slug>-tuned -f ./Modelfile",
@@ -337,13 +337,155 @@ export function deriveTrainingHandoffState({
     {
       id: "register",
       label: "Register model endpoint",
-      status: registered ? "complete" : model.active ? "eligible" : "pending",
-      hint: registered
+      status: registered ? "complete" : model.active ? "active" : "pending",
+      description: registered
         ? "API Registry row present — the tuned model is invocable as a governed source"
         : `Register the local endpoint (e.g. http://127.0.0.1:11434/v1) as API Registry row \`${slug}-model\` via /register-api.`,
     },
   ];
 
+  // Closure steps — the registry row only closes the loop when it is (a)
+  // PICKABLE by the governed relations (sandbox schedulerRegistryId and
+  // workflow api-registry-call nodes filter on the relation statusAllowlist:
+  // connected/approved/ok/success — a freshly scaffolded "registered" row is
+  // not pickable until the cockpit test stamps it), (b) actually REFERENCED
+  // by a sandbox row or workflow node, and (c) PROVEN to serve the tuned
+  // weights: the OpenAI-compatible response body carries `model`, so the
+  // registry row's lastResponse must name the tuned tag — never the base.
+  const registryRowFor = (() => {
+    const objects = workspaceConfig?.dataModel?.objects;
+    if (!Array.isArray(objects)) return null;
+    for (const object of objects) {
+      if (object?.objectType !== "api-registry") continue;
+      const row = (Array.isArray(object.rows) ? object.rows : [])
+        .find((r) => String(r?.integrationId || "") === `${slug}-model`);
+      if (row) return row;
+    }
+    return null;
+  })();
+  const PICKABLE = ["connected", "approved", "ok", "success"];
+  const pickable = registryRowFor && PICKABLE.includes(String(registryRowFor.status || "").toLowerCase());
+  const referenced = (() => {
+    const objects = workspaceConfig?.dataModel?.objects;
+    if (!Array.isArray(objects) || !registryRowFor) return false;
+    const id = String(registryRowFor.integrationId);
+    for (const object of objects) {
+      const rows = Array.isArray(object?.rows) ? object.rows : [];
+      if (object?.objectType === "sandbox-environment") {
+        if (rows.some((r) => String(r?.schedulerRegistryId || "") === id)) return true;
+        for (const r of rows) {
+          const graph = String(r?.orchestrationConfig || "");
+          if (graph.includes(`"registryId": "${id}"`) || graph.includes(`"registryId":"${id}"`)) return true;
+        }
+      }
+    }
+    return false;
+  })();
+  const tunedTag = (() => {
+    const versions = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+      .filter((o) => o?.objectType === TRAINING_OBJECT_TYPE)
+      .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+      .filter((r) => /-v\d+$/.test(String(r?.Name || "")) && String(r?.localModel || "").trim());
+    return versions.length ? String(versions[versions.length - 1].localModel).trim() : "";
+  })();
+  const proven = (() => {
+    if (!registryRowFor || !tunedTag) return false;
+    const response = String(registryRowFor.lastResponse || "");
+    return response.includes(`"model":"${tunedTag}"`) || response.includes(`"model": "${tunedTag}"`);
+  })();
+
+  steps.push(
+    {
+      id: "integrate",
+      label: "Integrate into sandbox + workflows",
+      status: referenced ? "complete" : pickable ? "active" : registryRowFor ? "pending" : "pending",
+      description: referenced
+        ? "Registry row referenced by a sandbox/workflow — invocable across governed objects"
+        : pickable
+          ? `Row is pickable — bind it via schedulerRegistryId or an api-registry-call workflow node.`
+          : registryRowFor
+            ? `Run the API Registry cockpit test first: pickers allow only ${PICKABLE.join("/")} status.`
+            : "Appears once the registry row is scaffolded.",
+    },
+    {
+      id: "prove",
+      label: "Prove tuned weights serve responses",
+      status: proven ? "complete" : registryRowFor && tunedTag ? "active" : "pending",
+      description: proven
+        ? `Verified: response model tag matches ${tunedTag} — tuned weights, not the base model`
+        : tunedTag
+          ? `Invoke via the registry test — the streamed response's \`model\` field must read ${tunedTag}, proving the fine-tuned weights (not the base) served it.`
+          : "Appears once a version row records the tuned model tag.",
+    },
+  );
+
   const completedCount = steps.filter((s) => s.status === "complete").length;
-  return { steps, completedCount, totalCount: steps.length, pipeline, slug, minScore };
+  // Milestone score — evidence-tied, mirroring the API Registry cockpit's
+  // milestone scoring (not a raw step ratio).
+  const done = (id) => steps.find((s) => s.id === id)?.status === "complete";
+  let score = 0;
+  if (done("collect")) score = 15;
+  if (done("curate")) score = Math.max(score, 30);
+  if (done("gather")) score = Math.max(score, 45);
+  if (done("export-sft")) score = Math.max(score, 60);
+  if (done("corpus")) score = Math.max(score, 70);
+  if (done("activate")) score = Math.max(score, 80);
+  if (done("register")) score = Math.max(score, 90);
+  const complete = done("integrate") && done("prove");
+  if (complete) score = 100;
+  return { steps, completedCount, totalCount: steps.length, complete, score, pipeline, slug, minScore };
+}
+
+/**
+ * Failure-recovery checklist — pure causation derivation for the prepare
+ * flow's error states (the API-registry-cockpit pattern applied to
+ * troubleshooting). Inputs are the real failure evidence: the stage
+ * reached, the thrown message, connectivity, and a fresh readback when one
+ * was obtainable. Because the apply is ONE governed PATCH, the three writes
+ * (exported stamps, version row, registry row) land atomically — the
+ * checklist states this instead of leaving the user guessing about partial
+ * writes.
+ */
+export function deriveHandoffRecovery({ stage, message = "", online = true, readbackOk = null, registryPresent = null, datasetDownloaded = false } = {}) {
+  const msg = String(message || "");
+  const offline = online === false || /failed to fetch|networkerror|load failed/i.test(msg);
+  const quota = /quota|no space|storage/i.test(msg);
+  const refused = /patch refused|400|unknown fields|invalid workspace config/i.test(msg);
+
+  const items = [];
+  items.push({
+    id: "connection",
+    status: offline ? "blocked" : "complete",
+    description: offline
+      ? "Connection to the workspace was lost (e.g. Wi-Fi dropped). The dev server must be reachable — reconnect, confirm the app URL loads, then retry."
+      : "Workspace connection healthy at failure time.",
+  });
+  items.push({
+    id: "dataset",
+    status: datasetDownloaded ? "complete" : quota ? "blocked" : stage === "package" ? "blocked" : "active",
+    description: datasetDownloaded
+      ? "Dataset file already saved — retry resumes without re-downloading."
+      : quota
+        ? "Device storage rejected the download (quota). Free space, then retry — conversion re-runs from your same curated selection."
+        : "Dataset not yet saved; retry re-runs conversion from your curated selection (nothing was lost — traces live in the data model).",
+  });
+  items.push({
+    id: "apply",
+    status: registryPresent === true ? "complete" : refused ? "blocked" : "active",
+    description: registryPresent === true
+      ? "Governed apply already landed (single atomic PATCH) — retry skips straight to verification."
+      : refused
+        ? `The governed PATCH was refused: ${msg.slice(0, 140)}. Nothing was written (the PATCH is atomic) — review the message, then retry.`
+        : "Apply pending — the exported stamps, version row, and registry row land together in one atomic governed PATCH on retry.",
+  });
+  items.push({
+    id: "verify",
+    status: readbackOk === true ? "complete" : readbackOk === false ? "blocked" : "active",
+    description: readbackOk === true
+      ? "Readback verified."
+      : readbackOk === false
+        ? "Readback could not confirm the rows — open /training after reconnecting; if the registry row is absent, retry the apply."
+        : "Runs after apply.",
+  });
+  return { items, retryable: !quota || datasetDownloaded, stage, offline };
 }
