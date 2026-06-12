@@ -27,7 +27,9 @@ helpers:
     description: Read-only surface map of a target repo — top-level layout, package/monorepo boundaries, entry points, docs inventory, CI workflows.
   - path: helpers/find-contracts.sh
     description: Read-only contract and extension-point discovery — contract/interface/schema files, adapter/provider/registry/plugin patterns, env selectors, validation layers.
-subSkills: []
+subSkills:
+  - name: governed-workspace-mutation
+    path: skills/governed-workspace-mutation/SKILL.md
 mcpTools: []
 ---
 
@@ -59,6 +61,12 @@ TARGET_REPO="${TARGET_REPO:-$(pwd)}"
 ```
 
 When the target is *this* repository (`growthub-local`), the source-of-truth order in [`AGENTS.md`](../../../AGENTS.md) §"Source Of Truth Order" overrides the generic order below — `README.md` → `AGENTS.md` → `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md` → focused `docs/` → starter workspace source → `scripts/runtime-control.sh` → `cli/src/**`.
+
+## Canonical mutation boundary (governed Growthub workspaces)
+
+When the target tree is a governed workspace (this repo's starter kit or any fork carrying `.growthub-fork/`), the investigation is not optional context — it protects a frozen invariant: **all workspace-config mutation goes through `PATCH /api/workspace` (allowlist: `dashboards`, `widgetTypes`, `canvas`, `dataModel`) and all sandbox execution goes through `POST /api/workspace/sandbox-run`.** No implementation module may add, bypass, or duplicate these two calls.
+
+Before proposing or making any workspace-configuration call, load the sub-skill [`skills/governed-workspace-mutation/SKILL.md`](./skills/governed-workspace-mutation/SKILL.md) — a token-efficient contract card with the exact request/response shapes, the full error envelope, the read-modify-one-key recipe, and the boundary anti-patterns, each citing its route source.
 
 ## Source-of-truth priority order (generic)
 
