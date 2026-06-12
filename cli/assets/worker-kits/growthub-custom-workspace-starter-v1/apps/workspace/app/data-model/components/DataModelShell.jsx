@@ -74,7 +74,9 @@ import {
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { SandboxBrowserAgentPanel } from "./SandboxBrowserAgentPanel.jsx";
 import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
+import { deriveSandboxBrowserAgentState } from "@/lib/sandbox-browser-agent-flow";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
@@ -1733,7 +1735,7 @@ function DataModelRecordDrawer({
     onClose();
   }
 
-  async function runSandbox() {
+  async function runSandbox(options = {}) {
     if (!table.objectId) {
       setSandboxMessage("Missing object id for this sandbox table.");
       return;
@@ -1743,13 +1745,24 @@ function DataModelRecordDrawer({
       setSandboxMessage("Row Name is required.");
       return;
     }
+    // Browser/local-agent fast lane hands a growthub-workflow-run-inputs-v1
+    // envelope through here; the default Run buttons pass a click event.
+    const runInputs =
+      options && typeof options === "object" && !Array.isArray(options)
+      && options.runInputs && typeof options.runInputs === "object"
+        ? options.runInputs
+        : null;
     setSandboxRunning(true);
     setSandboxMessage("");
     try {
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId: table.objectId, name: rowName }),
+        body: JSON.stringify({
+          objectId: table.objectId,
+          name: rowName,
+          ...(runInputs ? { runInputs } : {}),
+        }),
       });
       const payload = await res.json();
       const responseText = JSON.stringify(payload.response ?? payload, null, 2);
@@ -1968,6 +1981,21 @@ function DataModelRecordDrawer({
             draft={draft}
             disabled={saving || sandboxRunning}
             onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
+          />
+        )}
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
+          <SandboxBrowserAgentPanel
+            state={deriveSandboxBrowserAgentState({
+              workspaceConfig,
+              row: draft,
+              objectId: table.objectId,
+              runRecords: sandboxHistory,
+              agentAuthStatus: draft.agentAuthStatus
+            })}
+            disabled={saving || !String(draft.Name || "").trim()}
+            running={sandboxRunning}
+            onRun={(runInputs) => runSandbox(runInputs ? { runInputs } : {})}
+            onOpenCanvas={openWorkflowView}
           />
         )}
         {isSandbox && sidecarMode === "trace" && (

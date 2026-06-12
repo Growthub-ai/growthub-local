@@ -31,6 +31,20 @@ Workspace Builder excludes **`sandbox-environment`** from View widget bindings (
 
 - Custom adapters: `apps/workspace/lib/adapters/sandboxes/adapters/` (see `README.md` there).
 
+## Browser / local agent fast lane
+
+Browser-capable local workflows are **not** a new contract — they are an exposure of capabilities the sandbox object already has. The fast lane is a first-party, no-code configuration on every eligible sandbox record:
+
+- **Eligibility** is derived (never stored) by `apps/workspace/lib/sandbox-browser-agent-flow.js`: local run locality + `local-process` / `local-agent-host` adapter. `local-intelligence` and non-cataloged agent hosts are out. Serverless rows get a read-only note — browser/session-cache access is local-only unless delegated through an existing `schedulerRegistryId` registry row.
+- **Run inputs** ride the existing `growthub-workflow-run-inputs-v1` lane. An **input-schema-only orchestration graph** (one `human-input` / form node, no executable node) declares the safe field contract — `POST /api/workspace/sandbox-run` validates `runInputs` against it and execution falls through to the row's configured adapter/command. Templates in `apps/workspace/lib/sandbox-browser-run-inputs.js` (`browser-research`, `notebook-brief`, `profile-review`, `manual-browser-smoke`) pre-fill the panel; they never execute anything.
+- **Run-input delivery**: validated, secret-stripped values are exposed to the spawned local process/agent host as `GROWTHUB_SANDBOX_RUN_INPUTS` (JSON). `{ secretRef }` entries never expand; secret-shaped field ids are rejected.
+- **Safe row metadata** (optional, no secrets): `browserMode: "operator-approved"` and `requiresBrowser` mark a row as approved for browser-profile work. They are display/eligibility metadata only — auth state stays with the host CLI / operator browser, never in config.
+- **Operator approval**: workflows that touch external logged-in platforms require `operatorApproved: true` in run inputs, plus a bounded `sendMode` (`read-only` default, `draft-only`, `manual-review`, `operator-approved-action`). Externally mutating sendModes hard-require approval. No mass actions, no stealth automation, no credential extraction — ever.
+- **Proof is evidence-driven**: browser proof (`platform`, `targetUrl`, `currentUrl`, `title`, `reachedTarget`, `browserExitCode`, optional `artifact`) is read from the persisted run record's stdout / `lastResponse` — never asserted from row fields. Legacy NotebookLM proof (`notebook.*`, `chromeExitCode`) normalizes to the same shape with `platform: "notebooklm"`. `reachedTarget` is true only when a run record explicitly says so.
+- **Receipts are unchanged**: `inputSummary` (source, fieldCount, fileCount, fieldIds — ids only, never values), source-record history, and row stamps (`status`, `lastTested`, `lastRunId`, `lastSourceId`, `lastResponse`) flow through the same sandbox-run persistence as every other run.
+
+The record drawer renders the panel (`SandboxBrowserAgentPanel`) beside the existing Run bar and agent auth panel; Background Tasks and the Workflow Canvas remain the operational surfaces.
+
 ## Local agent auth onboarding
 
 Sandbox rows whose **`adapter` is `local-agent-host`** route execution through whichever local agent CLI is registered for `agentHost` (Claude Code, Codex, Cursor, Gemini, OpenCode, Pi, Qwen, Hermes, OpenClaw Gateway). The record sidecar exposes a **uniform** auth onboarding panel beside the existing **Run sandbox** bar — the mental model is identical for every host:

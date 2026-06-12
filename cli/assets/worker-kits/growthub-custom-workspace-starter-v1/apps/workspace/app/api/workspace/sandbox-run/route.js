@@ -78,6 +78,7 @@ import {
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import {
+  buildInputPayloadForRunner,
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
   validateRunInputsEnvelope,
@@ -548,6 +549,18 @@ async function executeSandboxRun(body, { emit } = {}) {
       envRefsResolved.push(slug);
     } else {
       envRefsMissing.push(slug);
+    }
+  }
+
+  // Browser / local agent fast lane: expose the validated, secret-stripped
+  // manual run-input values to spawned local processes and agent hosts.
+  // `buildInputPayloadForRunner` drops `{ secretRef }` entries, and the
+  // envelope was already normalized + redacted above — raw secrets never
+  // reach the child environment through this variable.
+  if (normalizedRunInputs) {
+    const runInputValues = buildInputPayloadForRunner(normalizedRunInputs);
+    if (Object.keys(runInputValues).length > 0) {
+      env.GROWTHUB_SANDBOX_RUN_INPUTS = JSON.stringify(runInputValues);
     }
   }
 

@@ -22,6 +22,15 @@ function normalizeMethod(value) {
   return ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method) ? method : "GET";
 }
 
+function hasHumanInputNode(graph) {
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  return nodes.some((node) => {
+    const type = String(node?.type || "").trim();
+    const action = String(node?.config?.action || "").trim();
+    return type === "human-input" || action === "form";
+  });
+}
+
 function buildUrl(record, inputPayload) {
   const baseUrl = String(record?.baseUrl || "").trim();
   let endpoint = String(record?.endpoint || "").trim();
@@ -281,6 +290,10 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
 
   const apiNode = extractApiRegistryCallNode(graph);
   if (!apiNode?.config) {
+    // Input-schema-only graphs (a human-input/form node and no executable
+    // node) declare the manual run-input contract while execution stays on
+    // the row's configured adapter — the browser/local-agent fast lane.
+    if (hasHumanInputNode(graph)) return null;
     return {
       ok: false,
       exitCode: 1,

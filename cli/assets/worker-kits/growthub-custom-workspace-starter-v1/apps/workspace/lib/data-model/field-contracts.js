@@ -26,6 +26,13 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
     statusAllowlist: TRUSTED_STATUSES
   },
   envRefs: { editor: "env-ref-multiselect" },
+  // Browser / local agent fast lane — safe row metadata (no secrets, no auth
+  // state). Marks a local row as operator-approved for browser-profile work.
+  browserMode: {
+    editor: "select",
+    options: ["", "operator-approved"]
+  },
+  requiresBrowser: { editor: "boolean-toggle" },
   lastResponse: { editor: "json-preview", readonly: true },
   orchestrationGraph: { editor: "orchestration-graph", readonly: true },
   lastRunId: { editor: "readonly-text" },

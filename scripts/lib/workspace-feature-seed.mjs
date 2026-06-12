@@ -37,6 +37,7 @@ export const SANDBOX_COLUMNS = [
   "Name", "lifecycleStatus", "version", "runLocality", "schedulerRegistryId", "runtime", "adapter", "agentHost",
   "envRefs", "networkAllow", "allowList", "instructions", "command", "timeoutMs", "status", "lastTested",
   "lastRunId", "lastSourceId", "lastResponse", "resolverTemplateId", "connectorKind", "executionLane",
+  "browserMode", "requiresBrowser",
 ];
 
 export const SCHEDULER_RELATION = {
@@ -72,6 +73,80 @@ export const REGISTRY_WORKFLOW_GRAPH = {
     { from: "api-request", to: "transform", passes: "provider-response" },
     { from: "transform", to: "result", passes: "normalized-output" },
   ],
+};
+
+/**
+ * Browser / local agent fast lane — input-schema-only graph. The human-input
+ * node declares the safe manual run-input contract (validated by sandbox-run);
+ * execution falls through to the row's local-process command. No api call,
+ * no swarm, no parallel runtime.
+ */
+export const BROWSER_SMOKE_GRAPH = {
+  version: 1,
+  provider: "growthub-native",
+  nodes: [
+    {
+      id: "run-inputs",
+      type: "human-input",
+      label: "Browser run inputs",
+      subtitle: "Operator-approved browser workflow inputs",
+      config: {
+        action: "form",
+        title: "Browser / local agent run inputs",
+        instructions: "Safe fields only — no credentials. External actions require operatorApproved.",
+        required: true,
+        fields: [
+          { key: "platform", label: "Platform", value: "text", required: true },
+          { key: "targetName", label: "Target name", value: "text", required: true },
+          { key: "profileUrl", label: "Profile URL", value: "url", required: false },
+          { key: "interest", label: "Interest", value: "text", required: false },
+          { key: "sendMode", label: "Send mode", value: "select", required: true },
+          { key: "operatorApproved", label: "Operator approved", value: "boolean", required: true },
+        ],
+      },
+    },
+  ],
+  edges: [],
+};
+
+/**
+ * Truthful configuration smoke — echoes the run-input contract back as
+ * browser-shaped proof WITHOUT claiming a live browser session. reachedTarget
+ * stays false and fallbackUsed true in CI; the live super-admin smoke is the
+ * only place a real `reachedTarget: true` can come from.
+ */
+export const BROWSER_SMOKE_COMMAND = [
+  "const inputs = JSON.parse(process.env.GROWTHUB_SANDBOX_RUN_INPUTS || \"{}\");",
+  "const proof = {",
+  "  browser: {",
+  "    platform: String(inputs.platform || \"\"),",
+  "    targetUrl: String(inputs.targetUrl || inputs.notebookUrl || inputs.profileUrl || \"\"),",
+  "    initialUrl: String(inputs.initialUrl || \"\"),",
+  "    currentUrl: \"\",",
+  "    title: \"\",",
+  "    reachedTarget: false,",
+  "    browserExitCode: null,",
+  "    stderr: \"\",",
+  "    note: \"configuration smoke - no live browser session in this environment\"",
+  "  },",
+  "  fallbackUsed: true,",
+  "  receivedFieldIds: Object.keys(inputs).sort()",
+  "};",
+  "console.log(JSON.stringify(proof, null, 2));",
+].join("\n");
+
+export const BROWSER_SMOKE_RUN_INPUTS = {
+  kind: "growthub-workflow-run-inputs-v1",
+  source: "manual-smoke",
+  values: {
+    platform: "notebooklm",
+    targetName: "The Melting Bar",
+    profileUrl: "",
+    interest: "",
+    sendMode: "read-only",
+    operatorApproved: true,
+  },
+  files: [],
 };
 
 export const API_REGISTRY_OBJECT = {
@@ -219,6 +294,33 @@ export const SANDBOX_OBJECT = {
       connectorKind: "http",
       executionLane: "sandbox-local",
       orchestrationConfig: JSON.stringify(REGISTRY_WORKFLOW_GRAPH, null, 2),
+    },
+    {
+      Name: "browser-agent-smoke",
+      lifecycleStatus: "draft",
+      version: "1",
+      runLocality: "local",
+      schedulerRegistryId: "",
+      runtime: "node",
+      adapter: "local-process",
+      agentHost: "",
+      envRefs: "",
+      networkAllow: "true",
+      allowList: "notebooklm.google.com,linkedin.com,medium.com",
+      instructions: "Run a safe browser/local-agent smoke using runInputs. Do not mutate external systems.",
+      command: BROWSER_SMOKE_COMMAND,
+      timeoutMs: "120000",
+      status: "",
+      lastTested: "",
+      lastRunId: "",
+      lastSourceId: "",
+      lastResponse: "",
+      resolverTemplateId: "",
+      connectorKind: "",
+      executionLane: "sandbox-local",
+      browserMode: "operator-approved",
+      requiresBrowser: "true",
+      orchestrationConfig: JSON.stringify(BROWSER_SMOKE_GRAPH, null, 2),
     },
   ],
   binding: { mode: "manual", source: "Data Model" },
