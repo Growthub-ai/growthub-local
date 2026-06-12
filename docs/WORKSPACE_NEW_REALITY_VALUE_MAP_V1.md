@@ -10,6 +10,7 @@ Read with:
 - [`docs/GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md`](./GOVERNED_CREATION_RELEASE_SNAPSHOT_V1.md)
 - [`docs/GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md`](./GOVERNED_CREATION_SPRINT_RETROSPECTIVE_V1.md)
 - [`docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md`](./GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
+- [`docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md`](./GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md)
 - [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [`docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md`](./CAUSATION_ITT_ELIGIBILITY_DRIVERS.md)
 
@@ -45,6 +46,7 @@ The current product reality combines two recent release layers:
 - `0.13.9` established Codex Sites as a governed workspace primitive. Real hosted site bindings are represented as Data Model rows, Builder Site items, and Workspace Settings state without storing private account data in the starter template.
 - `0.14.0` added the governed creation cockpit. API Registry rows now have an evidence-backed path through server-side test, response profiling, resolver recommendation, Data Source creation, source-record refresh, workflow persistence readiness, and Workspace Lens readback.
 - `0.14.1` adds the governed agent swarm cockpit. Helper-created swarm workflow rows now inherit the active helper execution target, open thread-bounded Background Tasks cockpits, execute through the same `sandbox-run` route, persist truthful subagent telemetry, and link canvas node delta tags back to the owning sandbox record.
+- `0.14.2` completes governed sandbox browser access. Sandbox rows carry `browserAccess`, workflow and swarm nodes inherit it through graph policy, local agents receive native browser lanes, local processes receive the env contract, local intelligence executes browser tool intents through the local browser bridge, and serverless runs carry the same grant in the sandbox-run envelope.
 
 Together they define the operating pattern for the platform: every useful external capability should enter as governed workspace state, become visible in the browser, leave receipts, and stay agent-readable.
 
