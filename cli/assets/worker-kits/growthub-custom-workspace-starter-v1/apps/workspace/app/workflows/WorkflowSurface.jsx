@@ -1051,7 +1051,13 @@ export default function WorkflowSurface() {
                 <Power size={13} /> {publishing ? "Publishing" : "Publish"}
               </button>
             )}
-            <button type="button" className="dm-workflow-chip-btn" disabled={!sandboxRow} onClick={openTraceMode}>
+            <button
+              type="button"
+              className="dm-workflow-chip-btn"
+              onClick={() => {
+                if (sandboxRow) openTraceMode();
+              }}
+            >
               <History size={13} /> See Runs
             </button>
             {sidecarMode === "trace" && (

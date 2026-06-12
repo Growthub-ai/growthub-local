@@ -196,6 +196,7 @@ async function main() {
     const logFd = fs.openSync(logPath, "a");
     devChild = spawn("npx", ["next", "dev", "--webpack", "-p", String(port), "-H", "127.0.0.1"], {
       cwd: appDir,
+      detached: true,
       stdio: ["ignore", logFd, logFd],
       env: { ...process.env, NODE_ENV: "development", WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true", PORT: String(port) },
     });
