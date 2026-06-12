@@ -31,6 +31,7 @@
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
+ *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  */
 
 // Capabilities
@@ -366,6 +367,29 @@ export {
   isAgentOutcomeReceipt,
   WORKSPACE_OUTCOME_CONTRACT_VERSION,
 } from "./workspace-outcome.js";
+
+// Governed Application Control Plane V1 (applications as first-class
+// governed entities — the workspace-app-registry Data Model object, the
+// Fleet lens, per-app health/next-action derivation, and app-scoped agent
+// assignment packets. Runtime truth: workspace app
+// lib/workspace-app-registry.js + GET /api/workspace/apps.)
+export type {
+  AppSurfaceRow,
+  AppHealthStatus,
+  AppLinkRollup,
+  AppNextAction,
+  AppAssignmentPacket,
+  WorkspaceAppEntry,
+  DetectedAppSurface,
+  WorkspaceFleetSummary,
+  WorkspaceAppsResponse,
+} from "./workspace-apps.js";
+export {
+  APP_REGISTRY_OBJECT_ID,
+  APP_SURFACE_OBJECT_TYPE,
+  isAppAssignmentPacket,
+  WORKSPACE_APPS_CONTRACT_VERSION,
+} from "./workspace-apps.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

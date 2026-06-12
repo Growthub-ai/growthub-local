@@ -104,6 +104,10 @@
     "./workspace-outcome": {
       "types": "./dist/workspace-outcome.d.ts",
       "import": "./dist/workspace-outcome.js"
+    },
+    "./workspace-apps": {
+      "types": "./dist/workspace-apps.d.ts",
+      "import": "./dist/workspace-apps.js"
     }
   },
   "main": "./dist/index.js",

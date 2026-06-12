@@ -848,6 +848,29 @@ const OBJECT_TYPE_PRESETS = {
     ],
     relations: []
   },
+  "app-surface": {
+    label: "App Surface",
+    icon: "LayoutGrid",
+    description: "A managed application: one row per app surface in the workspace/monorepo. References the app's governed parts by id (dashboardIds, workflowRefs as objectId:RowName, dataSourceIds, registryIds) — never embedded copies. The Fleet lens and GET /api/workspace/apps derive per-app health, blockers, next action, and the agent assignment packet from these rows.",
+    columns: [
+      "Name",
+      "appId",
+      "surfacePath",
+      "framework",
+      "packageName",
+      "owner",
+      "environment",
+      "deployTarget",
+      "status",
+      "dashboardIds",
+      "workflowRefs",
+      "dataSourceIds",
+      "registryIds",
+      "exportStatus",
+      "description"
+    ],
+    relations: []
+  },
   "people": {
     label: "People",
     icon: "Users",

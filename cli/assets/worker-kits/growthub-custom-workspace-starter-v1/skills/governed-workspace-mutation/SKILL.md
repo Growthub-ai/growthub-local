@@ -161,6 +161,14 @@ Every mutation lane emits the **same canonical receipt** (`@growthub/api-contrac
 
 **First-session continuation:** before acting, read the stream. Cite `receiptId`s, continue from `nextActions`, and inspect `rollbackRef` (previous version + delta index for publishes; sourceId for runs) before redoing anyone's work. Rejections come with `repairPlan[]` — follow it instead of retrying variations.
 
+## Applications as governed entities (Control Plane V1)
+
+Applications are first-class governed objects, not loose files. The source of truth is the `workspace-app-registry` Data Model object (objectType `"app-surface"`, preset ships in the Data Model) — one row per application, referencing its governed parts by id: `dashboardIds`, `workflowRefs` (`objectId:RowName`), `dataSourceIds`, `registryIds`. Rows mutate through the normal PATCH lane (policy + receipts apply).
+
+- **Read the fleet first:** `GET /api/workspace/apps` — registered apps with resolved links, health rollup (`ready`/`blocked`/`empty` + computed blockers), the single next action with a deep link into the real surface, the app-scoped **assignment packet** (goal, blockers, allowed routes, forbidden actions, expected evidence, object refs), plus `detected[]` filesystem app surfaces (advisory — registration is the governed act) and the Fleet lens state.
+- **Work app-scoped:** take the assignment packet's `objectRefs` as your mutation scope; everything outside it is out of bounds. The packet's `allowedRoutes` are the only routes you call.
+- **Humans see the same truth:** the Fleet lens renders in Workspace Lens (`/workspace-lens`, filter "Fleet") with one card step per app; `GET /api/workspace/swarm-condition?lensId=fleet` is the same state as an agent packet. SDK: `@growthub/api-contract/workspace-apps`.
+
 ## Workspace-first rule
 
 Before writing any code, ask: **does a governed object already represent this?** A scheduled job is a sandbox row. An external API is an API Registry row. A data view is a Data Model object bound to a View widget. A multi-agent workflow is a sandbox row with an `agent-swarm-v1` orchestration graph. If the capability exists as an object, your work is two API calls — not a new module. Extend objects; do not deviate into parallel code paths.

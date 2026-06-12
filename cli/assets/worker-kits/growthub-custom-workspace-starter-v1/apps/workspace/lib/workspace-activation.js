@@ -27,6 +27,10 @@
  *   - Backwards-compatible: a workspace with no `provenance` block still
  *     produces a valid (generic) activation state.
  *
+ * Sole import: lib/workspace-app-registry.js — the equally pure,
+ * dependency-free App Registry derivation module the Fleet lens reads
+ * (roadmap Item 4's runtime surface-metadata source).
+ *
  * The output shape:
  *
  *   {
@@ -53,6 +57,13 @@
  *     ]
  *   }
  */
+
+import {
+  APP_REGISTRY_OBJECT_ID,
+  deriveAppHealth,
+  deriveAppNextAction,
+  listAppSurfaceRows
+} from "./workspace-app-registry.js";
 
 const ACTIVATION_KIND = "growthub-workspace-activation-state-v1";
 const ACTIVATION_VERSION = 1;
@@ -1218,15 +1229,84 @@ function deriveAppBuildLensState(input = {}) {
 }
 
 /**
+ * Fleet lens (roadmap Item 4 — now un-staged). The precondition named in
+ * docs/ROADMAP_IMPACT_ITEMS_V1.md is satisfied: the runtime surface-metadata
+ * source is the governed `workspace-app-registry` Data Model object
+ * (lib/workspace-app-registry.js). Each registered application derives one
+ * step: status from its health rollup (linked workflows/APIs/data sources +
+ * persistence/deploy flags), description from its computed next action, href
+ * into the real surface that unblocks it. Pure, no secrets, never throws.
+ */
+function deriveFleetLensState(input = {}) {
+  const cfg = isPlainObject(input?.workspaceConfig) ? input.workspaceConfig : {};
+  const records = isPlainObject(input?.workspaceSourceRecords) ? input.workspaceSourceRecords : {};
+  const dur = deriveRuntimeDurability(input?.metadataGraph);
+  const runtimeFlags = {
+    durable: dur.durable,
+    readOnly: dur.readOnly,
+    deployReady: deriveDeployLensState(input).complete
+  };
+
+  const rows = listAppSurfaceRows(cfg);
+  const steps = [];
+  if (rows.length === 0) {
+    steps.push({
+      id: "register-first-app",
+      label: "Register your first application surface",
+      description: `Create the ${APP_REGISTRY_OBJECT_ID} object (objectType "app-surface") and add one row per app — name, surfacePath, and refs to its dashboards/workflows/data sources/APIs.`,
+      status: "pending",
+      href: "/data-model",
+      cta: "Open Data Model",
+    });
+  }
+  for (const row of rows) {
+    const health = deriveAppHealth(cfg, records, row, runtimeFlags);
+    const next = deriveAppNextAction(row, health);
+    const appId = safeString(row.appId).trim() || safeString(row.Name).trim();
+    steps.push({
+      id: `app-${appId}`,
+      label: safeString(row.Name).trim(),
+      description: health.status === "ready"
+        ? `Healthy — ${health.linkedCount} linked object(s).`
+        : next.label,
+      status: health.status === "ready" ? "complete" : health.status === "blocked" ? "blocked" : "pending",
+      href: next.href,
+      hint: health.status === "blocked" ? health.blockers[0] : "",
+      cta: health.status === "ready" ? "Open app" : "Unblock app",
+    });
+  }
+  for (const step of steps) {
+    if (!step.hint) delete step.hint;
+  }
+
+  const { totalCount, completedCount, complete, nextStepId } = scoreLensSteps(steps);
+  const headline = rows.length === 0
+    ? "Register the applications this workspace operates."
+    : complete
+      ? `All ${rows.length} application(s) are healthy.`
+      : `Operating ${rows.length} application(s) — ${completedCount} healthy.`;
+  const nextStep = steps.find((s) => s.id === nextStepId);
+  return {
+    kind: LENS_STATE_KIND,
+    lensId: "fleet",
+    title: "Application fleet",
+    headline,
+    subheadline: complete
+      ? "Assign the next capability to an agent, or register another app."
+      : (nextStep ? `Next: ${nextStep.label}.` : "Resolve each app's blockers."),
+    complete,
+    completedCount,
+    totalCount,
+    nextStepId,
+    steps,
+  };
+}
+
+/**
  * The lens registry. The activation deriver is the `primary` lens (it keeps
  * its own v1 state kind for backwards compatibility); every other entry is a
  * secondary lens that plugs into the same panel and the same swarm packet.
  * Adding a roadmap item is "register a deriver" — no new surface.
- *
- * NB: a Fleet / multi-app lens (roadmap Item 4) is intentionally NOT registered
- * — the exported workspace runtime exposes no in-artifact multi-app surface
- * registry to derive from. See docs/ROADMAP_IMPACT_ITEMS_V1.md (it stays staged
- * until a runtime surface-metadata source exists).
  */
 const WORKSPACE_LENS_REGISTRY = [
   { id: "activation", title: "Activation", primary: true, derive: deriveWorkspaceActivationState },
@@ -1235,6 +1315,7 @@ const WORKSPACE_LENS_REGISTRY = [
   { id: "deploy", title: "Deploy readiness", primary: false, derive: deriveDeployLensState },
   { id: "tasks", title: "Task management", primary: false, derive: deriveTaskLensState },
   { id: "app-build", title: "Application buildout", primary: false, derive: deriveAppBuildLensState },
+  { id: "fleet", title: "Application fleet", primary: false, derive: deriveFleetLensState },
 ];
 
 function getLensEntry(lensId) {
@@ -1559,6 +1640,9 @@ export {
   deriveDeployLensState,
   deriveTaskLensState,
   deriveAppBuildLensState,
+  // Fleet / multi-app lens (roadmap Item 4 — derives from the governed
+  // workspace-app-registry object, lib/workspace-app-registry.js)
+  deriveFleetLensState,
   // Swarm-assignable condition packet (roadmap Item 8)
   deriveSwarmConditionPacket,
   // Workspace contribution graph (daily-ritual visualization)

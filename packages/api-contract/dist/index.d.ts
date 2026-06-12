@@ -31,6 +31,7 @@
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
+ *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -62,5 +63,7 @@ export type { WorkspacePatchAllowedField, WorkspaceLiveWorkflowField, WorkspaceD
 export { WORKSPACE_PATCH_ALLOWED_FIELDS, WORKSPACE_LIVE_WORKFLOW_FIELDS, WORKSPACE_DRAFT_WORKFLOW_FIELDS, isWorkspacePatchPolicyRejection, isWorkflowPublishSuccess, WORKSPACE_PATCH_CONTRACT_VERSION, } from "./workspace-patch.js";
 export type { AgentOutcomeReceiptKind, AgentOutcomeStatus, AgentOutcomeLane, AgentOutcomeObjectRef, AgentOutcomeReceipt, WorkspaceGovernanceSummary, AgentOutcomesResponse, } from "./workspace-outcome.js";
 export { AGENT_OUTCOME_RECEIPT_KINDS, AGENT_OUTCOME_STATUSES, AGENT_OUTCOMES_SOURCE_ID, WORKSPACE_AGENT_LOOP_V1, isAgentOutcomeReceipt, WORKSPACE_OUTCOME_CONTRACT_VERSION, } from "./workspace-outcome.js";
+export type { AppSurfaceRow, AppHealthStatus, AppLinkRollup, AppNextAction, AppAssignmentPacket, WorkspaceAppEntry, DetectedAppSurface, WorkspaceFleetSummary, WorkspaceAppsResponse, } from "./workspace-apps.js";
+export { APP_REGISTRY_OBJECT_ID, APP_SURFACE_OBJECT_TYPE, isAppAssignmentPacket, WORKSPACE_APPS_CONTRACT_VERSION, } from "./workspace-apps.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

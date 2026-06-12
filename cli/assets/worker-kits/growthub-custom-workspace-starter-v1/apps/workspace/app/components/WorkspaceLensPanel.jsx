@@ -92,6 +92,7 @@ const FILTERS = [
   { id: "deploy", label: "Deploy" },
   { id: "tasks", label: "Tasks" },
   { id: "app-build", label: "App build" },
+  { id: "fleet", label: "Fleet" },
 ];
 
 export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, metadataGraph }) {

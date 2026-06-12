@@ -103,14 +103,15 @@ async function main() {
   fs.mkdirSync(demoHome, { recursive: true });
   const tmp = fs.mkdtempSync(path.join(demoHome, "ws-copy-"));
 
-  process.stdout.write(`[policy-e2e] Copying starter workspace → ${tmp}\n`);
-  fs.cpSync(kitWorkspace, tmp, {
+  const tmpApp = path.join(tmp, "apps", "workspace");
+  process.stdout.write(`[policy-e2e] Copying starter workspace → ${tmpApp}\n`);
+  fs.cpSync(kitWorkspace, tmpApp, {
     recursive: true,
     filter: (src) => !src.split(path.sep).includes("node_modules"),
   });
 
   // Prompt-capable stub adapter so draft swarm runs pass deterministically.
-  fs.writeFileSync(path.join(tmp, "lib/adapters/sandboxes/adapters/policy-probe-stub.js"), `import { registerSandboxAdapter } from "../sandbox-adapter-registry.js";
+  fs.writeFileSync(path.join(tmpApp, "lib/adapters/sandboxes/adapters/policy-probe-stub.js"), `import { registerSandboxAdapter } from "../sandbox-adapter-registry.js";
 registerSandboxAdapter({
   id: "local-agent-host",
   label: "policy probe stub",
@@ -130,7 +131,7 @@ registerSandboxAdapter({
 
   process.stdout.write("[policy-e2e] npm install (workspace app)…\n");
   const ni = spawnSync("npm", ["install", "--no-fund", "--no-audit"], {
-    cwd: tmp,
+    cwd: tmpApp,
     stdio: "inherit",
     env: { ...process.env, CI: "1" },
   });
@@ -138,7 +139,7 @@ registerSandboxAdapter({
 
   process.stdout.write(`[policy-e2e] starting next dev on :${port}…\n`);
   const dev = spawn("npx", ["next", "dev", "-p", String(port)], {
-    cwd: tmp,
+    cwd: tmpApp,
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
     env: { ...process.env, NODE_ENV: "development", WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true", PORT: String(port) },
@@ -379,6 +380,56 @@ registerSandboxAdapter({
     assert(!stream20.includes("sk-ant-"), "receipt stream must never contain token-shaped values");
     assert((await (await fetch(`${base}/api/workspace/agent-outcomes?limit=5`)).json()).receipts.length <= 5, "stream must honor limit");
     ok("receipts are secret-redacted and bounded");
+
+    // 21. applications register as governed rows (normal PATCH lane)
+    const cfg21 = await getConfig();
+    const firstDashboardId = (cfg21.dashboards || [])[0]?.id || "";
+    res = await patch({
+      dataModel: {
+        ...cfg21.dataModel,
+        objects: [
+          ...cfg21.dataModel.objects,
+          {
+            id: "workspace-app-registry",
+            label: "App Registry",
+            objectType: "app-surface",
+            columns: ["Name", "appId", "surfacePath", "framework", "dashboardIds", "workflowRefs", "dataSourceIds", "registryIds"],
+            rows: [
+              { Name: "Workflow App", appId: "wf-app", surfacePath: "apps/workspace", framework: "nextjs", dashboardIds: firstDashboardId, workflowRefs: "sbx-policy:wf", dataSourceIds: "", registryIds: "" },
+              { Name: "Empty App", appId: "empty-app" },
+            ],
+          },
+        ],
+      },
+    });
+    assert(res.status === 200, `app registry PATCH expected 200, got ${res.status} ${await res.text()}`);
+    ok("applications register as governed Data Model rows");
+
+    // 22. fleet read surface: health, links, next action, detection
+    res = await fetch(`${base}/api/workspace/apps`);
+    const fleet = await res.json();
+    assert(res.status === 200 && fleet.ok === true && fleet.registryObjectId === "workspace-app-registry", "apps route must return fleet state");
+    assert(fleet.apps.length === 2 && fleet.summary.total === 2, "both apps must be in the fleet");
+    const wfApp = fleet.apps.find((a) => a.appId === "wf-app");
+    assert(wfApp, "wf-app must be present");
+    assert(wfApp.links.workflows.found.length === 1 && wfApp.links.workflows.found[0].live === true, "linked workflow must resolve as live");
+    assert(wfApp.links.workflows.found[0].lastRunOk === true, "linked workflow must carry run evidence");
+    const emptyApp = fleet.apps.find((a) => a.appId === "empty-app");
+    assert(emptyApp.health.status === "empty" && emptyApp.nextAction.label.includes("Link"), "empty app must compute the link-parts next action");
+    assert(fleet.apps.every((a) => String(a.nextAction.href || "").startsWith("/")), "next actions must deep-link into real surfaces");
+    assert(Array.isArray(fleet.detected) && fleet.detected.some((d) => d.relPath === "apps/workspace" && d.framework === "nextjs"), `detection must find the artifact's own app surface, got ${JSON.stringify(fleet.detected)}`);
+    ok("fleet surface: per-app health, link resolution, next action, surface detection");
+
+    // 23. app-scoped swarm assignment + fleet lens packet
+    const packet = wfApp.assignment;
+    assert(packet.kind === "growthub-app-assignment-packet-v1" && packet.appId === "wf-app", "assignment packet must target the app");
+    assert(packet.allowedRoutes.some((r) => r.includes("workflow/publish")) && packet.forbiddenActions.length > 0, "packet must carry governed scope");
+    assert(packet.objectRefs.some((r) => r.objectId === "sbx-policy" && r.rowName === "wf"), "packet must scope to the app's governed objects");
+    const lensRes = await fetch(`${base}/api/workspace/swarm-condition?lensId=fleet`);
+    const lensPacket = await lensRes.json();
+    assert(lensRes.status === 200 && lensPacket.lensId === "fleet", `swarm-condition must serve the fleet lens, got ${lensPacket.lensId}`);
+    assert(fleet.lens.lensId === "fleet" && fleet.lens.steps.length === 2, "fleet lens must emit one step per app");
+    ok("app-scoped assignment packets + fleet lens (human + agent read one truth)");
 
     process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
   } finally {

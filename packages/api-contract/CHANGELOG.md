@@ -12,6 +12,13 @@ changes.
 
 ### Added
 
+- `./workspace-apps` subpath — Governed Application Control Plane V1:
+  `AppSurfaceRow` (the `workspace-app-registry` governed object rows),
+  `AppLinkRollup` / `AppHealthStatus` / `AppNextAction`,
+  `AppAssignmentPacket` (app-scoped swarm assignment),
+  `WorkspaceAppsResponse` (`GET /api/workspace/apps`),
+  `APP_REGISTRY_OBJECT_ID`, `APP_SURFACE_OBJECT_TYPE`,
+  `isAppAssignmentPacket`, `WORKSPACE_APPS_CONTRACT_VERSION`.
 - `./workspace-outcome` subpath — Agent Outcome Loop V1: `AgentOutcomeReceipt`
   (the canonical receipt every mutation lane emits into the
   `workspace:agent-outcomes` source-record stream), `AgentOutcomeLane`
