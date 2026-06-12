@@ -255,7 +255,7 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
                 />
                 serverless
               </label>
-              <small>Local uses process sandbox or Paperclip agent host on this machine. Serverless delegates to an API Registry URL.</small>
+              <small>Choose local execution or a scheduled serverless run.</small>
             </div>
             <div className="workspace-helper-setup-field-stack">
               <label>

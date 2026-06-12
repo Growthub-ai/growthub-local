@@ -6253,9 +6253,16 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-sandbox-config > .dm-cockpit { width: 100%; margin: 12px 0 8px; box-sizing: border-box; }
 .dm-radio-row { display: grid; gap: 8px; }
 .dm-radio-row label, .dm-check-row { display: grid; grid-template-columns: 16px minmax(0,1fr); align-items: start; column-gap: 8px; color: #1f2937; font-size: 12px; line-height: 1.35; }
+.dm-check-row-compact { grid-template-columns: 16px max-content 22px; align-items: center; width: fit-content; max-width: 100%; }
 .dm-radio-row input[type="radio"], .dm-check-row input[type="checkbox"] { width: 14px; height: 14px; margin: 1px 0 0; padding: 0; box-shadow: none; accent-color: #111827; }
 .dm-radio-row span, .dm-check-row span { color: #1f2937; font-size: 12px; font-weight: 500; }
 .dm-check-row { cursor: pointer; }
+.dm-check-row-compact > label { color: #1f2937; font-size: 12px; font-weight: 500; cursor: pointer; }
+.dm-help-wrap { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.dm-icon-help { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: #64748b; padding: 0; cursor: help; }
+.dm-icon-help:hover, .dm-icon-help:focus-visible { background: #f1f5f9; color: #334155; outline: none; }
+.dm-help-bubble { position: absolute; z-index: 80; left: 22px; top: 50%; transform: translateY(-50%); width: min(280px, calc(100vw - 48px)); display: none; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; box-shadow: 0 12px 30px rgba(15,23,42,.16); color: #334155; font-size: 11px; font-weight: 500; line-height: 1.4; padding: 8px 9px; }
+.dm-help-wrap:hover .dm-help-bubble, .dm-help-bubble.is-open { display: block; }
 .dm-select { position: relative; width: 100%; min-width: 0; font-size: 11px; }
 .dm-select-trigger { width: 100%; min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #111827; box-shadow: 0 1px 2px rgba(15,23,42,.05); font: inherit; font-size: 11px; padding: 6px 10px; text-align: left; cursor: pointer; transition: border-color .12s, box-shadow .12s, background .12s; }
 .dm-select-trigger:hover:not(:disabled) { border-color: #94a3b8; box-shadow: 0 2px 8px rgba(15,23,42,.08); }

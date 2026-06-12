@@ -435,6 +435,7 @@ function LocalAgentHostControls({
   const row = sandboxRow && typeof sandboxRow === "object" ? sandboxRow : {};
   const adapter = String(row.adapter || "local-process").trim() || "local-process";
   const agentHost = String(row.agentHost || "").trim();
+  const browserOn = ["true", "1", "on", "yes"].includes(String(row.browserAccess || "").trim().toLowerCase());
   const hostOptions = getAgentHostOptions();
   const canPatch = typeof onSandboxRowPatch === "function";
 
@@ -532,8 +533,13 @@ function LocalAgentHostControls({
             </select>
           </label>
           <p className="dm-orchestration-config__hint">
-            Uses Instructions + Command as the task payload. Tool intents in the JSON response are proposals only and are not executed by the workspace.
+            Uses Instructions + Command as the task payload. With sandbox browser access off, tool intents stay proposals. With browser access on, browser tool intents execute through the local browser bridge before the final JSON response is returned.
           </p>
+          {browserOn && (
+            <p className="dm-orchestration-config__hint">
+              This workflow's AI-agent nodes inherit browser access only when their node-level Network permission is enabled.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -610,6 +616,10 @@ export function OrchestrationNodeConfigPanel({
   const responseMode = config.responseMode || config.mode || "json";
   const nodeAgentAuthDraft = type === "ai-agent" ? buildNodeAgentAuthDraft(sandboxRow, config) : null;
   const canPatchSandboxRow = typeof onSandboxRowPatch === "function";
+  const sandboxBrowserOn = ["true", "1", "on", "yes"].includes(String(sandboxRow?.browserAccess || "").trim().toLowerCase());
+  const sandboxAdapter = String(sandboxRow?.adapter || "").trim();
+  const nodeAdapter = String(config.adapter || "").trim() || sandboxAdapter;
+  const nodeUsesLocalIntelligence = nodeAdapter === "local-intelligence";
 
   function patchNodeAgentHost(agentHost) {
     const nextHost = String(agentHost || "").trim();
@@ -1040,10 +1050,12 @@ export function OrchestrationNodeConfigPanel({
           <WorkflowCheckbox
             checked={config.networkAccess === true}
             disabled={disabled}
-            title="Network is granted only when both this and the row's networkAllow are on. The row's browser access inherits through the same gate."
+            title={sandboxBrowserOn && nodeUsesLocalIntelligence
+              ? "Network and browser are granted only when this node permission is on and the sandbox row has browser access on."
+              : "Network is granted only when both this and the row's networkAllow are on. The row's browser access inherits through the same gate."}
             onChange={(checked) => patchConfig({ networkAccess: checked })}
           >
-            Network
+            {sandboxBrowserOn && nodeUsesLocalIntelligence ? "Network + browser" : "Network"}
           </WorkflowCheckbox>
         </div>
       )}
@@ -1083,8 +1095,15 @@ export function OrchestrationNodeConfigPanel({
             <WorkflowCheckbox checked={config.canWriteDraft === true} disabled={disabled} onChange={(checked) => patchConfig({ canWriteDraft: checked })}>
               Write draft changes only
             </WorkflowCheckbox>
-            <WorkflowCheckbox checked={config.networkAccess === true} disabled={disabled} onChange={(checked) => patchConfig({ networkAccess: checked })}>
-              Allow network access
+            <WorkflowCheckbox
+              checked={config.networkAccess === true}
+              disabled={disabled}
+              title={sandboxBrowserOn && nodeUsesLocalIntelligence
+                ? "This node gets browser access only when this permission and the sandbox row Browser access toggle are both on."
+                : undefined}
+              onChange={(checked) => patchConfig({ networkAccess: checked })}
+            >
+              {sandboxBrowserOn && nodeUsesLocalIntelligence ? "Allow network + browser access" : "Allow network access"}
             </WorkflowCheckbox>
           </div>
           <KeyValueRows

@@ -164,7 +164,7 @@ function deriveSandboxServerlessState(input = {}) {
     status: "optional",
     description: isServerless
       ? `Once the scheduler, auth, and store are ready, run delegates to the serverless scheduler.${browserAccess ? " Browser access travels with the run in the growthub-sandbox-run-v1 envelope (sandbox.browserAccess), so the remote handler grants the same capability as a local run." : ""}`
-      : `Run this workflow in-process.${browserAccess ? " Browser access is engaged through the selected agent host's first-party browser integration." : ""}`,
+      : `Run this workflow in-process.${browserAccess ? (adapterId === "local-intelligence" ? " Browser access is executed by the local-intelligence browser bridge." : " Browser access is engaged through the selected agent host's first-party browser integration.") : ""}`,
     action: inline({ id: "run-sandbox", label: "Run" }),
   });
 

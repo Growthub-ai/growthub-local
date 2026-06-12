@@ -44,6 +44,8 @@ const { getSandboxAdapter } = await import(
   pathToFileURL(path.join(kitLib, "adapters/sandboxes/sandbox-adapter-registry.js")).href
 );
 await import(pathToFileURL(path.join(kitLib, "adapters/sandboxes/default-local-process.js")).href);
+await import(pathToFileURL(path.join(kitLib, "adapters/sandboxes/default-local-intelligence.js")).href);
+await import(pathToFileURL(path.join(kitLib, "adapters/sandboxes/adapters/local-intelligence-browser-access.js")).href);
 const { normalizeRunConsoleRecord } = await import(
   pathToFileURL(path.join(kitLib, "orchestration-run-console.js")).href
 );
@@ -209,4 +211,101 @@ test("serverless flow state carries browserAccess for both localities", () => {
   assert.equal(serverless.browserAccess, true);
   const off = deriveSandboxServerlessState({ sandboxRow: { runLocality: "serverless" } });
   assert.equal(off.browserAccess, false);
+});
+
+test("local-intelligence browser bridge executes only when sandbox browserAccess is on", async () => {
+  const adapter = getSandboxAdapter("local-intelligence");
+  assert.ok(adapter, "local-intelligence adapter must be registered");
+
+  const originalFetch = globalThis.fetch;
+  const originalDriver = globalThis.__growthubLocalIntelligenceBrowserDriver;
+  const calls = [];
+  const browserCalls = [];
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    const payload = calls.length === 1
+      ? {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                text: "need browser",
+                toolIntents: [{ tool: "browser.navigate", url: "https://example.com" }],
+                warnings: [],
+                confidence: 0.5
+              })
+            }
+          }],
+          usage: { total_tokens: 7 }
+        }
+      : {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                text: "browser observed Example Domain",
+                toolIntents: [],
+                warnings: [],
+                confidence: 0.9
+              })
+            }
+          }],
+          usage: { total_tokens: 11 }
+        };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  globalThis.__growthubLocalIntelligenceBrowserDriver = {
+    async run(intents) {
+      browserCalls.push(intents);
+      return [{ tool: "browser.navigate", url: "https://example.com", title: "Example Domain" }];
+    }
+  };
+
+  try {
+    const baseRequest = {
+      runId: "run_local_intelligence_browser",
+      name: "ollama-browser",
+      runtime: "node",
+      command: "check example.com",
+      timeoutMs: 15000,
+      networkAllow: true,
+      allowList: [],
+      env: {},
+      envRefSlugs: [],
+      envRefsMissing: [],
+      workdir: "/tmp",
+      ranAt: new Date().toISOString(),
+      intelligenceSandbox: {
+        userIntent: "check example.com",
+        localModel: "gemma3:4b",
+        localEndpoint: "http://127.0.0.1:11434/v1",
+        intelligenceAdapterMode: "ollama"
+      }
+    };
+
+    const off = await adapter.run({ ...baseRequest, browserAccess: false });
+    assert.equal(off.ok, true);
+    assert.equal(calls.length, 1, "browserAccess off must keep single default model call");
+    assert.equal(browserCalls.length, 0, "browserAccess off must not execute browser bridge");
+
+    calls.length = 0;
+    const on = await adapter.run({ ...baseRequest, browserAccess: true });
+    assert.equal(on.ok, true, on.error || "browser run must succeed");
+    assert.equal(calls.length, 2, "browserAccess on must make first-pass and final model calls");
+    assert.equal(browserCalls.length, 1, "browserAccess on must execute browser bridge");
+    assert.equal(on.adapterMeta.browserAccess, true);
+    assert.equal(on.adapterMeta.browserLane, "local-intelligence-browser-bridge");
+    assert.equal(on.adapterMeta.tools, 2);
+    const envelope = JSON.parse(on.stdout);
+    assert.equal(envelope.result.text, "browser observed Example Domain");
+    assert.deepEqual(envelope.result.browserObservations, [
+      { tool: "browser.navigate", url: "https://example.com", title: "Example Domain" }
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDriver === undefined) {
+      delete globalThis.__growthubLocalIntelligenceBrowserDriver;
+    } else {
+      globalThis.__growthubLocalIntelligenceBrowserDriver = originalDriver;
+    }
+  }
 });

@@ -14,6 +14,7 @@
     "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^0.468.0",
     "next": "^16.2.6",
+    "playwright-core": "^1.60.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^9.0.1",

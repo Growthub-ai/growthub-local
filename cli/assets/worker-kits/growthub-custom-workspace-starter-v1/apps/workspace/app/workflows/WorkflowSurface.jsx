@@ -912,6 +912,7 @@ export default function WorkflowSurface() {
       })
     : null;
   const isServerlessWorkflow = Boolean(serverlessState?.isServerless);
+  const showServerlessUpgrade = String(sandboxRow?.adapter || "").trim() !== "local-intelligence";
 
   async function patchSandboxAndPersist(fields) {
     if (resolved.rowIndex < 0 || !objectId || !workspaceConfig) return;
@@ -1013,7 +1014,7 @@ export default function WorkflowSurface() {
             >
               <ArrowUp size={13} />
             </button>
-            {sandboxRow && (
+            {sandboxRow && showServerlessUpgrade && (
               <button
                 type="button"
                 className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
@@ -1099,7 +1100,7 @@ export default function WorkflowSurface() {
 
         {/* One-time serverless upgrade onboarding — shows only when the operator
             has workflows but none are serverless, and hasn't dismissed it. */}
-        {sandboxRow && !upgradeOpen && upgradeState.showOnboarding ? (
+        {sandboxRow && showServerlessUpgrade && !upgradeOpen && upgradeState.showOnboarding ? (
           <div className="workspace-template-context-banner dm-workflow-upgrade-nudge" role="note">
             <div>
               <strong>{upgradeState.headline}</strong>
@@ -1117,7 +1118,7 @@ export default function WorkflowSurface() {
         {/* Serverless cockpit — same derivation + cockpit interface as the API
             Registry and sandbox lanes. Toggles patch the sandbox row; deep config
             (scheduler/adapter) routes to the object's Data Model drawer. */}
-        {sandboxRow && upgradeOpen && serverlessState ? (
+        {sandboxRow && showServerlessUpgrade && upgradeOpen && serverlessState ? (
           <div className="dm-workflow-upgrade-panel">
             <div className="dm-workflow-upgrade-panel-head">
               <span className="dm-api-action-card-eyebrow">Persistence &amp; scheduling</span>
