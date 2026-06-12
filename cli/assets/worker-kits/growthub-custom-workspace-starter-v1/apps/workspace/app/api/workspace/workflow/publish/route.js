@@ -47,6 +47,7 @@ import {
   patchSandboxRowInConfig,
   resolveWorkflowFieldNames
 } from "@/lib/orchestration-publish";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 function sha256(text) {
   return createHash("sha256").update(String(text), "utf8").digest("hex");
@@ -61,6 +62,24 @@ function findSandboxRow(workspaceConfig, objectId, name) {
   const rowIndex = rows.findIndex((row) => String(row?.Name || "").trim() === wantedName);
   if (rowIndex === -1) return { object, row: null, rowIndex: -1 };
   return { object, row: rows[rowIndex], rowIndex };
+}
+
+/**
+ * Gate failures are governance signal: emit a blocked outcome receipt
+ * (non-fatal) and return the structured failure envelope.
+ */
+async function publishBlocked(httpStatus, body, refs) {
+  await appendOutcomeReceipt({
+    kind: "workflow-publish",
+    lane: "server-authoritative",
+    outcomeStatus: "blocked",
+    ...(refs ? { objectRefs: [refs] } : {}),
+    summary: `publish blocked (${body.code}): ${body.error}`,
+    nextActions: body.code === "no_draft" || body.code === "draft_not_tested" || body.code === "draft_run_not_verified" || body.code === "draft_changed_after_test"
+      ? ["Save the draft, run POST /api/workspace/sandbox-run {useDraft:true} to a passing result, attest, then publish"]
+      : []
+  });
+  return NextResponse.json(body, { status: httpStatus });
 }
 
 async function POST(request) {
@@ -104,44 +123,35 @@ async function POST(request) {
   const { liveField, draftField } = resolveWorkflowFieldNames(row, requestedField || undefined);
   const draft = String(row[draftField] ?? "").trim();
   if (!draft) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "no_draft",
-        error: `no saved draft in ${draftField} — save the draft, test it with sandbox-run useDraft:true, then publish`
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "no_draft",
+      error: `no saved draft in ${draftField} — save the draft, test it with sandbox-run useDraft:true, then publish`
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
 
   const draftPassed = row.orchestrationDraftTestPassed === true
     || String(row.orchestrationDraftTestPassed ?? "") === "true";
   if (!draftPassed) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_not_tested",
-        error: "publish blocked — the saved draft has no successful test run; " +
-          "run POST /api/workspace/sandbox-run with useDraft:true and a passing result first"
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_not_tested",
+      error: "publish blocked — the saved draft has no successful test run; " +
+        "run POST /api/workspace/sandbox-run with useDraft:true and a passing result first"
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
 
   const testedConfig = String(row.orchestrationDraftTestedConfig ?? "");
   if (testedConfig !== draft) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_changed_after_test",
-        error: "publish blocked — the draft changed after its successful test; re-test this exact draft",
-        // Diagnostic raw-STRING hashes (the equality above is byte-level);
-        // the canonical graph hash everywhere else is sha256(stableStringify(parsedGraph)).
-        draftStringSha256: sha256(draft),
-        testedStringSha256: sha256(testedConfig)
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_changed_after_test",
+      error: "publish blocked — the draft changed after its successful test; re-test this exact draft",
+      // Diagnostic raw-STRING hashes (the equality above is byte-level);
+      // the canonical graph hash everywhere else is sha256(stableStringify(parsedGraph)).
+      draftStringSha256: sha256(draft),
+      testedStringSha256: sha256(testedConfig)
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
 
   // Lineage gate — the draft-field attestation (`orchestrationDraftTestPassed`,
@@ -152,39 +162,30 @@ async function POST(request) {
   // actually executed must equal this draft.
   const draftRunId = String(row.orchestrationDraftLastRunId ?? "").trim();
   if (!draftRunId) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_run_not_verified",
-        error: "publish blocked — no server-recorded draft run on this row; " +
-          "run POST /api/workspace/sandbox-run with useDraft:true first"
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_run_not_verified",
+      error: "publish blocked — no server-recorded draft run on this row; " +
+        "run POST /api/workspace/sandbox-run with useDraft:true first"
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
   const history = sourceId ? await readWorkspaceSourceRecords(sourceId) : null;
   const records = Array.isArray(history?.records) ? history.records : [];
   const runRecord = records.find((record) => String(record?.runId ?? "") === draftRunId);
   if (!runRecord) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_run_not_verified",
-        error: `publish blocked — draft run ${draftRunId} has no record in the sandbox run history (${sourceId})`
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_run_not_verified",
+      error: `publish blocked — draft run ${draftRunId} has no record in the sandbox run history (${sourceId})`
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
   if (runRecord.exitCode !== 0 || runRecord.error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_run_not_verified",
-        error: `publish blocked — draft run ${draftRunId} did not pass (exitCode ${runRecord.exitCode})`
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_run_not_verified",
+      error: `publish blocked — draft run ${draftRunId} did not pass (exitCode ${runRecord.exitCode})`
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
   // The record's draftSha256 is stamped by sandbox-run from the exact graph
   // it executed, before execution. It must match this saved draft.
@@ -193,29 +194,23 @@ async function POST(request) {
     .update(stableStringify(draftGraphParsed), "utf8")
     .digest("hex");
   if (runRecord.useDraft !== true || runRecord.draftSha256 !== expectedSha256) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "draft_run_not_verified",
-        error: `publish blocked — draft run ${draftRunId} executed a different graph than the saved draft ` +
-          "(or was not a draft run); re-test this exact draft with sandbox-run useDraft:true"
-      },
-      { status: 409 }
-    );
+    return publishBlocked(409, {
+      ok: false,
+      code: "draft_run_not_verified",
+      error: `publish blocked — draft run ${draftRunId} executed a different graph than the saved draft ` +
+        "(or was not a draft run); re-test this exact draft with sandbox-run useDraft:true"
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
 
   const parsedDraft = draftGraphParsed;
   const validation = validateOrchestrationGraph(parsedDraft);
   if (!validation?.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "invalid_graph",
-        error: "publish blocked — the draft does not parse as a valid orchestration graph",
-        details: validation?.errors ?? []
-      },
-      { status: 400 }
-    );
+    return publishBlocked(400, {
+      ok: false,
+      code: "invalid_graph",
+      error: "publish blocked — the draft does not parse as a valid orchestration graph",
+      details: validation?.errors ?? []
+    }, { objectId, rowName: name, objectType: "sandbox-environment" });
   }
 
   const publishedAt = new Date().toISOString();
@@ -262,6 +257,27 @@ async function POST(request) {
 
   try {
     const persisted = await writeWorkspaceConfig({ dataModel: next.dataModel });
+    const { receipt } = await appendOutcomeReceipt({
+      kind: "workflow-publish",
+      lane: "server-authoritative",
+      outcomeStatus: "published",
+      objectRefs: [{ objectId, rowName: name, objectType: "sandbox-environment" }],
+      changedFields: ["dataModel"],
+      runId: draftRunId,
+      sourceId,
+      draftSha256: expectedSha256,
+      publishedSha256,
+      version: nextVersion,
+      summary: `published ${liveField} v${nextVersion} for ${objectId}/${name} (${nodeDeltas.length} node delta(s), verified draft run ${draftRunId})`,
+      rollbackRef: {
+        objectId,
+        rowName: name,
+        liveField,
+        previousVersion: String(row.version || "1"),
+        deltaIndex: previousDeltas.length,
+        sourceId
+      }
+    });
     return NextResponse.json({
       ok: true,
       objectId,
@@ -270,6 +286,7 @@ async function POST(request) {
       publishedAt,
       liveField,
       publishedSha256,
+      receiptId: receipt.receiptId,
       workspaceConfig: persisted
     });
   } catch (error) {

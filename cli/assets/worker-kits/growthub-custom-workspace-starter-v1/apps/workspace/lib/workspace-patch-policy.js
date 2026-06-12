@@ -352,6 +352,40 @@ function evaluateWorkspacePatchPolicy(currentConfig, patch) {
   return { ok: violations.length === 0, violations };
 }
 
+/**
+ * Repair guidance — one governed alternative per violation code, so a
+ * rejection teaches self-correction instead of provoking retry loops.
+ * Returned by patch/preflight (`repairPlan[]`) and the PATCH 422 envelope.
+ */
+const REPAIR_PLANS = Object.freeze({
+  invalid_body: "Send a single JSON object containing only changed allowlisted keys.",
+  unknown_field: `Remove keys outside the allowlist (${WORKSPACE_PATCH_ALLOWED_FIELDS.join(", ")}); other config fields are read-only through this API.`,
+  full_config_body: "Never PATCH the whole workspace config back — GET first, then send only the changed allowlisted key(s).",
+  source_records_through_patch: "Write source records through POST /api/workspace/refresh-sources (or let sandbox-run persist run records); PATCH never touches the sidecar.",
+  oversized_patch: "Split the change into smaller PATCHes per allowlisted key, and move bulk data into source records.",
+  oversized_object: "Page bulk rows through source records; keep dataModel objects under the row ceiling.",
+  oversized_row: "Move bulk payloads into source records and store only a sourceId/reference on the row.",
+  oversized_node_config: "Reference large payloads from node configs via source records or env refs instead of inlining them.",
+  history_smuggling: "Run/record history lives in growthub.source-records.json (written by sandbox-run / refresh-sources) — store only lastRunId/lastSourceId on the row.",
+  credential_field: "Store the secret in the local CLI's own store and reference it via authRef / envRefs names only.",
+  live_workflow_field: "Move the graph into orchestrationDraftConfig (or orchestrationDraftGraph), prove it with POST /api/workspace/sandbox-run {useDraft:true}, then promote it with POST /api/workspace/workflow/publish.",
+  live_publish_via_patch: "lifecycleStatus \"live\" is set only by POST /api/workspace/workflow/publish after a verified draft test."
+});
+
+/** Ordered, deduplicated repair steps for a violation list. */
+function repairPlanForViolations(violations) {
+  const seen = new Set();
+  const plan = [];
+  for (const v of Array.isArray(violations) ? violations : []) {
+    const step = REPAIR_PLANS[v?.code];
+    if (step && !seen.has(step)) {
+      seen.add(step);
+      plan.push(step);
+    }
+  }
+  return plan;
+}
+
 export {
   CREDENTIAL_ROW_FIELDS,
   DRAFT_WORKFLOW_ROW_FIELDS,
@@ -361,5 +395,6 @@ export {
   WORKSPACE_PATCH_ALLOWED_FIELDS,
   WORKSPACE_PATCH_LIMITS,
   evaluateWorkspacePatchPolicy,
+  repairPlanForViolations,
   stableStringify
 };

@@ -80,6 +80,7 @@ import {
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import {
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
@@ -771,8 +772,29 @@ async function executeSandboxRun(body, { emit } = {}) {
     }
   }
 
+  // Agent Outcome Loop V1: every execution emits the same canonical receipt
+  // (kind "sandbox-run", lane "execution-proof") into workspace:agent-outcomes,
+  // linking the run record so publish gates and future agents can cite it.
+  const runOk = response.exitCode === 0 && !response.error;
+  await appendOutcomeReceipt({
+    kind: "sandbox-run",
+    lane: "execution-proof",
+    outcomeStatus: runOk ? "tested" : "failed",
+    intent: typeof body?.intent === "string" ? body.intent : undefined,
+    actor: typeof body?.actor === "string" ? body.actor : undefined,
+    objectRefs: [{ objectId, rowName: rowForRun.Name || name, objectType: "sandbox-environment" }],
+    runId,
+    sourceId: sourceId || undefined,
+    ...(useDraft && draftSha256 ? { draftSha256 } : {}),
+    summary: `${useDraft ? "draft " : ""}run ${runOk ? "passed" : "failed"} (exit ${response.exitCode}, ${effectiveAdapterId}/${runtime}) — ${String(response.stdout || response.stderr || response.error || "").slice(0, 160)}`,
+    ...(runOk && useDraft
+      ? { nextActions: ["Attest the tested draft (orchestrationDraftTestPassed + orchestrationDraftTestedConfig), then POST /api/workspace/workflow/publish"] }
+      : {}),
+    rollbackRef: sourceId ? { objectId, rowName: rowForRun.Name || name, sourceId } : undefined
+  });
+
   return NextResponse.json({
-    ok: response.exitCode === 0 && !response.error,
+    ok: runOk,
     status,
     runId,
     adapter: effectiveAdapterId,

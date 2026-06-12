@@ -144,6 +144,23 @@ curl -s -X POST "$WS/api/workspace/sandbox-run" -H 'content-type: application/js
 
 **Side effects you get for free — never replicate manually:** a versioned record appended to `growthub.source-records.json` under the `sourceId` (history accumulates per invocation), and the row stamped with `status`, `lastTested`, `lastRunId`, `lastSourceId`, `lastResponse`.
 
+## Agent Outcome Loop V1 — receipts, lanes, and the cockpit
+
+Every mutation lane emits the **same canonical receipt** (`@growthub/api-contract/workspace-outcome::AgentOutcomeReceipt`) into the server-owned stream `workspace:agent-outcomes` in `growthub.source-records.json`. A receipt answers: what was intended, what changed, was it preflighted, was it proven (runId/sourceId/draftSha256), was it published (version/publishedSha256), what should happen next (`nextActions`), and how to roll back or replay (`rollbackRef`). Receipts are secret-redacted and bounded — summaries and references, never raw payloads.
+
+**Lane classification — every lane is named; none is an unlabelled bypass:**
+
+| Lane | Route | Trust class |
+|---|---|---|
+| `untrusted-direct` | `PATCH /api/workspace` (+ preflight) | Full policy firewall |
+| `execution-proof` | `POST /api/workspace/sandbox-run` | Produces run lineage |
+| `server-authoritative` | `POST /api/workspace/workflow/publish` | Owns draft → live |
+| `governed-proposal` | `POST /api/workspace/helper/apply` | Privileged: human-reviewed; swarm graphs are server-built/validated (`buildSandboxRowFromSwarmProposal`), never model-authored verbatim |
+
+**The cockpit:** `GET /api/workspace/agent-outcomes` returns the receipt stream (newest first) plus a derived governance summary — blocked attempts, publishes, drafts awaiting test, drafts tested-but-unpublished, live rows with failed last runs, live rows without proof, helper applies. This is how an operator manages a workspace full of agents without reading logs.
+
+**First-session continuation:** before acting, read the stream. Cite `receiptId`s, continue from `nextActions`, and inspect `rollbackRef` (previous version + delta index for publishes; sourceId for runs) before redoing anyone's work. Rejections come with `repairPlan[]` — follow it instead of retrying variations.
+
 ## Workspace-first rule
 
 Before writing any code, ask: **does a governed object already represent this?** A scheduled job is a sandbox row. An external API is an API Registry row. A data view is a Data Model object bound to a View widget. A multi-agent workflow is a sandbox row with an `agent-swarm-v1` orchestration graph. If the capability exists as an object, your work is two API calls — not a new module. Extend objects; do not deviate into parallel code paths.

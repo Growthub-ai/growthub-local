@@ -12,6 +12,16 @@ changes.
 
 ### Added
 
+- `./workspace-outcome` subpath — Agent Outcome Loop V1: `AgentOutcomeReceipt`
+  (the canonical receipt every mutation lane emits into the
+  `workspace:agent-outcomes` source-record stream), `AgentOutcomeLane`
+  classification, `WorkspaceGovernanceSummary` + `AgentOutcomesResponse`
+  (the `GET /api/workspace/agent-outcomes` cockpit data model),
+  `WORKSPACE_AGENT_LOOP_V1` (the blessed call sequence),
+  `isAgentOutcomeReceipt`, `WORKSPACE_OUTCOME_CONTRACT_VERSION`.
+- `repairPlan` on the PATCH 422 rejection envelope and
+  `repairPlan` / `safeNextStep` on the preflight response — policy
+  rejections teach the governed alternative.
 - `./workspace-patch` subpath — `WorkspacePatchViolation(Code)`,
   `WorkspacePatchPolicyRejection`, `WorkspacePatchPreflightRequest/Response`,
   `WorkflowPublishRequest/Response/Success/Failure(Code)`,

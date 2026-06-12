@@ -100,6 +100,10 @@
     "./workspace-patch": {
       "types": "./dist/workspace-patch.d.ts",
       "import": "./dist/workspace-patch.js"
+    },
+    "./workspace-outcome": {
+      "types": "./dist/workspace-outcome.d.ts",
+      "import": "./dist/workspace-outcome.js"
     }
   },
   "main": "./dist/index.js",

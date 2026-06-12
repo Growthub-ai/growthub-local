@@ -14,8 +14,10 @@ import {
 } from "@/lib/workspace-config";
 import {
   WORKSPACE_PATCH_ALLOWED_FIELDS,
-  evaluateWorkspacePatchPolicy
+  evaluateWorkspacePatchPolicy,
+  repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 // Workspace Config Contract V1 — PATCH is permanently restricted to these
 // four fields. Sidecar source records (`workspaceSourceRecords`) are exposed
@@ -74,6 +76,15 @@ async function PATCH(request) {
   }
   const unknown = Object.keys(patch).filter((key) => !ALLOWED_PATCH_FIELDS.has(key));
   if (unknown.length) {
+    await appendOutcomeReceipt({
+      kind: "direct-patch",
+      lane: "untrusted-direct",
+      outcomeStatus: "blocked",
+      changedFields: unknown,
+      policyVerdict: { ok: false, violationCodes: ["unknown_field"] },
+      summary: `PATCH rejected (400): unknown top-level fields ${unknown.join(", ")}`,
+      nextActions: ["Send only changed allowlisted keys; dry-run with POST /api/workspace/patch/preflight"]
+    });
     return NextResponse.json(
       { error: "patch contains unknown fields", details: unknown, allowed: Array.from(ALLOWED_PATCH_FIELDS) },
       { status: 400 }
@@ -93,10 +104,21 @@ async function PATCH(request) {
   }
   const policy = evaluateWorkspacePatchPolicy(currentConfig, patch);
   if (!policy.ok) {
+    const repairPlan = repairPlanForViolations(policy.violations);
+    await appendOutcomeReceipt({
+      kind: "direct-patch",
+      lane: "untrusted-direct",
+      outcomeStatus: "blocked",
+      changedFields: Object.keys(sanitized),
+      policyVerdict: { ok: false, violationCodes: policy.violations.map((v) => v.code) },
+      summary: `PATCH rejected (422): ${policy.violations.map((v) => v.code).join(", ")}`,
+      nextActions: repairPlan
+    });
     return NextResponse.json(
       {
         error: "patch rejected by workspace mutation policy",
         violations: policy.violations,
+        repairPlan,
         preflight: "POST /api/workspace/patch/preflight dry-runs these checks without writing"
       },
       { status: 422 }
@@ -104,6 +126,15 @@ async function PATCH(request) {
   }
   try {
     const next = await writeWorkspaceConfig(sanitized);
+    await appendOutcomeReceipt({
+      kind: "direct-patch",
+      lane: "untrusted-direct",
+      outcomeStatus: "published",
+      changedFields: Object.keys(sanitized),
+      policyVerdict: { ok: true },
+      schemaVerdict: { ok: true },
+      summary: `PATCH applied: ${Object.keys(sanitized).join(", ")} updated`
+    });
     return NextResponse.json({ workspaceConfig: next });
   } catch (error) {
     if (error.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {

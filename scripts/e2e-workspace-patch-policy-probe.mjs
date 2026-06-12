@@ -326,6 +326,60 @@ registerSandboxAdapter({
     assert(String(wf2.orchestrationGraph || "").length > 0 && String(wf2.orchestrationConfig || "") === "", "wf2 live graph must land in orchestrationGraph only");
     ok("draft-graph-only row publishes into orchestrationGraph (field resolution)");
 
+    // 17. rejections teach repair: 422 carries repairPlan; preflight adds safeNextStep
+    const cfg17 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg17, "wf", { orchestrationConfig: changedDraft }) });
+    assert(res.status === 422, "expected 422 for live tamper");
+    let body17 = await res.json();
+    assert(Array.isArray(body17.repairPlan) && body17.repairPlan.some((s) => s.includes("workflow/publish")), "422 must carry a repairPlan pointing at workflow/publish");
+    pre = await (await preflight({ dataModel: mergeRow(cfg17, "wf", { orchestrationConfig: changedDraft }) })).json();
+    assert(pre.ok === false && Array.isArray(pre.repairPlan) && pre.repairPlan.length > 0, "preflight must return repairPlan");
+    assert(String(pre.safeNextStep || "").includes("workflow/publish"), `preflight safeNextStep must route to publish, got ${pre.safeNextStep}`);
+    ok("policy rejection teaches repair (repairPlan + safeNextStep)");
+
+    // 18. helper/apply emits a governed-proposal receipt
+    res = await fetch(`${base}/api/workspace/helper/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ proposals: [{ type: "explain.object", affectedField: "dataModel", payload: { objectId: "sbx-policy" }, rationale: "probe explain" }] }),
+    });
+    assert(res.status === 200 && (await res.json()).ok === true, "helper apply (explain) must succeed");
+    ok("helper apply (governed-proposal lane) succeeds");
+
+    // 19. the unified receipt stream + governance summary (cockpit data model)
+    res = await fetch(`${base}/api/workspace/agent-outcomes`);
+    const outcomes = await res.json();
+    assert(res.status === 200 && outcomes.ok === true && outcomes.sourceId === "workspace:agent-outcomes", "agent-outcomes route must return the stream");
+    const rs = outcomes.receipts;
+    assert(Array.isArray(rs) && rs.length > 0, "receipt stream must be non-empty");
+    const blocked = rs.find((r) => r.kind === "direct-patch" && r.outcomeStatus === "blocked");
+    assert(blocked && Array.isArray(blocked.policyVerdict?.violationCodes), "blocked direct-patch receipts must be visible with violation codes");
+    const published = rs.find((r) => r.kind === "workflow-publish" && r.outcomeStatus === "published");
+    assert(published, "published workflow-publish receipt must be in the stream");
+    assert(published.runId && published.sourceId && published.publishedSha256 && published.version, "publish receipt must carry runId/sourceId/hash/version proof");
+    assert(published.rollbackRef && published.rollbackRef.previousVersion, "publish receipt must carry a rollbackRef with previousVersion");
+    const ran = rs.find((r) => r.kind === "sandbox-run" && r.outcomeStatus === "tested" && r.draftSha256);
+    assert(ran && ran.runId, "draft sandbox-run receipt must link runId + draftSha256");
+    assert(ran.draftSha256 === published.draftSha256, "run receipt and publish receipt must share the same draft lineage hash");
+    const helperReceipt = rs.find((r) => r.kind === "helper-apply");
+    assert(helperReceipt && helperReceipt.lane === "governed-proposal", "helper apply must emit a governed-proposal receipt");
+    const blockedPublish = rs.find((r) => r.kind === "workflow-publish" && r.outcomeStatus === "blocked");
+    assert(blockedPublish, "blocked publish attempts must be in the stream");
+    for (const key of ["blockedAttempts", "publishes", "helperApplies", "draftsAwaitingTest", "draftsTestedNotPublished", "liveRowsWithFailedLastRun", "liveRowsWithoutProof"]) {
+      assert(Number.isFinite(outcomes.summary?.[key]), `summary.${key} must be a number`);
+    }
+    assert(outcomes.summary.blockedAttempts > 0 && outcomes.summary.publishes >= 2, "summary counters must reflect the session");
+    ok("unified receipt stream + governance summary (lineage links across lanes)");
+
+    // 20. receipts never leak secrets and stay bounded
+    const cfg20 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg20, "wf", { apiKey: "sk-ant-FAKESECRET12345" }) });
+    assert(res.status === 422, "credential patch must still 422");
+    const stream20 = JSON.stringify(await (await fetch(`${base}/api/workspace/agent-outcomes`)).json());
+    assert(!stream20.includes("sk-ant-"), "receipt stream must never contain token-shaped values");
+    assert((await (await fetch(`${base}/api/workspace/agent-outcomes?limit=5`)).json()).receipts.length <= 5, "stream must honor limit");
+    ok("receipts are secret-redacted and bounded");
+
     process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
   } finally {
     try {

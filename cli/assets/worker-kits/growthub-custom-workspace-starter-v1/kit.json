@@ -95,6 +95,8 @@
     "apps/workspace/app/api/workspace/workflow/publish/route.js",
     "apps/workspace/lib/workspace-patch-policy.js",
     "apps/workspace/lib/orchestration-publish.js",
+    "apps/workspace/lib/workspace-outcome-receipts.js",
+    "apps/workspace/app/api/workspace/agent-outcomes/route.js",
     "apps/workspace/app/api/workspace/refresh-sources/route.js",
     "apps/workspace/app/api/workspace/test-source/route.js",
     "apps/workspace/app/api/workspace/register-resolver/route.js",

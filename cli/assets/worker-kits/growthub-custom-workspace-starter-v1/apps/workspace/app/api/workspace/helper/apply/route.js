@@ -35,6 +35,7 @@ import {
   writeWorkspaceSourceRecords,
   describePersistenceMode,
 } from "@/lib/workspace-config";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import {
   applyProposalToConfig,
   validateProposalForApply,
@@ -515,6 +516,23 @@ async function POST(request) {
     const row = ht?.rows?.find((r) => r?.id === threadId);
     if (row && Array.isArray(row.messages)) messagesAfterApply = row.messages;
   }
+
+  // Agent Outcome Loop V1: the helper lane is GOVERNED-PROPOSAL — privileged
+  // (human-reviewed, server-built payloads), never an unlabelled bypass. It
+  // emits the same canonical receipt class as every other mutation lane, so
+  // the cockpit sees one stream.
+  await appendOutcomeReceipt({
+    kind: "helper-apply",
+    lane: "governed-proposal",
+    outcomeStatus: applied.length > 0 ? "published" : "failed",
+    actor: reviewedBy || "operator",
+    changedFields: Array.from(new Set(mutatingApplied.map((r) => r.affectedField))),
+    objectRefs: threadId ? [{ objectId: "helper-threads", rowName: threadId }] : undefined,
+    summary: `helper apply: ${applied.length} applied (${Array.from(new Set(applied.map((r) => r.type))).join(", ") || "none"}), ${skipped.length} skipped`,
+    ...(skipped.length > 0
+      ? { nextActions: skipped.slice(0, 3).map((s) => `skipped ${s.proposal?.type || "proposal"}: ${s.reason}`) }
+      : {})
+  });
 
   return NextResponse.json({
     ok: true,

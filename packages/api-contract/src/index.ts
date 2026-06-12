@@ -30,6 +30,7 @@
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
+ *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  */
 
 // Capabilities
@@ -342,6 +343,29 @@ export {
   isWorkflowPublishSuccess,
   WORKSPACE_PATCH_CONTRACT_VERSION,
 } from "./workspace-patch.js";
+
+// Agent Outcome Loop V1 (the positive-governance layer above the mutation
+// boundary — canonical receipts every mutation lane emits, the governance
+// summary cockpit data model, and the blessed agent loop sequence. Runtime
+// truth: workspace app lib/workspace-outcome-receipts.js + GET
+// /api/workspace/agent-outcomes.)
+export type {
+  AgentOutcomeReceiptKind,
+  AgentOutcomeStatus,
+  AgentOutcomeLane,
+  AgentOutcomeObjectRef,
+  AgentOutcomeReceipt,
+  WorkspaceGovernanceSummary,
+  AgentOutcomesResponse,
+} from "./workspace-outcome.js";
+export {
+  AGENT_OUTCOME_RECEIPT_KINDS,
+  AGENT_OUTCOME_STATUSES,
+  AGENT_OUTCOMES_SOURCE_ID,
+  WORKSPACE_AGENT_LOOP_V1,
+  isAgentOutcomeReceipt,
+  WORKSPACE_OUTCOME_CONTRACT_VERSION,
+} from "./workspace-outcome.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

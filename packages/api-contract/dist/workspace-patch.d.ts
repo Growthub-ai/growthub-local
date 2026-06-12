@@ -54,6 +54,12 @@ export interface WorkspacePatchLimits {
 export interface WorkspacePatchPolicyRejection {
     error: "patch rejected by workspace mutation policy";
     violations: WorkspacePatchViolation[];
+    /**
+     * Ordered, deduplicated repair steps derived from the violation codes —
+     * the governed alternative for each rejection, so an agent self-corrects
+     * instead of looping or guessing.
+     */
+    repairPlan?: string[];
     /** Pointer to the dry-run route. */
     preflight: string;
 }
@@ -71,6 +77,10 @@ export interface WorkspacePatchPreflightResponse {
         ok: boolean;
         errors: string[];
     };
+    /** Repair steps for every policy violation (empty when `policy.ok`). */
+    repairPlan: string[];
+    /** The single next governed call the agent should make, when derivable. */
+    safeNextStep?: string;
     persistence: {
         mode: "filesystem" | "read-only" | "database";
         canSave: boolean;

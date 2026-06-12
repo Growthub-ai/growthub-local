@@ -30,8 +30,10 @@ import {
 } from "@/lib/workspace-config";
 import {
   WORKSPACE_PATCH_ALLOWED_FIELDS,
-  evaluateWorkspacePatchPolicy
+  evaluateWorkspacePatchPolicy,
+  repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 async function POST(request) {
   let patch;
@@ -87,11 +89,42 @@ async function POST(request) {
   }
 
   const persistence = describePersistenceMode();
+  const ok = policy.ok && schema.ok;
+  const repairPlan = repairPlanForViolations(policy.violations);
+  // The single next governed call, when derivable from the verdicts.
+  let safeNextStep;
+  if (ok) {
+    safeNextStep = "PATCH /api/workspace with this exact body";
+  } else if (policy.violations.some((v) => v.code === "live_workflow_field" || v.code === "live_publish_via_patch")) {
+    safeNextStep =
+      "Save the graph as a draft field, prove it with POST /api/workspace/sandbox-run {useDraft:true}, then POST /api/workspace/workflow/publish";
+  } else if (repairPlan.length > 0) {
+    safeNextStep = repairPlan[0];
+  } else if (!schema.ok) {
+    safeNextStep = "Fix the schema errors against apps/workspace/lib/workspace-schema.js, then preflight again";
+  }
+
+  if (!ok) {
+    // Failed attempts are governance signal — visible in the cockpit stream.
+    await appendOutcomeReceipt({
+      kind: "patch-preflight",
+      lane: "untrusted-direct",
+      outcomeStatus: "blocked",
+      changedFields: patch && typeof patch === "object" && !Array.isArray(patch) ? Object.keys(patch) : [],
+      policyVerdict: { ok: policy.ok, violationCodes: policy.violations.map((v) => v.code) },
+      schemaVerdict: { ok: schema.ok, errorCount: schema.errors.length },
+      summary: `preflight blocked: ${[...policy.violations.map((v) => v.code), ...(schema.ok ? [] : ["schema"])].join(", ")}`,
+      nextActions: repairPlan.length ? repairPlan : (safeNextStep ? [safeNextStep] : [])
+    });
+  }
+
   return NextResponse.json({
-    ok: policy.ok && schema.ok,
+    ok,
     allowed: WORKSPACE_PATCH_ALLOWED_FIELDS,
     policy,
     schema,
+    repairPlan,
+    ...(safeNextStep ? { safeNextStep } : {}),
     persistence: {
       mode: persistence.mode,
       canSave: persistence.canSave,

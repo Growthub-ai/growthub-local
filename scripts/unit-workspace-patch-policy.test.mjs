@@ -251,3 +251,21 @@ test("non-object body fails", () => {
   assert.equal(result.ok, false);
   assert.ok(codes(result).includes("invalid_body"));
 });
+
+// ── repair guidance ────────────────────────────────────────────────────────
+
+test("repairPlanForViolations maps every violation code to a governed alternative", async () => {
+  const { repairPlanForViolations } = await import(policyModule);
+  const live = repairPlanForViolations([{ code: "live_workflow_field", path: "x", message: "m" }]);
+  assert.equal(live.length, 1);
+  assert.ok(live[0].includes("orchestrationDraftConfig") && live[0].includes("workflow/publish"));
+  const multi = repairPlanForViolations([
+    { code: "credential_field", path: "a", message: "m" },
+    { code: "history_smuggling", path: "b", message: "m" },
+    { code: "credential_field", path: "c", message: "m" }, // dedupe
+    { code: "not_a_real_code", path: "d", message: "m" },  // tolerated
+  ]);
+  assert.equal(multi.length, 2);
+  assert.ok(multi[0].includes("authRef"));
+  assert.ok(multi[1].includes("source-records"));
+});
