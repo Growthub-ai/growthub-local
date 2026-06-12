@@ -20,6 +20,12 @@ const LOCAL_AGENT_ADAPTERS = [
   { value: "local-agent-host", label: "Local agent host" },
   { value: "local-intelligence", label: "Local intelligence" }
 ];
+const LOCAL_INTELLIGENCE_MODE_OPTIONS = [
+  { value: "ollama", label: "ollama (OLLAMA_BASE_URL + /v1/chat/completions)" },
+  { value: "lmstudio", label: "lmstudio (LMSTUDIO_BASE_URL)" },
+  { value: "vllm", label: "vllm (VLLM_BASE_URL required)" },
+  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" }
+];
 const EMPTY_AGENT_AUTH_PATCH = {
   agentAuthStatus: "",
   agentAuthProvider: "",
@@ -427,7 +433,6 @@ function LocalAgentHostControls({
   onSandboxRowPatch
 }) {
   const row = sandboxRow && typeof sandboxRow === "object" ? sandboxRow : {};
-  const runLocality = String(row.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
   const adapter = String(row.adapter || "local-process").trim() || "local-process";
   const agentHost = String(row.agentHost || "").trim();
   const hostOptions = getAgentHostOptions();
@@ -444,36 +449,9 @@ function LocalAgentHostControls({
   return (
     <div className="dm-orchestration-config__section dm-workflow-agent-runtime">
       <span>Local agent runtime</span>
-      <div className="dm-sandbox-locality-toggle" role="group" aria-label="Run locality">
-        {["local", "serverless"].map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={runLocality === mode ? "is-active" : ""}
-            disabled={disabled || !canPatch}
-            onClick={() => {
-              const fields = { runLocality: mode };
-              if (mode === "serverless" && ["local-agent-host", "local-intelligence"].includes(adapter)) {
-                fields.adapter = "local-process";
-                fields.agentHost = "";
-                patchWithClearedAgentAuth(fields);
-                return;
-              }
-              patch(fields);
-            }}
-          >
-            {mode === "local" ? "Local" : "Serverless"}
-          </button>
-        ))}
-      </div>
       <p className="dm-orchestration-config__hint">
         Same runtime fields as the Data Model sandbox sidecar. Local agent host uses the Paperclip thin adapter on this machine.
       </p>
-      {runLocality === "serverless" && (
-        <p className="dm-orchestration-config__hint">
-          Serverless delegates execution to the configured scheduler/API Registry row; local CLI auth is not used.
-        </p>
-      )}
       <label className="dm-orchestration-config__field">
         <span>Execution adapter</span>
         <select
@@ -482,6 +460,7 @@ function LocalAgentHostControls({
           onChange={(event) => {
             const nextAdapter = event.target.value;
             patchWithClearedAgentAuth({
+              runLocality: "local",
               adapter: nextAdapter,
               agentHost: nextAdapter === "local-agent-host" ? (agentHost || "claude_local") : ""
             });
@@ -492,13 +471,17 @@ function LocalAgentHostControls({
           ))}
         </select>
       </label>
-      {runLocality === "local" && adapter === "local-agent-host" && (
+      {adapter === "local-agent-host" && (
         <label className="dm-orchestration-config__field">
           <span>Agent host (Paperclip)</span>
           <select
             value={agentHost}
             disabled={disabled || !canPatch}
-            onChange={(event) => patchWithClearedAgentAuth({ agentHost: event.target.value })}
+            onChange={(event) => patchWithClearedAgentAuth({
+              runLocality: "local",
+              adapter: "local-agent-host",
+              agentHost: event.target.value
+            })}
           >
             <option value="">Select host...</option>
             {hostOptions.map((item) => (
@@ -507,7 +490,7 @@ function LocalAgentHostControls({
           </select>
         </label>
       )}
-      {runLocality === "local" && adapter === "local-agent-host" && isSandboxLocalAgentHost(row) && (
+      {adapter === "local-agent-host" && isSandboxLocalAgentHost(row) && (
         <SandboxAgentAuthPanel
           objectId={objectId}
           rowName={rowName}
@@ -515,6 +498,43 @@ function LocalAgentHostControls({
           disabled={disabled || !canPatch}
           onPatchDraft={patch}
         />
+      )}
+      {adapter === "local-intelligence" && (
+        <div className="dm-sandbox-local-intel">
+          <label className="dm-orchestration-config__field">
+            <span>Concrete model id</span>
+            <input
+              value={row.localModel || ""}
+              disabled={disabled || !canPatch}
+              placeholder="gemma3:4b"
+              onChange={(event) => patch({ runLocality: "local", localModel: event.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Chat completions URL (optional)</span>
+            <input
+              value={row.localEndpoint || ""}
+              disabled={disabled || !canPatch}
+              placeholder="http://127.0.0.1:11434/v1/chat/completions"
+              onChange={(event) => patch({ runLocality: "local", localEndpoint: event.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Resolver mode</span>
+            <select
+              value={String(row.intelligenceAdapterMode || "ollama").trim().toLowerCase()}
+              disabled={disabled || !canPatch}
+              onChange={(event) => patch({ runLocality: "local", intelligenceAdapterMode: event.target.value })}
+            >
+              {LOCAL_INTELLIGENCE_MODE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="dm-orchestration-config__hint">
+            Uses Instructions + Command as the task payload. Tool intents in the JSON response are proposals only and are not executed by the workspace.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -599,6 +619,7 @@ export function OrchestrationNodeConfigPanel({
     });
     if (nextHost && canPatchSandboxRow) {
       onSandboxRowPatch({
+        runLocality: "local",
         adapter: "local-agent-host",
         agentHost: nextHost,
         ...EMPTY_AGENT_AUTH_PATCH

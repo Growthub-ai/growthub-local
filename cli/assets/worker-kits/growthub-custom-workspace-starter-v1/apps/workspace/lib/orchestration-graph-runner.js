@@ -281,6 +281,9 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
 
   const apiNode = extractApiRegistryCallNode(graph);
   if (!apiNode?.config) {
+    if ((Array.isArray(graph.nodes) ? graph.nodes : []).some((node) => node?.type === "ai-agent")) {
+      return null;
+    }
     return {
       ok: false,
       exitCode: 1,
