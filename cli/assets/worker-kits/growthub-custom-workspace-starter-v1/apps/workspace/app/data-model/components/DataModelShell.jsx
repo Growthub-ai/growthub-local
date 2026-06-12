@@ -74,6 +74,7 @@ import {
 import { ReferencePicker } from "./ReferencePicker.jsx";
 import { SandboxRunPanel } from "./SandboxRunPanel.jsx";
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { SandboxBrowserAgentPanel } from "./SandboxBrowserAgentPanel.jsx";
 import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
@@ -1959,6 +1960,18 @@ function DataModelRecordDrawer({
                 ? "Agent auth may be stale — open the auth panel above."
                 : null
             }
+          />
+        )}
+        {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && (
+          <SandboxBrowserAgentPanel
+            objectId={table.objectId}
+            rowName={String(draft.Name || "").trim()}
+            draft={draft}
+            workspaceConfig={workspaceConfig}
+            disabled={saving || sandboxRunning}
+            onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
+            onOpenGraph={openWorkflowView}
+            onOpenTrace={openTraceSidecar}
           />
         )}
         {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && isSandboxLocalAgentHost(draft) && (

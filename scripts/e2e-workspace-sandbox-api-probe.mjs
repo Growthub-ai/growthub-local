@@ -29,6 +29,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  BROWSER_SMOKE_RUN_INPUTS,
+  BROWSER_SMOKE_SANDBOX_ROW,
+} from "./lib/workspace-feature-seed.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const kitWorkspace = path.join(
   root,
@@ -558,6 +563,130 @@ registerSandboxAdapter({
     assert(swarmHistoryJson.records.length >= 1, "swarm history must have at least one record");
 
     process.stdout.write(`[e2e] swarm probe: ${swarmPayload.tasks.length} tasks, reward ${swarmPayload.reward.kind} score ${swarmPayload.reward.score}\n`);
+
+    // ------------------------------------------------------------------
+    // Browser / local agent fast lane — governed runInputs probes
+    // ------------------------------------------------------------------
+
+    // --- Negative: token-shaped field on a sandbox row must be rejected ---
+    const badBrowserRow = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [sandboxObject([{ ...BROWSER_SMOKE_SANDBOX_ROW, sessionKey: "sk-test-not-allowed" }])],
+        },
+      }),
+    });
+    assert(badBrowserRow.status === 400, `expected 400 for sessionKey on sandbox row, got ${badBrowserRow.status}`);
+
+    // --- Positive: PATCH the seed browser smoke row (browserMode metadata is schema-safe) ---
+    const browserColumns = [...sandboxColumns, "browserMode", "requiresBrowser"];
+    const browserPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [{ ...sandboxObject([BROWSER_SMOKE_SANDBOX_ROW]), columns: browserColumns }],
+        },
+      }),
+    });
+    assert(browserPatch.status === 200, `expected 200 for browser smoke PATCH, got ${browserPatch.status} ${await browserPatch.text()}`);
+
+    // --- Negative: runInputs must be an object ---
+    const badInputs = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "browser-agent-smoke", runInputs: ["nope"] }),
+    });
+    assert(badInputs.status === 400, `expected 400 for array runInputs, got ${badInputs.status}`);
+
+    // --- Positive: run the fast-lane smoke with the seed runInputs envelope ---
+    const browserRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        objectId: "sandboxes-e2e",
+        name: "browser-agent-smoke",
+        runInputs: BROWSER_SMOKE_RUN_INPUTS,
+      }),
+    });
+    const browserRunJson = await browserRun.json();
+    assert(browserRun.status === 200, `browser smoke run expected 200, got ${browserRun.status} ${JSON.stringify(browserRunJson)}`);
+    assert(browserRunJson.ok === true && browserRunJson.exitCode === 0, `browser smoke must exit 0, got ${JSON.stringify({ ok: browserRunJson.ok, exitCode: browserRunJson.exitCode, error: browserRunJson.response?.error })}`);
+    const inputSummary = browserRunJson.response?.inputSummary;
+    assert(inputSummary && inputSummary.source === "manual-browser-fastlane", "receipt must carry inputSummary with fast-lane source");
+    for (const id of ["platform", "targetName", "targetUrl", "sendMode", "operatorApproved"]) {
+      assert(inputSummary.fieldIds.includes(id), `inputSummary.fieldIds must include ${id}`);
+    }
+    assert(!JSON.stringify(inputSummary).includes("Melting Bar"), "inputSummary must never echo field values");
+
+    // Proof: the spawned script consumed GROWTHUB_RUN_INPUTS_JSON and emitted
+    // an honest dry-run browser proof (reachedTarget false, fallbackUsed true).
+    const browserStdout = JSON.parse(browserRunJson.response.stdout);
+    assert(browserStdout.browser.platform === "notebooklm", "proof.browser.platform must come from runInputs");
+    assert(browserStdout.browser.targetUrl === BROWSER_SMOKE_RUN_INPUTS.values.targetUrl, "proof.browser.targetUrl must round-trip from runInputs");
+    assert(browserStdout.browser.reachedTarget === false, "dry-run smoke must not fake reachedTarget");
+    assert(browserStdout.fallbackUsed === true, "dry-run smoke must declare fallbackUsed");
+
+    // Persistence: source-record history + row stamps through the one route.
+    const browserHistory = await fetch(`${base}/api/workspace/sandbox-run?objectId=sandboxes-e2e&name=browser-agent-smoke`);
+    const browserHistoryJson = await browserHistory.json();
+    assert(browserHistoryJson.ok && browserHistoryJson.records.length >= 1, "browser smoke history must persist");
+    const persistedRun = browserHistoryJson.records[0];
+    assert(persistedRun.runInputs?.values?.platform === "notebooklm", "persisted record keeps normalized runInputs");
+    assert(persistedRun.inputSummary?.fieldCount >= 5, "persisted record keeps inputSummary");
+
+    const cfgAfterBrowser = await (await fetch(`${base}/api/workspace`, { cache: "no-store" })).json();
+    const browserRowAfter = (cfgAfterBrowser.workspaceConfig?.dataModel?.objects || [])
+      .find((o) => o.id === "sandboxes-e2e")?.rows
+      ?.find((r) => String(r.Name || "") === "browser-agent-smoke");
+    assert(browserRowAfter?.lastRunId === browserRunJson.runId, "row.lastRunId must be stamped");
+    assert(browserRowAfter?.lastSourceId === browserRunJson.sourceId, "row.lastSourceId must be stamped");
+    assert(browserRowAfter?.status === "connected", "row.status must reflect the run");
+
+    // --- Negative: graph with required human-input must reject inputless runs ---
+    const inputGatedGraph = {
+      version: 1,
+      provider: "growthub-native",
+      nodes: [
+        { id: "form", type: "human-input", label: "Browser run", config: { required: true, fields: [
+          { key: "platform", value: "text", required: true },
+          { key: "targetUrl", value: "url", required: true },
+        ] } },
+        { id: "api", type: "api-registry-call", label: "API", config: { registryId: "missing", baseUrl: "https://example.invalid", endpoint: "/x", method: "POST" } },
+      ],
+      edges: [{ from: "form", to: "api", passes: "payload" }],
+    };
+    const gatedPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [{
+            ...sandboxObject([
+              BROWSER_SMOKE_SANDBOX_ROW,
+              { ...BROWSER_SMOKE_SANDBOX_ROW, Name: "browser-input-gated", command: "", orchestrationGraph: JSON.stringify(inputGatedGraph) },
+            ]),
+            columns: browserColumns,
+          }],
+        },
+      }),
+    });
+    assert(gatedPatch.status === 200, `gated row PATCH expected 200, got ${gatedPatch.status}`);
+    const gatedRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "browser-input-gated" }),
+    });
+    const gatedJson = await gatedRun.json();
+    assert(gatedRun.status === 400, `inputless run on required-input workflow expected 400, got ${gatedRun.status}`);
+    assert(
+      Array.isArray(gatedJson.missingFields) && gatedJson.missingFields.includes("platform") && gatedJson.missingFields.includes("targetUrl"),
+      `400 body must name missing fields, got ${JSON.stringify(gatedJson)}`,
+    );
+
+    process.stdout.write(`[e2e] browser fast lane: run ${browserRunJson.runId} persisted with inputSummary ${inputSummary.fieldCount} fields; honest dry-run proof verified.\n`);
 
     process.stdout.write("[e2e] all API probes completed successfully.\n");
   } finally {

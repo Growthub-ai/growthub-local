@@ -65,3 +65,20 @@ A `--version` (or equivalent reachability) probe **never** promotes to `active`.
 - The schema rejects out-of-band PATCHes that try to stash a secret field (`token`, `apiKey`, `accessToken`, `refreshToken`, `bearer`, `password`, `secret`, `sessionKey`) on a sandbox row.
 - The panel is hidden when `runLocality === "serverless"` (the local CLI is irrelevant in that case), when `adapter !== "local-agent-host"`, or when `agentHost` is not registered in the host auth catalog.
 - Hosts without a documented login subcommand show only the **Check status** button plus the catalog's `notes` line directing the operator to sign in via the host CLI directly. No invented subcommands.
+
+## Browser / local agent fast lane
+
+Browser-capable workflows are **not a new runtime** — they are local sandbox rows (`local-process` or `local-agent-host`) exposed through a first-party no-code panel in the record drawer. The lane is an exposure of contracts that already exist:
+
+- **Eligibility** is derived (pure, evidence-driven) by `apps/workspace/lib/sandbox-browser-agent-flow.js`. A row is browser-relevant when it carries safe metadata (`browserMode`, `requiresBrowser`, `browserProfile`, `platform`), its graph declares a browser-tagged node, or persisted run history already contains browser/notebook proof. `local-intelligence` rows and non-sandbox objects never surface the panel.
+- **Run inputs** come from templates in `apps/workspace/lib/sandbox-browser-run-inputs.js` (`browser-research`, `notebook-brief`, `profile-review`, `manual-browser-smoke`). Templates only pre-fill the existing `growthub-workflow-run-inputs-v1` envelope — they execute nothing. Execution is always `POST /api/workspace/sandbox-run`.
+- **Input delivery**: for local runs with `runInputs`, the route exposes the runner-safe projection (secretRefs stripped, values redacted) to the spawned process as `GROWTHUB_RUN_INPUTS_JSON`, so command/script rows consume manual inputs with no new adapter.
+- **Proof** is normalized by `extractBrowserProof` from persisted run receipts only: `{ platform, targetUrl, initialUrl, currentUrl, title, reachedTarget, browserExitCode, artifact, fallbackUsed }`. NotebookLM-style `notebook` proof normalizes to browser proof (`platform: "notebooklm"`, `chromeExitCode` → `browserExitCode`). `reachedTarget` and artifact claims are read verbatim from run output — never synthesized; fallback runs demote below "connected" truthfully. Row status fields alone never promote the lane.
+
+### Safety invariants (operator-owned sessions)
+
+- `sendMode` is constrained to `read-only | draft-only | manual-review | operator-approved-action`; the default is `read-only`.
+- Any externally mutating sendMode requires `operatorApproved: true` **and** an explicit target — and required operator-approval booleans are satisfied only by an explicit `true`, never a default.
+- Credential-shaped field ids and token-shaped values are rejected before an envelope is built; the server re-redacts via `normalizeRunInputsEnvelope`, and the schema still rejects token-shaped row fields. `inputSummary` persists field ids only — never values.
+- No credential extraction, cookie dumping, login/CAPTCHA bypass, stealth automation, or batch external actions. First-pass allowed behaviour is reading user-visible content, navigating to operator-provided targets, drafting, and generating artifacts.
+- Browser/session-cache access is **local-only**. `runLocality: serverless` rows show a read-only note; future hosted browser execution delegates through the existing `schedulerRegistryId` API Registry lane — no parallel contract.

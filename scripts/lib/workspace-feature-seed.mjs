@@ -37,6 +37,7 @@ export const SANDBOX_COLUMNS = [
   "Name", "lifecycleStatus", "version", "runLocality", "schedulerRegistryId", "runtime", "adapter", "agentHost",
   "envRefs", "networkAllow", "allowList", "instructions", "command", "timeoutMs", "status", "lastTested",
   "lastRunId", "lastSourceId", "lastResponse", "resolverTemplateId", "connectorKind", "executionLane",
+  "browserMode", "requiresBrowser",
 ];
 
 export const SCHEDULER_RELATION = {
@@ -163,6 +164,78 @@ export const DATA_SOURCE_OBJECT = {
   fieldSettings: { hidden: [], order: DATA_SOURCE_COLUMNS },
 };
 
+/**
+ * Browser / local agent fast lane — safe smoke fixture.
+ *
+ * Deterministic dry-run: reads the runner-safe manual inputs from
+ * GROWTHUB_RUN_INPUTS_JSON (exposed by sandbox-run for local rows) and emits
+ * an honest browser-proof envelope with reachedTarget:false / fallbackUsed:true.
+ * It never opens a browser, never touches an external platform, and never
+ * fakes proof — the live super-admin smoke replaces the command with a real
+ * operator-approved browser script on the machine that owns the session.
+ */
+export const BROWSER_SMOKE_COMMAND = [
+  "const inputs = JSON.parse(process.env.GROWTHUB_RUN_INPUTS_JSON || \"{}\");",
+  "const proof = {",
+  "  browser: {",
+  "    platform: String(inputs.platform || \"\"),",
+  "    targetUrl: String(inputs.targetUrl || inputs.notebookUrl || \"\"),",
+  "    initialUrl: String(inputs.initialUrl || \"\"),",
+  "    currentUrl: \"\",",
+  "    title: \"\",",
+  "    reachedTarget: false,",
+  "    browserExitCode: 0,",
+  "    stderr: \"\"",
+  "  },",
+  "  artifact: null,",
+  "  fallbackUsed: true,",
+  "  note: \"dry-run smoke - no live browser session in this environment\"",
+  "};",
+  "console.log(JSON.stringify(proof, null, 2));",
+].join("\n");
+
+export const BROWSER_SMOKE_RUN_INPUTS = {
+  kind: "growthub-workflow-run-inputs-v1",
+  source: "manual-browser-fastlane",
+  values: {
+    platform: "notebooklm",
+    targetName: "The Melting Bar",
+    targetUrl: "https://notebooklm.google.com/notebook/example",
+    initialUrl: "https://medium.com/example",
+    outputFormat: "docx",
+    sendMode: "read-only",
+    operatorApproved: true,
+  },
+  files: [],
+};
+
+export const BROWSER_SMOKE_SANDBOX_ROW = {
+  Name: "browser-agent-smoke",
+  lifecycleStatus: "draft",
+  version: "1",
+  runLocality: "local",
+  schedulerRegistryId: "",
+  runtime: "node",
+  adapter: "local-process",
+  agentHost: "",
+  envRefs: "",
+  networkAllow: "true",
+  allowList: "notebooklm.google.com,linkedin.com,medium.com",
+  instructions: "Run a safe browser/local-agent smoke using runInputs. Do not mutate external systems.",
+  command: BROWSER_SMOKE_COMMAND,
+  timeoutMs: "120000",
+  status: "",
+  lastTested: "",
+  lastRunId: "",
+  lastSourceId: "",
+  lastResponse: "",
+  resolverTemplateId: "",
+  connectorKind: "",
+  executionLane: "sandbox-local",
+  browserMode: "operator-approved",
+  requiresBrowser: "true",
+};
+
 export const SANDBOX_OBJECT = {
   id: "sandbox-probe",
   label: "Sandboxes",
@@ -220,6 +293,7 @@ export const SANDBOX_OBJECT = {
       executionLane: "sandbox-local",
       orchestrationConfig: JSON.stringify(REGISTRY_WORKFLOW_GRAPH, null, 2),
     },
+    BROWSER_SMOKE_SANDBOX_ROW,
   ],
   binding: { mode: "manual", source: "Data Model" },
   relations: [SCHEDULER_RELATION],

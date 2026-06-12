@@ -4147,3 +4147,60 @@ describe("workspace-activation — Customer Activation Layer V1", () => {
     expect(frozen).toContain("apps/workspace/app/components/WorkspaceActivationPanel.jsx");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Browser / local agent fast lane — exposure-only contract
+// ---------------------------------------------------------------------------
+
+describe("browser / local agent fast lane — governed exposure contract", () => {
+  it("ships the pure deriver, run-input templates, and drawer panel", () => {
+    expect(appExists("lib/sandbox-browser-agent-flow.js")).toBe(true);
+    expect(appExists("lib/sandbox-browser-run-inputs.js")).toBe(true);
+    expect(appExists("app/data-model/components/SandboxBrowserAgentPanel.jsx")).toBe(true);
+  });
+
+  it("adds NO parallel runtime: no browser-agent route, executions stay on sandbox-run", () => {
+    expect(appExists("app/api/workspace/browser-agent")).toBe(false);
+    const panel = appText("app/data-model/components/SandboxBrowserAgentPanel.jsx");
+    expect(panel).toContain("/api/workspace/sandbox-run");
+    expect(panel).not.toContain("/api/workspace/browser-agent");
+  });
+
+  it("deriver and templates are pure (no React, no fetch, no fs, no env reads)", () => {
+    for (const rel of ["lib/sandbox-browser-agent-flow.js", "lib/sandbox-browser-run-inputs.js"]) {
+      const text = appText(rel);
+      expect(text).not.toMatch(/from\s+["']react["']/);
+      expect(text).not.toMatch(/\bfetch\s*\(/);
+      expect(text).not.toMatch(/node:fs/);
+      expect(text).not.toMatch(/process\.env[.[]/);
+    }
+  });
+
+  it("sandbox-run exposes runner-safe runInputs to local processes via one env var", () => {
+    const route = appText("app/api/workspace/sandbox-run/route.js");
+    expect(route).toContain("GROWTHUB_RUN_INPUTS_JSON");
+    expect(route).toContain("buildInputPayloadForRunner(normalizedRunInputs)");
+    // Local-only: the projection is never attached to serverless delegation.
+    expect(route).toMatch(/normalizedRunInputs && runLocality !== "serverless"/);
+  });
+
+  it("templates enforce the operator-safety contract", async () => {
+    const modPath = path.join(APP_ROOT, "lib/sandbox-browser-run-inputs.js");
+    const mod = await import(`file://${modPath}`) as {
+      SEND_MODES: string[];
+      validateBrowserRunSafety: (values: Record<string, unknown>) => { ok: boolean; errors: string[] };
+    };
+    expect(mod.SEND_MODES).toEqual(["read-only", "draft-only", "manual-review", "operator-approved-action"]);
+    const mutating = mod.validateBrowserRunSafety({ sendMode: "operator-approved-action", operatorApproved: false, targetUrl: "https://example.com" });
+    expect(mutating.ok).toBe(false);
+    const credential = mod.validateBrowserRunSafety({ apiKey: "x" });
+    expect(credential.ok).toBe(false);
+  });
+
+  it("primitive doc documents the fast lane as exposure, not a new system", () => {
+    const doc = appText("docs/sandbox-environment-primitive.md");
+    expect(doc).toContain("Browser / local agent fast lane");
+    expect(doc).toContain("not a new runtime");
+    expect(doc).toContain("GROWTHUB_RUN_INPUTS_JSON");
+  });
+});

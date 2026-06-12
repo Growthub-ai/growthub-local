@@ -23,7 +23,13 @@
  * Data Sources downstream can normalize either locality.
  *
  * Request body:
- *   { objectId: string, name: string, useDraft?: boolean, draftGraph?: string | object }
+ *   { objectId: string, name: string, useDraft?: boolean, draftGraph?: string | object,
+ *     runInputs?: growthub-workflow-run-inputs-v1 envelope }
+ *
+ * When `runInputs` is provided for a local run, the runner-safe projection
+ * (secretRefs stripped, values redacted) is also exposed to the spawned
+ * process as `GROWTHUB_RUN_INPUTS_JSON` so command/script rows (including
+ * browser fast-lane smokes) can consume manual inputs without a new adapter.
  *
  * Response (success):
  *   {
@@ -78,6 +84,7 @@ import {
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import {
+  buildInputPayloadForRunner,
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
   validateRunInputsEnvelope,
@@ -549,6 +556,14 @@ async function executeSandboxRun(body, { emit } = {}) {
     } else {
       envRefsMissing.push(slug);
     }
+  }
+
+  // Browser / local agent fast lane: command-based local rows consume the
+  // manual run inputs through one env var. The payload is the runner-safe
+  // projection (secretRef values already stripped, strings already redacted
+  // by normalizeRunInputsEnvelope) — never the raw request body.
+  if (normalizedRunInputs && runLocality !== "serverless") {
+    env.GROWTHUB_RUN_INPUTS_JSON = JSON.stringify(buildInputPayloadForRunner(normalizedRunInputs));
   }
 
   const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
