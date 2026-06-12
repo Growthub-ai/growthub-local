@@ -15,7 +15,7 @@
  *   - Every event carries an ISO-8601 `at` timestamp.
  *   - Consumers MUST ignore unknown event types without erroring.
  */
-export type ExecutionEventType = "node_start" | "node_complete" | "node_error" | "credit_warning" | "progress" | "complete" | "error";
+export type ExecutionEventType = "node_start" | "node_complete" | "node_error" | "credit_warning" | "progress" | "complete" | "error" | "swarm_run_start" | "swarm_phase_start" | "swarm_agent_start" | "swarm_agent_complete" | "swarm_agent_error" | "swarm_phase_complete" | "swarm_run_complete";
 export interface NodeStartEvent {
     type: "node_start";
     /** Node instance id within the executing pipeline. */
@@ -71,7 +71,73 @@ export interface ErrorEvent {
     message: string;
     at: string;
 }
-export type ExecutionEvent = NodeStartEvent | NodeCompleteEvent | NodeErrorEvent | CreditWarningEvent | ProgressEvent | CompleteEvent | ErrorEvent;
+export interface SwarmRunStartEvent {
+    type: "swarm_run_start";
+    /** Sandbox run id for the governed swarm run. */
+    runId: string;
+    /** Human title of the swarm workflow row. */
+    title?: string;
+    /** Number of agents planned across all phases. */
+    agentCount?: number;
+    at: string;
+}
+export interface SwarmPhaseStartEvent {
+    type: "swarm_phase_start";
+    runId: string;
+    /** Stable phase id (e.g. "plan", "dispatch", "synthesize"). */
+    phaseId: string;
+    /** Human-facing phase label. */
+    label?: string;
+    at: string;
+}
+export interface SwarmAgentStartEvent {
+    type: "swarm_agent_start";
+    runId: string;
+    phaseId: string;
+    /** Stable agent/task id within the phase. */
+    agentId: string;
+    /** Agent role label. */
+    role?: string;
+    at: string;
+}
+export interface SwarmAgentCompleteEvent {
+    type: "swarm_agent_complete";
+    runId: string;
+    phaseId: string;
+    agentId: string;
+    /** Truthful token count when the adapter reports one; null otherwise. */
+    tokens?: number | null;
+    /** Truthful tool-call count when the adapter reports one; null otherwise. */
+    tools?: number | null;
+    durationMs?: number;
+    at: string;
+}
+export interface SwarmAgentErrorEvent {
+    type: "swarm_agent_error";
+    runId: string;
+    phaseId: string;
+    agentId: string;
+    /** Human-readable error message. */
+    error: string;
+    at: string;
+}
+export interface SwarmPhaseCompleteEvent {
+    type: "swarm_phase_complete";
+    runId: string;
+    phaseId: string;
+    /** Terminal phase status. */
+    status?: "completed" | "failed" | "skipped";
+    at: string;
+}
+export interface SwarmRunCompleteEvent {
+    type: "swarm_run_complete";
+    runId: string;
+    /** Terminal run status. */
+    status?: "completed" | "failed" | "canceled";
+    durationMs?: number;
+    at: string;
+}
+export type ExecutionEvent = NodeStartEvent | NodeCompleteEvent | NodeErrorEvent | CreditWarningEvent | ProgressEvent | CompleteEvent | ErrorEvent | SwarmRunStartEvent | SwarmPhaseStartEvent | SwarmAgentStartEvent | SwarmAgentCompleteEvent | SwarmAgentErrorEvent | SwarmPhaseCompleteEvent | SwarmRunCompleteEvent;
 /**
  * Type guard for an {@link ExecutionEvent}.
  *

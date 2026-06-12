@@ -1,5 +1,31 @@
 # @growthub/api-contract
 
+## 1.5.0
+
+Additive minor. Promotes the **governed workspace mutation boundary** into
+the public type surface, alongside the runtime enforcement that ships in
+`growthub-custom-workspace-starter-v1` (`lib/workspace-patch-policy.js`,
+`POST /api/workspace/patch/preflight`, `POST /api/workspace/workflow/publish`).
+
+Pure type-only plus frozen vocabulary constants; no existing export shape
+changes.
+
+### Added
+
+- `./workspace-patch` subpath — `WorkspacePatchViolation(Code)`,
+  `WorkspacePatchPolicyRejection`, `WorkspacePatchPreflightRequest/Response`,
+  `WorkflowPublishRequest/Response/Success/Failure(Code)`,
+  `WORKSPACE_PATCH_ALLOWED_FIELDS`, `WORKSPACE_LIVE_WORKFLOW_FIELDS`,
+  `WORKSPACE_DRAFT_WORKFLOW_FIELDS`, `isWorkspacePatchPolicyRejection`,
+  `isWorkflowPublishSuccess`, `WORKSPACE_PATCH_CONTRACT_VERSION`.
+
+### Fixed
+
+- `./helper` subpath export was advertised by docs but missing from
+  `package.json#exports`; it now resolves (`dist/helper.{js,d.ts}` already
+  shipped via the root re-export).
+
+
 ## 1.3.0-alpha.2
 
 Additive patch. Adds descriptive hosted Agent Builder manifest contracts to

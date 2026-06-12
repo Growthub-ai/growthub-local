@@ -102,6 +102,7 @@ Hard rules:
 2. The **filesystem persistence** adapter is opt-in for non-dev runtimes (`WORKSPACE_CONFIG_ALLOW_FS_WRITE=true`). The default for serverless deploys is `read-only` with a 409 + guidance string.
 3. **`PATCH /api/workspace`** is restricted to `dashboards`, `widgetTypes`, `canvas`, and `dataModel`. `dataModel.objects` is a governed manual object surface; creating or editing one must not create a widget or mutate canvas placement. Other fields are preserved through the round-trip but never accepted on PATCH.
 4. **Trace and policy** are append-only and write-through-the-CLI. Hand-edits to `trace.jsonl` are not part of the V1 contract.
+5. **The PATCH mutation policy** (`apps/workspace/lib/workspace-patch-policy.js`) runs before every config write: full-config bodies, sidecar writes, oversized rows/node-configs, history blobs, credential-shaped fields, and direct live-workflow mutations are rejected with HTTP 422 + structured `violations[]`. `POST /api/workspace/patch/preflight` dry-runs the same gates. Live workflow state (`orchestrationGraph`/`orchestrationConfig`, `version`, `lifecycleStatus: "live"`, `orchestrationPublishedAt`, `orchestrationDeltas`) is publish-owned: **`POST /api/workspace/workflow/publish`** is the only draft → live transition, verified against the sandbox run history's `draftSha256` lineage — never against PATCH-writable attestation fields alone. SDK contract: `@growthub/api-contract/workspace-patch`.
 
 ## Governed data objects
 

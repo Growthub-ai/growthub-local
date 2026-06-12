@@ -34,7 +34,9 @@ This workspace already contains the machinery you would otherwise write. Dashboa
 | Change workspace configuration | `PATCH /api/workspace` |
 | Execute a `sandbox-environment` row (incl. agent-swarm graphs) | `POST /api/workspace/sandbox-run` |
 
-Everything else is a read (`GET /api/workspace`) or a specialised governed lane (`refresh-sources`, `test-source`, `helper/query|apply`). There is no third mutation path. Route truth in this tree: `apps/workspace/app/api/workspace/route.js` and `apps/workspace/app/api/workspace/sandbox-run/route.js`.
+Everything else is a read (`GET /api/workspace`) or a specialised governed lane (`refresh-sources`, `test-source`, `helper/query|apply`, `patch/preflight`, `workflow/publish`). There is no third mutation path. Route truth in this tree: `apps/workspace/app/api/workspace/route.js`, `apps/workspace/app/api/workspace/sandbox-run/route.js`, `apps/workspace/app/api/workspace/patch/preflight/route.js`, `apps/workspace/app/api/workspace/workflow/publish/route.js`.
+
+**This boundary is runtime-enforced, not advisory.** `PATCH /api/workspace` runs every body through the mutation policy (`apps/workspace/lib/workspace-patch-policy.js`) before any write; violations return **HTTP 422** with structured `violations[] = { code, path, message }`. An agent that ignores this card does not get a different outcome — it gets a 422. SDK types: `@growthub/api-contract/workspace-patch`.
 
 ## First-session traversal (token-budgeted, any harness)
 
@@ -50,24 +52,41 @@ Seven reads, in order, regardless of how the operator has personalised the works
 
 Then state your plan in terms of governed objects, not new code.
 
-## The verified mutation protocol
+## The verified mutation protocol (runtime-enforced)
 
-Every mutation follows **read → validate → prove → publish → confirm**. Each step uses capability that already exists; none of it is optional ceremony — skipping a step is how value gets destroyed.
+Every mutation follows **read → preflight → prove → publish → confirm**. This is not ceremony the agent may skip — the runtime enforces the load-bearing steps.
 
 ```
-1. READ      GET /api/workspace                  → workspaceConfig, persistence mode
-2. VALIDATE  shape the change against workspace-schema.js (or let helper/query draft it)
-3. PROVE     test before binding/publishing:
-               data sources   → POST /api/workspace/test-source
-               sandbox rows   → POST /api/workspace/sandbox-run (the run IS the test)
-               draft graphs   → sandbox-run with {"useDraft": true} — executes the draft
-                                without publishing it onto the row
-4. PUBLISH   PATCH /api/workspace with ONLY the changed allowlisted key
-5. CONFIRM   require HTTP 200 + the returned workspaceConfig before any dependent
-             step. A failed PATCH means nothing downstream may be applied.
+1. READ       GET /api/workspace                       → workspaceConfig, persistence mode
+2. PREFLIGHT  POST /api/workspace/patch/preflight      → dry-runs the exact PATCH gates
+              (mutation policy + merged-config schema)  and returns structured reasons;
+              fix every reason before the real PATCH
+3. PROVE      data sources    → POST /api/workspace/test-source
+              sandbox rows    → POST /api/workspace/sandbox-run (the run IS the test)
+              workflow drafts → sandbox-run with {"useDraft": true} — executes the draft
+                                without publishing; stamps the run + its draftSha256
+                                into the server-owned run history
+4. PUBLISH    config keys     → PATCH /api/workspace with ONLY the changed allowlisted key
+              workflow drafts → POST /api/workspace/workflow/publish — the ONLY transition
+                                from draft to live (see below)
+5. CONFIRM    require the success envelope before any dependent step. A failed call
+              means nothing downstream may be applied.
 ```
 
-Drafting on behalf of a user? Prefer the helper lane — `POST /api/workspace/helper/query` proposes (no writes), a human reviews, `helper/apply` validates and writes with a receipt. The PATCH allowlist is the helper's hard ceiling too (`docs/WORKSPACE_HELPER_CONTRACT_V1.md` in the source repo).
+Drafting on behalf of a user? Prefer the helper lane — `POST /api/workspace/helper/query` proposes (no writes), a human reviews, `helper/apply` validates and writes with a receipt (its final `ok: true` is only reachable after the write succeeds). The PATCH allowlist is the helper's hard ceiling too (`docs/WORKSPACE_HELPER_CONTRACT_V1.md` in the source repo).
+
+## Workflow publish — server-authoritative
+
+Live workflow state on sandbox-environment rows is **publish-owned**. The mutation policy blocks direct PATCH from: changing `orchestrationGraph` / `orchestrationConfig` / `orchestrationPublishedAt` / `orchestrationDeltas`, bumping `version`, or transitioning `lifecycleStatus` to `"live"` (echoing persisted values is always fine; moving a live row back to draft — pausing — remains a direct operator action).
+
+`POST /api/workspace/workflow/publish` with `{ objectId, name }` verifies, against server-owned state:
+
+1. a saved draft exists (`orchestrationDraftConfig` / `orchestrationDraftGraph`);
+2. the draft test passed (`orchestrationDraftTestPassed`) **and** the tested config equals the saved draft byte-for-byte;
+3. **lineage**: the row's `orchestrationDraftLastRunId` resolves to a record in the sandbox run history whose `exitCode` is 0 and whose `draftSha256` (stamped by sandbox-run from the exact graph it executed, before execution) matches this draft — the attestation fields alone are PATCH-writable and therefore never trusted;
+4. the draft parses as a valid orchestration graph.
+
+Then it bumps `version`, moves draft → live, clears draft state, stamps `orchestrationPublishedAt`, appends the `orchestrationDeltas` record (with `publishedSha256`), sets `lifecycleStatus: "live"`, and persists. Failure codes: `no_draft`, `draft_not_tested`, `draft_changed_after_test`, `draft_run_not_verified`, `invalid_graph`, `read_only`.
 
 ## Call 1 — `PATCH /api/workspace`
 
@@ -91,8 +110,11 @@ curl -s -X PATCH "$WS/api/workspace" -H 'content-type: application/json' \
 | 400 | `{"error":"patch contains unknown fields","details":[...],"allowed":["dashboards","widgetTypes","canvas","dataModel"]}` | Remove the key. There is no other route — `branding`, `capabilities`, `integrations`, `id`, `provenance` are read-only through this API. |
 | 400 | `{"error":"patch must be a plain object"}` | Body must be a JSON object, not an array/scalar. |
 | 400 | `{"error":"invalid workspace config: <joined errors>","details":[...]}` | Fix each entry in `details`; read `workspace-schema.js`, don't guess. |
+| 422 | `{"error":"patch rejected by workspace mutation policy","violations":[{code,path,message}],"preflight":...}` | Read each violation's `message` — it names the governed alternative (publish route, refresh-sources, source records). Never look for a workaround; preflight the corrected body. |
 | 409 | `{"error":"workspace config is read-only in this runtime", "guidance": ...}` | Surface `guidance` to the user (edit `growthub.config.json` locally, or `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true` on a writable runtime). Never work around it. |
 | 500 | persistence fault | Report; do not mutate files behind the adapter's back. |
+
+**Policy ceilings (422 `violations[].code`):** `unknown_field`, `full_config_body`, `source_records_through_patch`, `live_workflow_field`, `live_publish_via_patch`, `credential_field`, `history_smuggling`, `oversized_patch` (2 MB body), `oversized_row` (128 KB, echoes exempt), `oversized_object` (500 rows), `oversized_node_config` (64 KB).
 
 **Validator facts verified live:**
 
@@ -126,13 +148,16 @@ curl -s -X POST "$WS/api/workspace/sandbox-run" -H 'content-type: application/js
 
 Before writing any code, ask: **does a governed object already represent this?** A scheduled job is a sandbox row. An external API is an API Registry row. A data view is a Data Model object bound to a View widget. A multi-agent workflow is a sandbox row with an `agent-swarm-v1` orchestration graph. If the capability exists as an object, your work is two API calls — not a new module. Extend objects; do not deviate into parallel code paths.
 
-## Anti-patterns — boundary violations
+## Anti-patterns — the runtime blocks these; don't waste tokens trying
 
 - Writing `growthub.config.json` or `growthub.source-records.json` directly while the app is the runtime authority, or inventing a new mutation route/server action.
-- PATCHing the whole config back, or keys outside the four-field allowlist.
-- Proceeding after a failed PATCH, or publishing a graph that never had a successful draft run.
+- PATCHing the whole config back (`full_config_body`), keys outside the allowlist (400), or `workspaceSourceRecords` (`source_records_through_patch`).
+- PATCHing live workflow fields, bumping `version`, or setting `lifecycleStatus: "live"` directly (`live_workflow_field` / `live_publish_via_patch` — use `workflow/publish`).
+- Forging the draft attestation via PATCH — publish cross-checks the run history's `draftSha256` (`draft_run_not_verified`).
+- Proceeding after a failed PATCH or publish.
+- Smuggling run history into rows (`history_smuggling`) or inlining megabyte payloads (`oversized_*`) — bulk data lives in source records.
 - Executing sandbox/swarm work via ad-hoc shell instead of `sandbox-run` (you lose run lineage and row stamping).
-- Putting credential values in rows, prompts, or PATCH bodies.
+- Putting credential values in rows, prompts, or PATCH bodies (`credential_field` + schema rejection).
 - Hand-editing `.growthub-fork/trace.jsonl` or `policy.json` — CLI-written, append-only.
 - Keying sandbox rows with lowercase `name`, or putting the payload anywhere but `command`.
 

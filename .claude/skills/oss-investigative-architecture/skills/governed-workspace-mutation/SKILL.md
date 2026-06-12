@@ -6,7 +6,9 @@ progressiveDisclosure: true
 
 # Governed Workspace Mutation — pointer to the canonical card
 
-**The invariant (never lost, even if you read nothing else):** a governed Growthub workspace has exactly two canonical mutation calls — `PATCH /api/workspace` (allowlist: `dashboards`, `widgetTypes`, `canvas`, `dataModel`) and `POST /api/workspace/sandbox-run` (all sandbox / agent-swarm execution). Everything else is a read or a specialised governed lane (`refresh-sources`, `test-source`, `helper/query|apply`). No implementation module may add, bypass, or duplicate these calls, and no mutation proceeds past a failed call.
+**The invariant (never lost, even if you read nothing else):** a governed Growthub workspace has exactly two canonical mutation calls — `PATCH /api/workspace` (allowlist: `dashboards`, `widgetTypes`, `canvas`, `dataModel`) and `POST /api/workspace/sandbox-run` (all sandbox / agent-swarm execution). Everything else is a read or a specialised governed lane (`refresh-sources`, `test-source`, `helper/query|apply`, `patch/preflight`, `workflow/publish`). No implementation module may add, bypass, or duplicate these calls, and no mutation proceeds past a failed call.
+
+**The boundary is runtime-enforced**: the PATCH route runs `lib/workspace-patch-policy.js` before any write (HTTP 422 + `violations[]` on rejection), `POST /api/workspace/patch/preflight` dry-runs the gates, and `POST /api/workspace/workflow/publish` is the only draft → live workflow transition (verified against server-owned run-history lineage, not client attestation). SDK: `@growthub/api-contract/workspace-patch`.
 
 **The canonical contract card** — runtime-verified request/response shapes, every observed error envelope, the verified mutation protocol (read → validate → prove → publish → confirm), the row-shape traps (`Name` capital-N identity column; `command` is the executed payload), the workspace-first rule, and the boundary anti-patterns — lives where it ships:
 

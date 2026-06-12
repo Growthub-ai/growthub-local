@@ -1,0 +1,288 @@
+/**
+ * POST /api/workspace/workflow/publish
+ *
+ * Server-authoritative publish for sandbox-environment workflow rows.
+ * This route is the ONLY transition from draft to live: direct
+ * `PATCH /api/workspace` is policy-blocked (workspace-patch-policy.js) from
+ * changing `orchestrationGraph` / `orchestrationConfig` / `version` /
+ * `orchestrationPublishedAt` / `orchestrationDeltas` or setting
+ * `lifecycleStatus: "live"`.
+ *
+ * Publish gates (all server-verified against the persisted row — the client
+ * cannot vouch for itself):
+ *   1. The row exists (object id + objectType "sandbox-environment" +
+ *      capital-N `Name`).
+ *   2. A saved draft exists (`orchestrationDraftConfig` / `orchestrationDraftGraph`).
+ *   3. The draft was test-run successfully: `orchestrationDraftTestPassed === true`
+ *      (set by POST /api/workspace/sandbox-run with `useDraft: true`).
+ *   4. The tested config is byte-identical to the saved draft
+ *      (`orchestrationDraftTestedConfig` === draft) — a draft edited after
+ *      its successful test must be re-tested.
+ *   5. The draft parses as a structurally valid orchestration graph.
+ *
+ * On success: bumps `version`, moves the draft into the live field, clears
+ * draft state, stamps `orchestrationPublishedAt`, appends an
+ * `orchestrationDeltas` record (with the sha256 of the published config),
+ * sets `lifecycleStatus: "live"`, and persists via writeWorkspaceConfig.
+ *
+ * Request:  { objectId: string, name: string }
+ * Response: { ok, objectId, name, version, publishedAt, liveField,
+ *             publishedSha256, workspaceConfig }
+ *           or { ok: false, code, error, ... } with 4xx/5xx status.
+ */
+
+import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
+import {
+  readWorkspaceConfig,
+  readWorkspaceSourceRecords,
+  writeWorkspaceConfig
+} from "@/lib/workspace-config";
+import { sandboxRunSourceId } from "@/lib/workspace-data-model";
+import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
+import { stableStringify } from "@/lib/workspace-patch-policy";
+import {
+  getNodeDeltaRecords,
+  normalizeDeltaTags,
+  patchSandboxRowInConfig,
+  resolveWorkflowFieldNames
+} from "@/lib/orchestration-publish";
+
+function sha256(text) {
+  return createHash("sha256").update(String(text), "utf8").digest("hex");
+}
+
+function findSandboxRow(workspaceConfig, objectId, name) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const object = objects.find((entry) => entry?.id === objectId && entry?.objectType === "sandbox-environment");
+  if (!object) return { object: null, row: null, rowIndex: -1 };
+  const wantedName = String(name || "").trim();
+  const rows = Array.isArray(object.rows) ? object.rows : [];
+  const rowIndex = rows.findIndex((row) => String(row?.Name || "").trim() === wantedName);
+  if (rowIndex === -1) return { object, row: null, rowIndex: -1 };
+  return { object, row: rows[rowIndex], rowIndex };
+}
+
+async function POST(request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, code: "invalid_body", error: "invalid json body" }, { status: 400 });
+  }
+  const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  if (!objectId || !name) {
+    return NextResponse.json(
+      { ok: false, code: "invalid_body", error: "objectId and name are required" },
+      { status: 400 }
+    );
+  }
+
+  const workspaceConfig = await readWorkspaceConfig();
+  const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
+  if (!object) {
+    return NextResponse.json(
+      { ok: false, code: "object_not_found", error: `no sandbox-environment object with id ${objectId}` },
+      { status: 404 }
+    );
+  }
+  if (!row) {
+    return NextResponse.json(
+      { ok: false, code: "row_not_found", error: `no sandbox row named ${name} in object ${objectId}` },
+      { status: 404 }
+    );
+  }
+
+  const { liveField, draftField } = resolveWorkflowFieldNames(row);
+  const draft = String(row[draftField] ?? "").trim();
+  if (!draft) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "no_draft",
+        error: `no saved draft in ${draftField} — save the draft, test it with sandbox-run useDraft:true, then publish`
+      },
+      { status: 409 }
+    );
+  }
+
+  const draftPassed = row.orchestrationDraftTestPassed === true
+    || String(row.orchestrationDraftTestPassed ?? "") === "true";
+  if (!draftPassed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_not_tested",
+        error: "publish blocked — the saved draft has no successful test run; " +
+          "run POST /api/workspace/sandbox-run with useDraft:true and a passing result first"
+      },
+      { status: 409 }
+    );
+  }
+
+  const testedConfig = String(row.orchestrationDraftTestedConfig ?? "");
+  if (testedConfig !== draft) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_changed_after_test",
+        error: "publish blocked — the draft changed after its successful test; re-test this exact draft",
+        draftSha256: sha256(draft),
+        testedSha256: sha256(testedConfig)
+      },
+      { status: 409 }
+    );
+  }
+
+  // Lineage gate — the draft-field attestation (`orchestrationDraftTestPassed`,
+  // `orchestrationDraftTestedConfig`) is PATCH-writable, so it is not trusted
+  // alone. The claimed draft run must exist in the source-record run history
+  // (which only sandbox-run writes; PATCH is policy-blocked from sidecar
+  // writes), must have passed (exitCode 0, no error), and the graph it
+  // actually executed must equal this draft.
+  const draftRunId = String(row.orchestrationDraftLastRunId ?? "").trim();
+  if (!draftRunId) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_run_not_verified",
+        error: "publish blocked — no server-recorded draft run on this row; " +
+          "run POST /api/workspace/sandbox-run with useDraft:true first"
+      },
+      { status: 409 }
+    );
+  }
+  const sourceId = sandboxRunSourceId(objectId, row.Name || name);
+  const history = sourceId ? await readWorkspaceSourceRecords(sourceId) : null;
+  const records = Array.isArray(history?.records) ? history.records : [];
+  const runRecord = records.find((record) => String(record?.runId ?? "") === draftRunId);
+  if (!runRecord) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_run_not_verified",
+        error: `publish blocked — draft run ${draftRunId} has no record in the sandbox run history (${sourceId})`
+      },
+      { status: 409 }
+    );
+  }
+  if (runRecord.exitCode !== 0 || runRecord.error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_run_not_verified",
+        error: `publish blocked — draft run ${draftRunId} did not pass (exitCode ${runRecord.exitCode})`
+      },
+      { status: 409 }
+    );
+  }
+  // The record's draftSha256 is stamped by sandbox-run from the exact graph
+  // it executed, before execution. It must match this saved draft.
+  const draftGraphParsed = parseOrchestrationGraph(draft);
+  const expectedSha256 = createHash("sha256")
+    .update(stableStringify(draftGraphParsed), "utf8")
+    .digest("hex");
+  if (runRecord.useDraft !== true || runRecord.draftSha256 !== expectedSha256) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "draft_run_not_verified",
+        error: `publish blocked — draft run ${draftRunId} executed a different graph than the saved draft ` +
+          "(or was not a draft run); re-test this exact draft with sandbox-run useDraft:true"
+      },
+      { status: 409 }
+    );
+  }
+
+  const parsedDraft = draftGraphParsed;
+  const validation = validateOrchestrationGraph(parsedDraft);
+  if (!validation?.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "invalid_graph",
+        error: "publish blocked — the draft does not parse as a valid orchestration graph",
+        details: validation?.errors ?? []
+      },
+      { status: 400 }
+    );
+  }
+
+  const publishedAt = new Date().toISOString();
+  const currentVersion = Number(row.version || 1);
+  const nextVersion = Number.isFinite(currentVersion) ? String(currentVersion + 1) : "1";
+  const previousDeltas = Array.isArray(row.orchestrationDeltas) ? row.orchestrationDeltas : [];
+  const previousPublishedGraph = parseOrchestrationGraph(row[liveField]);
+  const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, parsedDraft);
+  const deltaTags = normalizeDeltaTags(nodeDeltas.flatMap((delta) => delta.deltaTags));
+  const changeReason = nodeDeltas.map((delta) => delta.changeReason).filter(Boolean).join("\n");
+  const publishedSha256 = sha256(draft);
+
+  const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
+    [liveField]: draft,
+    [draftField]: "",
+    version: nextVersion,
+    lifecycleStatus: "live",
+    orchestrationDraftStatus: "published",
+    orchestrationDraftTestPassed: false,
+    orchestrationDraftTestedConfig: "",
+    orchestrationPublishedAt: publishedAt,
+    orchestrationDeltas: [
+      ...previousDeltas,
+      {
+        at: publishedAt,
+        version: nextVersion,
+        field: liveField,
+        action: "publish",
+        previousVersion: String(row.version || "1"),
+        draftTestedAt: row.orchestrationDraftLastTested || "",
+        draftRunId: row.orchestrationDraftLastRunId || "",
+        publishedSha256,
+        changeReason,
+        deltaTags,
+        nodeDeltas,
+        nodeCount: Array.isArray(parsedDraft?.nodes) ? parsedDraft.nodes.length : 0,
+        edgeCount: Array.isArray(parsedDraft?.edges) ? parsedDraft.edges.length : 0
+      }
+    ]
+  });
+
+  try {
+    const persisted = await writeWorkspaceConfig({ dataModel: next.dataModel });
+    return NextResponse.json({
+      ok: true,
+      objectId,
+      name,
+      version: nextVersion,
+      publishedAt,
+      liveField,
+      publishedSha256,
+      workspaceConfig: persisted
+    });
+  } catch (error) {
+    if (error.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "read_only",
+          error: "workspace config is read-only in this runtime",
+          guidance: error.guidance || null
+        },
+        { status: 409 }
+      );
+    }
+    if (error.code === "INVALID_WORKSPACE_CONFIG") {
+      return NextResponse.json(
+        { ok: false, code: "invalid_config", error: error.message, details: error.details },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json(
+      { ok: false, code: "write_failed", error: error?.message || "failed to write workspace config" },
+      { status: 500 }
+    );
+  }
+}
+
+export { POST };

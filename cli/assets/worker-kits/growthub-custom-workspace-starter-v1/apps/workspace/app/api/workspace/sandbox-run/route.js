@@ -50,6 +50,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -78,6 +79,7 @@ import {
 } from "@/lib/adapters/sandboxes";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
+import { stableStringify } from "@/lib/workspace-patch-policy";
 import {
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
@@ -470,6 +472,11 @@ async function executeSandboxRun(body, { emit } = {}) {
   const draftGraph = useDraft
     ? parseOrchestrationGraph(body?.draftGraph || row.orchestrationDraftConfig || row.orchestrationDraftGraph)
     : null;
+  // Hash the draft BEFORE execution (the graph runner may annotate the object
+  // in place). This is the lineage anchor the workflow publish gate verifies.
+  const draftSha256 = draftGraph
+    ? createHash("sha256").update(stableStringify(draftGraph), "utf8").digest("hex")
+    : null;
   const rowForRun = draftGraph
     ? { ...row, orchestrationGraph: draftGraph, orchestrationConfig: draftGraph }
     : row;
@@ -698,6 +705,16 @@ async function executeSandboxRun(body, { emit } = {}) {
     row: rowForRun,
     runInputs: normalizedRunInputs
   });
+
+  // Draft-run lineage anchor: the sha256 of the exact graph that executed,
+  // persisted into the run record. The sidecar is only writable by server
+  // routes (PATCH is policy-blocked from it), so the workflow publish gate
+  // can verify "this saved draft is what actually ran" against this hash —
+  // the PATCH-writable draft attestation fields alone are never trusted.
+  if (useDraft && draftSha256) {
+    response.useDraft = true;
+    response.draftSha256 = draftSha256;
+  }
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
   const persistence = describePersistenceMode();

@@ -28,6 +28,8 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
+ *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  */
 
 // Capabilities
@@ -310,6 +312,36 @@ export {
   isWorkspaceProposal,
   WORKSPACE_HELPER_CONTRACT_VERSION,
 } from "./helper.js";
+
+// Workspace mutation policy (the governed mutation boundary — the PATCH
+// allowlist + policy violation envelope, the patch preflight dry-run, and
+// the server-authoritative workflow publish route. Runtime enforcement
+// lives in the workspace app: lib/workspace-patch-policy.js plus the
+// patch/preflight and workflow/publish routes.)
+export type {
+  WorkspacePatchAllowedField,
+  WorkspaceLiveWorkflowField,
+  WorkspaceDraftWorkflowField,
+  WorkspacePatchViolationCode,
+  WorkspacePatchViolation,
+  WorkspacePatchLimits,
+  WorkspacePatchPolicyRejection,
+  WorkspacePatchPreflightRequest,
+  WorkspacePatchPreflightResponse,
+  WorkflowPublishRequest,
+  WorkflowPublishFailureCode,
+  WorkflowPublishSuccess,
+  WorkflowPublishFailure,
+  WorkflowPublishResponse,
+} from "./workspace-patch.js";
+export {
+  WORKSPACE_PATCH_ALLOWED_FIELDS,
+  WORKSPACE_LIVE_WORKFLOW_FIELDS,
+  WORKSPACE_DRAFT_WORKFLOW_FIELDS,
+  isWorkspacePatchPolicyRejection,
+  isWorkflowPublishSuccess,
+  WORKSPACE_PATCH_CONTRACT_VERSION,
+} from "./workspace-patch.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
