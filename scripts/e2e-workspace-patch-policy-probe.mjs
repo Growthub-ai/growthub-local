@@ -288,6 +288,44 @@ registerSandboxAdapter({
     assert(res.status === 422, `tampering live graph after publish expected 422, got ${res.status}`);
     ok("published row: echo passes, live tamper fails");
 
+    // 15. preflight uses the write path's EXACT merge step. `widgets: null`
+    // is a key-delete under applyWorkspaceConfigPatch (multi-tab switch);
+    // a naive top-level replacement would fail schema on the null. Preflight
+    // and the real PATCH must agree.
+    const canvasPatch = {
+      canvas: { widgets: null, tabs: [{ id: "t1", name: "Tab 1", widgets: [] }], activeTabId: "t1" },
+    };
+    pre = await (await preflight(canvasPatch)).json();
+    assert(pre.ok === true, `preflight must accept the canvas merge patch like the real PATCH does, got ${JSON.stringify(pre).slice(0, 400)}`);
+    res = await patch(canvasPatch);
+    assert(res.status === 200, `real canvas merge PATCH expected 200, got ${res.status} ${await res.text()}`);
+    ok("preflight matches real PATCH canvas merge semantics (widgets:null delete)");
+
+    // 16. rows that only carry orchestrationDraftGraph publish into
+    // orchestrationGraph — never silently into orchestrationConfig.
+    const cfg16 = await getConfig();
+    res = await patch({
+      dataModel: {
+        ...cfg16.dataModel,
+        objects: cfg16.dataModel.objects.map((o) =>
+          o.id !== "sbx-policy" ? o : { ...o, rows: [...o.rows, { Name: "wf2", lifecycleStatus: "draft", version: "1", runLocality: "local", adapter: "local-agent-host", agentHost: "claude_local", runtime: "node", command: "", orchestrationDraftGraph: draftSerialized, orchestrationDraftStatus: "untested" }] },
+        ),
+      },
+    });
+    assert(res.status === 200, `creating draft-graph row expected 200, got ${res.status} ${await res.text()}`);
+    res = await sandboxRun({ objectId: "sbx-policy", name: "wf2", useDraft: true });
+    assert((await res.json()).ok === true, "wf2 draft run must pass");
+    const cfg16b = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg16b, "wf2", { orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "wf2 attestation must pass");
+    res = await publish({ objectId: "sbx-policy", name: "wf2" });
+    pub = await res.json();
+    assert(res.status === 200 && pub.ok === true, `wf2 publish expected ok, got ${res.status} ${JSON.stringify(pub).slice(0, 300)}`);
+    assert(pub.liveField === "orchestrationGraph", `wf2 must publish into orchestrationGraph, got ${pub.liveField}`);
+    const wf2 = (await getConfig()).dataModel.objects.find((o) => o.id === "sbx-policy").rows.find((r) => r.Name === "wf2");
+    assert(String(wf2.orchestrationGraph || "").length > 0 && String(wf2.orchestrationConfig || "") === "", "wf2 live graph must land in orchestrationGraph only");
+    ok("draft-graph-only row publishes into orchestrationGraph (field resolution)");
+
     process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
   } finally {
     try {

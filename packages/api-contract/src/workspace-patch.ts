@@ -151,6 +151,14 @@ export interface WorkflowPublishRequest {
   objectId: string;
   /** The row's capital-N `Name` column value. */
   name: string;
+  /**
+   * Optional explicit live field to publish into. When omitted the server
+   * resolves it: populated live field → populated draft field → default
+   * `orchestrationConfig`. The Workflows surface passes its URL-selected
+   * field so rows that only carry `orchestrationDraftGraph` publish into
+   * `orchestrationGraph`.
+   */
+  field?: "orchestrationConfig" | "orchestrationGraph";
 }
 
 /** Stable failure codes for publish gates. Additive. */
@@ -176,7 +184,11 @@ export interface WorkflowPublishSuccess {
   publishedAt: string;
   /** Which live field received the draft (`orchestrationConfig` | `orchestrationGraph`). */
   liveField: string;
-  /** sha256 of the published serialized graph — also recorded in the delta entry. */
+  /**
+   * The canonical graph hash: sha256 of the stable-serialized parsed graph.
+   * Identical in meaning to the run record's `draftSha256` lineage stamp,
+   * and recorded in the appended `orchestrationDeltas` entry.
+   */
   publishedSha256: string;
   /** Full persisted config after the publish write. */
   workspaceConfig: Record<string, unknown>;
@@ -186,9 +198,13 @@ export interface WorkflowPublishFailure {
   ok: false;
   code: WorkflowPublishFailureCode | (string & {});
   error: string;
-  /** Present on `draft_changed_after_test`. */
-  draftSha256?: string;
-  testedSha256?: string;
+  /**
+   * Present on `draft_changed_after_test`. Diagnostic raw-STRING hashes
+   * (the gate compares the strings byte-for-byte); distinct from the
+   * canonical parsed-graph hash used by `publishedSha256` / `draftSha256`.
+   */
+  draftStringSha256?: string;
+  testedStringSha256?: string;
   /** Present on `invalid_graph` / `invalid_config`. */
   details?: string[];
   /** Present on `read_only`. */

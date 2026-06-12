@@ -137,17 +137,35 @@ function getNodeDeltaRecords(previousGraph, nextGraph) {
 
 /**
  * Resolve which live field this row publishes into and which draft field
- * feeds it — same precedence the Workflows surface uses.
+ * feeds it.
+ *
+ * Precedence (matching the Workflows surface):
+ *   1. An explicit `requestedField` ("orchestrationConfig" | "orchestrationGraph")
+ *      — the surface preserves the URL-selected field when no live graph
+ *      exists yet, so the publish request may carry it.
+ *   2. Whichever live field is populated.
+ *   3. Whichever DRAFT field is populated — a row whose only state is
+ *      `orchestrationDraftGraph` publishes into `orchestrationGraph`,
+ *      never silently into `orchestrationConfig`.
+ *   4. Default `orchestrationConfig`.
  */
-function resolveWorkflowFieldNames(row) {
+function resolveWorkflowFieldNames(row, requestedField) {
   const hasGraphValue = (value) => Boolean(String(value ?? "").trim());
-  const liveField = hasGraphValue(row?.orchestrationConfig)
-    ? "orchestrationConfig"
-    : hasGraphValue(row?.orchestrationGraph)
-      ? "orchestrationGraph"
-      : "orchestrationConfig";
-  const draftField = liveField === "orchestrationConfig" ? "orchestrationDraftConfig" : "orchestrationDraftGraph";
-  return { liveField, draftField };
+  const draftFor = (live) => (live === "orchestrationConfig" ? "orchestrationDraftConfig" : "orchestrationDraftGraph");
+  if (requestedField === "orchestrationConfig" || requestedField === "orchestrationGraph") {
+    return { liveField: requestedField, draftField: draftFor(requestedField) };
+  }
+  let liveField;
+  if (hasGraphValue(row?.orchestrationConfig)) {
+    liveField = "orchestrationConfig";
+  } else if (hasGraphValue(row?.orchestrationGraph)) {
+    liveField = "orchestrationGraph";
+  } else if (!hasGraphValue(row?.orchestrationDraftConfig) && hasGraphValue(row?.orchestrationDraftGraph)) {
+    liveField = "orchestrationGraph";
+  } else {
+    liveField = "orchestrationConfig";
+  }
+  return { liveField, draftField: draftFor(liveField) };
 }
 
 export {

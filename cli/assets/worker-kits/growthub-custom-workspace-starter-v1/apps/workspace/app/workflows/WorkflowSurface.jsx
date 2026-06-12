@@ -502,7 +502,7 @@ export default function WorkflowSurface() {
       const res = await fetch("/api/workspace/workflow/publish", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId, name: rowId }),
+        body: JSON.stringify({ objectId, name: rowId, field: effectiveFieldName }),
       });
       const payload = await res.json();
       if (!res.ok || !payload.ok) {

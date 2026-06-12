@@ -72,9 +72,16 @@ async function POST(request) {
   }
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const requestedField = typeof body?.field === "string" ? body.field.trim() : "";
   if (!objectId || !name) {
     return NextResponse.json(
       { ok: false, code: "invalid_body", error: "objectId and name are required" },
+      { status: 400 }
+    );
+  }
+  if (requestedField && requestedField !== "orchestrationConfig" && requestedField !== "orchestrationGraph") {
+    return NextResponse.json(
+      { ok: false, code: "invalid_body", error: 'field must be "orchestrationConfig" or "orchestrationGraph" when provided' },
       { status: 400 }
     );
   }
@@ -94,7 +101,7 @@ async function POST(request) {
     );
   }
 
-  const { liveField, draftField } = resolveWorkflowFieldNames(row);
+  const { liveField, draftField } = resolveWorkflowFieldNames(row, requestedField || undefined);
   const draft = String(row[draftField] ?? "").trim();
   if (!draft) {
     return NextResponse.json(
@@ -128,8 +135,10 @@ async function POST(request) {
         ok: false,
         code: "draft_changed_after_test",
         error: "publish blocked — the draft changed after its successful test; re-test this exact draft",
-        draftSha256: sha256(draft),
-        testedSha256: sha256(testedConfig)
+        // Diagnostic raw-STRING hashes (the equality above is byte-level);
+        // the canonical graph hash everywhere else is sha256(stableStringify(parsedGraph)).
+        draftStringSha256: sha256(draft),
+        testedStringSha256: sha256(testedConfig)
       },
       { status: 409 }
     );
@@ -217,7 +226,10 @@ async function POST(request) {
   const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, parsedDraft);
   const deltaTags = normalizeDeltaTags(nodeDeltas.flatMap((delta) => delta.deltaTags));
   const changeReason = nodeDeltas.map((delta) => delta.changeReason).filter(Boolean).join("\n");
-  const publishedSha256 = sha256(draft);
+  // One canonical draft/graph hash everywhere: sha256(stableStringify(parsedGraph)).
+  // This is the same value sandbox-run stamped as the record's draftSha256,
+  // so the lineage record and the publish delta are directly comparable.
+  const publishedSha256 = expectedSha256;
 
   const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
     [liveField]: draft,

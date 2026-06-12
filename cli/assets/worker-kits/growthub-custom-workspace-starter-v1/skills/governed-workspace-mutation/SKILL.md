@@ -114,7 +114,7 @@ curl -s -X PATCH "$WS/api/workspace" -H 'content-type: application/json' \
 | 409 | `{"error":"workspace config is read-only in this runtime", "guidance": ...}` | Surface `guidance` to the user (edit `growthub.config.json` locally, or `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true` on a writable runtime). Never work around it. |
 | 500 | persistence fault | Report; do not mutate files behind the adapter's back. |
 
-**Policy ceilings (422 `violations[].code`):** `unknown_field`, `full_config_body`, `source_records_through_patch`, `live_workflow_field`, `live_publish_via_patch`, `credential_field`, `history_smuggling`, `oversized_patch` (2 MB body), `oversized_row` (128 KB, echoes exempt), `oversized_object` (500 rows), `oversized_node_config` (64 KB).
+**Status precision:** unknown top-level keys — including full-config bodies and `workspaceSourceRecords` — are caught by the route's legacy allowlist check first and return **400** with `allowed[]`; the policy's named reasons for those cases (`unknown_field`, `full_config_body`, `source_records_through_patch`) surface through **preflight**. The **422** policy rejection covers content violations *inside* allowlisted keys: `live_workflow_field`, `live_publish_via_patch`, `credential_field`, `history_smuggling`, `oversized_patch` (2 MB body), `oversized_row` (128 KB, echoes exempt), `oversized_object` (500 rows), `oversized_node_config` (64 KB).
 
 **Validator facts verified live:**
 

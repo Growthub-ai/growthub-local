@@ -89,7 +89,15 @@ function describePersistenceMode() {
   return baseFilesystem("Local development");
 }
 
-function applyPatch(currentConfig, patch) {
+/**
+ * Pure merge step shared by the real write path and the preflight dry-run
+ * (`POST /api/workspace/patch/preflight`). Canvas patches MERGE over the
+ * current canvas (layout/bindings preserved, single-tab vs multi-tab fields
+ * stripped, `null` deletes a key) — they are NOT top-level replacements.
+ * Preflight must call this exact function so it can never disagree with
+ * `writeWorkspaceConfig` about what the merged config will be.
+ */
+function applyWorkspaceConfigPatch(currentConfig, patch) {
   const next = { ...currentConfig };
   if (patch.dashboards !== undefined) next.dashboards = patch.dashboards;
   if (patch.widgetTypes !== undefined) next.widgetTypes = patch.widgetTypes;
@@ -137,7 +145,7 @@ async function writeWorkspaceConfig(patch) {
     throw error;
   }
   const current = await readWorkspaceConfig();
-  const next = applyPatch(current, patch);
+  const next = applyWorkspaceConfigPatch(current, patch);
   validateWorkspaceConfig({
     dashboards: next.dashboards,
     widgetTypes: next.widgetTypes,
@@ -420,6 +428,7 @@ export {
   KNOWN_WIDGET_KINDS,
   PERSISTENCE_ADAPTERS,
   READ_ONLY_GUIDANCE,
+  applyWorkspaceConfigPatch,
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,

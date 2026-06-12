@@ -23,6 +23,7 @@
 
 import { NextResponse } from "next/server";
 import {
+  applyWorkspaceConfigPatch,
   describePersistenceMode,
   readWorkspaceConfig,
   validateWorkspaceConfig
@@ -55,15 +56,19 @@ async function POST(request) {
 
   const policy = evaluateWorkspacePatchPolicy(currentConfig, patch);
 
-  // Schema check mirrors writeWorkspaceConfig: merge allowlisted keys over
-  // the current config, then validate the merged result. Skipped when the
-  // body is not a plain object (policy already reports that).
+  // Schema check uses writeWorkspaceConfig's EXACT merge step
+  // (applyWorkspaceConfigPatch) — canvas patches merge over the current
+  // canvas with layout/bindings preservation and null-deletes, never a
+  // top-level replacement — so preflight can never disagree with the real
+  // PATCH about the merged result. Skipped when the body is not a plain
+  // object (policy already reports that).
   let schema = { ok: true, errors: [] };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
-    const merged = { ...(currentConfig || {}) };
+    const sanitized = {};
     for (const key of WORKSPACE_PATCH_ALLOWED_FIELDS) {
-      if (Object.prototype.hasOwnProperty.call(patch, key)) merged[key] = patch[key];
+      if (Object.prototype.hasOwnProperty.call(patch, key)) sanitized[key] = patch[key];
     }
+    const merged = applyWorkspaceConfigPatch(currentConfig || {}, sanitized);
     try {
       validateWorkspaceConfig({
         dashboards: merged.dashboards,
