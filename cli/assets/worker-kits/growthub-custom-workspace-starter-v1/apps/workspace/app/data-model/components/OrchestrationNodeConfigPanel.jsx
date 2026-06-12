@@ -20,6 +20,12 @@ const LOCAL_AGENT_ADAPTERS = [
   { value: "local-agent-host", label: "Local agent host" },
   { value: "local-intelligence", label: "Local intelligence" }
 ];
+const LOCAL_INTELLIGENCE_MODE_OPTIONS = [
+  { value: "ollama", label: "ollama (OLLAMA_BASE_URL + /v1/chat/completions)" },
+  { value: "lmstudio", label: "lmstudio (LMSTUDIO_BASE_URL)" },
+  { value: "vllm", label: "vllm (VLLM_BASE_URL required)" },
+  { value: "custom-openai-compatible", label: "custom (use Chat completions URL above)" }
+];
 const EMPTY_AGENT_AUTH_PATCH = {
   agentAuthStatus: "",
   agentAuthProvider: "",
@@ -427,9 +433,9 @@ function LocalAgentHostControls({
   onSandboxRowPatch
 }) {
   const row = sandboxRow && typeof sandboxRow === "object" ? sandboxRow : {};
-  const runLocality = String(row.runLocality || "local").trim().toLowerCase() === "serverless" ? "serverless" : "local";
   const adapter = String(row.adapter || "local-process").trim() || "local-process";
   const agentHost = String(row.agentHost || "").trim();
+  const browserOn = ["true", "1", "on", "yes"].includes(String(row.browserAccess || "").trim().toLowerCase());
   const hostOptions = getAgentHostOptions();
   const canPatch = typeof onSandboxRowPatch === "function";
 
@@ -444,36 +450,9 @@ function LocalAgentHostControls({
   return (
     <div className="dm-orchestration-config__section dm-workflow-agent-runtime">
       <span>Local agent runtime</span>
-      <div className="dm-sandbox-locality-toggle" role="group" aria-label="Run locality">
-        {["local", "serverless"].map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={runLocality === mode ? "is-active" : ""}
-            disabled={disabled || !canPatch}
-            onClick={() => {
-              const fields = { runLocality: mode };
-              if (mode === "serverless" && ["local-agent-host", "local-intelligence"].includes(adapter)) {
-                fields.adapter = "local-process";
-                fields.agentHost = "";
-                patchWithClearedAgentAuth(fields);
-                return;
-              }
-              patch(fields);
-            }}
-          >
-            {mode === "local" ? "Local" : "Serverless"}
-          </button>
-        ))}
-      </div>
       <p className="dm-orchestration-config__hint">
         Same runtime fields as the Data Model sandbox sidecar. Local agent host uses the Paperclip thin adapter on this machine.
       </p>
-      {runLocality === "serverless" && (
-        <p className="dm-orchestration-config__hint">
-          Serverless delegates execution to the configured scheduler/API Registry row; local CLI auth is not used.
-        </p>
-      )}
       <label className="dm-orchestration-config__field">
         <span>Execution adapter</span>
         <select
@@ -482,6 +461,7 @@ function LocalAgentHostControls({
           onChange={(event) => {
             const nextAdapter = event.target.value;
             patchWithClearedAgentAuth({
+              runLocality: "local",
               adapter: nextAdapter,
               agentHost: nextAdapter === "local-agent-host" ? (agentHost || "claude_local") : ""
             });
@@ -492,13 +472,17 @@ function LocalAgentHostControls({
           ))}
         </select>
       </label>
-      {runLocality === "local" && adapter === "local-agent-host" && (
+      {adapter === "local-agent-host" && (
         <label className="dm-orchestration-config__field">
           <span>Agent host (Paperclip)</span>
           <select
             value={agentHost}
             disabled={disabled || !canPatch}
-            onChange={(event) => patchWithClearedAgentAuth({ agentHost: event.target.value })}
+            onChange={(event) => patchWithClearedAgentAuth({
+              runLocality: "local",
+              adapter: "local-agent-host",
+              agentHost: event.target.value
+            })}
           >
             <option value="">Select host...</option>
             {hostOptions.map((item) => (
@@ -507,7 +491,7 @@ function LocalAgentHostControls({
           </select>
         </label>
       )}
-      {runLocality === "local" && adapter === "local-agent-host" && isSandboxLocalAgentHost(row) && (
+      {adapter === "local-agent-host" && isSandboxLocalAgentHost(row) && (
         <SandboxAgentAuthPanel
           objectId={objectId}
           rowName={rowName}
@@ -516,8 +500,61 @@ function LocalAgentHostControls({
           onPatchDraft={patch}
         />
       )}
+      {adapter === "local-intelligence" && (
+        <div className="dm-sandbox-local-intel">
+          <label className="dm-orchestration-config__field">
+            <span>Concrete model id</span>
+            <input
+              value={row.localModel || ""}
+              disabled={disabled || !canPatch}
+              placeholder="gemma3:4b"
+              onChange={(event) => patch({ runLocality: "local", localModel: event.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Chat completions URL (optional)</span>
+            <input
+              value={row.localEndpoint || ""}
+              disabled={disabled || !canPatch}
+              placeholder="http://127.0.0.1:11434/v1/chat/completions"
+              onChange={(event) => patch({ runLocality: "local", localEndpoint: event.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Resolver mode</span>
+            <select
+              value={String(row.intelligenceAdapterMode || "ollama").trim().toLowerCase()}
+              disabled={disabled || !canPatch}
+              onChange={(event) => patch({ runLocality: "local", intelligenceAdapterMode: event.target.value })}
+            >
+              {LOCAL_INTELLIGENCE_MODE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="dm-orchestration-config__hint">
+            Uses Instructions + Command as the task payload. With sandbox browser access off, tool intents stay proposals. With browser access on, browser tool intents execute through the local browser bridge before the final JSON response is returned.
+          </p>
+          {browserOn && (
+            <p className="dm-orchestration-config__hint">
+              This workflow's AI-agent nodes inherit browser access only when their node-level Network permission is enabled.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function buildNodeAgentAuthDraft(sandboxRow, config) {
+  const agentHost = String(config?.agentHost || sandboxRow?.agentHost || "").trim();
+  if (!agentHost) return null;
+  return {
+    ...(sandboxRow || {}),
+    runLocality: "local",
+    adapter: "local-agent-host",
+    agentHost
+  };
 }
 
 export function OrchestrationNodeConfigPanel({
@@ -577,6 +614,28 @@ export function OrchestrationNodeConfigPanel({
 
   const registryConnected = isApiRegistryTestSuccessful(registryRow);
   const responseMode = config.responseMode || config.mode || "json";
+  const nodeAgentAuthDraft = type === "ai-agent" ? buildNodeAgentAuthDraft(sandboxRow, config) : null;
+  const canPatchSandboxRow = typeof onSandboxRowPatch === "function";
+  const sandboxBrowserOn = ["true", "1", "on", "yes"].includes(String(sandboxRow?.browserAccess || "").trim().toLowerCase());
+  const sandboxAdapter = String(sandboxRow?.adapter || "").trim();
+  const nodeAdapter = String(config.adapter || "").trim() || sandboxAdapter;
+  const nodeUsesLocalIntelligence = nodeAdapter === "local-intelligence";
+
+  function patchNodeAgentHost(agentHost) {
+    const nextHost = String(agentHost || "").trim();
+    patchConfig({
+      agentHost: nextHost,
+      ...(nextHost ? { adapter: "local-agent-host" } : {})
+    });
+    if (nextHost && canPatchSandboxRow) {
+      onSandboxRowPatch({
+        runLocality: "local",
+        adapter: "local-agent-host",
+        agentHost: nextHost,
+        ...EMPTY_AGENT_AUTH_PATCH
+      });
+    }
+  }
 
   return (
     <div className="dm-orchestration-config">
@@ -964,7 +1023,7 @@ export function OrchestrationNodeConfigPanel({
             <select
               value={config.agentHost || ""}
               disabled={disabled}
-              onChange={(e) => patchConfig({ agentHost: e.target.value })}
+              onChange={(e) => patchNodeAgentHost(e.target.value)}
             >
               <option value="">Inherit</option>
               {Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => (
@@ -972,6 +1031,15 @@ export function OrchestrationNodeConfigPanel({
               ))}
             </select>
           </label>
+          {nodeAgentAuthDraft && isSandboxLocalAgentHost(nodeAgentAuthDraft) && (
+            <SandboxAgentAuthPanel
+              objectId={objectId}
+              rowName={rowName}
+              draft={nodeAgentAuthDraft}
+              disabled={disabled || !canPatchSandboxRow}
+              onPatchDraft={onSandboxRowPatch}
+            />
+          )}
           <WorkflowCheckbox
             checked={config.required !== false}
             disabled={disabled}
@@ -982,10 +1050,12 @@ export function OrchestrationNodeConfigPanel({
           <WorkflowCheckbox
             checked={config.networkAccess === true}
             disabled={disabled}
-            title="Network is granted only when both this and the row's networkAllow are on."
+            title={sandboxBrowserOn && nodeUsesLocalIntelligence
+              ? "Network and browser are granted only when this node permission is on and the sandbox row has browser access on."
+              : "Network is granted only when both this and the row's networkAllow are on. The row's browser access inherits through the same gate."}
             onChange={(checked) => patchConfig({ networkAccess: checked })}
           >
-            Network
+            {sandboxBrowserOn && nodeUsesLocalIntelligence ? "Network + browser" : "Network"}
           </WorkflowCheckbox>
         </div>
       )}
@@ -1025,8 +1095,15 @@ export function OrchestrationNodeConfigPanel({
             <WorkflowCheckbox checked={config.canWriteDraft === true} disabled={disabled} onChange={(checked) => patchConfig({ canWriteDraft: checked })}>
               Write draft changes only
             </WorkflowCheckbox>
-            <WorkflowCheckbox checked={config.networkAccess === true} disabled={disabled} onChange={(checked) => patchConfig({ networkAccess: checked })}>
-              Allow network access
+            <WorkflowCheckbox
+              checked={config.networkAccess === true}
+              disabled={disabled}
+              title={sandboxBrowserOn && nodeUsesLocalIntelligence
+                ? "This node gets browser access only when this permission and the sandbox row Browser access toggle are both on."
+                : undefined}
+              onChange={(checked) => patchConfig({ networkAccess: checked })}
+            >
+              {sandboxBrowserOn && nodeUsesLocalIntelligence ? "Allow network + browser access" : "Allow network access"}
             </WorkflowCheckbox>
           </div>
           <KeyValueRows

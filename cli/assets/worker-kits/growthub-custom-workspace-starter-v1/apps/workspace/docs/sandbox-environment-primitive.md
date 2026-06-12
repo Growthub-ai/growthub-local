@@ -23,6 +23,32 @@ Agents and streamed APIs elsewhere in the sandbox stay orthogonal: serverless sw
 
 Sandbox rows reference **`authRef` / named env refs** — never literals in browser or config records. Scheduling uses the referenced API Registry row’s **`authRef`** merge rules identical to **`/api/workspace/test-source`**.
 
+## Browser access (`browserAccess`)
+
+`browserAccess` is a first-class boolean column on the sandbox row, surfaced as a single toggle in the record sidecar's **Environment & Network** section. It is locality-agnostic and agent-host-agnostic: the saved record carries the capability, and each execution path grants it through the mechanism that path actually understands.
+
+**Deterministic normalization** — browser access implies outbound network. The sidecar toggle stamps `networkAllow: "true"` when browser access is switched on, and `POST /api/workspace/sandbox-run` enforces the same implication server-side (`networkAllow || browserAccess`), so rows patched via the API behave identically to rows saved in the UI.
+
+**This is the product's existing agent browser primitive, surfaced — not a new system.** The upstream Paperclip server already grants any agent browser access through one boolean: the agent config's `chrome` primitive (`ui/src/components/agent-config-primitives.tsx` — "Enable Claude's Chrome integration by passing --chrome"), gated by the chrome-lease service (`server/src/services/chrome-lease.ts`) before `adapter.execute()`. The CMS profile contract likewise speaks `allowBrowserBridge` and execution mode `"browser"`. `browserAccess` is the same bit on the governed sandbox row, so rows stay portable to the upstream adapter registry without translation — exactly like the host slugs.
+
+**Local (`local-agent-host`)** — when the row's bit is on, each host engages its **first-party** browser integration; the adapter never invents flags or writes host config it cannot verify against the upstream tool (the same rule the auth catalog follows for login subcommands):
+
+| Lane | Hosts | Mechanism |
+| --- | --- | --- |
+| `native-flag` | Claude Code | `--chrome` — Claude's own Chrome integration, the same flag the upstream server adapter passes for the agent `chrome` primitive. |
+| `native-flag` | Codex | `--enable browser_use --enable in_app_browser` (with `--sandbox workspace-write`). |
+| `env-signal` | Cursor, Gemini, Qwen, OpenCode, Pi, Hermes, OpenClaw Gateway | The host receives `GROWTHUB_SANDBOX_BROWSER_ACCESS=1` (mirroring the upstream browser-isolation context); whatever browser integration the operator has configured in that host honors the row's setting. |
+
+The lane engaged for a run is recorded in `adapterMeta.browserLane`, and the run-console record projection surfaces `context.browserAccess` plus the full `adapterMeta`, so every run shows its browser proof. No host-global config (`~/.claude`, `~/.codex`, …) is ever mutated.
+
+**Orchestration graph** — this is why browser access is node-level and host-agnostic with zero extra configuration: `thinAdapter` and `ai-agent` nodes execute through this same host catalog, so every node inherits the row's browser grant no matter which host runs it (subagent nodes through the existing node-level Network gate; orchestrator and synthesis phases directly).
+
+One deliberate decision, stated explicitly: **Codex `workspace-write` on `networkAllow` alone is intentional.** Codex's `read-only` sandbox blocks all outbound network, so `workspace-write` is the least-privileged Codex mode where the row's network grant can take effect — and writes are confined to the sealed ephemeral workdir the adapter spawns into, never the operator's repo. Browser flags remain gated on `browserAccess` only; network alone never opens a browser.
+
+**Local (`local-process`)** and every other adapter — the sealed RunRequest carries `browserAccess: boolean`, and the env contract publishes `GROWTHUB_SANDBOX_BROWSER_ACCESS=1|0` alongside `GROWTHUB_SANDBOX_NET_ALLOW(LIST)`, so any script or drop-zone adapter honors the row's setting without knowing about specific hosts.
+
+**Serverless** — the `growthub-sandbox-run-v1` envelope carries `sandbox.browserAccess` (plus `networkAllow` / `allowList`), so a workflow upgraded from local to serverless keeps the identical capability contract: the Edge/QStash/cron handler reads one boolean and grants its own runtime's browser (e.g. a remote browser pool or hosted agent's browser tool). No host-specific knowledge crosses the wire — slugs and booleans only, never secrets.
+
 ## Not a widget source
 
 Workspace Builder excludes **`sandbox-environment`** from View widget bindings (execution records, not tabular KPI sources). See **`data-sources-api-registry.md`** in this folder.

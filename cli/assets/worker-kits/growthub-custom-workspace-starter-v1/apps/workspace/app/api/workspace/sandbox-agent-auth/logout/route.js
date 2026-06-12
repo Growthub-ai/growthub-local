@@ -10,7 +10,7 @@
  * host's `notes` string.
  *
  * Request body:
- *   { objectId: string, name: string }
+ *   { objectId: string, name: string, agentHost?: string }
  *
  * Response:
  *   {
@@ -42,6 +42,7 @@ async function POST(request) {
 
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const agentHost = typeof body?.agentHost === "string" ? body.agentHost.trim() : "";
   if (!objectId || !name) {
     return NextResponse.json(
       { ok: false, error: "objectId and name are required" },
@@ -50,7 +51,7 @@ async function POST(request) {
   }
 
   try {
-    const result = await runAgentLogout({ objectId, name });
+    const result = await runAgentLogout({ objectId, name, agentHost });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

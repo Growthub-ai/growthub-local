@@ -226,27 +226,7 @@ export const SANDBOX_OBJECT = {
   fieldSettings: { hidden: [], order: SANDBOX_COLUMNS },
 };
 
-export const HELPER_SANDBOX_OBJECT = {
-  id: "workspace-helper-sandbox",
-  label: "Workspace Helper Sandbox",
-  source: "Workspace Helper Sandbox",
-  objectType: "sandbox-environment",
-  icon: "Terminal",
-  columns: ["Name", "lifecycleStatus", "runLocality", "runtime", "adapter", "agentHost", "intelligenceType", "localModel", "localEndpoint", "intelligenceAdapterMode"],
-  rows: [{
-    Name: "workspace-helper",
-    lifecycleStatus: "live",
-    runLocality: "local",
-    runtime: "node",
-    adapter: "local-intelligence",
-    agentHost: "",
-    intelligenceType: "local-intelligence",
-    localModel: "",
-    localEndpoint: "",
-    intelligenceAdapterMode: "ollama",
-  }],
-  binding: { mode: "manual", source: "Workspace Helper Sandbox" },
-};
+export const HELPER_SANDBOX_OBJECT_ID = "workspace-helper-sandbox";
 
 export const SEED_CANVAS_WIDGETS = [
   { id: "widget-ops-notes", kind: "rich-text", title: "Ops Notes", position: { x: 0, y: 0, w: 4, h: 4 }, config: { text: "Feature-work seed ready.", binding: { mode: "manual", source: "Manual text", rows: [] } } },
@@ -274,7 +254,7 @@ export function buildFeatureWorkspaceSeed(baseConfig = {}) {
       ...baseConfig,
       dashboards,
       canvas: { ...(baseConfig.canvas || {}), widgets: SEED_CANVAS_WIDGETS },
-      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT, HELPER_SANDBOX_OBJECT] },
+      dataModel: { objects: [API_REGISTRY_OBJECT, DATA_SOURCE_OBJECT, SANDBOX_OBJECT] },
     },
     sourceRecords: SEED_SOURCE_RECORDS,
     envLocal: SEED_ENV_LOCAL,
@@ -323,6 +303,11 @@ export async function validateFeatureWorkspaceSeed(appDir, workspaceConfig, sour
     }
   }
   if (!cockpit.complete) throw new Error(`cockpit incomplete; score=${cockpit.score}`);
+
+  const helperObject = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === HELPER_SANDBOX_OBJECT_ID);
+  if (helperObject) {
+    throw new Error("feature seed must not pre-seed workspace-helper-sandbox; helper setup owns that row");
+  }
 
   return { activationState, cockpit, configuredEnvRefs };
 }

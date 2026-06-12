@@ -77,7 +77,8 @@ Written **before** `next dev` starts (same lane as `e2e-workspace-sandbox-api-pr
 | `api-registry-probe` | api-registry | Trusted row `probe-scheduler` (tested, connected) + untrusted `probe-untrusted` |
 | `probe-scheduler-source` | data-source | Linked to `probe-scheduler`; sidecar records hydrated |
 | `sandbox-probe` | sandbox-environment | `probe-local-sbx` (baseline run evidence) + `registry-workflow` (orchestration graph) |
-| `workspace-helper-sandbox` | sandbox-environment | Hidden helper row (`local-intelligence`) |
+
+The feature seed does **not** create `workspace-helper-sandbox`; helper setup owns that row at runtime.
 
 ### UI / activation
 

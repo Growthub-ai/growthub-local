@@ -1044,6 +1044,12 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (row.allowList !== undefined && typeof row.allowList !== "string" && !Array.isArray(row.allowList)) {
     errors.push(`${path}.allowList must be a comma-separated string or array of hostnames`);
   }
+  if (row.browserAccess !== undefined) {
+    const value = String(row.browserAccess).trim().toLowerCase();
+    if (!["", "true", "false", "0", "1", "on", "off"].includes(value)) {
+      errors.push(`${path}.browserAccess must coerce to a boolean (true/false/on/off)`);
+    }
+  }
   if (row.instructions !== undefined && typeof row.instructions !== "string") {
     errors.push(`${path}.instructions must be a string`);
   }

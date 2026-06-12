@@ -27,6 +27,9 @@
  *     timeoutMs:       number,            // hard cap, capped at SANDBOX_MAX_TIMEOUT_MS
  *     networkAllow:    boolean,           // allow outbound network from inside the sandbox
  *     allowList:       string[],          // hostnames the user explicitly allowed
+ *     browserAccess:   boolean,           // row-level browser capability (implies networkAllow);
+ *                                         // adapters surface it natively where the target supports
+ *                                         // it and always publish GROWTHUB_SANDBOX_BROWSER_ACCESS
  *     env:             Record<string,string>, // server-resolved env (NEVER sent to browser)
  *     envRefSlugs:     string[],          // ref slugs resolved (kept for record metadata)
  *     envRefsMissing:  string[],          // slugs the server could not resolve (audit-only)
@@ -99,7 +102,8 @@ function describeRegisteredSandboxAdapters() {
           slug,
           label: host?.label || slug,
           binary: host?.binary || null,
-          installHint: host?.installHint || null
+          installHint: host?.installHint || null,
+          browserLane: host?.browser?.lane || "env-signal"
         }))
       : null
   }));

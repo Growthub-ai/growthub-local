@@ -647,6 +647,14 @@ function SandboxTraceFieldButton({ label, value, disabled, onOpen }) {
   );
 }
 
+// Human labels for the per-host browser lanes declared in the
+// local-agent-host catalog — surfaced so the operator's mental model matches
+// exactly what the adapter does under the hood when browserAccess is on.
+const BROWSER_LANE_LABELS = {
+  "native-flag": "browser enabled through the host CLI's first-party browser integration flags.",
+  "env-signal": "host receives GROWTHUB_SANDBOX_BROWSER_ACCESS=1 — its own configured browser integration honors this setting."
+};
+
 function SandboxRecordFields({
   draft,
   setDraft,
@@ -705,8 +713,21 @@ function SandboxRecordFields({
     return { ...fields, ...EMPTY_AGENT_AUTH_PATCH };
   }
 
+  function defaultSchedulerRegistryId() {
+    const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+    for (const object of objects) {
+      if (object?.objectType !== "api-registry") continue;
+      const row = (object.rows || []).find((r) => String(r?.integrationId || "").trim());
+      if (row) return String(row.integrationId || "").trim();
+    }
+    return "";
+  }
+
   function setRunLocality(next) {
     const fields = { runLocality: next };
+    if (next === "serverless") {
+      fields.schedulerRegistryId = String(draft.schedulerRegistryId || "").trim() || defaultSchedulerRegistryId();
+    }
     if (next === "serverless" && ["local-agent-host", "local-intelligence"].includes(String(draft.adapter || "").trim())) {
       fields.adapter = "local-process";
       fields.agentHost = "";
@@ -724,6 +745,8 @@ function SandboxRecordFields({
   }
 
   const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
+  const browserOn = ["true", "1", "on", "yes"].includes(String(draft.browserAccess || "").trim().toLowerCase());
+  const browserHostMeta = (selectedAdapterMeta?.hostCatalog || []).find((h) => h.slug === String(draft.agentHost || "").trim());
 
   // Same cockpit interface + mental model as the API Registry lane, driven by
   // the serverless/scheduling/persistence derivation. Steps are status-only
@@ -735,6 +758,7 @@ function SandboxRecordFields({
     persistenceAdapters: serverlessSignals.persistenceAdapters,
     inlineEditing: true,
   });
+  const showServerlessUpgrade = String(draft.adapter || "").trim() !== "local-intelligence";
   function handleServerlessAction(action) {
     if (!action) return;
     if (action.id === "toggle-locality") setRunLocality(serverlessState.isServerless ? "local" : "serverless");
@@ -743,12 +767,14 @@ function SandboxRecordFields({
 
   return (
     <div className="dm-sandbox-config">
-      <ApiRegistryCreationCockpit
-        state={serverlessState}
-        onAction={handleServerlessAction}
-        disabled={!table.mutable || saving}
-        eyebrow={serverlessState.isServerless ? "Serverless workflow" : "Workflow runtime"}
-      />
+      {showServerlessUpgrade && (
+        <ApiRegistryCreationCockpit
+          state={serverlessState}
+          onAction={handleServerlessAction}
+          disabled={!table.mutable || saving}
+          eyebrow={serverlessState.isServerless ? "Serverless workflow" : "Workflow runtime"}
+        />
+      )}
       <DrawerSection title="Identity & Mode">
         <label className="dm-record-field">
           <span>Name</span>
@@ -791,7 +817,7 @@ function SandboxRecordFields({
           onChange={setRunLocality}
         />
         <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 6 }}>
-          Local uses process sandbox or Paperclip agent host on this machine. Serverless delegates to an API Registry URL (no local agent CLI).
+          Choose local execution or a scheduled serverless run.
         </p>
 
         {locality === "serverless" && table.objectId && (
@@ -883,7 +909,7 @@ function SandboxRecordFields({
             </label>
 
             <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 0 }}>
-              Uses <strong>Instructions</strong> + <strong>Command</strong> as the task payload. Tool intents in the JSON response are proposals only and are not executed by the workspace.
+              Uses <strong>Instructions</strong> + <strong>Command</strong> as the task payload. With browser access off, tool intents stay proposals. With browser access on, browser tool intents execute through the local browser bridge before the final JSON response is returned.
             </p>
           </div>
         )}
@@ -921,10 +947,12 @@ function SandboxRecordFields({
         </div>
 
         <ToggleField
-          checked={netOn}
-          disabled={!table.mutable || saving}
+          checked={netOn || browserOn}
+          disabled={!table.mutable || saving || (browserOn && !netOn)}
           label="Network allow-list mode"
-          description="When enabled, local runs honor GROWTHUB_SANDBOX_NET_* and the allow list below."
+          description={browserOn && !netOn
+            ? "Network enabled by browser access — the run route grants it even though this row's networkAllow is off. Turn browser access off to control network independently."
+            : "When enabled, local runs honor GROWTHUB_SANDBOX_NET_* and the allow list below."}
           onChange={(on) => patchFields({ networkAllow: on ? "true" : "false" })}
         />
 
@@ -937,6 +965,21 @@ function SandboxRecordFields({
             onBlur={(event) => patchFields({ allowList: event.target.value })}
           />
         </label>
+
+        <ToggleField
+          checked={browserOn}
+          disabled={!table.mutable || saving}
+          label="Browser access"
+          description="Allows this sandbox to use a real browser. Also enables network. Local intelligence uses the Playwright browser bridge; Codex/Claude use their native browser modes."
+          onChange={(on) => patchFields(on
+            ? { browserAccess: "true", networkAllow: "true" }
+            : { browserAccess: "false" })}
+        />
+        {browserOn && String(draft.adapter || "").trim() === "local-agent-host" && browserHostMeta && (
+          <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4 }}>
+            {browserHostMeta.label}: {BROWSER_LANE_LABELS[browserHostMeta.browserLane] || BROWSER_LANE_LABELS["env-signal"]}
+          </p>
+        )}
       </DrawerSection>
 
       <DrawerSection title="Prompt & Limits">

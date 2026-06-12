@@ -43,6 +43,7 @@
  *       envRefsMissing:  string[],
  *       networkAllow:    boolean,
  *       allowList:       string[],
+ *       browserAccess:   boolean,                // first-class browser capability (implies networkAllow)
  *       adapterMeta?:    Record<string, unknown>
  *     }
  *   }
@@ -173,6 +174,7 @@ async function runServerlessScheduler({
   timeoutMs,
   networkAllow,
   allowList,
+  browserAccess,
   envRefSlugs,
   envRefsResolved,
   envRefsMissing
@@ -251,6 +253,7 @@ async function runServerlessScheduler({
       timeoutMs,
       networkAllow,
       allowList,
+      browserAccess,
       envRefSlugs,
       envRefsResolved,
       envRefsMissing
@@ -353,6 +356,7 @@ function buildRunResponse({
   envRefsMissing,
   networkAllow,
   allowList,
+  browserAccess,
   result,
   timeoutMs,
   row,
@@ -384,6 +388,7 @@ function buildRunResponse({
     envRefsMissing,
     networkAllow,
     allowList,
+    browserAccess,
     adapterMeta: result.adapterMeta || null
   };
   if (row && (row.resolverTemplateId || row.connectorKind || row.executionLane)) {
@@ -497,7 +502,11 @@ async function executeSandboxRun(body, { emit } = {}) {
   let adapterId = (typeof rowForRun.adapter === "string" && rowForRun.adapter.trim()) ? rowForRun.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
   const agentHost = typeof rowForRun.agentHost === "string" ? rowForRun.agentHost.trim() : "";
   const schedulerRegistryId = typeof rowForRun.schedulerRegistryId === "string" ? rowForRun.schedulerRegistryId.trim() : "";
-  const networkAllow = coerceBoolean(rowForRun.networkAllow);
+  const browserAccess = coerceBoolean(rowForRun.browserAccess);
+  // Browser access implies outbound network — the same deterministic
+  // normalization the sidecar toggle applies, enforced server-side so
+  // rows patched via the API behave identically to rows saved in the UI.
+  const networkAllow = coerceBoolean(rowForRun.networkAllow) || browserAccess;
   const allowList = parseSandboxAllowList(rowForRun.allowList);
   const envRefSlugs = parseSandboxEnvRefs(rowForRun.envRefs);
   const command = typeof rowForRun.command === "string" ? rowForRun.command : "";
@@ -576,6 +585,7 @@ async function executeSandboxRun(body, { emit } = {}) {
         envRefsResolved,
         networkAllow,
         allowList,
+        browserAccess,
         instructions,
         command,
         timeoutMs,
@@ -607,6 +617,7 @@ async function executeSandboxRun(body, { emit } = {}) {
       timeoutMs,
       networkAllow,
       allowList,
+      browserAccess,
       envRefSlugs,
       envRefsResolved,
       envRefsMissing
@@ -640,6 +651,7 @@ async function executeSandboxRun(body, { emit } = {}) {
         timeoutMs,
         networkAllow,
         allowList,
+        browserAccess,
         env,
         envRefSlugs,
         envRefsMissing,
@@ -680,6 +692,7 @@ async function executeSandboxRun(body, { emit } = {}) {
     envRefsMissing,
     networkAllow,
     allowList,
+    browserAccess,
     result,
     timeoutMs,
     row: rowForRun,

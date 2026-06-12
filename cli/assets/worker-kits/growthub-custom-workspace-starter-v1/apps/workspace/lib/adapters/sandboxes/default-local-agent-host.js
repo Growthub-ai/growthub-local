@@ -37,26 +37,94 @@ const MAX_OUTPUT_BYTES = 1024 * 256;
 const TELEMETRY_MARKER = "GROWTHUB_AGENT_TELEMETRY:";
 
 /**
+ * Browser access — the product's OWN agent browser primitive, surfaced.
+ *
+ * The upstream Paperclip server already gives every agent browser access
+ * through one boolean: the agent config's `chrome` primitive (see
+ * `ui/src/components/agent-config-primitives.tsx` — "Enable Claude's Chrome
+ * integration by passing --chrome") gated by the chrome-lease service in
+ * `server/src/services/chrome-lease.ts` before `adapter.execute()`. The
+ * sandbox row's `browserAccess` is the SAME bit on the governed Data Model
+ * side, so a row stays portable to the upstream adapter registry without
+ * translation — exactly like the host slugs themselves.
+ *
+ * When `browserAccess` is on, each host engages its FIRST-PARTY browser
+ * integration — nothing is invented or injected by this adapter:
+ *
+ *   native-flag   the host CLI has a first-party browser flag and
+ *                 argv(request) appends it (Claude Code `--chrome`,
+ *                 Codex `--enable browser_use --enable in_app_browser`).
+ *   env-signal    the host CLI has no documented one-shot browser flag; it
+ *                 receives GROWTHUB_SANDBOX_BROWSER_ACCESS=1 (mirroring the
+ *                 upstream browser-isolation context) and its own browser
+ *                 integration — whatever the operator has configured in that
+ *                 host — honors the row's setting. We never fabricate a flag
+ *                 or write host config we cannot verify against the upstream
+ *                 tool, the same rule the auth catalog follows for login
+ *                 subcommands.
+ *
+ * In the orchestration graph this is what makes browser access node-level
+ * and host-agnostic: thinAdapter / ai-agent nodes execute through this same
+ * catalog, so every node inherits the row's browser grant regardless of
+ * which host runs it.
+ */
+
+/**
  * Canonical Paperclip host catalog — slugs mirror `AGENT_ADAPTER_TYPES`.
  *
  * Each entry declares the binary the operator must have on PATH and how to
- * invoke it for one-shot prompt execution. `argv` returns the argv array the
- * adapter should pass; `inputMode` chooses whether the user's command is sent
- * via stdin or as a positional argument. `installHint` is surfaced verbatim
- * when the binary is not found, so operators get an actionable error.
+ * invoke it for one-shot prompt execution. `argv(request)` receives the sealed
+ * RunRequest and returns the argv array the adapter should pass — hosts with
+ * native capability flags (network sandbox mode, browser access) derive them
+ * deterministically from the governed row's saved settings. `inputMode`
+ * chooses whether the user's command is sent via stdin or as a positional
+ * argument. `installHint` is surfaced verbatim when the binary is not found,
+ * so operators get an actionable error. `browser` declares how the host's
+ * first-party browser integration is engaged (see above).
  */
 const HOST_CATALOG = {
   claude_local: {
     label: "Claude Code (local)",
     binary: "claude",
-    argv: () => ["-p", "--output-format", "text"],
+    argv: (request = {}) => {
+      const args = ["-p", "--output-format", "text"];
+      if (request.browserAccess) {
+        // Claude Code's first-party Chrome integration — the same flag the
+        // upstream server adapter passes when the agent config's `chrome`
+        // primitive is on.
+        args.push("--chrome");
+      }
+      return args;
+    },
+    browser: { lane: "native-flag", flags: ["--chrome"] },
     inputMode: "stdin",
     installHint: "Install Claude Code: npm i -g @anthropic-ai/claude-code"
   },
   codex_local: {
     label: "Codex CLI (local)",
     binary: "codex",
-    argv: () => ["exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"],
+    argv: (request = {}) => {
+      // INTENTIONAL: networkAllow alone selects `workspace-write`. Codex's
+      // `read-only` sandbox blocks ALL outbound network, so workspace-write is
+      // the least-privileged Codex mode where the row's network grant can take
+      // effect — and writes are confined to the sealed ephemeral workdir the
+      // adapter spawns into (cwd), never the operator's repo. Browser flags
+      // remain gated on browserAccess only; network alone never opens a browser.
+      const netOn = Boolean(request.networkAllow);
+      const browserOn = Boolean(request.browserAccess);
+      const args = [
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        netOn ? "workspace-write" : "read-only",
+      ];
+      if (browserOn) {
+        args.push("--enable", "browser_use", "--enable", "in_app_browser");
+      }
+      args.push("-");
+      return args;
+    },
+    browser: { lane: "native-flag", flags: ["--enable", "browser_use", "--enable", "in_app_browser"] },
     inputMode: "stdin",
     installHint: "Install Codex CLI: npm i -g @openai/codex"
   },
@@ -64,6 +132,7 @@ const HOST_CATALOG = {
     label: "Cursor Agent (local)",
     binary: "cursor-agent",
     argv: () => ["--print"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install Cursor Agent CLI: curl https://cursor.com/install -fsS | bash"
   },
@@ -71,6 +140,7 @@ const HOST_CATALOG = {
     label: "Gemini CLI (local)",
     binary: "gemini",
     argv: () => ["-p", "-"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install Gemini CLI: npm i -g @google/gemini-cli"
   },
@@ -78,6 +148,7 @@ const HOST_CATALOG = {
     label: "OpenCode (local)",
     binary: "opencode",
     argv: () => ["run", "--quiet"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install OpenCode: npm i -g opencode-ai"
   },
@@ -85,6 +156,7 @@ const HOST_CATALOG = {
     label: "Pi (local)",
     binary: "pi",
     argv: () => ["run", "--stdin"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install Pi CLI: refer to your Paperclip Pi distribution"
   },
@@ -92,6 +164,7 @@ const HOST_CATALOG = {
     label: "Qwen Code (local)",
     binary: "qwen",
     argv: () => ["-p"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install Qwen Code CLI: refer to your Qwen distribution"
   },
@@ -99,6 +172,7 @@ const HOST_CATALOG = {
     label: "Hermes Paperclip (local)",
     binary: "hermes",
     argv: () => ["run", "--stdin"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install Hermes Paperclip adapter: npm i -g hermes-paperclip-adapter"
   },
@@ -106,6 +180,7 @@ const HOST_CATALOG = {
     label: "OpenClaw Gateway (local)",
     binary: "openclaw",
     argv: () => ["gateway", "exec", "--stdin"],
+    browser: { lane: "env-signal" },
     inputMode: "stdin",
     installHint: "Install OpenClaw Gateway: refer to your Paperclip distribution"
   }
@@ -292,12 +367,13 @@ async function run(request) {
     GROWTHUB_SANDBOX_AGENT_HOST: hostSlug,
     GROWTHUB_SANDBOX_NET_ALLOW: request.networkAllow ? "1" : "0",
     GROWTHUB_SANDBOX_NET_ALLOWLIST: Array.isArray(request.allowList) ? request.allowList.join(",") : "",
+    GROWTHUB_SANDBOX_BROWSER_ACCESS: request.browserAccess ? "1" : "0",
     ...(request.env || {})
   };
 
   const timeoutMs = Number.isFinite(request.timeoutMs) && request.timeoutMs > 0 ? request.timeoutMs : 60000;
   const startedAt = Date.now();
-  const argv = host.argv(command);
+  const argv = host.argv(request);
 
   return await new Promise((resolve) => {
     let stdout = Buffer.alloc(0);
@@ -385,6 +461,8 @@ async function run(request) {
           binary: host.binary,
           argv,
           inputMode: host.inputMode,
+          browserAccess: Boolean(request.browserAccess),
+          browserLane: request.browserAccess ? host.browser.lane : null,
           timedOut,
           signal: signal || null,
           tokens: telemetry.tokens,

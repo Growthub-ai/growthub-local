@@ -157,9 +157,10 @@ function validateOrchestrationGraph(graph) {
     } else {
       const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
       const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
+      const hasAiAgent = graph.nodes.some((n) => n?.type === "ai-agent");
       const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
-      if (!hasThinAdapter && !hasApi) errors.push("orchestrationGraph requires an api-registry-call node");
-      if (!hasThinAdapter && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
+      if (!hasThinAdapter && !hasApi && !hasAiAgent) errors.push("orchestrationGraph requires an executable node");
+      if (!hasThinAdapter && !hasAiAgent && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
     }
   }
   if (!Array.isArray(graph.edges)) {
@@ -712,6 +713,7 @@ function buildCanonicalNode(nodeId, registryRow = {}, options = {}) {
 function getNextCanonicalNodeId(graph) {
   const parsed = parseOrchestrationGraph(graph) || graph;
   if ((parsed?.nodes || []).some((n) => n?.type === "thinAdapter")) return null;
+  if ((parsed?.nodes || []).some((n) => n?.type === "ai-agent")) return null;
   const ids = new Set((parsed?.nodes || []).map((n) => String(n.id)));
   for (const id of CANONICAL_NODE_ORDER) {
     if (!ids.has(id)) return id;

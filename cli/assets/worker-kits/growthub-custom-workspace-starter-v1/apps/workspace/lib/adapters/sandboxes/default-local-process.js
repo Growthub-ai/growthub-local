@@ -108,6 +108,7 @@ async function run(request) {
     GROWTHUB_SANDBOX_RUN_ID: request.runId || "",
     GROWTHUB_SANDBOX_NET_ALLOW: request.networkAllow ? "1" : "0",
     GROWTHUB_SANDBOX_NET_ALLOWLIST: Array.isArray(request.allowList) ? request.allowList.join(",") : "",
+    GROWTHUB_SANDBOX_BROWSER_ACCESS: request.browserAccess ? "1" : "0",
     ...(request.env || {})
   };
 
@@ -177,7 +178,8 @@ async function run(request) {
           timedOut,
           signal: signal || null,
           networkAllow: Boolean(request.networkAllow),
-          allowList: Array.isArray(request.allowList) ? request.allowList : []
+          allowList: Array.isArray(request.allowList) ? request.allowList : [],
+          browserAccess: Boolean(request.browserAccess)
         }
       });
     });

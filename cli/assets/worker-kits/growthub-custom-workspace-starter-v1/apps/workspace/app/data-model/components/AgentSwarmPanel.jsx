@@ -3,6 +3,17 @@
 import { useMemo } from "react";
 import { Check, Plus, Trash2 } from "lucide-react";
 import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
+import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
+import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
+
+const EMPTY_AGENT_AUTH_PATCH = {
+  agentAuthStatus: "",
+  agentAuthProvider: "",
+  agentAuthLastChecked: "",
+  agentAuthLastExitCode: "",
+  agentAuthLastMessage: "",
+  agentAuthLastLoginUrl: ""
+};
 
 function getHostOptions() {
   return Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => ({
@@ -23,6 +34,17 @@ function withRecordRef(patch, objectId, rowName, nodeId) {
   return {
     ...patch,
     sandboxRecordRef: nodeSandboxRecordRef(objectId, rowName, nodeId)
+  };
+}
+
+function buildSubagentAuthDraft(sandboxRow, config) {
+  const agentHost = String(config?.agentHost || sandboxRow?.agentHost || "").trim();
+  if (!agentHost) return null;
+  return {
+    ...(sandboxRow || {}),
+    runLocality: "local",
+    adapter: "local-agent-host",
+    agentHost
   };
 }
 
@@ -139,7 +161,7 @@ function patchSwarmConfig(graph, patch) {
   return { ...graph, swarm: { ...base, ...patch } };
 }
 
-export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disabled }) {
+export function AgentSwarmPanel({ graph, objectId, rowName, sandboxRow, onSandboxRowPatch, onGraphChange, disabled }) {
   const hostOptions = useMemo(getHostOptions, []);
   if (!graph || typeof graph !== "object") return null;
 
@@ -152,6 +174,21 @@ export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disab
   function patchGraph(updater) {
     if (typeof updater !== "function") return;
     onGraphChange?.(updater);
+  }
+
+  function patchSubagentHost(nodeId, agentHost) {
+    const nextHost = String(agentHost || "").trim();
+    patchGraph((g) => patchSubagent(g, nodeId, {
+      agentHost: nextHost,
+      ...(nextHost ? { adapter: "local-agent-host" } : {})
+    }, objectId, rowName));
+    if (nextHost && typeof onSandboxRowPatch === "function") {
+      onSandboxRowPatch({
+        adapter: "local-agent-host",
+        agentHost: nextHost,
+        ...EMPTY_AGENT_AUTH_PATCH
+      });
+    }
   }
 
   return (
@@ -187,6 +224,7 @@ export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disab
           )}
           {subagents.map((node) => {
             const cfg = node.config || {};
+            const subagentAuthDraft = buildSubagentAuthDraft(sandboxRow, cfg);
             return (
               <div key={node.id} className="dm-agent-swarm-panel__subagent">
                 <div className="dm-agent-swarm-panel__row">
@@ -252,7 +290,7 @@ export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disab
                   <select
                     value={cfg.agentHost || ""}
                     disabled={disabled}
-                    onChange={(e) => patchGraph((g) => patchSubagent(g, node.id, { agentHost: e.target.value }, objectId, rowName))}
+                    onChange={(e) => patchSubagentHost(node.id, e.target.value)}
                   >
                     <option value="">Inherit</option>
                     {hostOptions.map((opt) => (
@@ -260,6 +298,15 @@ export function AgentSwarmPanel({ graph, objectId, rowName, onGraphChange, disab
                     ))}
                   </select>
                 </label>
+                {subagentAuthDraft && isSandboxLocalAgentHost(subagentAuthDraft) && (
+                  <SandboxAgentAuthPanel
+                    objectId={objectId}
+                    rowName={rowName}
+                    draft={subagentAuthDraft}
+                    disabled={disabled || typeof onSandboxRowPatch !== "function"}
+                    onPatchDraft={onSandboxRowPatch}
+                  />
+                )}
                 <WorkflowCheckbox
                   checked={cfg.required !== false}
                   disabled={disabled}
