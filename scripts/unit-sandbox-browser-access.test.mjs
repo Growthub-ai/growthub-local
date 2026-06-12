@@ -2,17 +2,20 @@
 /**
  * Unit coverage for the first-class sandbox `browserAccess` primitive.
  *
- * Invariants under test:
- *   - EVERY host in the local-agent-host catalog declares a browser
- *     provisioning lane (native-argv / mcp-config-flag / project-mcp-config /
- *     mcp-convention) — no host is silently browser-less.
+ * `browserAccess` is the governed-row mirror of the upstream agent config
+ * `chrome` primitive — the product's existing agent browser mechanism. The
+ * invariants under test:
+ *
+ *   - every host in the local-agent-host catalog declares how its FIRST-PARTY
+ *     browser integration is engaged (native-flag) or that it rides the env
+ *     signal (env-signal) — nothing is invented per host.
  *   - argv(request) derives capability flags deterministically from the
- *     governed row's saved settings (codex native flags, claude mcp-config
- *     flag) and stays stable when browserAccess is off.
- *   - provisionBrowserAccess writes only inside the sealed workdir and
- *     returns audit metadata; it is a no-op when browserAccess is off.
- *   - deriveSandboxServerlessState surfaces browserAccess for both
- *     localities so the upgrade path keeps the identical capability contract.
+ *     governed row's saved settings (Claude `--chrome`, Codex browser_use)
+ *     and stays byte-identical when browserAccess is off.
+ *   - the sealed env contract publishes GROWTHUB_SANDBOX_BROWSER_ACCESS to
+ *     every adapter (proven with a real local-process spawn).
+ *   - run-console projection, schema validation, swarm inheritance, and the
+ *     serverless flow state all carry the same bit.
  *
  * Run with:  node --test scripts/unit-sandbox-browser-access.test.mjs
  */
@@ -31,7 +34,7 @@ const kitLib = path.join(
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib",
 );
 
-const { BROWSER_MCP_CONFIG, HOST_CATALOG, provisionBrowserAccess } = await import(
+const { HOST_CATALOG } = await import(
   pathToFileURL(path.join(kitLib, "adapters/sandboxes/default-local-agent-host.js")).href
 );
 const { deriveSandboxServerlessState } = await import(
@@ -51,15 +54,15 @@ const { buildSandboxRowFromSwarmProposal } = await import(
   pathToFileURL(path.join(kitLib, "workspace-swarm-proposal.js")).href
 );
 
-const KNOWN_LANES = ["native-argv", "mcp-config-flag", "project-mcp-config", "mcp-convention"];
+const KNOWN_LANES = ["native-flag", "env-signal"];
 
-test("every catalog host declares a browser provisioning lane", () => {
+test("every catalog host declares its browser lane", () => {
   for (const [slug, host] of Object.entries(HOST_CATALOG)) {
-    assert.ok(host.browser, `${slug} must declare a browser provisioning spec`);
+    assert.ok(host.browser, `${slug} must declare a browser lane`);
     assert.ok(KNOWN_LANES.includes(host.browser.lane), `${slug} lane ${host.browser.lane} unknown`);
-    assert.ok(Array.isArray(host.browser.files), `${slug} browser.files must be an array`);
-    if (host.browser.lane !== "native-argv") {
-      assert.ok(host.browser.files.length > 0, `${slug} non-native lane must provision at least one file`);
+    if (host.browser.lane === "native-flag") {
+      assert.ok(Array.isArray(host.browser.flags) && host.browser.flags.length > 0,
+        `${slug} native-flag lane must declare its first-party flags`);
     }
   }
 });
@@ -79,6 +82,24 @@ test("every host argv is callable for all browserAccess/networkAllow combination
   }
 });
 
+test("argv is byte-identical with browserAccess off — no behavior drift for existing rows", () => {
+  for (const [slug, host] of Object.entries(HOST_CATALOG)) {
+    assert.deepEqual(
+      host.argv({ networkAllow: true }),
+      host.argv({ networkAllow: true, browserAccess: false }),
+      `${slug} must not change argv when browserAccess is explicitly off`
+    );
+  }
+});
+
+test("claude argv engages Claude's first-party --chrome integration only when browser is on", () => {
+  assert.deepEqual(HOST_CATALOG.claude_local.argv({}), ["-p", "--output-format", "text"]);
+  assert.deepEqual(
+    HOST_CATALOG.claude_local.argv({ browserAccess: true }),
+    ["-p", "--output-format", "text", "--chrome"]
+  );
+});
+
 test("codex argv derives native sandbox + browser flags from the row", () => {
   const off = HOST_CATALOG.codex_local.argv({});
   assert.deepEqual(off, ["exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"]);
@@ -92,74 +113,6 @@ test("codex argv derives native sandbox + browser flags from the row", () => {
     "exec", "--skip-git-repo-check", "--sandbox", "workspace-write",
     "--enable", "browser_use", "--enable", "in_app_browser", "-",
   ]);
-});
-
-test("claude argv points at the provisioned MCP config only when browser is on", () => {
-  assert.deepEqual(HOST_CATALOG.claude_local.argv({}), ["-p", "--output-format", "text"]);
-  const on = HOST_CATALOG.claude_local.argv({ browserAccess: true });
-  assert.ok(on.includes("--mcp-config"), "browser on must pass --mcp-config");
-  assert.ok(on.includes("--allowedTools"), "browser on must allowlist the browser MCP tools");
-});
-
-test("provisionBrowserAccess writes host config inside the workdir and audits it", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-browser-test-"));
-  try {
-    const provision = await provisionBrowserAccess(HOST_CATALOG.cursor, { browserAccess: true }, workdir);
-    assert.equal(provision.lane, "project-mcp-config");
-    assert.deepEqual(provision.files, [".cursor/mcp.json"]);
-    const written = JSON.parse(await fs.readFile(path.join(workdir, ".cursor/mcp.json"), "utf8"));
-    assert.ok(written.mcpServers?.browser?.command, "written config must declare the browser MCP server");
-  } finally {
-    await fs.rm(workdir, { recursive: true, force: true });
-  }
-});
-
-test("provisionBrowserAccess falls back to the .mcp.json convention for hosts without a spec", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-browser-test-"));
-  try {
-    const provision = await provisionBrowserAccess({}, { browserAccess: true }, workdir);
-    assert.equal(provision.lane, "mcp-convention");
-    assert.deepEqual(provision.files, [".mcp.json"]);
-  } finally {
-    await fs.rm(workdir, { recursive: true, force: true });
-  }
-});
-
-test("provisionBrowserAccess is a no-op when browserAccess is off", async () => {
-  const provision = await provisionBrowserAccess(HOST_CATALOG.cursor, { browserAccess: false }, "/nonexistent");
-  assert.equal(provision, null);
-});
-
-test("browser MCP server package is pinned, never @latest", () => {
-  const args = BROWSER_MCP_CONFIG.mcpServers.browser.args.join(" ");
-  assert.ok(!args.includes("@latest"), "MCP package must be pinned for run-to-run determinism");
-  assert.match(args, /@playwright\/mcp@\d+\.\d+\.\d+/, "MCP package must carry an exact version");
-});
-
-test("claude provisioning writes the pinned MCP config inside the workdir only", async () => {
-  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-browser-test-"));
-  try {
-    const provision = await provisionBrowserAccess(HOST_CATALOG.claude_local, { browserAccess: true }, workdir);
-    assert.equal(provision.lane, "mcp-config-flag");
-    for (const rel of provision.files) {
-      assert.ok(!path.isAbsolute(rel) && !rel.split(/[\\/]/).includes(".."), `${rel} must stay relative`);
-      const resolved = path.resolve(workdir, rel);
-      assert.ok(resolved.startsWith(workdir + path.sep) || resolved === path.join(workdir, rel), `${rel} must resolve inside the workdir`);
-      const body = await fs.readFile(resolved, "utf8");
-      assert.ok(!body.includes("@latest"), "provisioned config must use the pinned package");
-    }
-  } finally {
-    await fs.rm(workdir, { recursive: true, force: true });
-  }
-});
-
-test("no catalog provisioning file can escape the workdir", () => {
-  for (const [slug, host] of Object.entries(HOST_CATALOG)) {
-    for (const file of host.browser.files) {
-      assert.ok(!path.isAbsolute(file.path), `${slug}: ${file.path} must be relative`);
-      assert.ok(!file.path.split(/[\\/]/).includes(".."), `${slug}: ${file.path} must not traverse upward`);
-    }
-  }
 });
 
 test("sealed contract: local-process publishes GROWTHUB_SANDBOX_BROWSER_ACCESS to the script", async () => {
@@ -190,7 +143,7 @@ test("sealed contract: local-process publishes GROWTHUB_SANDBOX_BROWSER_ACCESS t
   }
 });
 
-test("run-console projection surfaces browserAccess and the provisioning audit", () => {
+test("run-console projection surfaces browserAccess and the engaged lane", () => {
   const normalized = normalizeRunConsoleRecord({
     runId: "run_x",
     ranAt: new Date().toISOString(),
@@ -199,11 +152,11 @@ test("run-console projection surfaces browserAccess and the provisioning audit",
     browserAccess: true,
     networkAllow: true,
     allowList: ["example.com"],
-    adapterMeta: { adapter: "local-agent-host", browserAccess: true, browserProvision: { lane: "native-argv", files: [] } }
+    adapterMeta: { adapter: "local-agent-host", browserAccess: true, browserLane: "native-flag" }
   });
   assert.ok(normalized, "record must normalize");
   assert.equal(normalized.context.browserAccess, true);
-  assert.equal(normalized.context.adapterMeta.browserProvision.lane, "native-argv");
+  assert.equal(normalized.context.adapterMeta.browserLane, "native-flag");
 });
 
 test("schema accepts boolean-coercible browserAccess and rejects garbage", () => {

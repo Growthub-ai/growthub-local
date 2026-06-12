@@ -103,7 +103,7 @@ function describeRegisteredSandboxAdapters() {
           label: host?.label || slug,
           binary: host?.binary || null,
           installHint: host?.installHint || null,
-          browserLane: host?.browser?.lane || "mcp-convention"
+          browserLane: host?.browser?.lane || "env-signal"
         }))
       : null
   }));

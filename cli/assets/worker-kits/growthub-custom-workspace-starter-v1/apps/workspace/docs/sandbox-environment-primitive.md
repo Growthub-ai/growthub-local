@@ -29,27 +29,25 @@ Sandbox rows reference **`authRef` / named env refs** — never literals in brow
 
 **Deterministic normalization** — browser access implies outbound network. The sidecar toggle stamps `networkAllow: "true"` when browser access is switched on, and `POST /api/workspace/sandbox-run` enforces the same implication server-side (`networkAllow || browserAccess`), so rows patched via the API behave identically to rows saved in the UI.
 
-**Local (`local-agent-host`)** — every host in the catalog has a declared browser provisioning lane in `lib/adapters/sandboxes/default-local-agent-host.js`; no host is silently browser-less:
+**This is the product's existing agent browser primitive, surfaced — not a new system.** The upstream Paperclip server already grants any agent browser access through one boolean: the agent config's `chrome` primitive (`ui/src/components/agent-config-primitives.tsx` — "Enable Claude's Chrome integration by passing --chrome"), gated by the chrome-lease service (`server/src/services/chrome-lease.ts`) before `adapter.execute()`. The CMS profile contract likewise speaks `allowBrowserBridge` and execution mode `"browser"`. `browserAccess` is the same bit on the governed sandbox row, so rows stay portable to the upstream adapter registry without translation — exactly like the host slugs.
+
+**Local (`local-agent-host`)** — when the row's bit is on, each host engages its **first-party** browser integration; the adapter never invents flags or writes host config it cannot verify against the upstream tool (the same rule the auth catalog follows for login subcommands):
 
 | Lane | Hosts | Mechanism |
 | --- | --- | --- |
-| `native-argv` | Codex | First-party CLI flags: `--sandbox workspace-write` + `--enable browser_use --enable in_app_browser`. |
-| `mcp-config-flag` | Claude Code | Adapter writes a Playwright MCP browser-server config into the sealed run workdir and passes `--mcp-config` + `--allowedTools "mcp__browser__*"`. |
-| `project-mcp-config` | Cursor, Gemini, Qwen, OpenCode | Adapter writes the host's project-scoped MCP config (`.cursor/mcp.json`, `.gemini/settings.json`, `.qwen/settings.json`, `opencode.json`) into the workdir; the child spawns with `cwd: workdir` and auto-loads it. |
-| `mcp-convention` | Pi, Hermes, OpenClaw Gateway | Adapter writes the standard `.mcp.json` convention file into the workdir. |
+| `native-flag` | Claude Code | `--chrome` — Claude's own Chrome integration, the same flag the upstream server adapter passes for the agent `chrome` primitive. |
+| `native-flag` | Codex | `--enable browser_use --enable in_app_browser` (with `--sandbox workspace-write`). |
+| `env-signal` | Cursor, Gemini, Qwen, OpenCode, Pi, Hermes, OpenClaw Gateway | The host receives `GROWTHUB_SANDBOX_BROWSER_ACCESS=1` (mirroring the upstream browser-isolation context); whatever browser integration the operator has configured in that host honors the row's setting. |
 
-Provisioning writes **only inside the ephemeral workdir** — host-global config (`~/.claude`, `~/.codex`, `~/.gemini`, …) is never mutated. The lane and written files are recorded in `adapterMeta.browserProvision` for the audit trail, and the run-console record projection surfaces `context.browserAccess` plus the full `adapterMeta` so every run shows its browser proof.
+The lane engaged for a run is recorded in `adapterMeta.browserLane`, and the run-console record projection surfaces `context.browserAccess` plus the full `adapterMeta`, so every run shows its browser proof. No host-global config (`~/.claude`, `~/.codex`, …) is ever mutated.
 
-Two deliberate decisions, stated explicitly:
+**Orchestration graph** — this is why browser access is node-level and host-agnostic with zero extra configuration: `thinAdapter` and `ai-agent` nodes execute through this same host catalog, so every node inherits the row's browser grant no matter which host runs it (subagent nodes through the existing node-level Network gate; orchestrator and synthesis phases directly).
 
-- **Codex `workspace-write` on `networkAllow` alone is intentional.** Codex's `read-only` sandbox blocks all outbound network, so `workspace-write` is the least-privileged Codex mode where the row's network grant can take effect — and writes are confined to the sealed ephemeral workdir the adapter spawns into, never the operator's repo. Browser flags (`--enable browser_use --enable in_app_browser`) remain gated on `browserAccess` only; network alone never opens a browser.
-- **The Playwright MCP package is pinned** (`@playwright/mcp@0.0.76`), not `@latest` — two runs of the same saved row must resolve the same browser server. Operators can override the pin with `GROWTHUB_SANDBOX_BROWSER_MCP_PACKAGE` on the workspace host (runtime config, never row data, never a secret).
+One deliberate decision, stated explicitly: **Codex `workspace-write` on `networkAllow` alone is intentional.** Codex's `read-only` sandbox blocks all outbound network, so `workspace-write` is the least-privileged Codex mode where the row's network grant can take effect — and writes are confined to the sealed ephemeral workdir the adapter spawns into, never the operator's repo. Browser flags remain gated on `browserAccess` only; network alone never opens a browser.
 
 **Local (`local-process`)** and every other adapter — the sealed RunRequest carries `browserAccess: boolean`, and the env contract publishes `GROWTHUB_SANDBOX_BROWSER_ACCESS=1|0` alongside `GROWTHUB_SANDBOX_NET_ALLOW(LIST)`, so any script or drop-zone adapter honors the row's setting without knowing about specific hosts.
 
 **Serverless** — the `growthub-sandbox-run-v1` envelope carries `sandbox.browserAccess` (plus `networkAllow` / `allowList`), so a workflow upgraded from local to serverless keeps the identical capability contract: the Edge/QStash/cron handler reads one boolean and grants its own runtime's browser (e.g. a remote browser pool or hosted agent's browser tool). No host-specific knowledge crosses the wire — slugs and booleans only, never secrets.
-
-**Orchestration graph** — the row's `browserAccess` flows into the run execution context. Orchestrator and synthesis phases inherit it directly; ai-agent subagent nodes inherit it through the same node-level **Network** gate that already scopes `networkAllow` (browser is a superset of network, so a node with network off gets neither).
 
 ## Not a widget source
 
