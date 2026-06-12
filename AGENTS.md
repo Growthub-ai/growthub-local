@@ -149,6 +149,17 @@ The local agent host adapter is the handoff point for Codex and other local CLIs
 
 Governed agent swarm workflows are sandbox-environment rows with `agent-swarm-v1` orchestration graphs. They are proposed by the helper, applied through the existing `dataModel` lane, opened through Background Tasks with a thread-bounded focus, executed through the same `sandbox-run` route, and traced in the workflow canvas through node `sandboxRecordRef` values. Do not create a separate swarm object model or fallback redirect path.
 
+## Canonical workspace mutation boundary
+
+A governed workspace has exactly two canonical mutation calls; every agent harness must route through them and never invent a third path:
+
+1. `PATCH /api/workspace` — config mutation, permanently allowlisted to `dashboards`, `widgetTypes`, `canvas`, `dataModel`.
+2. `POST /api/workspace/sandbox-run` — all sandbox / agent-swarm execution, including draft proofs via `useDraft: true`.
+
+Mutations follow the verified protocol: read (`GET /api/workspace`) → validate against `workspace-schema.js` (or draft through the helper) → prove (test-source / sandbox-run / draft run) → publish (PATCH only the changed allowlisted key) → confirm (require the 200 success envelope before any dependent step). Prefer existing governed objects over new code: scheduled jobs, external APIs, data views, and multi-agent workflows are already objects plus these two calls.
+
+The runtime-verified contract card — exact request/response shapes, observed error envelopes, and the row-shape traps (`Name` capital-N identity column, `command` as the executed payload) — is [`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/skills/governed-workspace-mutation/SKILL.md`](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/skills/governed-workspace-mutation/SKILL.md). It ships inside every exported workspace at `skills/governed-workspace-mutation/SKILL.md`, so first-session agents in any fork find it in the standard traversal. Read it before any workspace-configuration call.
+
 ## Workspace Helper
 
 The workspace helper is a governed, workspace-grammar-aware planning engine that drafts proposals for dashboards, widgets, API registry rows, and custom business objects. It operates in propose-only mode — mutations require an explicit apply step.

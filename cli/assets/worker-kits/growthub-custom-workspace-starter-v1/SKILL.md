@@ -29,7 +29,9 @@ helpers:
   - path: helpers/check-self-improving-health.sh
     verb: check-self-improving-health
     description: Validate self-improving workspace primitives and proposal dirs.
-subSkills: []
+subSkills:
+  - name: governed-workspace-mutation
+    path: skills/governed-workspace-mutation/SKILL.md
 mcpTools: []
 ---
 
@@ -44,7 +46,7 @@ Every Growthub governed Workspace is materialised from this kit. The kit ships t
 3. **`templates/project.md`** — session-memory template. On `growthub starter init` and `growthub starter import-*`, the CLI copies this to `.growthub-fork/project.md` so every fork starts with an append-only editing history alongside the machine-readable `trace.jsonl`.
 4. **`templates/self-eval.md`** — self-evaluation pattern. Describes the generate → render → evaluate → retry (≤3) loop that mirrors the Fork Sync Agent's preview → apply → trace lifecycle.
 5. **`helpers/`** — safe shell tool layer. Scripts an agent calls via one shell invocation instead of reconstructing raw commands. Populated per fork; the baseline ships conventions only.
-6. **`skills/`** — nested sub-skill convention. Each sub-directory is a full `SKILL.md`-addressable sub-skill that a parent agent can spawn in parallel for heavy or narrow tasks.
+6. **`skills/`** — nested sub-skill convention. Each sub-directory is a full `SKILL.md`-addressable sub-skill that a parent agent can spawn in parallel for heavy or narrow tasks. The baseline ships [`skills/governed-workspace-mutation/SKILL.md`](./skills/governed-workspace-mutation/SKILL.md) — the runtime-verified contract card for the two canonical workspace calls (`PATCH /api/workspace`, `POST /api/workspace/sandbox-run`). **Read it before any workspace-configuration mutation or sandbox execution.**
 
 ## When to use this skill
 
