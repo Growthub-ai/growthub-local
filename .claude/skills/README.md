@@ -32,6 +32,7 @@ Every skill here plugs into that journey.
 | [`growthub-marketing-operator`](./growthub-marketing-operator/SKILL.md) | Dispatch marketing intents to the correct skill + framework + template | `cli/assets/worker-kits/growthub-marketing-skills-v1/` |
 | [`growthub-worker-kits`](./growthub-worker-kits/SKILL.md) | Umbrella skill for operating any worker kit — workspace resolution via `${<KIT>_HOME}`, QUICKSTART pattern, kit-wide CLI entries | `cli/assets/worker-kits/`, `scripts/export-worker-kit.mjs` |
 | [`growthub-workspace-helper`](./growthub-workspace-helper/SKILL.md) | Draft dashboards, widget layouts, API registry rows, and custom objects via the workspace helper endpoint; returns governed proposals for explicit review and apply | `apps/workspace/app/api/workspace/helper/`, `apps/workspace/lib/workspace-helper.js`, `packages/api-contract/src/helper.ts` |
+| [`oss-investigative-architecture`](./oss-investigative-architecture/SKILL.md) | "investigate this repo", source-of-truth architecture analysis, additive implementation planning against any repository's real contracts and extension points | `AGENTS.md` (source-of-truth order), `docs/SKILLS_MCP_DISCOVERY.md`, own read-only helpers (`helpers/map-surfaces.sh`, `helpers/find-contracts.sh`) |
 
 ## Core loop — every agent follows this order
 
@@ -55,6 +56,7 @@ Every skill here plugs into that journey.
 - **User wants T3 Code CLI (health / prompt / session / profile)** → `growthub-t3code-harness`.
 - **User is doing marketing work (CRO, SEO, content, email, launch, pricing)** → `growthub-marketing-operator`.
 - **User is operating inside any worker kit (running, inspecting, installing, forking)** → `growthub-worker-kits` (umbrella) + the per-kit operator runbook it points to.
+- **User wants an architecture investigation or an additive implementation plan grounded in a repo's actual source-of-truth (contracts, invariants, extension points)** → `oss-investigative-architecture`. Not prefixed `growthub-` because it operates on any target repository, not just this one.
 
 If multiple skills could apply, prefer the one that is the narrowest match for the user's stated outcome.
 
