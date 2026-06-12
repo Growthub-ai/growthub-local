@@ -37,26 +37,89 @@ const MAX_OUTPUT_BYTES = 1024 * 256;
 const TELEMETRY_MARKER = "GROWTHUB_AGENT_TELEMETRY:";
 
 /**
+ * Browser provisioning — agnostic, deterministic, one per host.
+ *
+ * When the governed sandbox row has `browserAccess` on, every host receives a
+ * working browser through the mechanism its CLI actually understands. The
+ * lanes are:
+ *
+ *   native-argv         the host CLI has first-party browser flags; argv(request)
+ *                       appends them (no file provisioning needed).
+ *   mcp-config-flag     the host CLI accepts a one-shot MCP config flag; the
+ *                       adapter writes a Playwright MCP browser-server config
+ *                       into the sealed workdir and argv(request) points at it.
+ *   project-mcp-config  the host CLI auto-loads project-scoped MCP config from
+ *                       cwd; the adapter writes the host's config file into the
+ *                       workdir before spawn (the child runs with cwd=workdir).
+ *   mcp-convention      universal fallback — the adapter writes the standard
+ *                       `.mcp.json` into the workdir for hosts without a
+ *                       verified native lane.
+ *
+ * The browser server itself is host-agnostic: Playwright MCP via npx, no API
+ * key, works on macOS / Windows / Linux. On top of whichever lane applies,
+ * EVERY host also receives GROWTHUB_SANDBOX_BROWSER_ACCESS=1 plus the network
+ * allow list, so browser tooling configured inside the host honors the row's
+ * saved setting even when the lane is only the convention file.
+ */
+const BROWSER_MCP_SERVER = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+const BROWSER_MCP_CONFIG = { mcpServers: { browser: BROWSER_MCP_SERVER } };
+const BROWSER_MCP_CONFIG_FILENAME = "growthub-browser-mcp.json";
+const BROWSER_FALLBACK_PROVISION = Object.freeze({
+  lane: "mcp-convention",
+  files: [{ path: ".mcp.json", json: BROWSER_MCP_CONFIG }]
+});
+
+/**
  * Canonical Paperclip host catalog — slugs mirror `AGENT_ADAPTER_TYPES`.
  *
  * Each entry declares the binary the operator must have on PATH and how to
- * invoke it for one-shot prompt execution. `argv` returns the argv array the
- * adapter should pass; `inputMode` chooses whether the user's command is sent
- * via stdin or as a positional argument. `installHint` is surfaced verbatim
- * when the binary is not found, so operators get an actionable error.
+ * invoke it for one-shot prompt execution. `argv(request)` receives the sealed
+ * RunRequest and returns the argv array the adapter should pass — hosts with
+ * native capability flags (network sandbox mode, browser access) derive them
+ * deterministically from the governed row's saved settings. `inputMode`
+ * chooses whether the user's command is sent via stdin or as a positional
+ * argument. `installHint` is surfaced verbatim when the binary is not found,
+ * so operators get an actionable error. `browser` declares the host's
+ * provisioning lane (see above); hosts without one fall back to the `.mcp.json`
+ * convention so no host is ever silently browser-less.
  */
 const HOST_CATALOG = {
   claude_local: {
     label: "Claude Code (local)",
     binary: "claude",
-    argv: () => ["-p", "--output-format", "text"],
+    argv: (request = {}) => {
+      const args = ["-p", "--output-format", "text"];
+      if (request.browserAccess) {
+        args.push("--mcp-config", BROWSER_MCP_CONFIG_FILENAME, "--allowedTools", "mcp__browser__*");
+      }
+      return args;
+    },
+    browser: {
+      lane: "mcp-config-flag",
+      files: [{ path: BROWSER_MCP_CONFIG_FILENAME, json: BROWSER_MCP_CONFIG }]
+    },
     inputMode: "stdin",
     installHint: "Install Claude Code: npm i -g @anthropic-ai/claude-code"
   },
   codex_local: {
     label: "Codex CLI (local)",
     binary: "codex",
-    argv: () => ["exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"],
+    argv: (request = {}) => {
+      const netOn = Boolean(request.networkAllow);
+      const browserOn = Boolean(request.browserAccess);
+      const args = [
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        netOn ? "workspace-write" : "read-only",
+      ];
+      if (browserOn) {
+        args.push("--enable", "browser_use", "--enable", "in_app_browser");
+      }
+      args.push("-");
+      return args;
+    },
+    browser: { lane: "native-argv", files: [] },
     inputMode: "stdin",
     installHint: "Install Codex CLI: npm i -g @openai/codex"
   },
@@ -64,6 +127,10 @@ const HOST_CATALOG = {
     label: "Cursor Agent (local)",
     binary: "cursor-agent",
     argv: () => ["--print"],
+    browser: {
+      lane: "project-mcp-config",
+      files: [{ path: ".cursor/mcp.json", json: BROWSER_MCP_CONFIG }]
+    },
     inputMode: "stdin",
     installHint: "Install Cursor Agent CLI: curl https://cursor.com/install -fsS | bash"
   },
@@ -71,6 +138,10 @@ const HOST_CATALOG = {
     label: "Gemini CLI (local)",
     binary: "gemini",
     argv: () => ["-p", "-"],
+    browser: {
+      lane: "project-mcp-config",
+      files: [{ path: ".gemini/settings.json", json: BROWSER_MCP_CONFIG }]
+    },
     inputMode: "stdin",
     installHint: "Install Gemini CLI: npm i -g @google/gemini-cli"
   },
@@ -78,6 +149,16 @@ const HOST_CATALOG = {
     label: "OpenCode (local)",
     binary: "opencode",
     argv: () => ["run", "--quiet"],
+    browser: {
+      lane: "project-mcp-config",
+      files: [{
+        path: "opencode.json",
+        json: {
+          $schema: "https://opencode.ai/config.json",
+          mcp: { browser: { type: "local", command: [BROWSER_MCP_SERVER.command, ...BROWSER_MCP_SERVER.args], enabled: true } }
+        }
+      }]
+    },
     inputMode: "stdin",
     installHint: "Install OpenCode: npm i -g opencode-ai"
   },
@@ -85,6 +166,7 @@ const HOST_CATALOG = {
     label: "Pi (local)",
     binary: "pi",
     argv: () => ["run", "--stdin"],
+    browser: BROWSER_FALLBACK_PROVISION,
     inputMode: "stdin",
     installHint: "Install Pi CLI: refer to your Paperclip Pi distribution"
   },
@@ -92,6 +174,10 @@ const HOST_CATALOG = {
     label: "Qwen Code (local)",
     binary: "qwen",
     argv: () => ["-p"],
+    browser: {
+      lane: "project-mcp-config",
+      files: [{ path: ".qwen/settings.json", json: BROWSER_MCP_CONFIG }]
+    },
     inputMode: "stdin",
     installHint: "Install Qwen Code CLI: refer to your Qwen distribution"
   },
@@ -99,6 +185,7 @@ const HOST_CATALOG = {
     label: "Hermes Paperclip (local)",
     binary: "hermes",
     argv: () => ["run", "--stdin"],
+    browser: BROWSER_FALLBACK_PROVISION,
     inputMode: "stdin",
     installHint: "Install Hermes Paperclip adapter: npm i -g hermes-paperclip-adapter"
   },
@@ -106,10 +193,34 @@ const HOST_CATALOG = {
     label: "OpenClaw Gateway (local)",
     binary: "openclaw",
     argv: () => ["gateway", "exec", "--stdin"],
+    browser: BROWSER_FALLBACK_PROVISION,
     inputMode: "stdin",
     installHint: "Install OpenClaw Gateway: refer to your Paperclip distribution"
   }
 };
+
+/**
+ * Provision browser capability into the sealed workdir for the selected host.
+ * Pure file writes inside `workdir` only — never touches host-global config
+ * (no ~/.claude, ~/.codex, ~/.gemini mutation), so the operator's own agent
+ * setup is never modified. Returns audit metadata for adapterMeta.
+ */
+async function provisionBrowserAccess(host, request, workdir) {
+  if (!request.browserAccess) return null;
+  const spec = host.browser || BROWSER_FALLBACK_PROVISION;
+  const provision = { lane: spec.lane, files: [], server: "playwright-mcp" };
+  for (const file of spec.files || []) {
+    const target = path.join(workdir, file.path);
+    try {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, JSON.stringify(file.json, null, 2), "utf8");
+      provision.files.push(file.path);
+    } catch (error) {
+      provision.error = error?.message || `failed to write ${file.path}`;
+    }
+  }
+  return provision;
+}
 
 const SUPPORTED_HOSTS = Object.keys(HOST_CATALOG);
 
@@ -283,6 +394,8 @@ async function run(request) {
     // Best-effort audit copy of the prompt — execution still continues
   }
 
+  const browserProvision = await provisionBrowserAccess(host, request, workdir);
+
   const env = {
     PATH: process.env.PATH || "",
     HOME: process.env.HOME || workdir,
@@ -292,12 +405,13 @@ async function run(request) {
     GROWTHUB_SANDBOX_AGENT_HOST: hostSlug,
     GROWTHUB_SANDBOX_NET_ALLOW: request.networkAllow ? "1" : "0",
     GROWTHUB_SANDBOX_NET_ALLOWLIST: Array.isArray(request.allowList) ? request.allowList.join(",") : "",
+    GROWTHUB_SANDBOX_BROWSER_ACCESS: request.browserAccess ? "1" : "0",
     ...(request.env || {})
   };
 
   const timeoutMs = Number.isFinite(request.timeoutMs) && request.timeoutMs > 0 ? request.timeoutMs : 60000;
   const startedAt = Date.now();
-  const argv = host.argv(command);
+  const argv = host.argv(request);
 
   return await new Promise((resolve) => {
     let stdout = Buffer.alloc(0);
@@ -385,6 +499,8 @@ async function run(request) {
           binary: host.binary,
           argv,
           inputMode: host.inputMode,
+          browserAccess: Boolean(request.browserAccess),
+          browserProvision,
           timedOut,
           signal: signal || null,
           tokens: telemetry.tokens,
@@ -416,4 +532,11 @@ registerSandboxAdapter({
   run
 });
 
-export { HOST_CATALOG, SUPPORTED_HOSTS, extractAgentHostTelemetry };
+export {
+  BROWSER_MCP_CONFIG,
+  BROWSER_MCP_CONFIG_FILENAME,
+  HOST_CATALOG,
+  SUPPORTED_HOSTS,
+  extractAgentHostTelemetry,
+  provisionBrowserAccess
+};

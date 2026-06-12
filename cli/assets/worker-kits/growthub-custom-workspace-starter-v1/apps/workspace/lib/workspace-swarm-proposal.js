@@ -69,6 +69,7 @@ const SWARM_EXECUTION_TARGET_FIELDS = [
   "timeoutMs",
   "networkAllow",
   "allowList",
+  "browserAccess",
 ];
 
 function clean(value) {
@@ -152,6 +153,7 @@ function resolveSwarmExecutionTarget(workspaceConfig, payload = {}) {
     timeoutMs: String(clampPositiveInt(payload?.timeoutMs || helperRow?.timeoutMs, SWARM_DEFAULT_TIMEOUT_MS)),
     networkAllow: clean(payload?.networkAllow || helperRow?.networkAllow),
     allowList: clean(payload?.allowList || helperRow?.allowList),
+    browserAccess: clean(payload?.browserAccess || helperRow?.browserAccess),
     inheritedFromObjectId: helperRow ? WORKSPACE_HELPER_SANDBOX_OBJECT_ID : "",
     inheritedFromName: helperRow ? clean(helperRow.Name || WORKSPACE_HELPER_ROW_NAME) : "",
   };
@@ -406,6 +408,7 @@ function buildSandboxRowFromSwarmProposal(workspaceConfig, proposal) {
     envRefs: "",
     networkAllow: executionTarget.networkAllow,
     allowList: executionTarget.allowList,
+    browserAccess: executionTarget.browserAccess,
     instructions: clean(payload.objective),
     command: "",
     timeoutMs: executionTarget.timeoutMs,

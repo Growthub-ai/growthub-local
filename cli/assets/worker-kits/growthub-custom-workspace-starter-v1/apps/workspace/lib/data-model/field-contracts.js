@@ -11,6 +11,7 @@ const SANDBOX_ENVIRONMENT_FIELDS = {
     options: ["local", "serverless"]
   },
   networkAllow: { editor: "boolean-toggle" },
+  browserAccess: { editor: "boolean-toggle" },
   lifecycleStatus: {
     editor: "select",
     options: ["draft", "live"]

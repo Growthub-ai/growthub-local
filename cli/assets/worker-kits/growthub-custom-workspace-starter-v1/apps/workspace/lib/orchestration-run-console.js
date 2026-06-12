@@ -685,6 +685,7 @@ function normalizeRunConsoleRecord(record) {
       envRefsMissing: Array.isArray(record.envRefsMissing) ? record.envRefsMissing.slice() : [],
       networkAllow: Boolean(record.networkAllow),
       allowList: Array.isArray(record.allowList) ? record.allowList.slice() : [],
+      browserAccess: Boolean(record.browserAccess),
       adapterMeta,
       templateTrace
     },

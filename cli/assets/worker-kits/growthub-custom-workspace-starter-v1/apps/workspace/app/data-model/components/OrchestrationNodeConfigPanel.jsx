@@ -982,7 +982,7 @@ export function OrchestrationNodeConfigPanel({
           <WorkflowCheckbox
             checked={config.networkAccess === true}
             disabled={disabled}
-            title="Network is granted only when both this and the row's networkAllow are on."
+            title="Network is granted only when both this and the row's networkAllow are on. The row's browser access inherits through the same gate."
             onChange={(checked) => patchConfig({ networkAccess: checked })}
           >
             Network

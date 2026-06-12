@@ -23,6 +23,29 @@ Agents and streamed APIs elsewhere in the sandbox stay orthogonal: serverless sw
 
 Sandbox rows reference **`authRef` / named env refs** — never literals in browser or config records. Scheduling uses the referenced API Registry row’s **`authRef`** merge rules identical to **`/api/workspace/test-source`**.
 
+## Browser access (`browserAccess`)
+
+`browserAccess` is a first-class boolean column on the sandbox row, surfaced as a single toggle in the record sidecar's **Environment & Network** section. It is locality-agnostic and agent-host-agnostic: the saved record carries the capability, and each execution path grants it through the mechanism that path actually understands.
+
+**Deterministic normalization** — browser access implies outbound network. The sidecar toggle stamps `networkAllow: "true"` when browser access is switched on, and `POST /api/workspace/sandbox-run` enforces the same implication server-side (`networkAllow || browserAccess`), so rows patched via the API behave identically to rows saved in the UI.
+
+**Local (`local-agent-host`)** — every host in the catalog has a declared browser provisioning lane in `lib/adapters/sandboxes/default-local-agent-host.js`; no host is silently browser-less:
+
+| Lane | Hosts | Mechanism |
+| --- | --- | --- |
+| `native-argv` | Codex | First-party CLI flags: `--sandbox workspace-write` + `--enable browser_use --enable in_app_browser`. |
+| `mcp-config-flag` | Claude Code | Adapter writes a Playwright MCP browser-server config into the sealed run workdir and passes `--mcp-config` + `--allowedTools "mcp__browser__*"`. |
+| `project-mcp-config` | Cursor, Gemini, Qwen, OpenCode | Adapter writes the host's project-scoped MCP config (`.cursor/mcp.json`, `.gemini/settings.json`, `.qwen/settings.json`, `opencode.json`) into the workdir; the child spawns with `cwd: workdir` and auto-loads it. |
+| `mcp-convention` | Pi, Hermes, OpenClaw Gateway | Adapter writes the standard `.mcp.json` convention file into the workdir. |
+
+Provisioning writes **only inside the ephemeral workdir** — host-global config (`~/.claude`, `~/.codex`, `~/.gemini`, …) is never mutated. The lane and written files are recorded in `adapterMeta.browserProvision` for the audit trail.
+
+**Local (`local-process`)** and every other adapter — the sealed RunRequest carries `browserAccess: boolean`, and the env contract publishes `GROWTHUB_SANDBOX_BROWSER_ACCESS=1|0` alongside `GROWTHUB_SANDBOX_NET_ALLOW(LIST)`, so any script or drop-zone adapter honors the row's setting without knowing about specific hosts.
+
+**Serverless** — the `growthub-sandbox-run-v1` envelope carries `sandbox.browserAccess` (plus `networkAllow` / `allowList`), so a workflow upgraded from local to serverless keeps the identical capability contract: the Edge/QStash/cron handler reads one boolean and grants its own runtime's browser (e.g. a remote browser pool or hosted agent's browser tool). No host-specific knowledge crosses the wire — slugs and booleans only, never secrets.
+
+**Orchestration graph** — the row's `browserAccess` flows into the run execution context. Orchestrator and synthesis phases inherit it directly; ai-agent subagent nodes inherit it through the same node-level **Network** gate that already scopes `networkAllow` (browser is a superset of network, so a node with network off gets neither).
+
 ## Not a widget source
 
 Workspace Builder excludes **`sandbox-environment`** from View widget bindings (execution records, not tabular KPI sources). See **`data-sources-api-registry.md`** in this folder.

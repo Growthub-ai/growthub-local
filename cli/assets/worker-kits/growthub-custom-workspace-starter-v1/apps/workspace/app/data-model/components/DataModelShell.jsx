@@ -647,6 +647,16 @@ function SandboxTraceFieldButton({ label, value, disabled, onOpen }) {
   );
 }
 
+// Human labels for the per-host browser provisioning lanes declared in the
+// local-agent-host catalog — surfaced so the operator's mental model matches
+// exactly what the adapter does under the hood when browserAccess is on.
+const BROWSER_LANE_LABELS = {
+  "native-argv": "browser enabled through the host CLI's native browser flags.",
+  "mcp-config-flag": "browser provisioned through a one-shot MCP config flag (Playwright MCP in the run workdir).",
+  "project-mcp-config": "browser provisioned through project-scoped MCP config written into the run workdir (Playwright MCP).",
+  "mcp-convention": "browser provisioned through the standard .mcp.json convention in the run workdir (Playwright MCP)."
+};
+
 function SandboxRecordFields({
   draft,
   setDraft,
@@ -724,6 +734,8 @@ function SandboxRecordFields({
   }
 
   const netOn = ["true", "1", "on", "yes"].includes(String(draft.networkAllow || "").trim().toLowerCase());
+  const browserOn = ["true", "1", "on", "yes"].includes(String(draft.browserAccess || "").trim().toLowerCase());
+  const browserHostMeta = (selectedAdapterMeta?.hostCatalog || []).find((h) => h.slug === String(draft.agentHost || "").trim());
 
   // Same cockpit interface + mental model as the API Registry lane, driven by
   // the serverless/scheduling/persistence derivation. Steps are status-only
@@ -937,6 +949,21 @@ function SandboxRecordFields({
             onBlur={(event) => patchFields({ allowList: event.target.value })}
           />
         </label>
+
+        <ToggleField
+          checked={browserOn}
+          disabled={!table.mutable || saving}
+          label="Browser access"
+          description="Agents in this sandbox can drive a real browser. Saved on the record; turning this on also enables network. Every local agent host is provisioned through its own lane (native CLI flags or a Playwright MCP browser server in the run workdir), every adapter receives GROWTHUB_SANDBOX_BROWSER_ACCESS, and serverless runs carry browserAccess in the growthub-sandbox-run-v1 envelope."
+          onChange={(on) => patchFields(on
+            ? { browserAccess: "true", networkAllow: "true" }
+            : { browserAccess: "false" })}
+        />
+        {browserOn && String(draft.adapter || "").trim() === "local-agent-host" && browserHostMeta && (
+          <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 4 }}>
+            {browserHostMeta.label}: {BROWSER_LANE_LABELS[browserHostMeta.browserLane] || BROWSER_LANE_LABELS["mcp-convention"]}
+          </p>
+        )}
       </DrawerSection>
 
       <DrawerSection title="Prompt & Limits">

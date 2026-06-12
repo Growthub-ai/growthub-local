@@ -881,6 +881,7 @@ const OBJECT_TYPE_PRESETS = {
       "envRefs",
       "networkAllow",
       "allowList",
+      "browserAccess",
       "instructions",
       "command",
       "timeoutMs",
