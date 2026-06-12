@@ -1,5 +1,15 @@
 # @growthub/cli
 
+## 0.14.2
+
+### Patch Changes
+
+Browser / local agent fast lane for governed sandbox records (exposure-only — no new runtime, object type, or run route):
+
+- Custom workspace starter kit ships `lib/sandbox-browser-agent-flow.js` (pure, evidence-driven eligibility + browser/notebook proof normalization), `lib/sandbox-browser-run-inputs.js` (browser-safe run-input templates with the operator-approval / sendMode safety contract), and the `SandboxBrowserAgentPanel` record-drawer surface.
+- `POST /api/workspace/sandbox-run` exposes the runner-safe run-input projection to local processes as `GROWTHUB_RUN_INPUTS_JSON` (secretRefs stripped, values redacted; local lane only).
+- Feature seed gains the `browser-agent-smoke` fixture (honest dry-run proof, never fakes `reachedTarget`); e2e workspace probe covers the lane with negative and positive runInputs probes.
+
 ## 0.8.0
 
 ### Minor Changes
