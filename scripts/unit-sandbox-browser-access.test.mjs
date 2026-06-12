@@ -31,11 +31,24 @@ const kitLib = path.join(
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib",
 );
 
-const { HOST_CATALOG, provisionBrowserAccess } = await import(
+const { BROWSER_MCP_CONFIG, HOST_CATALOG, provisionBrowserAccess } = await import(
   pathToFileURL(path.join(kitLib, "adapters/sandboxes/default-local-agent-host.js")).href
 );
 const { deriveSandboxServerlessState } = await import(
   pathToFileURL(path.join(kitLib, "sandbox-serverless-flow.js")).href
+);
+const { getSandboxAdapter } = await import(
+  pathToFileURL(path.join(kitLib, "adapters/sandboxes/sandbox-adapter-registry.js")).href
+);
+await import(pathToFileURL(path.join(kitLib, "adapters/sandboxes/default-local-process.js")).href);
+const { normalizeRunConsoleRecord } = await import(
+  pathToFileURL(path.join(kitLib, "orchestration-run-console.js")).href
+);
+const { validateWorkspaceConfig } = await import(
+  pathToFileURL(path.join(kitLib, "workspace-schema.js")).href
+);
+const { buildSandboxRowFromSwarmProposal } = await import(
+  pathToFileURL(path.join(kitLib, "workspace-swarm-proposal.js")).href
 );
 
 const KNOWN_LANES = ["native-argv", "mcp-config-flag", "project-mcp-config", "mcp-convention"];
@@ -115,6 +128,125 @@ test("provisionBrowserAccess falls back to the .mcp.json convention for hosts wi
 test("provisionBrowserAccess is a no-op when browserAccess is off", async () => {
   const provision = await provisionBrowserAccess(HOST_CATALOG.cursor, { browserAccess: false }, "/nonexistent");
   assert.equal(provision, null);
+});
+
+test("browser MCP server package is pinned, never @latest", () => {
+  const args = BROWSER_MCP_CONFIG.mcpServers.browser.args.join(" ");
+  assert.ok(!args.includes("@latest"), "MCP package must be pinned for run-to-run determinism");
+  assert.match(args, /@playwright\/mcp@\d+\.\d+\.\d+/, "MCP package must carry an exact version");
+});
+
+test("claude provisioning writes the pinned MCP config inside the workdir only", async () => {
+  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-browser-test-"));
+  try {
+    const provision = await provisionBrowserAccess(HOST_CATALOG.claude_local, { browserAccess: true }, workdir);
+    assert.equal(provision.lane, "mcp-config-flag");
+    for (const rel of provision.files) {
+      assert.ok(!path.isAbsolute(rel) && !rel.split(/[\\/]/).includes(".."), `${rel} must stay relative`);
+      const resolved = path.resolve(workdir, rel);
+      assert.ok(resolved.startsWith(workdir + path.sep) || resolved === path.join(workdir, rel), `${rel} must resolve inside the workdir`);
+      const body = await fs.readFile(resolved, "utf8");
+      assert.ok(!body.includes("@latest"), "provisioned config must use the pinned package");
+    }
+  } finally {
+    await fs.rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("no catalog provisioning file can escape the workdir", () => {
+  for (const [slug, host] of Object.entries(HOST_CATALOG)) {
+    for (const file of host.browser.files) {
+      assert.ok(!path.isAbsolute(file.path), `${slug}: ${file.path} must be relative`);
+      assert.ok(!file.path.split(/[\\/]/).includes(".."), `${slug}: ${file.path} must not traverse upward`);
+    }
+  }
+});
+
+test("sealed contract: local-process publishes GROWTHUB_SANDBOX_BROWSER_ACCESS to the script", async () => {
+  const adapter = getSandboxAdapter("local-process");
+  assert.ok(adapter, "local-process adapter must be registered");
+  const workdir = await fs.mkdtemp(path.join(os.tmpdir(), "growthub-browser-test-"));
+  try {
+    const result = await adapter.run({
+      runId: "run_browser_smoke",
+      name: "browser-smoke",
+      runtime: "bash",
+      command: 'printf "%s" "$GROWTHUB_SANDBOX_BROWSER_ACCESS"',
+      timeoutMs: 15000,
+      networkAllow: true,
+      allowList: [],
+      browserAccess: true,
+      env: {},
+      envRefSlugs: [],
+      envRefsMissing: [],
+      workdir,
+      ranAt: new Date().toISOString()
+    });
+    assert.equal(result.ok, true, result.error || "run must succeed");
+    assert.equal(result.stdout, "1", "script must observe GROWTHUB_SANDBOX_BROWSER_ACCESS=1");
+    assert.equal(result.adapterMeta.browserAccess, true, "adapterMeta must audit browserAccess");
+  } finally {
+    await fs.rm(workdir, { recursive: true, force: true });
+  }
+});
+
+test("run-console projection surfaces browserAccess and the provisioning audit", () => {
+  const normalized = normalizeRunConsoleRecord({
+    runId: "run_x",
+    ranAt: new Date().toISOString(),
+    exitCode: 0,
+    stdout: "ok",
+    browserAccess: true,
+    networkAllow: true,
+    allowList: ["example.com"],
+    adapterMeta: { adapter: "local-agent-host", browserAccess: true, browserProvision: { lane: "native-argv", files: [] } }
+  });
+  assert.ok(normalized, "record must normalize");
+  assert.equal(normalized.context.browserAccess, true);
+  assert.equal(normalized.context.adapterMeta.browserProvision.lane, "native-argv");
+});
+
+test("schema accepts boolean-coercible browserAccess and rejects garbage", () => {
+  const config = (browserAccess) => ({
+    dataModel: {
+      objects: [{
+        id: "sb",
+        label: "Sandbox",
+        objectType: "sandbox-environment",
+        columns: ["Name", "browserAccess"],
+        rows: [{ Name: "row-1", browserAccess }]
+      }]
+    }
+  });
+  assert.doesNotThrow(() => validateWorkspaceConfig(config("true")));
+  assert.doesNotThrow(() => validateWorkspaceConfig(config("")));
+  assert.throws(() => validateWorkspaceConfig(config("banana")), /browserAccess must coerce to a boolean/);
+});
+
+test("swarm proposals inherit browserAccess from the live helper sandbox", () => {
+  const workspaceConfig = {
+    dataModel: {
+      objects: [{
+        id: "workspace-helper-sandbox",
+        label: "Workspace Helper",
+        objectType: "sandbox-environment",
+        columns: ["Name"],
+        rows: [{
+          Name: "workspace-helper",
+          lifecycleStatus: "live",
+          runLocality: "local",
+          adapter: "local-intelligence",
+          networkAllow: "true",
+          allowList: "example.com",
+          browserAccess: "true"
+        }]
+      }]
+    }
+  };
+  const row = buildSandboxRowFromSwarmProposal(workspaceConfig, {
+    payload: { name: "Swarm", objective: "research example.com", agents: [{ role: "researcher" }] }
+  });
+  assert.equal(row.browserAccess, "true", "proposed swarm row must inherit the helper's browserAccess");
 });
 
 test("serverless flow state carries browserAccess for both localities", () => {

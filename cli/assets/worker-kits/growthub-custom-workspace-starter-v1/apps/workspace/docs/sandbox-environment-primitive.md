@@ -38,7 +38,12 @@ Sandbox rows reference **`authRef` / named env refs** — never literals in brow
 | `project-mcp-config` | Cursor, Gemini, Qwen, OpenCode | Adapter writes the host's project-scoped MCP config (`.cursor/mcp.json`, `.gemini/settings.json`, `.qwen/settings.json`, `opencode.json`) into the workdir; the child spawns with `cwd: workdir` and auto-loads it. |
 | `mcp-convention` | Pi, Hermes, OpenClaw Gateway | Adapter writes the standard `.mcp.json` convention file into the workdir. |
 
-Provisioning writes **only inside the ephemeral workdir** — host-global config (`~/.claude`, `~/.codex`, `~/.gemini`, …) is never mutated. The lane and written files are recorded in `adapterMeta.browserProvision` for the audit trail.
+Provisioning writes **only inside the ephemeral workdir** — host-global config (`~/.claude`, `~/.codex`, `~/.gemini`, …) is never mutated. The lane and written files are recorded in `adapterMeta.browserProvision` for the audit trail, and the run-console record projection surfaces `context.browserAccess` plus the full `adapterMeta` so every run shows its browser proof.
+
+Two deliberate decisions, stated explicitly:
+
+- **Codex `workspace-write` on `networkAllow` alone is intentional.** Codex's `read-only` sandbox blocks all outbound network, so `workspace-write` is the least-privileged Codex mode where the row's network grant can take effect — and writes are confined to the sealed ephemeral workdir the adapter spawns into, never the operator's repo. Browser flags (`--enable browser_use --enable in_app_browser`) remain gated on `browserAccess` only; network alone never opens a browser.
+- **The Playwright MCP package is pinned** (`@playwright/mcp@0.0.76`), not `@latest` — two runs of the same saved row must resolve the same browser server. Operators can override the pin with `GROWTHUB_SANDBOX_BROWSER_MCP_PACKAGE` on the workspace host (runtime config, never row data, never a secret).
 
 **Local (`local-process`)** and every other adapter — the sealed RunRequest carries `browserAccess: boolean`, and the env contract publishes `GROWTHUB_SANDBOX_BROWSER_ACCESS=1|0` alongside `GROWTHUB_SANDBOX_NET_ALLOW(LIST)`, so any script or drop-zone adapter honors the row's setting without knowing about specific hosts.
 

@@ -60,8 +60,17 @@ const TELEMETRY_MARKER = "GROWTHUB_AGENT_TELEMETRY:";
  * EVERY host also receives GROWTHUB_SANDBOX_BROWSER_ACCESS=1 plus the network
  * allow list, so browser tooling configured inside the host honors the row's
  * saved setting even when the lane is only the convention file.
+ *
+ * The MCP package is PINNED for determinism — a floating `@latest` would make
+ * two runs of the same saved row resolve different browser servers. Operators
+ * can override the pin (e.g. to roll forward or use an internal mirror) with
+ * the GROWTHUB_SANDBOX_BROWSER_MCP_PACKAGE env var on the workspace host;
+ * the override is operator runtime config, never row data and never a secret.
  */
-const BROWSER_MCP_SERVER = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+const BROWSER_MCP_PACKAGE =
+  (typeof process !== "undefined" && process.env.GROWTHUB_SANDBOX_BROWSER_MCP_PACKAGE) ||
+  "@playwright/mcp@0.0.76";
+const BROWSER_MCP_SERVER = { command: "npx", args: ["-y", BROWSER_MCP_PACKAGE] };
 const BROWSER_MCP_CONFIG = { mcpServers: { browser: BROWSER_MCP_SERVER } };
 const BROWSER_MCP_CONFIG_FILENAME = "growthub-browser-mcp.json";
 const BROWSER_FALLBACK_PROVISION = Object.freeze({
@@ -105,6 +114,12 @@ const HOST_CATALOG = {
     label: "Codex CLI (local)",
     binary: "codex",
     argv: (request = {}) => {
+      // INTENTIONAL: networkAllow alone selects `workspace-write`. Codex's
+      // `read-only` sandbox blocks ALL outbound network, so workspace-write is
+      // the least-privileged Codex mode where the row's network grant can take
+      // effect — and writes are confined to the sealed ephemeral workdir the
+      // adapter spawns into (cwd), never the operator's repo. Browser flags
+      // remain gated on browserAccess only; network alone never opens a browser.
       const netOn = Boolean(request.networkAllow);
       const browserOn = Boolean(request.browserAccess);
       const args = [

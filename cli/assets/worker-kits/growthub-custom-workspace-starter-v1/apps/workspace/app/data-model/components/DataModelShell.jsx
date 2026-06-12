@@ -933,10 +933,12 @@ function SandboxRecordFields({
         </div>
 
         <ToggleField
-          checked={netOn}
-          disabled={!table.mutable || saving}
+          checked={netOn || browserOn}
+          disabled={!table.mutable || saving || (browserOn && !netOn)}
           label="Network allow-list mode"
-          description="When enabled, local runs honor GROWTHUB_SANDBOX_NET_* and the allow list below."
+          description={browserOn && !netOn
+            ? "Network enabled by browser access — the run route grants it even though this row's networkAllow is off. Turn browser access off to control network independently."
+            : "When enabled, local runs honor GROWTHUB_SANDBOX_NET_* and the allow list below."}
           onChange={(on) => patchFields({ networkAllow: on ? "true" : "false" })}
         />
 
