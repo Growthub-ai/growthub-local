@@ -20,9 +20,9 @@
  * no second product surface, no terminal emulator — just a uniform
  * readiness bridge.
  *
- * Status values stamped on the row are intentionally distinct between
- * confirmed-authenticated ("active") and merely-installed ("reachable")
- * so the pill cannot overclaim auth from a `--version` probe.
+ * The pill represents selected local host readiness. Legacy `reachable`
+ * metadata is rendered as Active so Data Model and workflow sidecars stay
+ * visually identical after a successful host switch/check path.
  */
 
 import { useCallback, useState } from "react";
@@ -32,7 +32,7 @@ import { getAgentHostCapabilities } from "@/lib/sandbox-agent-host-catalog";
 
 const STATUS_LABEL = {
   active: "Active",
-  reachable: "Reachable",
+  reachable: "Active",
   stale: "Stale",
   missing: "Missing",
   checking: "Checking",
@@ -40,10 +40,9 @@ const STATUS_LABEL = {
 };
 
 function statusKind(status) {
-  if (status === "active") return "ok";
+  if (status === "active" || status === "reachable") return "ok";
   if (status === "stale") return "warn";
   if (status === "missing") return "bad";
-  // "reachable" stays neutral — CLI is installed, but auth is NOT confirmed.
   return "";
 }
 
@@ -62,15 +61,28 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
   const [busy, setBusy] = useState(null); // "status" | "login" | "logout" | null
   const [output, setOutput] = useState(null);
   const [message, setMessage] = useState("");
+  const [localAuthState, setLocalAuthState] = useState(null);
 
   const capabilities = getAgentHostCapabilities(draft);
   const providerMatchesHost = String(draft?.agentAuthProvider || "").trim() === String(draft?.agentHost || "").trim();
+  const localMatchesHost =
+    localAuthState?.provider &&
+    String(localAuthState.provider || "").trim() === String(capabilities?.slug || "").trim();
   const currentStatus =
-    providerMatchesHost && typeof draft?.agentAuthStatus === "string" && draft.agentAuthStatus.trim()
-      ? draft.agentAuthStatus.trim()
-      : "unknown";
-  const lastChecked = providerMatchesHost ? draft?.agentAuthLastChecked || "" : "";
-  const lastMessage = providerMatchesHost ? draft?.agentAuthLastMessage || "" : "";
+    localMatchesHost && typeof localAuthState?.status === "string" && localAuthState.status.trim()
+      ? localAuthState.status.trim()
+      : providerMatchesHost && typeof draft?.agentAuthStatus === "string" && draft.agentAuthStatus.trim()
+        ? draft.agentAuthStatus.trim()
+        : "unknown";
+  const lastChecked = localMatchesHost && localAuthState?.checkedAt
+    ? localAuthState.checkedAt
+    : providerMatchesHost
+      ? draft?.agentAuthLastChecked || ""
+      : "";
+  const lastMessage =
+    localMatchesHost && typeof localAuthState?.message === "string"
+      ? localAuthState.message
+      : providerMatchesHost ? draft?.agentAuthLastMessage || "" : "";
   const displayMessage = normalizeAuthMessage(message || lastMessage, capabilities?.label)
     || (currentStatus === "unknown" ? "Run Check or Login to verify this local agent host." : "");
 
@@ -85,15 +97,23 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
         const res = await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ objectId, name: rowName })
+          body: JSON.stringify({ objectId, name: rowName, agentHost: capabilities.slug })
         });
         const payload = await res.json();
         setOutput(payload);
         setMessage(payload.message || (payload.ok ? "Done" : payload.error || "Failed"));
+        if (payload.status) {
+          setLocalAuthState({
+            status: payload.status,
+            provider: payload.provider || capabilities.slug,
+            checkedAt: payload.checkedAt || new Date().toISOString(),
+            message: payload.message || ""
+          });
+        }
         if (typeof onPatchDraft === "function" && payload.status) {
           onPatchDraft({
             agentAuthStatus: payload.status,
-            agentAuthProvider: payload.provider || draft?.agentHost || "unknown",
+            agentAuthProvider: payload.provider || capabilities.slug,
             agentAuthLastChecked: payload.checkedAt || new Date().toISOString(),
             agentAuthLastExitCode:
               typeof payload.exitCode === "number" ? payload.exitCode : null,
@@ -107,7 +127,7 @@ export function SandboxAgentAuthPanel({ objectId, rowName, draft, disabled, onPa
         setBusy(null);
       }
     },
-    [canAct, objectId, rowName, onPatchDraft, draft?.agentHost]
+    [canAct, objectId, rowName, onPatchDraft, capabilities?.slug]
   );
 
   const onCheckStatus = () =>

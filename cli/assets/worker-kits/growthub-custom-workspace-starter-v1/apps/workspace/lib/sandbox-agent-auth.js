@@ -34,15 +34,14 @@
  * on-disk auth state; this module only records *readiness*, not secrets.
  *
  * The status semantics are deliberately conservative:
- *   - "active"    a real auth probe confirmed authentication (auth-status
- *                 exit 0 with auth-shaped output, or a clean login exit)
- *   - "reachable" the binary is callable (version probe exit 0) — but
- *                 authentication is NOT yet confirmed
+ *   - "active"    the selected pinned host CLI is callable and ready for the
+ *                 local agent-host bridge, or a clean login exit completed
+ *   - "reachable" legacy metadata value treated as active by the UI
  *   - "stale"    the binary printed auth-shaped failure output
  *   - "missing"  binary not found on PATH
  *
- * A `--version` probe NEVER promotes to "active". The next sandbox-run is
- * the final source of truth for session readiness.
+ * A successful host probe promotes to "active" because the sidecar represents
+ * selected local host readiness, not provider-account auth semantics.
  */
 
 import { spawn } from "node:child_process";
@@ -132,6 +131,38 @@ function assertAgentHostEligible(row, { requireLogin = false, requireLogout = fa
   return { spec, agentHost };
 }
 
+function normalizeAgentHostOverride(agentHost) {
+  const nextAgentHost = String(agentHost || "").trim();
+  if (!nextAgentHost) return "";
+  if (!getHostAuthSpec(nextAgentHost)) {
+    const error = new Error(
+      `Agent auth setup is not registered for agentHost "${nextAgentHost}"`
+    );
+    error.code = "SANDBOX_AGENT_AUTH_HOST_UNSUPPORTED";
+    throw error;
+  }
+  return nextAgentHost;
+}
+
+function applyAgentHostOverride(row, agentHost) {
+  if (!agentHost) return row;
+  return {
+    ...row,
+    runLocality: "local",
+    adapter: "local-agent-host",
+    agentHost
+  };
+}
+
+function buildAgentHostSelectionPatch(agentHost) {
+  if (!agentHost) return {};
+  return {
+    runLocality: "local",
+    adapter: "local-agent-host",
+    agentHost
+  };
+}
+
 function resolveHostBinary(row, spec) {
   const candidates = [row?.agentCommand, row?.claudeCommand];
   for (const candidate of candidates) {
@@ -205,9 +236,24 @@ function hasAny(patterns, text) {
   return patterns.some((p) => p.test(text));
 }
 
+function deriveStatusFromAuthStatusJson(text) {
+  if (!text || typeof text !== "string") return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && typeof parsed.loggedIn === "boolean") {
+      return parsed.loggedIn ? "active" : "stale";
+    }
+  } catch {}
+  return null;
+}
+
 function deriveStatusFromAuthStatusProbe({ exitCode, stdout = "", stderr = "", spawnError }) {
   if (spawnError) return spawnError.notFound ? "missing" : null;
   const combined = `${stdout}\n${stderr}`;
+  const jsonStatus = deriveStatusFromAuthStatusJson(stdout) || deriveStatusFromAuthStatusJson(stderr);
+  if (jsonStatus) return jsonStatus;
   if (hasAny(UNKNOWN_SUBCOMMAND_PATTERNS, combined)) return null; // fall back
   if (hasAny(STALE_AUTH_PATTERNS, combined)) return "stale";
   if (exitCode === 0) return "active";
@@ -219,7 +265,7 @@ function deriveStatusFromAuthStatusProbe({ exitCode, stdout = "", stderr = "", s
 
 function deriveStatusFromVersionProbe({ exitCode, stderr, spawnError }) {
   if (spawnError) return spawnError.notFound ? "missing" : "unknown";
-  if (typeof exitCode === "number" && exitCode === 0) return "reachable";
+  if (typeof exitCode === "number" && exitCode === 0) return "active";
   const text = String(stderr || "");
   if (hasAny(STALE_AUTH_PATTERNS, text)) return "stale";
   return "unknown";
@@ -237,8 +283,8 @@ function deriveLoginStatus({ exitCode, stderr, stdout, timedOut, spawnError }) {
 function shortMessage({ status, label, exitCode, error, loginUrl }) {
   const name = label || "Local agent CLI";
   if (error) return `${name}: ${redactSecrets(String(error))}`;
-  if (status === "active") return loginUrl ? "Login completed." : "Authenticated.";
-  if (status === "reachable") return "CLI reachable. Run Login to verify authentication.";
+  if (status === "active") return loginUrl ? "Login completed." : "Active.";
+  if (status === "reachable") return "Active.";
   if (status === "stale") return "Authentication needs setup. Run Login, then run the sandbox again.";
   if (status === "missing") return `${name} not found. Install it and try again.`;
   if (status === "checking") return `Checking ${name}…`;
@@ -329,16 +375,18 @@ function runCommand({ binary, args, cwd, timeoutMs, stdin }) {
 // Public API — login / logout / status
 // ──────────────────────────────────────────────────────────────────────────
 
-async function runAgentLogin({ objectId, name }) {
+async function runAgentLogin({ objectId, name, agentHost }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  const { spec, agentHost } = assertAgentHostEligible(row, { requireLogin: true });
+  const selectedAgentHost = normalizeAgentHostOverride(agentHost);
+  const effectiveRow = applyAgentHostOverride(row, selectedAgentHost);
+  const { spec, agentHost: effectiveAgentHost } = assertAgentHostEligible(effectiveRow, { requireLogin: true });
 
-  const binary = resolveHostBinary(row, spec);
-  const cwd = resolveCwd(row);
+  const binary = resolveHostBinary(effectiveRow, spec);
+  const cwd = resolveCwd(effectiveRow);
   const startedAt = Date.now();
 
   const result = await runCommand({
@@ -356,20 +404,21 @@ async function runAgentLogin({ objectId, name }) {
 
   const patch = buildRowPatch({
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     checkedAt,
     exitCode: result.exitCode,
     loginUrl,
     label: spec.label,
     spawnError: result.spawnError
   });
+  Object.assign(patch, buildAgentHostSelectionPatch(selectedAgentHost));
 
   await applyRowPatch({ workspaceConfig, object, rowIndex, patch });
 
   return {
     ok: status === "active",
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     label: spec.label,
     binary,
     cwd,
@@ -384,16 +433,18 @@ async function runAgentLogin({ objectId, name }) {
   };
 }
 
-async function runAgentLogout({ objectId, name }) {
+async function runAgentLogout({ objectId, name, agentHost }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  const { spec, agentHost } = assertAgentHostEligible(row, { requireLogout: true });
+  const selectedAgentHost = normalizeAgentHostOverride(agentHost);
+  const effectiveRow = applyAgentHostOverride(row, selectedAgentHost);
+  const { spec, agentHost: effectiveAgentHost } = assertAgentHostEligible(effectiveRow, { requireLogout: true });
 
-  const binary = resolveHostBinary(row, spec);
-  const cwd = resolveCwd(row);
+  const binary = resolveHostBinary(effectiveRow, spec);
+  const cwd = resolveCwd(effectiveRow);
   const startedAt = Date.now();
 
   let exitCode = null;
@@ -422,7 +473,7 @@ async function runAgentLogout({ objectId, name }) {
 
   const patch = buildRowPatch({
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     checkedAt,
     exitCode,
     loginUrl: null,
@@ -432,13 +483,14 @@ async function runAgentLogout({ objectId, name }) {
   patch.agentAuthLastMessage = spawnError?.notFound
     ? shortMessage({ status: "missing", label: spec.label })
     : `${spec.label} logged out — auth will be required before next run.`;
+  Object.assign(patch, buildAgentHostSelectionPatch(selectedAgentHost));
 
   await applyRowPatch({ workspaceConfig, object, rowIndex, patch });
 
   return {
     ok: !spawnError,
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     label: spec.label,
     binary,
     cwd,
@@ -451,16 +503,18 @@ async function runAgentLogout({ objectId, name }) {
   };
 }
 
-async function checkAgentStatus({ objectId, name }) {
+async function checkAgentStatus({ objectId, name, agentHost }) {
   const workspaceConfig = await readWorkspaceConfig();
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) throw notFoundError(`no sandbox-environment object with id ${objectId}`);
   if (!row) throw notFoundError(`no sandbox row named ${name} in object ${objectId}`);
 
-  const { spec, agentHost } = assertAgentHostEligible(row);
+  const selectedAgentHost = normalizeAgentHostOverride(agentHost);
+  const effectiveRow = applyAgentHostOverride(row, selectedAgentHost);
+  const { spec, agentHost: effectiveAgentHost } = assertAgentHostEligible(effectiveRow);
 
-  const binary = resolveHostBinary(row, spec);
-  const cwd = resolveCwd(row);
+  const binary = resolveHostBinary(effectiveRow, spec);
+  const cwd = resolveCwd(effectiveRow);
 
   // Two-phase probe:
   //   1. If the catalog declares an auth-status subcommand, try it first.
@@ -503,20 +557,21 @@ async function checkAgentStatus({ objectId, name }) {
 
   const patch = buildRowPatch({
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     checkedAt,
     exitCode: usedResult.exitCode,
     loginUrl: null,
     label: spec.label,
     spawnError: usedResult.spawnError
   });
+  Object.assign(patch, buildAgentHostSelectionPatch(selectedAgentHost));
 
   await applyRowPatch({ workspaceConfig, object, rowIndex, patch });
 
   return {
     ok: status === "active",
     status,
-    provider: agentHost,
+    provider: effectiveAgentHost,
     label: spec.label,
     binary,
     cwd,

@@ -520,6 +520,17 @@ function LocalAgentHostControls({
   );
 }
 
+function buildNodeAgentAuthDraft(sandboxRow, config) {
+  const agentHost = String(config?.agentHost || sandboxRow?.agentHost || "").trim();
+  if (!agentHost) return null;
+  return {
+    ...(sandboxRow || {}),
+    runLocality: "local",
+    adapter: "local-agent-host",
+    agentHost
+  };
+}
+
 export function OrchestrationNodeConfigPanel({
   node,
   onConfigChange,
@@ -577,6 +588,23 @@ export function OrchestrationNodeConfigPanel({
 
   const registryConnected = isApiRegistryTestSuccessful(registryRow);
   const responseMode = config.responseMode || config.mode || "json";
+  const nodeAgentAuthDraft = type === "ai-agent" ? buildNodeAgentAuthDraft(sandboxRow, config) : null;
+  const canPatchSandboxRow = typeof onSandboxRowPatch === "function";
+
+  function patchNodeAgentHost(agentHost) {
+    const nextHost = String(agentHost || "").trim();
+    patchConfig({
+      agentHost: nextHost,
+      ...(nextHost ? { adapter: "local-agent-host" } : {})
+    });
+    if (nextHost && canPatchSandboxRow) {
+      onSandboxRowPatch({
+        adapter: "local-agent-host",
+        agentHost: nextHost,
+        ...EMPTY_AGENT_AUTH_PATCH
+      });
+    }
+  }
 
   return (
     <div className="dm-orchestration-config">
@@ -964,7 +992,7 @@ export function OrchestrationNodeConfigPanel({
             <select
               value={config.agentHost || ""}
               disabled={disabled}
-              onChange={(e) => patchConfig({ agentHost: e.target.value })}
+              onChange={(e) => patchNodeAgentHost(e.target.value)}
             >
               <option value="">Inherit</option>
               {Object.entries(HOST_AUTH_CATALOG || {}).map(([slug, host]) => (
@@ -972,6 +1000,15 @@ export function OrchestrationNodeConfigPanel({
               ))}
             </select>
           </label>
+          {nodeAgentAuthDraft && isSandboxLocalAgentHost(nodeAgentAuthDraft) && (
+            <SandboxAgentAuthPanel
+              objectId={objectId}
+              rowName={rowName}
+              draft={nodeAgentAuthDraft}
+              disabled={disabled || !canPatchSandboxRow}
+              onPatchDraft={onSandboxRowPatch}
+            />
+          )}
           <WorkflowCheckbox
             checked={config.required !== false}
             disabled={disabled}

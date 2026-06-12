@@ -1239,6 +1239,8 @@ export default function WorkflowSurface() {
                     graph={orchestrationGraph}
                     objectId={objectId}
                     rowName={rowId}
+                    sandboxRow={sandboxRow}
+                    onSandboxRowPatch={patchSandboxRuntimeFields}
                     disabled={false}
                     onGraphChange={(updater) => {
                       setOrchestrationGraph((g) => (typeof updater === "function" ? updater(g) : updater));
