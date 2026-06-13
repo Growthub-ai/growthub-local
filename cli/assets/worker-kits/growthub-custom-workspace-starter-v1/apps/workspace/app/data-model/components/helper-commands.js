@@ -41,6 +41,14 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    name: "/causation",
+    label: "Causation driver",
+    description: "Replay the causal proof chain across the four governed lanes — read-only, no writes",
+    scope: "workspace",
+    mutates: false,
+    view: "causation"
+  },
+  {
     name: "/swarm",
     label: "Swarm",
     description: "Propose a governed agent swarm — you review and apply before any run",

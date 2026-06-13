@@ -108,6 +108,9 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   const helperHandoffDismissed = helperConfigured || isHelperHandoffDismissed(effectiveConfig);
   const [setupOpen, setSetupOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
+  // Which sidecar view to open into — null is the default chat surface;
+  // "causation" deep-links the read-only causal-proof-chain cockpit.
+  const [helperInitialView, setHelperInitialView] = useState(null);
 
   useEffect(() => {
     setLocalConfig(workspaceConfig);
@@ -151,6 +154,20 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   }, [dismissWalkthrough]);
 
   const openHelperHandoff = useMemo(() => () => {
+    setHelperInitialView(null);
+    if (helperConfigured) {
+      setHelperOpen(true);
+      return;
+    }
+    setSetupOpen(true);
+  }, [helperConfigured]);
+
+  // Open the helper sidecar straight into the read-only causation driver —
+  // the human's forensic mirror of the agent swarm cockpit. Same governed
+  // helper widget; no new route, no writes. Unconfigured helpers fall back to
+  // the setup flow, then land in the causation view once connected.
+  const openCausationDriver = useMemo(() => () => {
+    setHelperInitialView("causation");
     if (helperConfigured) {
       setHelperOpen(true);
       return;
@@ -383,6 +400,14 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
             <button type="button" onClick={openHelperHandoff}>
               {helperConfigured ? "Open helper" : "Set up helper"}
             </button>
+            <button
+              type="button"
+              className="workspace-lens-helper-card-secondary"
+              onClick={openCausationDriver}
+              data-open-causation-driver=""
+            >
+              Open causation driver
+            </button>
           </div>
         </article>
       </section>
@@ -478,10 +503,11 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
 
       <HelperSidecar
         open={helperOpen}
-        onClose={() => setHelperOpen(false)}
+        onClose={() => { setHelperOpen(false); setHelperInitialView(null); }}
         workspaceConfig={effectiveConfig}
         initialIntent="explain"
         initialPrompt=""
+        initialView={helperInitialView}
         onApplied={(nextConfig) => setLocalConfig(nextConfig)}
       />
     </div>
