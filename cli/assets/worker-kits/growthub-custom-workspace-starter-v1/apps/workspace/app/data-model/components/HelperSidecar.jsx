@@ -48,6 +48,7 @@ import {
   WorkspaceHelperSetupModal,
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
+import { EligibilityCockpit } from "./EligibilityCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -346,7 +347,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, initialView, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -422,6 +423,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   useEffect(() => {
     if (initialIntent) { setIntent(initialIntent); setActiveIntent(initialIntent); }
   }, [initialIntent]);
+
+  // Open directly into a read-only cockpit view (e.g. the eligibility cockpit
+  // launched from the Workspace Lens button). Only re-applies on open/target
+  // change — the in-sidecar back button navigates away normally afterwards.
+  useEffect(() => {
+    if (open && initialView) setActiveView(initialView);
+  }, [open, initialView]);
 
   // Seed the prompt textarea when the helper opens with a starter prompt
   // (empty state CTA, palette intents). Only re-seeds when opening.
@@ -975,6 +983,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   };
 
   const inSwarmView = activeView === "swarm-list" || activeView === "swarm-detail" || activeView === "tool-output";
+  const inEligibilityView = activeView === "eligibility";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1009,7 +1018,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {inSwarmView && (
+            {(inSwarmView || inEligibilityView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1026,11 +1035,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               </button>
             )}
             <span className="dm-sidecar-title" data-helper-title="">
-              {inSwarmView
-                ? "Background tasks"
-                : threadActive
-                  ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                  : "Workspace Helper"}
+              {inEligibilityView
+                ? "Eligibility & causation"
+                : inSwarmView
+                  ? "Background tasks"
+                  : threadActive
+                    ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                    : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -1086,11 +1097,19 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
+        {/* Eligibility & causation cockpit — read-only projection over the
+            same agent-outcome receipt stream; no route change, no mutation. */}
+        {activeTab === "assistant" && inEligibilityView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-swarm-view={activeView}>
+            <EligibilityCockpit />
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && (
+        {activeTab === "assistant" && !inSwarmView && !inEligibilityView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble

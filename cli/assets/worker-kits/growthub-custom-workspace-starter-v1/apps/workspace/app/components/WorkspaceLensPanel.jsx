@@ -108,6 +108,9 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   const helperHandoffDismissed = helperConfigured || isHelperHandoffDismissed(effectiveConfig);
   const [setupOpen, setSetupOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
+  // Which sidecar view the helper opens into ("chat" by default; the
+  // eligibility button below launches the read-only causation cockpit).
+  const [helperInitialView, setHelperInitialView] = useState("chat");
 
   useEffect(() => {
     setLocalConfig(workspaceConfig);
@@ -152,6 +155,19 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
 
   const openHelperHandoff = useMemo(() => () => {
     if (helperConfigured) {
+      setHelperInitialView("chat");
+      setHelperOpen(true);
+      return;
+    }
+    setSetupOpen(true);
+  }, [helperConfigured]);
+
+  // Launch the helper sidecar straight into the read-only eligibility &
+  // causation driver cockpit. Same governed handoff as "Open helper" — if the
+  // helper is not configured yet, it routes through setup first.
+  const openEligibilityCockpit = useMemo(() => () => {
+    if (helperConfigured) {
+      setHelperInitialView("eligibility");
       setHelperOpen(true);
       return;
     }
@@ -383,6 +399,13 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
             <button type="button" onClick={openHelperHandoff}>
               {helperConfigured ? "Open helper" : "Set up helper"}
             </button>
+            <button
+              type="button"
+              className="workspace-lens-eligibility-btn"
+              onClick={openEligibilityCockpit}
+            >
+              Eligibility cockpit
+            </button>
           </div>
         </article>
       </section>
@@ -482,6 +505,7 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
         workspaceConfig={effectiveConfig}
         initialIntent="explain"
         initialPrompt=""
+        initialView={helperInitialView}
         onApplied={(nextConfig) => setLocalConfig(nextConfig)}
       />
     </div>

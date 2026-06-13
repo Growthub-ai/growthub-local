@@ -41,6 +41,14 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    name: "/eligibility",
+    label: "Eligibility",
+    description: "Open the eligibility & causation driver cockpit — read-only route-shopping + actor verdicts",
+    scope: "workspace",
+    mutates: false,
+    view: "eligibility"
+  },
+  {
     name: "/swarm",
     label: "Swarm",
     description: "Propose a governed agent swarm — you review and apply before any run",

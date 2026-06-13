@@ -5104,6 +5104,19 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-cockpit-receipt-chip { align-self: start; }
 .dm-cockpit-receipt-text { font-size: 12px; color: #64748b; line-height: 1.4; }
 
+/* Eligibility & causation cockpit — read-only projection over the receipt
+   stream. Reuses the dm-swarm-card surface + dm-run-console dots/hints and the
+   dm-db-status chip; these add only section grouping and the driver rows. */
+.dm-elig-cockpit { gap: 12px; }
+.dm-elig-section { display: flex; flex-direction: column; gap: 8px; }
+.dm-elig-section .dm-helper-toolcall-title { display: inline-flex; align-items: center; gap: 6px; }
+.dm-elig-actor-head { width: 100%; background: transparent; border: 0; padding: 0; cursor: pointer; font: inherit; text-align: left; }
+.dm-elig-drivers { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.dm-elig-driver { align-items: start; }
+.dm-elig-refs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
+.dm-elig-ref { font-size: 11px; color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px; padding: 0 4px; }
+.dm-elig-route .dm-swarm-card-desc code { margin: 0 1px; }
+
 /* Serverless upgrade — toolbar button, one-time nudge, and cockpit panel. */
 .dm-workflow-upgrade-btn { position: relative; }
 .dm-workflow-upgrade-btn.is-serverless { color: #166534; }
@@ -9006,6 +9019,8 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-lens-helper-card-body p { margin: 0; color: #6b7280; font-size: 12px; line-height: 1.45; max-width: 260px; }
 .workspace-lens-helper-card-body button { margin-top: 4px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font-size: 12px; font-weight: 500; padding: 7px 12px; cursor: pointer; }
 .workspace-lens-helper-card-body button:hover { background: #f9fafb; }
+.workspace-lens-helper-card-body button.workspace-lens-eligibility-btn { margin-top: 2px; border-color: transparent; background: transparent; color: #4b5563; font-weight: 500; }
+.workspace-lens-helper-card-body button.workspace-lens-eligibility-btn:hover { background: #f3f4f6; color: #111827; }
 .workspace-lens-branches { margin: 24px 0 32px; }
 .workspace-lens-branches-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
 .workspace-lens-branches-head h2 { margin: 0; color: #111827; font-size: 18px; font-weight: 600; }
