@@ -117,11 +117,43 @@ governed receipt trace required to estimate the behavior corpus.
 - **Deterministic** (seeded). **Never asserts** without evidence — an empty
   corpus returns `insufficient-evidence`.
 
-## §5 — Validation
+## §5 — Cockpit surface (shared, identical to the swarm cockpit)
 
-`scripts/unit-swarm-society-simulation.test.mjs` — 9 tests: profiling rates,
-sequence-based route-shopping detection, simulation determinism, blocked-rate
-monotonicity, simulation-receipt schema/flag, concurrency↔contention, safe
-concurrency + verdicts, empty-corpus insufficiency, never-throws.
+The simulation is operated through the **same sidecar grammar** as the swarm
+cockpit — no new navigation, no new visual language, no broken mental model.
 
-Run: `node --test scripts/unit-swarm-society-simulation.test.mjs`
+- **Shared config** — `lib/simulation-cockpit-config.js` is the single contract
+  both entry points use: the read-only endpoint, the clamped parameter fields
+  (agents / tasks / concurrency / seed), and the verdict→dot vocabulary
+  (`dm-run-console__tree-dot` variants). Pure and tested.
+- **Cockpit** — `app/data-model/components/SimulationCockpit.jsx` reuses the
+  exact swarm-cockpit CSS (`dm-swarm-cockpit`, `dm-helper-toolcall`,
+  `dm-swarm-card`, `dm-run-console__hint`, `dm-helper-setup-input`,
+  `dm-btn-primary`). It calls `GET /api/workspace/swarm-predictability` via the
+  shared config and renders the Predictability Report. Strictly read-only.
+- **Two seamless entry points, one cockpit:**
+  - **`/simulate`** helper command (read-only view switch, same pattern as
+    `/workflows`) opens the cockpit inside the chat widget composer.
+  - A **seamless white "Run simulation" button** in the Workspace Lens helper
+    card (inherits the existing `.workspace-lens-helper-card-body button` white
+    style) opens the *same* sidecar in the simulation view via a new
+    `initialView` prop — gated by the identical helper-setup check.
+- **Closed loop** — the report is derived from the agent-outcome receipt stream
+  the configured agent emits; running a simulation refreshes the host config so
+  the user's Data Model records stay in sync, exactly as swarm runs do.
+
+## §6 — Validation
+
+- `scripts/unit-swarm-society-simulation.test.mjs` — 9 tests: profiling rates,
+  sequence-based route-shopping detection, simulation determinism, blocked-rate
+  monotonicity, simulation-receipt schema/flag, concurrency↔contention, safe
+  concurrency + verdicts, empty-corpus insufficiency, never-throws.
+- `scripts/unit-simulation-cockpit-config.test.mjs` — 6 tests: the shared
+  cockpit config (clamps, query building, verdict vocabulary, summary).
+- `scripts/unit-simulation-cockpit-wiring.test.mjs` — 5 structural tests: the
+  cockpit reuses the swarm CSS grammar and is read-only; the sidecar mounts it
+  under the `simulation` view + `initialView`; `/simulate` is a governed
+  read-only view switch; the Lens exposes the shared white action.
+- `scripts/unit-helper-command-registry.test.mjs` — `/simulate` governance.
+
+Run: `node --test scripts/unit-swarm-society-simulation.test.mjs scripts/unit-simulation-cockpit-config.test.mjs scripts/unit-simulation-cockpit-wiring.test.mjs`

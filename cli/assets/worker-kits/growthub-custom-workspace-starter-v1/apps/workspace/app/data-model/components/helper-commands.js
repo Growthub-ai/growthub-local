@@ -41,6 +41,14 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    name: "/simulate",
+    label: "Simulate",
+    description: "Forecast swarm predictability from receipts — read-only, nothing runs",
+    scope: "swarm",
+    mutates: false,
+    view: "simulation"
+  },
+  {
     name: "/swarm",
     label: "Swarm",
     description: "Propose a governed agent swarm — you review and apply before any run",

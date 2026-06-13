@@ -48,6 +48,7 @@ import {
   WorkspaceHelperSetupModal,
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
+import { SimulationCockpit } from "./SimulationCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -346,7 +347,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, initialView, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -508,6 +509,17 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
       setSlashDismissed(false);
     }
   }, [open]);
+
+  // Open directly into a requested view (e.g. the Workspace Lens "Run
+  // simulation" action passes initialView="simulation"). The close-reset above
+  // returns to "chat" so the next default open is unaffected.
+  useEffect(() => {
+    if (open && initialView && initialView !== "chat") {
+      setActiveTab("assistant");
+      setSwarmFocus(null);
+      setActiveView(initialView);
+    }
+  }, [open, initialView]);
 
   // Close the "More" pill dropdown on outside click.
   useEffect(() => {
@@ -975,6 +987,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   };
 
   const inSwarmView = activeView === "swarm-list" || activeView === "swarm-detail" || activeView === "tool-output";
+  const inSimulationView = activeView === "simulation";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1086,11 +1099,20 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
+        {/* Simulation cockpit view — same sidecar shell, read-only swarm-society
+            predictability forecast. Shared by the /simulate command and the
+            Workspace Lens action button (initialView="simulation"). */}
+        {activeTab === "assistant" && inSimulationView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-swarm-view={activeView}>
+            <SimulationCockpit onConfigRefresh={refreshWorkspaceConfig} />
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && (
+        {activeTab === "assistant" && !inSwarmView && !inSimulationView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble
