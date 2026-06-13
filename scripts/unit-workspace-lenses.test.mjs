@@ -67,9 +67,10 @@ test("registry — exactly one primary lens and it is activation, stable order",
   assert.equal(primaries.length, 1);
   assert.equal(primaries[0].id, "activation");
   const ids = activation.WORKSPACE_LENS_REGISTRY.map((e) => e.id);
-  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build"]);
-  // Fleet/multi-app (Item 4) is intentionally NOT registered.
-  assert.equal(ids.includes("fleet"), false);
+  // Fleet/multi-app (Item 4) is registered as of Governed Application
+  // Control Plane V1 — its staging precondition (a runtime surface-metadata
+  // source) is satisfied by the workspace-app-registry governed object.
+  assert.deepEqual(ids, ["activation", "persistence", "observability", "deploy", "tasks", "app-build", "fleet"]);
 });
 
 test("every lens emits the panel-compatible step shape", () => {

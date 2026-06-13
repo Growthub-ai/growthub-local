@@ -41,6 +41,13 @@ export function isExecutionEvent(value) {
         case "progress":
         case "complete":
         case "error":
+        case "swarm_run_start":
+        case "swarm_phase_start":
+        case "swarm_agent_start":
+        case "swarm_agent_complete":
+        case "swarm_agent_error":
+        case "swarm_phase_complete":
+        case "swarm_run_complete":
             return true;
         default:
             return false;

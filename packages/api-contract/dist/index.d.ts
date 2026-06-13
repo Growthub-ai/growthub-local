@@ -28,6 +28,10 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
+ *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
+ *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
+ *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -53,5 +57,13 @@ export type { PipelineTraceEventType, PipelineTraceEnvelope, PipelineStageStarte
 export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
 export type { KitHealthSeverity, KitHealthCheck, KitHealthReport, KitMaturityDimension, KitMaturityScore, } from "./health.js";
 export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
+export type { WorkspaceHelperIntent, WorkspaceHelperProposal, WorkspaceProposalType, WorkspaceHelperReceipt, WorkspaceHelperSnapshot, WorkspaceHelperQuery, WorkspaceHelperResponse, WorkspaceHelperApplyRequest, WorkspaceHelperApplyReceipt, WorkspaceHelperApplyResponse, WorkspaceHelperNodeInput, WorkspaceHelperNodeOutput, WorkspaceHelperCapabilityManifest, } from "./helper.js";
+export { WORKSPACE_HELPER_INTENT_VALUES, WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOSAL_TYPE_TO_PATCH_FIELD, isWorkspaceHelperResponse, isWorkspaceProposal, WORKSPACE_HELPER_CONTRACT_VERSION, } from "./helper.js";
+export type { WorkspacePatchAllowedField, WorkspaceLiveWorkflowField, WorkspaceDraftWorkflowField, WorkspacePatchViolationCode, WorkspacePatchViolation, WorkspacePatchLimits, WorkspacePatchPolicyRejection, WorkspacePatchPreflightRequest, WorkspacePatchPreflightResponse, WorkflowPublishRequest, WorkflowPublishFailureCode, WorkflowPublishSuccess, WorkflowPublishFailure, WorkflowPublishResponse, } from "./workspace-patch.js";
+export { WORKSPACE_PATCH_ALLOWED_FIELDS, WORKSPACE_LIVE_WORKFLOW_FIELDS, WORKSPACE_DRAFT_WORKFLOW_FIELDS, isWorkspacePatchPolicyRejection, isWorkflowPublishSuccess, WORKSPACE_PATCH_CONTRACT_VERSION, } from "./workspace-patch.js";
+export type { AgentOutcomeReceiptKind, AgentOutcomeStatus, AgentOutcomeLane, AgentOutcomeObjectRef, AgentOutcomeReceipt, WorkspaceGovernanceSummary, AgentOutcomesResponse, } from "./workspace-outcome.js";
+export { AGENT_OUTCOME_RECEIPT_KINDS, AGENT_OUTCOME_STATUSES, AGENT_OUTCOMES_SOURCE_ID, WORKSPACE_AGENT_LOOP_V1, isAgentOutcomeReceipt, WORKSPACE_OUTCOME_CONTRACT_VERSION, } from "./workspace-outcome.js";
+export type { AppSurfaceRow, AppHealthStatus, AppLinkRollup, AppNextAction, AppAssignmentPacket, WorkspaceAppEntry, DetectedAppSurface, WorkspaceFleetSummary, WorkspaceAppsResponse, } from "./workspace-apps.js";
+export { APP_REGISTRY_OBJECT_ID, APP_SURFACE_OBJECT_TYPE, isAppAssignmentPacket, WORKSPACE_APPS_CONTRACT_VERSION, } from "./workspace-apps.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

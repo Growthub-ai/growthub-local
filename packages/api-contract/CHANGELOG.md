@@ -1,5 +1,48 @@
 # @growthub/api-contract
 
+## 1.5.0
+
+Additive minor. Promotes the **governed workspace mutation boundary** into
+the public type surface, alongside the runtime enforcement that ships in
+`growthub-custom-workspace-starter-v1` (`lib/workspace-patch-policy.js`,
+`POST /api/workspace/patch/preflight`, `POST /api/workspace/workflow/publish`).
+
+Pure type-only plus frozen vocabulary constants; no existing export shape
+changes.
+
+### Added
+
+- `./workspace-apps` subpath — Governed Application Control Plane V1:
+  `AppSurfaceRow` (the `workspace-app-registry` governed object rows),
+  `AppLinkRollup` / `AppHealthStatus` / `AppNextAction`,
+  `AppAssignmentPacket` (app-scoped swarm assignment),
+  `WorkspaceAppsResponse` (`GET /api/workspace/apps`),
+  `APP_REGISTRY_OBJECT_ID`, `APP_SURFACE_OBJECT_TYPE`,
+  `isAppAssignmentPacket`, `WORKSPACE_APPS_CONTRACT_VERSION`.
+- `./workspace-outcome` subpath — Agent Outcome Loop V1: `AgentOutcomeReceipt`
+  (the canonical receipt every mutation lane emits into the
+  `workspace:agent-outcomes` source-record stream), `AgentOutcomeLane`
+  classification, `WorkspaceGovernanceSummary` + `AgentOutcomesResponse`
+  (the `GET /api/workspace/agent-outcomes` cockpit data model),
+  `WORKSPACE_AGENT_LOOP_V1` (the blessed call sequence),
+  `isAgentOutcomeReceipt`, `WORKSPACE_OUTCOME_CONTRACT_VERSION`.
+- `repairPlan` on the PATCH 422 rejection envelope and
+  `repairPlan` / `safeNextStep` on the preflight response — policy
+  rejections teach the governed alternative.
+- `./workspace-patch` subpath — `WorkspacePatchViolation(Code)`,
+  `WorkspacePatchPolicyRejection`, `WorkspacePatchPreflightRequest/Response`,
+  `WorkflowPublishRequest/Response/Success/Failure(Code)`,
+  `WORKSPACE_PATCH_ALLOWED_FIELDS`, `WORKSPACE_LIVE_WORKFLOW_FIELDS`,
+  `WORKSPACE_DRAFT_WORKFLOW_FIELDS`, `isWorkspacePatchPolicyRejection`,
+  `isWorkflowPublishSuccess`, `WORKSPACE_PATCH_CONTRACT_VERSION`.
+
+### Fixed
+
+- `./helper` subpath export was advertised by docs but missing from
+  `package.json#exports`; it now resolves (`dist/helper.{js,d.ts}` already
+  shipped via the root re-export).
+
+
 ## 1.3.0-alpha.2
 
 Additive patch. Adds descriptive hosted Agent Builder manifest contracts to

@@ -28,6 +28,10 @@
  *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
  *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
+ *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
+ *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
+ *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
+ *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  */
 
 // Capabilities
@@ -310,6 +314,82 @@ export {
   isWorkspaceProposal,
   WORKSPACE_HELPER_CONTRACT_VERSION,
 } from "./helper.js";
+
+// Workspace mutation policy (the governed mutation boundary — the PATCH
+// allowlist + policy violation envelope, the patch preflight dry-run, and
+// the server-authoritative workflow publish route. Runtime enforcement
+// lives in the workspace app: lib/workspace-patch-policy.js plus the
+// patch/preflight and workflow/publish routes.)
+export type {
+  WorkspacePatchAllowedField,
+  WorkspaceLiveWorkflowField,
+  WorkspaceDraftWorkflowField,
+  WorkspacePatchViolationCode,
+  WorkspacePatchViolation,
+  WorkspacePatchLimits,
+  WorkspacePatchPolicyRejection,
+  WorkspacePatchPreflightRequest,
+  WorkspacePatchPreflightResponse,
+  WorkflowPublishRequest,
+  WorkflowPublishFailureCode,
+  WorkflowPublishSuccess,
+  WorkflowPublishFailure,
+  WorkflowPublishResponse,
+} from "./workspace-patch.js";
+export {
+  WORKSPACE_PATCH_ALLOWED_FIELDS,
+  WORKSPACE_LIVE_WORKFLOW_FIELDS,
+  WORKSPACE_DRAFT_WORKFLOW_FIELDS,
+  isWorkspacePatchPolicyRejection,
+  isWorkflowPublishSuccess,
+  WORKSPACE_PATCH_CONTRACT_VERSION,
+} from "./workspace-patch.js";
+
+// Agent Outcome Loop V1 (the positive-governance layer above the mutation
+// boundary — canonical receipts every mutation lane emits, the governance
+// summary cockpit data model, and the blessed agent loop sequence. Runtime
+// truth: workspace app lib/workspace-outcome-receipts.js + GET
+// /api/workspace/agent-outcomes.)
+export type {
+  AgentOutcomeReceiptKind,
+  AgentOutcomeStatus,
+  AgentOutcomeLane,
+  AgentOutcomeObjectRef,
+  AgentOutcomeReceipt,
+  WorkspaceGovernanceSummary,
+  AgentOutcomesResponse,
+} from "./workspace-outcome.js";
+export {
+  AGENT_OUTCOME_RECEIPT_KINDS,
+  AGENT_OUTCOME_STATUSES,
+  AGENT_OUTCOMES_SOURCE_ID,
+  WORKSPACE_AGENT_LOOP_V1,
+  isAgentOutcomeReceipt,
+  WORKSPACE_OUTCOME_CONTRACT_VERSION,
+} from "./workspace-outcome.js";
+
+// Governed Application Control Plane V1 (applications as first-class
+// governed entities — the workspace-app-registry Data Model object, the
+// Fleet lens, per-app health/next-action derivation, and app-scoped agent
+// assignment packets. Runtime truth: workspace app
+// lib/workspace-app-registry.js + GET /api/workspace/apps.)
+export type {
+  AppSurfaceRow,
+  AppHealthStatus,
+  AppLinkRollup,
+  AppNextAction,
+  AppAssignmentPacket,
+  WorkspaceAppEntry,
+  DetectedAppSurface,
+  WorkspaceFleetSummary,
+  WorkspaceAppsResponse,
+} from "./workspace-apps.js";
+export {
+  APP_REGISTRY_OBJECT_ID,
+  APP_SURFACE_OBJECT_TYPE,
+  isAppAssignmentPacket,
+  WORKSPACE_APPS_CONTRACT_VERSION,
+} from "./workspace-apps.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.

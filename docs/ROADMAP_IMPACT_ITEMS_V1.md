@@ -99,10 +99,13 @@ Workspace Lens helps them manage *ongoing* value. The customer journey:
 > is independent of the lens work (reproduced on `origin/main` with the lens changes reverted) and the
 > `/workspace-lens` surface is immune (it renders no canvas). Worth a defensive default-position guard.
 
-- **Item 4 (multi-app / fleet lens)** — ⏸ **staged, intentionally not implemented.** The exported workspace
-  runtime exposes no in-artifact multi-app surface registry to derive from (surface detection lives in the CLI's
-  `workspace surface list`, not in `growthub.config.json`). A Fleet lens requires a runtime surface-metadata
-  source first; inventing one would violate the pure-derivation guardrail. See Item 4 below.
+- **Item 4 (multi-app / fleet lens)** — ✅ **shipped (Governed Application Control Plane V1).** The staging
+  precondition is satisfied: the runtime surface-metadata source is the governed `workspace-app-registry`
+  Data Model object (objectType `app-surface`, `lib/workspace-app-registry.js`). The Fleet lens is registered
+  in `WORKSPACE_LENS_REGISTRY`; `GET /api/workspace/apps` derives per-app links/health/next-action plus
+  app-scoped agent assignment packets and bridges filesystem surface detection (advisory) into the runtime.
+  SDK: `@growthub/api-contract/workspace-apps`. Per-app deploy targets and a dedicated fleet management page
+  remain future work; the operator surfaces today are Workspace Lens (Fleet chip) + the Data Model registry.
 
 All shipped lenses keep the activation invariants: pure derivation, no fetch, no mutation, no secrets, never
 throws on partial input, hrefs route into existing surfaces only. The only mutation path remains

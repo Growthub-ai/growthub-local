@@ -436,6 +436,11 @@ registerSandboxAdapter({
       ]
     };
 
+    // Live workflow graphs are publish-owned: direct PATCH of
+    // orchestrationGraph / orchestrationConfig is policy-blocked (422). The
+    // governed path is draft save → sandbox-run useDraft:true → attestation →
+    // POST /api/workspace/workflow/publish. This section exercises that loop.
+    const swarmDraftSerialized = JSON.stringify(swarmGraph);
     const swarmPatch = await fetch(`${base}/api/workspace`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -456,14 +461,86 @@ registerSandboxAdapter({
                 runtime: "node",
                 command: "",
                 instructions: "Swarm orchestrator instructions.",
-                orchestrationGraph: JSON.stringify(swarmGraph),
+                orchestrationDraftConfig: swarmDraftSerialized,
+                orchestrationDraftStatus: "untested",
               }),
             ]),
           ],
         },
       }),
     });
-    assert(swarmPatch.status === 200, `PATCH for swarm row expected 200, got ${swarmPatch.status} ${await swarmPatch.text()}`);
+    assert(swarmPatch.status === 200, `PATCH for swarm draft row expected 200, got ${swarmPatch.status} ${await swarmPatch.text()}`);
+
+    // Stale pattern must be rejected: direct PATCH of the live graph → 422.
+    const staleLivePatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        dataModel: {
+          objects: [
+            sandboxObject([
+              emptyRow({ Name: "api-probe-row", adapter: "local-process", runtime: "bash", command: "echo orchestrator-ok" }),
+              emptyRow({
+                Name: "swarm-probe-row",
+                adapter: "local-agent-host",
+                agentHost: "claude_local",
+                runtime: "node",
+                orchestrationGraph: swarmDraftSerialized,
+              }),
+            ]),
+          ],
+        },
+      }),
+    });
+    assert(staleLivePatch.status === 422, `direct live-graph PATCH must be policy-rejected with 422, got ${staleLivePatch.status}`);
+
+    // Draft test run (server stamps orchestrationDraftLastRunId + run record).
+    const draftRun = await fetch(`${base}/api/workspace/sandbox-run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-probe-row", useDraft: true }),
+    });
+    const draftRunJson = await draftRun.json();
+    assert(draftRunJson.ok === true, `draft swarm run must pass via stub adapter, got ${JSON.stringify(draftRunJson).slice(0, 300)}`);
+
+    // Premature publish must fail: draft has no attestation yet.
+    const earlyPublish = await fetch(`${base}/api/workspace/workflow/publish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-probe-row" }),
+    });
+    assert(earlyPublish.status === 409, `publish before attestation must 409, got ${earlyPublish.status}`);
+
+    // Attestation: merge draft test stamps onto the CURRENT persisted rows so
+    // the server-stamped orchestrationDraftLastRunId survives the round-trip.
+    const cfgNow = await (await fetch(`${base}/api/workspace`)).json();
+    const mergedObjects = (cfgNow.workspaceConfig.dataModel?.objects || []).map((object) => {
+      if (object?.id !== "sandboxes-e2e") return object;
+      return {
+        ...object,
+        rows: (object.rows || []).map((row) =>
+          String(row?.Name || "") === "swarm-probe-row"
+            ? { ...row, orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: swarmDraftSerialized }
+            : row,
+        ),
+      };
+    });
+    const attestPatch = await fetch(`${base}/api/workspace`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataModel: { ...cfgNow.workspaceConfig.dataModel, objects: mergedObjects } }),
+    });
+    assert(attestPatch.status === 200, `attestation PATCH expected 200, got ${attestPatch.status} ${await attestPatch.text()}`);
+
+    // Server-authoritative publish: verifies attestation AND run lineage.
+    const publishRes = await fetch(`${base}/api/workspace/workflow/publish`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-probe-row" }),
+    });
+    const publishJson = await publishRes.json();
+    assert(publishRes.status === 200 && publishJson.ok === true, `publish expected ok, got ${publishRes.status} ${JSON.stringify(publishJson).slice(0, 300)}`);
+    assert(typeof publishJson.publishedSha256 === "string" && publishJson.publishedSha256.length === 64, "publish must return the published config sha256");
 
     const swarmRun = await fetch(`${base}/api/workspace/sandbox-run`, {
       method: "POST",
@@ -503,43 +580,30 @@ registerSandboxAdapter({
       "swarm response must carry the logTree rooted at swarm-root",
     );
 
-    // Negative-path: ai-agent cannot fall back to local-process
+    // Negative-path: ai-agent cannot fall back to local-process. Exercised
+    // through a draft run with an inline draftGraph (the governed lane for
+    // unpublished graphs) — live graphs only ever exist via publish.
+    const cfgForGate = await (await fetch(`${base}/api/workspace`)).json();
+    const gateObjects = (cfgForGate.workspaceConfig.dataModel?.objects || []).map((object) => {
+      if (object?.id !== "sandboxes-e2e") return object;
+      return {
+        ...object,
+        rows: [
+          ...(object.rows || []),
+          emptyRow({ Name: "swarm-gate-row", adapter: "local-process", runtime: "bash" }),
+        ],
+      };
+    });
     const swarmCodeExecGate = await fetch(`${base}/api/workspace`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        dataModel: {
-          objects: [
-            sandboxObject([
-              emptyRow({
-                Name: "api-probe-row",
-                adapter: "local-agent-host",
-                agentHost: "claude_local",
-                runtime: "node",
-              }),
-              emptyRow({
-                Name: "swarm-probe-row",
-                adapter: "local-agent-host",
-                agentHost: "claude_local",
-                runtime: "node",
-                orchestrationGraph: JSON.stringify(swarmGraph),
-              }),
-              emptyRow({
-                Name: "swarm-gate-row",
-                adapter: "local-process",
-                runtime: "bash",
-                orchestrationGraph: JSON.stringify(swarmGraph),
-              }),
-            ]),
-          ],
-        },
-      }),
+      body: JSON.stringify({ dataModel: { ...cfgForGate.workspaceConfig.dataModel, objects: gateObjects } }),
     });
     assert(swarmCodeExecGate.status === 200, "PATCH swarm-gate-row should validate");
     const swarmGateRun = await fetch(`${base}/api/workspace/sandbox-run`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-gate-row" }),
+      body: JSON.stringify({ objectId: "sandboxes-e2e", name: "swarm-gate-row", useDraft: true, draftGraph: swarmGraph }),
     });
     const swarmGateJson = await swarmGateRun.json();
     assert(

@@ -50,6 +50,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -78,6 +79,9 @@ import {
 } from "@/lib/adapters/sandboxes";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
+import { stableStringify } from "@/lib/workspace-patch-policy";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
 import {
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
@@ -470,6 +474,11 @@ async function executeSandboxRun(body, { emit } = {}) {
   const draftGraph = useDraft
     ? parseOrchestrationGraph(body?.draftGraph || row.orchestrationDraftConfig || row.orchestrationDraftGraph)
     : null;
+  // Hash the draft BEFORE execution (the graph runner may annotate the object
+  // in place). This is the lineage anchor the workflow publish gate verifies.
+  const draftSha256 = draftGraph
+    ? createHash("sha256").update(stableStringify(draftGraph), "utf8").digest("hex")
+    : null;
   const rowForRun = draftGraph
     ? { ...row, orchestrationGraph: draftGraph, orchestrationConfig: draftGraph }
     : row;
@@ -699,6 +708,16 @@ async function executeSandboxRun(body, { emit } = {}) {
     runInputs: normalizedRunInputs
   });
 
+  // Draft-run lineage anchor: the sha256 of the exact graph that executed,
+  // persisted into the run record. The sidecar is only writable by server
+  // routes (PATCH is policy-blocked from it), so the workflow publish gate
+  // can verify "this saved draft is what actually ran" against this hash —
+  // the PATCH-writable draft attestation fields alone are never trusted.
+  if (useDraft && draftSha256) {
+    response.useDraft = true;
+    response.draftSha256 = draftSha256;
+  }
+
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
   const persistence = describePersistenceMode();
   const status = response.exitCode === 0 && !response.error ? "connected" : "failed";
@@ -754,8 +773,29 @@ async function executeSandboxRun(body, { emit } = {}) {
     }
   }
 
+  // Agent Outcome Loop V1: every execution emits the same canonical receipt
+  // (kind "sandbox-run", lane "execution-proof") into workspace:agent-outcomes,
+  // linking the run record so publish gates and future agents can cite it.
+  const runOk = response.exitCode === 0 && !response.error;
+  await appendOutcomeReceipt({
+    kind: "sandbox-run",
+    lane: "execution-proof",
+    outcomeStatus: runOk ? "tested" : "failed",
+    intent: typeof body?.intent === "string" ? body.intent : undefined,
+    actor: typeof body?.actor === "string" ? body.actor : undefined,
+    objectRefs: [{ objectId, rowName: rowForRun.Name || name, objectType: "sandbox-environment" }],
+    runId,
+    sourceId: sourceId || undefined,
+    ...(useDraft && draftSha256 ? { draftSha256 } : {}),
+    summary: `${useDraft ? "draft " : ""}run ${runOk ? "passed" : "failed"} (exit ${response.exitCode}, ${effectiveAdapterId}/${runtime}) — ${String(response.stdout || response.stderr || response.error || "").slice(0, 160)}`,
+    ...(runOk && useDraft
+      ? { nextActions: ["Attest the tested draft (orchestrationDraftTestPassed + orchestrationDraftTestedConfig), then POST /api/workspace/workflow/publish"] }
+      : {}),
+    rollbackRef: sourceId ? { objectId, rowName: rowForRun.Name || name, sourceId } : undefined
+  });
+
   return NextResponse.json({
-    ok: response.exitCode === 0 && !response.error,
+    ok: runOk,
     status,
     runId,
     adapter: effectiveAdapterId,
@@ -771,6 +811,37 @@ async function executeSandboxRun(body, { emit } = {}) {
 
 async function POST(request) {
   const accept = request.headers.get("accept") || "";
+  // Unified app-scope gate: with x-growthub-app-scope, this run must target
+  // a workflow inside the app's governed scope (route-shopping closed).
+  let scopedAppId = null;
+  {
+    const cfgForScope = await readWorkspaceConfig().catch(() => ({}));
+    const scope = requireAppScope(request, cfgForScope);
+    if (scope.scoped && scope.violation) {
+      await appendOutcomeReceipt({
+        kind: "sandbox-run", lane: "execution-proof", outcomeStatus: "blocked",
+        appId: scope.violation.appScope,
+        summary: `sandbox-run rejected (422 app scope): ${scope.violation.violationType}`,
+        nextActions: [scope.violation.suggestedAction]
+      });
+      return NextResponse.json(scope.violation, { status: 422 });
+    }
+    if (scope.scoped) {
+      let peek = null;
+      try { peek = await request.clone().json(); } catch { peek = null; }
+      const violation = checkScopedWorkflowAccess(scope.context, peek?.objectId, peek?.name);
+      if (violation) {
+        await appendOutcomeReceipt({
+          kind: "sandbox-run", lane: "execution-proof", outcomeStatus: "blocked",
+          appId: scope.appId,
+          summary: `sandbox-run rejected (422 app scope): workflow ${peek?.objectId}:${peek?.name} outside app ${scope.appId}`,
+          nextActions: [violation.suggestedAction]
+        });
+        return NextResponse.json(violation, { status: 422 });
+      }
+      scopedAppId = scope.appId;
+    }
+  }
   let body;
   try {
     body = await request.json();

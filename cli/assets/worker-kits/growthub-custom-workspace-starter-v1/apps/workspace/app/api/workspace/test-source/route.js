@@ -35,6 +35,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { requireAppScope, checkScopedRegistryAccess } from "@/lib/workspace-app-registry";
+import { readWorkspaceConfig as readCfgForScope } from "@/lib/workspace-config";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
@@ -61,6 +64,24 @@ async function POST(request) {
   }
 
   const { integrationId, binding } = body || {};
+  // App-scope gate: a scoped agent may only test integrations on its
+  // registry-row registryIds (data-plane isolation, Attio-style object scope).
+  {
+    const cfgForScope = await readCfgForScope().catch(() => ({}));
+    const scope = requireAppScope(request, cfgForScope);
+    if (scope.scoped) {
+      const violation = scope.violation || checkScopedRegistryAccess(scope.context, integrationId);
+      if (violation) {
+        await appendOutcomeReceipt({
+          kind: "agent-outcome", lane: "untrusted-direct", outcomeStatus: "blocked",
+          appId: violation.appScope || scope.appId,
+          summary: `test-source rejected (422 app scope): ${violation.violationType}`,
+          nextActions: violation.repairPlan
+        });
+        return NextResponse.json(violation, { status: 422 });
+      }
+    }
+  }
   if (typeof integrationId !== "string" || !integrationId.trim()) {
     return NextResponse.json({ ok: false, reason: "bad-request", error: "integrationId must be a non-empty string" }, { status: 400 });
   }

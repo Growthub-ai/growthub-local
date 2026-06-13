@@ -31,6 +31,8 @@
  */
 
 import { NextResponse } from "next/server";
+import { requireAppScope, checkScopedSourceAccess } from "@/lib/workspace-app-registry";
+import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { readWorkspaceConfig, writeWorkspaceSourceRecords } from "@/lib/workspace-config";
@@ -50,6 +52,25 @@ async function POST(request) {
   }
 
   const { sourceIds } = body;
+  // App-scope gate: a scoped agent may only refresh sources referenced on
+  // its registry row (dataSourceIds / derived sourceIds).
+  {
+    let cfgForScope = {};
+    try { cfgForScope = await readWorkspaceConfig(); } catch { cfgForScope = {}; }
+    const scope = requireAppScope(request, cfgForScope);
+    if (scope.scoped) {
+      const violation = scope.violation || checkScopedSourceAccess(scope.context, sourceIds);
+      if (violation) {
+        await appendOutcomeReceipt({
+          kind: "agent-outcome", lane: "untrusted-direct", outcomeStatus: "blocked",
+          appId: violation.appScope || scope.appId,
+          summary: `refresh-sources rejected (422 app scope): ${violation.violationType}`,
+          nextActions: violation.repairPlan
+        });
+        return NextResponse.json(violation, { status: 422 });
+      }
+    }
+  }
   if (!Array.isArray(sourceIds) || sourceIds.length === 0) {
     return NextResponse.json({ error: "sourceIds must be a non-empty array" }, { status: 400 });
   }

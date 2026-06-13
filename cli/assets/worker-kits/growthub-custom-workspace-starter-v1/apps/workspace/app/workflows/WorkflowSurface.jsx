@@ -44,6 +44,11 @@ import {
   validateOrchestrationGraph
 } from "@/lib/orchestration-graph";
 import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
+import {
+  nodeSandboxRecordRef,
+  patchSandboxRowInConfig,
+  withGraphSandboxRecordRefs
+} from "@/lib/orchestration-publish";
 import { OrchestrationGraphCanvas } from "../data-model/components/OrchestrationGraphCanvas.jsx";
 import { OrchestrationGraphEmptyCanvas } from "../data-model/components/OrchestrationGraphEmptyCanvas.jsx";
 import { OrchestrationNodeConfigPanel } from "../data-model/components/OrchestrationNodeConfigPanel.jsx";
@@ -117,47 +122,6 @@ function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   return firstRegistryRow ? { object: firstRegistryObject, row: firstRegistryRow } : null;
 }
 
-function patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, fields) {
-  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-  return {
-    ...workspaceConfig,
-    dataModel: {
-      ...workspaceConfig.dataModel,
-      objects: objects.map((object) => {
-        if (object?.id !== objectId) return object;
-        const rows = Array.isArray(object.rows) ? object.rows : [];
-        return {
-          ...object,
-          rows: rows.map((row, index) => (index === rowIndex ? { ...row, ...fields } : row)),
-        };
-      }),
-    },
-  };
-}
-
-function nodeSandboxRecordRef(objectId, rowName, nodeId) {
-  return {
-    objectId: String(objectId || "").trim(),
-    rowName: String(rowName || "").trim(),
-    nodeId: String(nodeId || "").trim()
-  };
-}
-
-function withGraphSandboxRecordRefs(graph, objectId, rowName) {
-  const parsed = parseOrchestrationGraph(graph) || graph;
-  if (!parsed || typeof parsed !== "object") return parsed;
-  return {
-    ...parsed,
-    nodes: (Array.isArray(parsed.nodes) ? parsed.nodes : []).map((node) => ({
-      ...node,
-      config: {
-        ...(node?.config || {}),
-        sandboxRecordRef: nodeSandboxRecordRef(objectId, rowName, node?.id)
-      }
-    }))
-  };
-}
-
 const WORKFLOW_ACTION_GROUPS = [
   {
     label: "Data",
@@ -199,90 +163,6 @@ function getWorkspaceObjectOptions(workspaceConfig) {
       label: String(object.name || object.label || object.id),
       objectType: String(object.objectType || "custom")
     }));
-}
-
-function normalizeDeltaTags(tags) {
-  return Array.from(new Set((Array.isArray(tags) ? tags : [])
-    .map((tag) => String(tag || "").trim().toLowerCase())
-    .filter(Boolean)));
-}
-
-function inferDeltaTagsForWorkflowNode(node, config) {
-  const tags = [];
-  const type = String(node?.type || "").trim();
-  const action = String(config?.action || node?.id || "").trim();
-  if (type === "thinAdapter") tags.push("model", "prompt", "routing");
-  if (type === "ai-agent") tags.push("model", "prompt", "output");
-  if (type === "data-action" || type === "data-trigger") tags.push("input", "output");
-  if (type === "flow-control") tags.push("routing");
-  if (type === "core-action") tags.push("runtime");
-  if (type === "human-input") tags.push("input");
-  if (action.includes("search") || action.includes("filter")) tags.push("evaluation", "guardrail");
-  if (action.includes("delete") || config?.confirmationRequired) tags.push("guardrail");
-  if (action.includes("http") || config?.url || config?.method) tags.push("routing", "input", "output");
-  if (action.includes("email")) tags.push("input", "output");
-  if (action.includes("delay") || config?.duration || config?.unit) tags.push("runtime");
-  if (config?.objectId || config?.fieldMap || config?.filters) tags.push("input", "output");
-  if (config?.model || config?.prompt) tags.push("model", "prompt");
-  return normalizeDeltaTags(tags);
-}
-
-function getNodeDeltaRecords(previousGraph, nextGraph) {
-  const previousNodes = new Map(
-    (Array.isArray(previousGraph?.nodes) ? previousGraph.nodes : [])
-      .map((node) => [String(node?.id || ""), node])
-      .filter(([id]) => id)
-  );
-
-  return (Array.isArray(nextGraph?.nodes) ? nextGraph.nodes : [])
-    .map((node) => {
-      const nodeId = String(node?.id || "").trim();
-      if (!nodeId) return null;
-      const previous = previousNodes.get(nodeId);
-      const config = node?.config && typeof node.config === "object" && !Array.isArray(node.config) ? node.config : {};
-      const previousConfig = previous?.config && typeof previous.config === "object" && !Array.isArray(previous.config)
-        ? previous.config
-        : {};
-      const currentComparable = JSON.stringify({
-        type: node?.type || "",
-        sandbox: node?.sandbox || "",
-        label: node?.label || "",
-        subtitle: node?.subtitle || "",
-        config
-      });
-      const previousComparable = JSON.stringify({
-        type: previous?.type || "",
-        sandbox: previous?.sandbox || "",
-        label: previous?.label || "",
-        subtitle: previous?.subtitle || "",
-        config: previousConfig
-      });
-      const explicitTags = normalizeDeltaTags(config.deltaTags);
-      const deltaTags = explicitTags.length > 0 ? explicitTags : inferDeltaTagsForWorkflowNode(node, config);
-      const changeReason = String(config.changeReason || "").trim();
-      const changed = currentComparable !== previousComparable;
-      if (!changed && !changeReason && deltaTags.length === 0) return null;
-      return {
-        nodeId,
-        nodeType: String(node?.type || ""),
-        label: String(node?.label || node?.sandbox || nodeId),
-        sandboxRecordRef: config.sandboxRecordRef || null,
-        changeReason,
-        deltaTags,
-        requiresRetest: config.requiresRetest !== false,
-        previous: previous ? {
-          type: String(previous.type || ""),
-          sandbox: String(previous.sandbox || ""),
-          label: String(previous.label || "")
-        } : null,
-        next: {
-          type: String(node.type || ""),
-          sandbox: String(node.sandbox || ""),
-          label: String(node.label || "")
-        }
-      };
-    })
-    .filter(Boolean);
 }
 
 function makeWorkflowNode(action, workspaceConfig, graph) {
@@ -606,54 +486,31 @@ export default function WorkflowSurface() {
 
   async function publishGraph() {
     if (resolved.rowIndex < 0 || !objectId) return;
+    // Publish is server-authoritative: POST /api/workspace/workflow/publish
+    // verifies the saved draft + passing test against the persisted row and
+    // owns the version bump, delta record, and draft → live promotion.
+    // Direct PATCH of live workflow fields is rejected by the runtime policy.
     const serialized = serializeCurrentGraph();
-    const draftPassed = sandboxRow?.orchestrationDraftTestPassed === true || String(sandboxRow?.orchestrationDraftTestPassed || "") === "true";
-    const testedConfig = String(sandboxRow?.orchestrationDraftTestedConfig || "");
-    if (!draftPassed || testedConfig !== serialized) {
-      setSaveMessage("Publish blocked. Save and test this exact draft successfully before publishing.");
+    const savedDraft = String(sandboxRow?.[draftFieldName] || "");
+    if (dirty || serialized !== savedDraft) {
+      setSaveMessage("Publish blocked. Save this draft first — publish promotes the saved, tested draft.");
       return;
     }
     setPublishing(true);
     setSaveMessage("");
     try {
-      const currentVersion = Number(sandboxRow?.version || 1);
-      const nextVersion = Number.isFinite(currentVersion) ? String(currentVersion + 1) : "1";
-      const previousDeltas = Array.isArray(sandboxRow?.orchestrationDeltas) ? sandboxRow.orchestrationDeltas : [];
-      const previousPublishedGraph = parseOrchestrationGraph(sandboxRow?.[effectiveFieldName]);
-      const graphWithRefs = withGraphSandboxRecordRefs(orchestrationGraph, objectId, rowId);
-      const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, graphWithRefs);
-      const deltaTags = normalizeDeltaTags(nodeDeltas.flatMap((delta) => delta.deltaTags));
-      const changeReason = nodeDeltas.map((delta) => delta.changeReason).filter(Boolean).join("\n");
-      const next = patchSandboxRowInConfig(workspaceConfig, objectId, resolved.rowIndex, {
-        [effectiveFieldName]: serialized,
-        [draftFieldName]: "",
-        version: nextVersion,
-        lifecycleStatus: "live",
-        orchestrationDraftStatus: "published",
-        orchestrationDraftTestPassed: false,
-        orchestrationDraftTestedConfig: "",
-        orchestrationPublishedAt: new Date().toISOString(),
-        orchestrationDeltas: [
-          ...previousDeltas,
-          {
-            at: new Date().toISOString(),
-            version: nextVersion,
-            field: effectiveFieldName,
-            action: "publish",
-            previousVersion: String(sandboxRow?.version || "1"),
-            draftTestedAt: sandboxRow?.orchestrationDraftLastTested || "",
-            draftRunId: sandboxRow?.orchestrationDraftLastRunId || "",
-            changeReason,
-            deltaTags,
-            nodeDeltas,
-            nodeCount: Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes.length : 0,
-            edgeCount: Array.isArray(orchestrationGraph?.edges) ? orchestrationGraph.edges.length : 0
-          }
-        ]
+      const res = await fetch("/api/workspace/workflow/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId, name: rowId, field: effectiveFieldName }),
       });
-      await persistWorkspace(next);
+      const payload = await res.json();
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error || "Publish failed");
+      }
+      setWorkspaceConfig(payload.workspaceConfig || workspaceConfig);
       setDirty(false);
-      setSaveMessage(`Published orchestration config v${nextVersion}.`);
+      setSaveMessage(`Published orchestration config v${payload.version}.`);
     } catch (err) {
       setSaveMessage(err.message || "Publish failed");
     } finally {

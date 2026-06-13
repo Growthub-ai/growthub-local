@@ -11,8 +11,8 @@
  *
  * Optional query parameter:
  *   - lensId: "activation" (default) | "persistence" | "observability" |
- *             "deploy" | "tasks" | "app-build". Unknown ids fall back to
- *             "activation".
+ *             "deploy" | "tasks" | "app-build" | "fleet". Unknown ids fall
+ *             back to "activation".
  *
  * Authority invariants:
  *   - GET only. PATCH / POST / PUT / DELETE are not exposed. Writes still flow

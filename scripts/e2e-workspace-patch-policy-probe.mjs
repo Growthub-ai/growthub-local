@@ -1,0 +1,580 @@
+#!/usr/bin/env node
+/**
+ * Adversarial HTTP probes for the governed workspace mutation boundary:
+ *
+ *   - PATCH /api/workspace            — mutation policy (422 + violations[])
+ *   - POST  /api/workspace/patch/preflight — dry-run gates, no writes
+ *   - POST  /api/workspace/workflow/publish — server-authoritative publish
+ *
+ * Boots the same temp copy of the bundled custom-workspace Next app as
+ * scripts/e2e-workspace-sandbox-api-probe.mjs, then drives every adversarial
+ * case the policy must block and every governed case it must allow.
+ *
+ * Usage (from repo root):
+ *   node scripts/e2e-workspace-patch-policy-probe.mjs
+ *   PORT=3998 node scripts/e2e-workspace-patch-policy-probe.mjs
+ */
+
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const kitWorkspace = path.join(
+  root,
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace",
+);
+
+function pickFreePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => {
+      const a = s.address();
+      const p = typeof a === "object" && a ? a.port : 0;
+      s.close(() => resolve(p));
+    });
+    s.on("error", reject);
+  });
+}
+
+async function sleep(ms) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function waitForHttpReady(url, maxMs = 120_000) {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      if (res.ok || res.status === 400 || res.status === 409) return;
+    } catch {
+      /* retry */
+    }
+    await sleep(500);
+  }
+  throw new Error(`Server did not become ready within ${maxMs}ms: ${url}`);
+}
+
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg);
+}
+
+function sandboxObject(rows) {
+  return {
+    id: "sbx-policy",
+    label: "Sandboxes",
+    objectType: "sandbox-environment",
+    columns: ["Name", "lifecycleStatus", "version", "runLocality", "adapter", "runtime", "command"],
+    rows,
+    binding: { mode: "manual", source: "Data Model" },
+  };
+}
+
+const minimalGraph = {
+  version: 1,
+  provider: "growthub-native",
+  executionMode: "agent-swarm-v1",
+  swarm: { maxConcurrency: 1, rewardWeights: { parallel: 0.25, finish: 0.35, outcome: 0.4 }, outcomeCriteria: "done" },
+  nodes: [
+    { id: "orchestrator", type: "thinAdapter", label: "Orchestrator", sandbox: "orchestrator", config: { executionPolicy: "parallel", prompt: "Plan.", outputKey: "plan" } },
+    { id: "subagent-a", type: "ai-agent", label: "A", config: { role: "A", taskPrompt: "do a", required: true } },
+    { id: "synthesis", type: "tool-result", label: "Synth", config: { successStatusCodes: [200], outputMode: "swarm-summary" } },
+  ],
+  edges: [
+    { from: "orchestrator", to: "subagent-a", passes: "subtask-assignment" },
+    { from: "subagent-a", to: "synthesis", passes: "subtask-result" },
+  ],
+};
+
+async function main() {
+  const port =
+    process.env.PORT && String(process.env.PORT).trim()
+      ? Number(process.env.PORT)
+      : await pickFreePort();
+  const base = `http://127.0.0.1:${port}`;
+
+  const profileRoot = process.env.CLI_DEMO_HOME?.trim()
+    ? path.resolve(process.env.CLI_DEMO_HOME.trim())
+    : path.join(os.tmpdir(), "growthub-cli-demo");
+  const demoHome = path.join(profileRoot, "e2e-workspace-patch-policy");
+  fs.mkdirSync(demoHome, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(demoHome, "ws-copy-"));
+
+  const tmpApp = path.join(tmp, "apps", "workspace");
+  process.stdout.write(`[policy-e2e] Copying starter workspace → ${tmpApp}\n`);
+  fs.cpSync(kitWorkspace, tmpApp, {
+    recursive: true,
+    filter: (src) => !src.split(path.sep).includes("node_modules"),
+  });
+
+  // Prompt-capable stub adapter so draft swarm runs pass deterministically.
+  fs.writeFileSync(path.join(tmpApp, "lib/adapters/sandboxes/adapters/policy-probe-stub.js"), `import { registerSandboxAdapter } from "../sandbox-adapter-registry.js";
+registerSandboxAdapter({
+  id: "local-agent-host",
+  label: "policy probe stub",
+  description: "Patch-policy e2e stub.",
+  locality: "local",
+  supportedRuntimes: ["node", "bash", "python"],
+  supportedHosts: ["claude_local"],
+  hostCatalog: { claude_local: { label: "Claude Code (stub)", binary: "claude" } },
+  run: async (request) => {
+    const phase = request?.env?.GROWTHUB_SWARM_PHASE || "subagent";
+    if (phase === "orchestrator") return { ok: true, exitCode: 0, durationMs: 1, stdout: "PLAN: probe.", stderr: "", adapterMeta: { stub: true } };
+    if (phase === "synthesis") return { ok: true, exitCode: 0, durationMs: 1, stdout: "Done.\\nOUTCOME_SCORE: 0.9", stderr: "", adapterMeta: { stub: true } };
+    return { ok: true, exitCode: 0, durationMs: 1, stdout: "done", stderr: "", adapterMeta: { stub: true } };
+  }
+});
+`, "utf8");
+
+  process.stdout.write("[policy-e2e] npm install (workspace app)…\n");
+  const ni = spawnSync("npm", ["install", "--no-fund", "--no-audit"], {
+    cwd: tmpApp,
+    stdio: "inherit",
+    env: { ...process.env, CI: "1" },
+  });
+  assert(ni.status === 0, "npm install failed");
+
+  process.stdout.write(`[policy-e2e] starting next dev on :${port}…\n`);
+  const dev = spawn("npx", ["next", "dev", "-p", String(port)], {
+    cwd: tmpApp,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+    env: { ...process.env, NODE_ENV: "development", WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true", PORT: String(port) },
+  });
+  dev.stdout?.on("data", () => {});
+  dev.stderr?.on("data", (c) => process.stderr.write(c));
+  dev.unref();
+
+  const patch = (body) =>
+    fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const preflight = (body) =>
+    fetch(`${base}/api/workspace/patch/preflight`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const publish = (body) =>
+    fetch(`${base}/api/workspace/workflow/publish`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const sandboxRun = (body) =>
+    fetch(`${base}/api/workspace/sandbox-run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const getConfig = async () => (await (await fetch(`${base}/api/workspace`)).json()).workspaceConfig;
+  const mergeRow = (config, name, fields) => ({
+    ...config.dataModel,
+    objects: (config.dataModel?.objects || []).map((o) =>
+      o?.id !== "sbx-policy" ? o : { ...o, rows: (o.rows || []).map((r) => (String(r?.Name || "") === name ? { ...r, ...fields } : r)) },
+    ),
+  });
+
+  const draftSerialized = JSON.stringify(minimalGraph);
+  let pass = 0;
+  const ok = (label) => {
+    pass += 1;
+    process.stdout.write(`[policy-e2e] ok ${String(pass).padStart(2)} — ${label}\n`);
+  };
+
+  try {
+    await waitForHttpReady(`${base}/api/workspace`);
+
+    // 1. valid normal dataModel patch succeeds
+    let res = await patch({ dataModel: { objects: [sandboxObject([{ Name: "wf", lifecycleStatus: "draft", version: "1", runLocality: "local", adapter: "local-agent-host", agentHost: "claude_local", runtime: "node", command: "" }])] } });
+    assert(res.status === 200, `valid dataModel patch expected 200, got ${res.status} ${await res.text()}`);
+    ok("valid normal dataModel patch succeeds");
+
+    // 2. unknown top-level patch fails
+    res = await patch({ branding: { name: "evil" } });
+    assert(res.status === 400, `unknown field expected 400, got ${res.status}`);
+    ok("unknown top-level patch field fails");
+
+    // 3. full workspace config body fails + preflight names the reason
+    const fullCfg = await getConfig();
+    res = await patch(fullCfg);
+    assert(res.status === 400, `full config patch expected 400, got ${res.status}`);
+    let pre = await (await preflight(fullCfg)).json();
+    assert(pre.ok === false && pre.policy.violations.some((v) => v.code === "full_config_body"), `preflight must flag full_config_body, got ${JSON.stringify(pre.policy?.violations)}`);
+    ok("full workspace config patch fails (preflight: full_config_body)");
+
+    // 4. workspaceSourceRecords through PATCH fails + preflight names it
+    res = await patch({ workspaceSourceRecords: { "sandbox:x:y": {} } });
+    assert(res.status === 400, `sourceRecords patch expected 400, got ${res.status}`);
+    pre = await (await preflight({ workspaceSourceRecords: {} })).json();
+    assert(pre.ok === false && pre.policy.violations.some((v) => v.code === "source_records_through_patch"), "preflight must flag source_records_through_patch");
+    ok("workspaceSourceRecords through PATCH fails");
+
+    // 5. direct live orchestrationGraph patch fails (422 + violations[])
+    const cfg5 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg5, "wf", { orchestrationGraph: draftSerialized }) });
+    assert(res.status === 422, `live graph patch expected 422, got ${res.status}`);
+    let body5 = await res.json();
+    assert(Array.isArray(body5.violations) && body5.violations.some((v) => v.code === "live_workflow_field"), "422 body must carry live_workflow_field violation");
+    ok("direct live orchestrationGraph patch fails (422)");
+
+    // 6. direct version bump and lifecycleStatus→live fail
+    const cfg6 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg6, "wf", { version: "9" }) });
+    assert(res.status === 422, `version bump expected 422, got ${res.status}`);
+    res = await patch({ dataModel: mergeRow(cfg6, "wf", { lifecycleStatus: "live" }) });
+    assert(res.status === 422, `lifecycleStatus live expected 422, got ${res.status}`);
+    ok("direct version bump / lifecycleStatus→live fail (422)");
+
+    // 7. oversized row + oversized node config fail
+    const cfg7 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg7, "wf", { payload: "x".repeat(140_000) }) });
+    assert(res.status === 422, `oversized row expected 422, got ${res.status}`);
+    const fatGraph = { ...minimalGraph, nodes: [{ id: "fat", type: "core-action", config: { blob: "x".repeat(70_000) } }], edges: [] };
+    res = await patch({ dataModel: mergeRow(cfg7, "wf", { orchestrationDraftConfig: JSON.stringify(fatGraph) }) });
+    assert(res.status === 422, `oversized node config expected 422, got ${res.status}`);
+    let body7 = await res.json();
+    assert(body7.violations.some((v) => v.code === "oversized_node_config"), "expected oversized_node_config violation");
+    ok("oversized dataModel row / node config fail (422)");
+
+    // 8. draft graph save succeeds (+ preflight ok)
+    const cfg8 = await getConfig();
+    const draftPatch = { dataModel: mergeRow(cfg8, "wf", { orchestrationDraftConfig: draftSerialized, orchestrationDraftStatus: "untested", orchestrationDraftTestPassed: false, orchestrationDraftTestedConfig: "" }) };
+    pre = await (await preflight(draftPatch)).json();
+    assert(pre.ok === true, `preflight for draft save must pass, got ${JSON.stringify(pre).slice(0, 400)}`);
+    res = await patch(draftPatch);
+    assert(res.status === 200, `draft save expected 200, got ${res.status} ${await res.text()}`);
+    ok("draft graph save succeeds (preflight + PATCH)");
+
+    // 9. publish fails before any draft test
+    res = await publish({ objectId: "sbx-policy", name: "wf" });
+    assert(res.status === 409, `publish before test expected 409, got ${res.status}`);
+    let pub = await res.json();
+    assert(pub.code === "draft_not_tested", `expected draft_not_tested, got ${pub.code}`);
+    ok("workflow publish fails before successful draft test");
+
+    // 10. forged attestation without a real run is rejected by lineage gate
+    const cfg10 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg10, "wf", { orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "attestation fields are draft fields — PATCH itself succeeds");
+    res = await publish({ objectId: "sbx-policy", name: "wf" });
+    pub = await res.json();
+    assert(res.status === 409 && pub.code === "draft_run_not_verified", `forged attestation must hit lineage gate, got ${res.status} ${pub.code}`);
+    ok("forged attestation without a real draft run is rejected (lineage gate)");
+
+    // 11. sandbox-run with useDraft:true succeeds (server stamps the run)
+    res = await sandboxRun({ objectId: "sbx-policy", name: "wf", useDraft: true });
+    const run = await res.json();
+    assert(run.ok === true, `draft run must pass via stub, got ${JSON.stringify(run).slice(0, 300)}`);
+    ok("sandbox-run with useDraft:true succeeds");
+
+    // 12. publish fails if draft changed after test
+    const cfg12 = await getConfig();
+    const changedDraft = JSON.stringify({ ...minimalGraph, swarm: { ...minimalGraph.swarm, outcomeCriteria: "changed" } });
+    res = await patch({ dataModel: mergeRow(cfg12, "wf", { orchestrationDraftConfig: changedDraft, orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "saving a changed draft is allowed");
+    res = await publish({ objectId: "sbx-policy", name: "wf" });
+    pub = await res.json();
+    assert(res.status === 409 && pub.code === "draft_changed_after_test", `expected draft_changed_after_test, got ${res.status} ${pub.code}`);
+    ok("workflow publish fails when draft changed after its test");
+
+    // 13. publish succeeds after the exact tested draft is restored
+    const cfg13 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg13, "wf", { orchestrationDraftConfig: draftSerialized, orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "restoring the tested draft is allowed");
+    res = await publish({ objectId: "sbx-policy", name: "wf" });
+    pub = await res.json();
+    assert(res.status === 200 && pub.ok === true, `publish expected ok, got ${res.status} ${JSON.stringify(pub).slice(0, 300)}`);
+    assert(pub.version === "2" && typeof pub.publishedSha256 === "string", "publish must bump version and return sha256");
+    const cfgAfter = await getConfig();
+    const liveRow = (cfgAfter.dataModel.objects.find((o) => o.id === "sbx-policy")?.rows || []).find((r) => r.Name === "wf");
+    assert(liveRow.lifecycleStatus === "live" && String(liveRow.orchestrationConfig || "").length > 0, "row must be live with the published graph");
+    assert(String(liveRow.orchestrationDraftConfig || "") === "", "draft field must be cleared after publish");
+    assert(Array.isArray(liveRow.orchestrationDeltas) && liveRow.orchestrationDeltas.length === 1, "publish must append exactly one delta record");
+    ok("workflow publish succeeds after exact draft test (version 2, live, deltas)");
+
+    // 14. published live row: echo passes, tamper fails
+    res = await patch({ dataModel: cfgAfter.dataModel });
+    assert(res.status === 200, `echoing the published config must pass, got ${res.status} ${await res.text()}`);
+    res = await patch({ dataModel: mergeRow(cfgAfter, "wf", { orchestrationConfig: changedDraft }) });
+    assert(res.status === 422, `tampering live graph after publish expected 422, got ${res.status}`);
+    ok("published row: echo passes, live tamper fails");
+
+    // 15. preflight uses the write path's EXACT merge step. `widgets: null`
+    // is a key-delete under applyWorkspaceConfigPatch (multi-tab switch);
+    // a naive top-level replacement would fail schema on the null. Preflight
+    // and the real PATCH must agree.
+    const canvasPatch = {
+      canvas: { widgets: null, tabs: [{ id: "t1", name: "Tab 1", widgets: [] }], activeTabId: "t1" },
+    };
+    pre = await (await preflight(canvasPatch)).json();
+    assert(pre.ok === true, `preflight must accept the canvas merge patch like the real PATCH does, got ${JSON.stringify(pre).slice(0, 400)}`);
+    res = await patch(canvasPatch);
+    assert(res.status === 200, `real canvas merge PATCH expected 200, got ${res.status} ${await res.text()}`);
+    ok("preflight matches real PATCH canvas merge semantics (widgets:null delete)");
+
+    // 16. rows that only carry orchestrationDraftGraph publish into
+    // orchestrationGraph — never silently into orchestrationConfig.
+    const cfg16 = await getConfig();
+    res = await patch({
+      dataModel: {
+        ...cfg16.dataModel,
+        objects: cfg16.dataModel.objects.map((o) =>
+          o.id !== "sbx-policy" ? o : { ...o, rows: [...o.rows, { Name: "wf2", lifecycleStatus: "draft", version: "1", runLocality: "local", adapter: "local-agent-host", agentHost: "claude_local", runtime: "node", command: "", orchestrationDraftGraph: draftSerialized, orchestrationDraftStatus: "untested" }] },
+        ),
+      },
+    });
+    assert(res.status === 200, `creating draft-graph row expected 200, got ${res.status} ${await res.text()}`);
+    res = await sandboxRun({ objectId: "sbx-policy", name: "wf2", useDraft: true });
+    assert((await res.json()).ok === true, "wf2 draft run must pass");
+    const cfg16b = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg16b, "wf2", { orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "wf2 attestation must pass");
+    res = await publish({ objectId: "sbx-policy", name: "wf2" });
+    pub = await res.json();
+    assert(res.status === 200 && pub.ok === true, `wf2 publish expected ok, got ${res.status} ${JSON.stringify(pub).slice(0, 300)}`);
+    assert(pub.liveField === "orchestrationGraph", `wf2 must publish into orchestrationGraph, got ${pub.liveField}`);
+    const wf2 = (await getConfig()).dataModel.objects.find((o) => o.id === "sbx-policy").rows.find((r) => r.Name === "wf2");
+    assert(String(wf2.orchestrationGraph || "").length > 0 && String(wf2.orchestrationConfig || "") === "", "wf2 live graph must land in orchestrationGraph only");
+    ok("draft-graph-only row publishes into orchestrationGraph (field resolution)");
+
+    // 17. rejections teach repair: 422 carries repairPlan; preflight adds safeNextStep
+    const cfg17 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg17, "wf", { orchestrationConfig: changedDraft }) });
+    assert(res.status === 422, "expected 422 for live tamper");
+    let body17 = await res.json();
+    assert(Array.isArray(body17.repairPlan) && body17.repairPlan.some((s) => s.includes("workflow/publish")), "422 must carry a repairPlan pointing at workflow/publish");
+    pre = await (await preflight({ dataModel: mergeRow(cfg17, "wf", { orchestrationConfig: changedDraft }) })).json();
+    assert(pre.ok === false && Array.isArray(pre.repairPlan) && pre.repairPlan.length > 0, "preflight must return repairPlan");
+    assert(String(pre.safeNextStep || "").includes("workflow/publish"), `preflight safeNextStep must route to publish, got ${pre.safeNextStep}`);
+    ok("policy rejection teaches repair (repairPlan + safeNextStep)");
+
+    // 18. helper/apply emits a governed-proposal receipt
+    res = await fetch(`${base}/api/workspace/helper/apply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ proposals: [{ type: "explain.object", affectedField: "dataModel", payload: { objectId: "sbx-policy" }, rationale: "probe explain" }] }),
+    });
+    assert(res.status === 200 && (await res.json()).ok === true, "helper apply (explain) must succeed");
+    ok("helper apply (governed-proposal lane) succeeds");
+
+    // 19. the unified receipt stream + governance summary (cockpit data model)
+    res = await fetch(`${base}/api/workspace/agent-outcomes`);
+    const outcomes = await res.json();
+    assert(res.status === 200 && outcomes.ok === true && outcomes.sourceId === "workspace:agent-outcomes", "agent-outcomes route must return the stream");
+    const rs = outcomes.receipts;
+    assert(Array.isArray(rs) && rs.length > 0, "receipt stream must be non-empty");
+    const blocked = rs.find((r) => r.kind === "direct-patch" && r.outcomeStatus === "blocked");
+    assert(blocked && Array.isArray(blocked.policyVerdict?.violationCodes), "blocked direct-patch receipts must be visible with violation codes");
+    const published = rs.find((r) => r.kind === "workflow-publish" && r.outcomeStatus === "published");
+    assert(published, "published workflow-publish receipt must be in the stream");
+    assert(published.runId && published.sourceId && published.publishedSha256 && published.version, "publish receipt must carry runId/sourceId/hash/version proof");
+    assert(published.rollbackRef && published.rollbackRef.previousVersion, "publish receipt must carry a rollbackRef with previousVersion");
+    const ran = rs.find((r) => r.kind === "sandbox-run" && r.outcomeStatus === "tested" && r.draftSha256);
+    assert(ran && ran.runId, "draft sandbox-run receipt must link runId + draftSha256");
+    assert(ran.draftSha256 === published.draftSha256, "run receipt and publish receipt must share the same draft lineage hash");
+    const helperReceipt = rs.find((r) => r.kind === "helper-apply");
+    assert(helperReceipt && helperReceipt.lane === "governed-proposal", "helper apply must emit a governed-proposal receipt");
+    const blockedPublish = rs.find((r) => r.kind === "workflow-publish" && r.outcomeStatus === "blocked");
+    assert(blockedPublish, "blocked publish attempts must be in the stream");
+    for (const key of ["blockedAttempts", "publishes", "helperApplies", "draftsAwaitingTest", "draftsTestedNotPublished", "liveRowsWithFailedLastRun", "liveRowsWithoutProof"]) {
+      assert(Number.isFinite(outcomes.summary?.[key]), `summary.${key} must be a number`);
+    }
+    assert(outcomes.summary.blockedAttempts > 0 && outcomes.summary.publishes >= 2, "summary counters must reflect the session");
+    ok("unified receipt stream + governance summary (lineage links across lanes)");
+
+    // 20. receipts never leak secrets and stay bounded
+    const cfg20 = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg20, "wf", { apiKey: "sk-ant-FAKESECRET12345" }) });
+    assert(res.status === 422, "credential patch must still 422");
+    const stream20 = JSON.stringify(await (await fetch(`${base}/api/workspace/agent-outcomes`)).json());
+    assert(!stream20.includes("sk-ant-"), "receipt stream must never contain token-shaped values");
+    assert((await (await fetch(`${base}/api/workspace/agent-outcomes?limit=5`)).json()).receipts.length <= 5, "stream must honor limit");
+    ok("receipts are secret-redacted and bounded");
+
+    // 21. applications register as governed rows (normal PATCH lane)
+    const cfg21 = await getConfig();
+    const firstDashboardId = (cfg21.dashboards || [])[0]?.id || "";
+    res = await patch({
+      dataModel: {
+        ...cfg21.dataModel,
+        objects: [
+          ...cfg21.dataModel.objects,
+          {
+            id: "workspace-app-registry",
+            label: "App Registry",
+            objectType: "app-surface",
+            columns: ["Name", "appId", "surfacePath", "framework", "dashboardIds", "workflowRefs", "dataSourceIds", "registryIds"],
+            rows: [
+              { Name: "Workflow App", appId: "wf-app", surfacePath: "apps/workspace", framework: "nextjs", dashboardIds: firstDashboardId, workflowRefs: "sbx-policy:wf", dataSourceIds: "", registryIds: "" },
+              { Name: "Empty App", appId: "empty-app" },
+            ],
+          },
+        ],
+      },
+    });
+    assert(res.status === 200, `app registry PATCH expected 200, got ${res.status} ${await res.text()}`);
+    ok("applications register as governed Data Model rows");
+
+    // 22. fleet read surface: health, links, next action, detection
+    res = await fetch(`${base}/api/workspace/apps`);
+    const fleet = await res.json();
+    assert(res.status === 200 && fleet.ok === true && fleet.registryObjectId === "workspace-app-registry", "apps route must return fleet state");
+    assert(fleet.apps.length === 2 && fleet.summary.total === 2, "both apps must be in the fleet");
+    const wfApp = fleet.apps.find((a) => a.appId === "wf-app");
+    assert(wfApp, "wf-app must be present");
+    assert(wfApp.links.workflows.found.length === 1 && wfApp.links.workflows.found[0].live === true, "linked workflow must resolve as live");
+    assert(wfApp.links.workflows.found[0].lastRunOk === true, "linked workflow must carry run evidence");
+    const emptyApp = fleet.apps.find((a) => a.appId === "empty-app");
+    assert(emptyApp.health.status === "empty" && emptyApp.nextAction.label.includes("Link"), "empty app must compute the link-parts next action");
+    assert(fleet.apps.every((a) => String(a.nextAction.href || "").startsWith("/")), "next actions must deep-link into real surfaces");
+    assert(Array.isArray(fleet.detected) && fleet.detected.some((d) => d.relPath === "apps/workspace" && d.framework === "nextjs"), `detection must find the artifact's own app surface, got ${JSON.stringify(fleet.detected)}`);
+    ok("fleet surface: per-app health, link resolution, next action, surface detection");
+
+    // 23. app-scoped swarm assignment + fleet lens packet
+    const packet = wfApp.assignment;
+    assert(packet.kind === "growthub-app-assignment-packet-v1" && packet.appId === "wf-app", "assignment packet must target the app");
+    assert(packet.allowedRoutes.some((r) => r.includes("workflow/publish")) && packet.forbiddenActions.length > 0, "packet must carry governed scope");
+    assert(packet.objectRefs.some((r) => r.objectId === "sbx-policy" && r.rowName === "wf"), "packet must scope to the app's governed objects");
+    const lensRes = await fetch(`${base}/api/workspace/swarm-condition?lensId=fleet`);
+    const lensPacket = await lensRes.json();
+    assert(lensRes.status === 200 && lensPacket.lensId === "fleet", `swarm-condition must serve the fleet lens, got ${lensPacket.lensId}`);
+    assert(fleet.lens.lensId === "fleet" && fleet.lens.steps.length === 2, "fleet lens must emit one step per app");
+    ok("app-scoped assignment packets + fleet lens (human + agent read one truth)");
+
+    // 24. human operator surface: /workspace-lens serves (the panel renders
+    // every registry lens — fleet inclusion in the panel's composed state is
+    // unit-proven; the page legitimately gates lens cards behind activation
+    // completeness), and the same fleet truth is served via the public
+    // swarm-condition projection.
+    const lensPage = await fetch(`${base}/workspace-lens`);
+    assert(lensPage.status === 200, `workspace-lens page must serve, got ${lensPage.status}`);
+    const fleetCondition = await (await fetch(`${base}/api/workspace/swarm-condition?lensId=fleet`)).json();
+    assert(fleetCondition.lensId === "fleet" && fleetCondition.goal.length > 0, "fleet lens state must be served to humans/agents alike");
+    ok("workspace-lens serves; fleet state flows through the panel registry + public projection");
+
+    // 25. lifecycle drives health: publishing a linked workflow clears the
+    // app's "not live" blocker (register app3 → blocked → publish → cleared)
+    const cfg25 = await getConfig();
+    res = await patch({
+      dataModel: {
+        ...cfg25.dataModel,
+        objects: cfg25.dataModel.objects.map((o) => {
+          if (o.id === "sbx-policy") {
+            return { ...o, rows: [...o.rows, { Name: "wf3", lifecycleStatus: "draft", version: "1", runLocality: "local", adapter: "local-agent-host", agentHost: "claude_local", runtime: "node", command: "", orchestrationDraftConfig: draftSerialized, orchestrationDraftStatus: "untested" }] };
+          }
+          if (o.id === "workspace-app-registry") {
+            return { ...o, rows: [...o.rows, { Name: "Lifecycle App", appId: "lc-app", workflowRefs: "sbx-policy:wf3" }] };
+          }
+          return o;
+        }),
+      },
+    });
+    assert(res.status === 200, `lifecycle setup PATCH expected 200, got ${res.status} ${await res.text()}`);
+    let fleet25 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    let lcApp = fleet25.apps.find((a) => a.appId === "lc-app");
+    assert(lcApp.health.status === "blocked" && lcApp.health.blockers.some((b) => b.includes("not live")), "unpublished workflow must block the app");
+    res = await sandboxRun({ objectId: "sbx-policy", name: "wf3", useDraft: true });
+    assert((await res.json()).ok === true, "wf3 draft proof must pass");
+    const cfg25b = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg25b, "wf3", { orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "wf3 attestation must pass");
+    res = await publish({ objectId: "sbx-policy", name: "wf3" });
+    assert((await res.json()).ok === true, "wf3 publish must succeed");
+    fleet25 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    lcApp = fleet25.apps.find((a) => a.appId === "lc-app");
+    assert(!lcApp.health.blockers.some((b) => b.includes("not live")), `publish must clear the app's not-live blocker, got ${JSON.stringify(lcApp.health.blockers)}`);
+    assert(lcApp.links.workflows.found[0].live === true && lcApp.links.workflows.found[0].lastRunOk === true, "app health must reflect live + proven workflow");
+    ok("workflow draft → proof → publish transitions app health (lifecycle is causal)");
+
+    // 26. app-scope runtime enforcement: x-growthub-app-scope restricts the
+    // mutation to the app's governed objects
+    const cfg26 = await getConfig();
+    const scopedPatch = (body) =>
+      fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(body) });
+    // out of scope: a NEW unrelated object
+    res = await scopedPatch({ dataModel: { ...cfg26.dataModel, objects: [...cfg26.dataModel.objects, { id: "unrelated-obj", label: "X", rows: [] }] } });
+    assert(res.status === 422, `out-of-scope mutation expected 422, got ${res.status}`);
+    const scopeBody = await res.json();
+    assert(scopeBody.violations?.[0]?.code === "app_scope_violation", "must reject with app_scope_violation");
+    // in scope: a draft save on the app's own workflow object
+    res = await scopedPatch({ dataModel: mergeRow(cfg26, "wf3", { orchestrationDraftConfig: draftSerialized, orchestrationDraftStatus: "untested", orchestrationDraftTestPassed: false, orchestrationDraftTestedConfig: "" }) });
+    assert(res.status === 200, `in-scope mutation expected 200, got ${res.status} ${await res.text()}`);
+    // unknown app id
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "ghost-app" }, body: JSON.stringify({ dataModel: cfg26.dataModel }) });
+    assert(res.status === 422, "unknown app scope must 422");
+    ok("app-scope header enforces per-app mutation isolation at runtime");
+
+    // 27. route shopping is CLOSED: every governed route enforces the scope
+    const scopedFetch = (route, body, appId = "lc-app") =>
+      fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json", "x-growthub-app-scope": appId }, body: JSON.stringify(body) });
+    res = await scopedFetch("/api/workspace/workflow/publish", { objectId: "sbx-policy", name: "wf" }); // wf is NOT in lc-app's refs
+    let v = await res.json();
+    assert(res.status === 422 && v.violationType === "workflow_outside_app" && Array.isArray(v.repairPlan) && v.repairPlan.length > 0, `scoped publish out-of-scope expected 422 workflow_outside_app, got ${res.status} ${JSON.stringify(v).slice(0, 200)}`);
+    res = await scopedFetch("/api/workspace/sandbox-run", { objectId: "sbx-policy", name: "wf", useDraft: true });
+    assert(res.status === 422 && (await res.json()).violationType === "workflow_outside_app", "scoped sandbox-run out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/test-source", { integrationId: "not-my-integration" });
+    assert(res.status === 422 && (await res.json()).violationType === "registry_outside_app", "scoped test-source out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/refresh-sources", { sourceIds: ["not-my-source"] });
+    assert(res.status === 422 && (await res.json()).violationType === "data_source_outside_app", "scoped refresh-sources out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/helper/apply", { proposals: [] });
+    assert(res.status === 422 && (await res.json()).violationType === "route_operator_only", "helper/apply under scope must be operator-only 422");
+    // in-scope execution still works (lc-app owns sbx-policy:wf3)
+    res = await scopedFetch("/api/workspace/sandbox-run", { objectId: "sbx-policy", name: "wf3", useDraft: true });
+    assert((await res.json()).ok === true, "scoped in-scope draft run must pass");
+    ok("route shopping closed: all governed routes enforce app scope");
+
+    // 28. preflight mirrors PATCH including the scope verdict
+    const cfg28 = await getConfig();
+    const outOfScopeBody = { dataModel: { ...cfg28.dataModel, objects: [...cfg28.dataModel.objects, { id: "rogue-obj", label: "X", rows: [] }] } };
+    res = await fetch(`${base}/api/workspace/patch/preflight`, { method: "POST", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(outOfScopeBody) });
+    const pre28 = await res.json();
+    assert(pre28.ok === false && pre28.appScopeVerdict?.allowed === false, "preflight must carry the failing appScopeVerdict");
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(outOfScopeBody) });
+    assert(res.status === 422, "the real PATCH must mirror preflight's scope verdict");
+    ok("preflight appScopeVerdict mirrors the real PATCH (single source of truth)");
+
+    // 29. violation → repair → success (the self-correction loop)
+    const cfg29 = await getConfig();
+    const registryGrow = {
+      dataModel: {
+        ...cfg29.dataModel,
+        objects: cfg29.dataModel.objects.map((o) =>
+          o.id !== "workspace-app-registry" ? o : { ...o, rows: o.rows.map((r) => (r.appId === "lc-app" ? { ...r, dataSourceIds: "lc-data" } : r)) }),
+      },
+    };
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(registryGrow) });
+    assert(res.status === 200, `growing own scope via the registry row must pass, got ${res.status} ${await res.text()}`);
+    const cfg29b = await getConfig();
+    const addOwned = { dataModel: { ...cfg29b.dataModel, objects: [...cfg29b.dataModel.objects, { id: "lc-data", label: "LC Data", columns: ["Name"], rows: [] }] } };
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(addOwned) });
+    assert(res.status === 200, `creating the now-referenced object must pass, got ${res.status} ${await res.text()}`);
+    ok("violation → register ref → retry succeeds (agent self-correction loop)");
+
+    // 30. overlapping refs + truthful packet + tamper-evident receipt chain
+    const fleet30 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    const lc = fleet30.apps.find((a) => a.appId === "lc-app");
+    assert(Array.isArray(lc.assignment.operatorOnlyRoutes) && lc.assignment.operatorOnlyRoutes.some((r) => r.includes("helper/apply")), "packet must name helper/apply operator-only");
+    assert(lc.assignment.allowedRoutes.every((r) => r.startsWith("GET ") || r.includes("x-growthub-app-scope") || r.includes("header")), `allowedRoutes must be truthful (all scoped or read-only), got ${JSON.stringify(lc.assignment.allowedRoutes)}`);
+    const stream30 = await (await fetch(`${base}/api/workspace/agent-outcomes?limit=200`)).json();
+    const chain = [...stream30.receipts].reverse(); // oldest first
+    const stable = (value) => JSON.stringify(value, (k, x) => (x && typeof x === "object" && !Array.isArray(x)) ? Object.keys(x).sort().reduce((acc, kk) => (acc[kk] = x[kk], acc), {}) : x);
+    const { createHash } = await import("node:crypto");
+    let chainOk = true;
+    for (let i = 1; i < chain.length; i++) {
+      if (!Number.isFinite(chain[i].seq) || chain[i].seq !== chain[i - 1].seq + 1) { chainOk = false; break; }
+      const expected = createHash("sha256").update(stable(chain[i - 1]), "utf8").digest("hex");
+      if (chain[i].prevReceiptSha256 !== expected) { chainOk = false; break; }
+    }
+    assert(chain.length > 5 && chainOk, "receipt stream must form an intact seq + hash chain");
+    assert(chain.some((r) => r.appId === "lc-app" && r.outcomeStatus === "blocked"), "scoped violations must be attributed to the app in the stream");
+    ok("truthful packet + overlapping-scope safety + tamper-evident receipt chain");
+
+    process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
+  } finally {
+    try {
+      dev.kill("SIGTERM");
+    } catch {
+      /* ignore */
+    }
+    try {
+      spawnSync("sh", ["-c", `pkill -f "next dev -p ${port}" 2>/dev/null || true`], { stdio: "ignore" });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
