@@ -92,6 +92,17 @@ export interface AgentOutcomeReceipt {
         deltaIndex?: number;
         sourceId?: string;
     };
+    /** App identity when the action ran under `x-growthub-app-scope`. */
+    appId?: string;
+    /** Server-side monotonic sequence (tamper-evidence). */
+    seq?: number;
+    /**
+     * sha256(stableStringify(previous receipt)) — hash chain over the stream;
+     * a mutated or removed receipt breaks every subsequent link. Null for the
+     * first receipt. No signing key/TEE exists in this runtime; a signed
+     * anchor is named future work.
+     */
+    prevReceiptSha256?: string | null;
     /** ISO timestamp. */
     createdAt: string;
 }

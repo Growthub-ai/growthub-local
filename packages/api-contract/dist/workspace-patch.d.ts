@@ -79,6 +79,16 @@ export interface WorkspacePatchPreflightResponse {
     };
     /** Repair steps for every policy violation (empty when `policy.ok`). */
     repairPlan: string[];
+    /**
+     * Present when `x-growthub-app-scope` was sent: preflight mirrors the
+     * real PATCH's scope gate exactly — if `allowed` is false, the PATCH
+     * with the same header will 422 identically.
+     */
+    appScopeVerdict?: {
+        allowed: boolean;
+        appScope: string;
+        violations: Array<Record<string, unknown>>;
+    };
     /** The single next governed call the agent should make, when derivable. */
     safeNextStep?: string;
     persistence: {

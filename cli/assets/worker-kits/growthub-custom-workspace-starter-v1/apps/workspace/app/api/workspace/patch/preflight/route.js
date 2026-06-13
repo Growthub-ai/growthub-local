@@ -33,6 +33,7 @@ import {
   evaluateWorkspacePatchPolicy,
   repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
+import { evaluateAppScope, requireAppScope } from "@/lib/workspace-app-registry";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 async function POST(request) {
@@ -88,8 +89,22 @@ async function POST(request) {
     schema = { ok: false, errors: ["patch must be a plain object"] };
   }
 
+  // Preflight mirrors PATCH exactly, INCLUDING the app-scope verdict
+  // (OpenClaw: preflight is the single source of truth — if appScopeVerdict
+  // is not allowed, the real PATCH with the same header will 422 the same way).
+  const scope = requireAppScope(request, currentConfig || {});
+  let appScopeVerdict = null;
+  if (scope.scoped) {
+    if (scope.violation) {
+      appScopeVerdict = { allowed: false, appScope: scope.violation.appScope, violations: [scope.violation] };
+    } else {
+      const verdict = evaluateAppScope(currentConfig || {}, patch, scope.appId);
+      appScopeVerdict = { allowed: verdict.ok, appScope: scope.appId, violations: verdict.violations };
+    }
+  }
+
   const persistence = describePersistenceMode();
-  const ok = policy.ok && schema.ok;
+  const ok = policy.ok && schema.ok && (appScopeVerdict ? appScopeVerdict.allowed : true);
   const repairPlan = repairPlanForViolations(policy.violations);
   // The single next governed call, when derivable from the verdicts.
   let safeNextStep;
@@ -124,6 +139,7 @@ async function POST(request) {
     policy,
     schema,
     repairPlan,
+    ...(appScopeVerdict ? { appScopeVerdict } : {}),
     ...(safeNextStep ? { safeNextStep } : {}),
     persistence: {
       mode: persistence.mode,

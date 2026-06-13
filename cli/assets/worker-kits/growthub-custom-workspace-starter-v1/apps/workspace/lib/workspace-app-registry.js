@@ -225,16 +225,23 @@ function buildAppAssignmentPacket(workspaceConfig, workspaceSourceRecords, row, 
       ...health.links.workflows.found.map((w) => ({ objectId: w.objectId, rowName: w.rowName })),
       ...health.links.dataSources.found.map((s) => ({ objectId: s.id }))
     ],
+    // Truthful capability advertisement (OpenClaw pattern): every route
+    // listed here ENFORCES x-growthub-app-scope at runtime — send the header
+    // on every call. Routes an app-scoped agent may NOT use are named in
+    // operatorOnlyRoutes, never silently omitted.
     allowedRoutes: [
       "GET /api/workspace",
       "GET /api/workspace/apps",
-      "POST /api/workspace/patch/preflight",
-      `PATCH /api/workspace with header x-growthub-app-scope: ${appId} (runtime-enforced app scope)`,
-      "POST /api/workspace/test-source",
-      "POST /api/workspace/refresh-sources",
-      "POST /api/workspace/sandbox-run (useDraft:true for drafts)",
-      "POST /api/workspace/workflow/publish",
-      "GET /api/workspace/agent-outcomes"
+      "GET /api/workspace/agent-outcomes",
+      `POST /api/workspace/patch/preflight (header x-growthub-app-scope: ${appId} → appScopeVerdict)`,
+      `PATCH /api/workspace (header x-growthub-app-scope: ${appId}; scope runtime-enforced)`,
+      `POST /api/workspace/test-source (header; integrationId must be in registryIds)`,
+      `POST /api/workspace/refresh-sources (header; sourceIds must be in dataSourceIds)`,
+      `POST /api/workspace/sandbox-run (header; workflow must be in scope; useDraft:true for drafts)`,
+      `POST /api/workspace/workflow/publish (header; workflow must be in scope)`
+    ],
+    operatorOnlyRoutes: [
+      "POST /api/workspace/helper/apply (human-reviewed proposal lane — rejected under app scope)"
     ],
     forbiddenActions: [
       "mutating objects not referenced by this app's registry row",
@@ -420,6 +427,12 @@ function buildAppScopeViolation(appScope, violationType, offendingPaths, suggest
     violationType,
     offendingPaths: Array.isArray(offendingPaths) ? offendingPaths : [],
     suggestedAction,
+    // Structured, machine-followable repair steps (Hermes-style: the agent
+    // resolves programmatically instead of retrying variations).
+    repairPlan: [
+      suggestedAction,
+      `Verify your scope first: GET /api/workspace/apps and read the "${safeString(appScope).trim()}" assignment packet (objectRefs + allowedRoutes)`
+    ],
     ...(context ? { allowedObjectIds: Array.from(context.objectIds) } : {})
   };
 }
@@ -455,8 +468,11 @@ function requireAppScope(request, workspaceConfig) {
 
 /** Pure per-route access checks against a verified scope context. */
 function checkScopedWorkflowAccess(context, objectId, rowName) {
+  // Row-precise on purpose: execution/publish scope is the explicit
+  // workflowRefs list, never the whole sandbox object — PATCH's object-level
+  // grain does not leak into the execution lanes.
   const ref = `${safeString(objectId).trim()}:${safeString(rowName).trim()}`;
-  if (context.workflowRefs.has(ref) || context.objectIds.has(safeString(objectId).trim())) return null;
+  if (context.workflowRefs.has(ref)) return null;
   return buildAppScopeViolation(
     context.appId,
     "workflow_outside_app",

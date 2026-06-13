@@ -166,7 +166,21 @@ Every mutation lane emits the **same canonical receipt** (`@growthub/api-contrac
 Applications are first-class governed objects, not loose files. The source of truth is the `workspace-app-registry` Data Model object (objectType `"app-surface"`, preset ships in the Data Model) — one row per application, referencing its governed parts by id: `dashboardIds`, `workflowRefs` (`objectId:RowName`), `dataSourceIds`, `registryIds`. Rows mutate through the normal PATCH lane (policy + receipts apply).
 
 - **Read the fleet first:** `GET /api/workspace/apps` — registered apps with resolved links, health rollup (`ready`/`blocked`/`empty` + computed blockers), the single next action with a deep link into the real surface, the app-scoped **assignment packet** (goal, blockers, allowed routes, forbidden actions, expected evidence, object refs), plus `detected[]` filesystem app surfaces (advisory — registration is the governed act) and the Fleet lens state.
-- **Work app-scoped:** take the assignment packet's `objectRefs` as your mutation scope; everything outside it is out of bounds. The packet's `allowedRoutes` are the only routes you call. **Scope is runtime-enforced**: set `x-growthub-app-scope: <appId>` on every PATCH — the route then rejects (`422 app_scope_violation`) any change to dataModel objects or dashboards outside the app's registry-row references, and to the workspace-global `canvas`/`widgetTypes` surfaces. Need a wider scope? Register the object on the app's row first (that change is itself in scope via the registry object).
+- **Work app-scoped:** take the assignment packet's `objectRefs` as your mutation scope; everything outside it is out of bounds. **Scope is runtime-enforced on every governed route, not just PATCH** — send `x-growthub-app-scope: <appId>` on every call. Rejections are a structured `AppScopeViolation` envelope (`violationType`, `offendingPaths`, `repairPlan[]`, `allowedObjectIds`) — follow the repair plan, never route-shop.
+
+**Scope-enforcement matrix (what the header does per route):**
+
+| Route | Scoped behavior |
+|---|---|
+| `PATCH /api/workspace` | changed/new dataModel objects + dashboards must be in the app's refs; `canvas`/`widgetTypes` are workspace-global → rejected |
+| `POST /api/workspace/patch/preflight` | returns `appScopeVerdict` — mirrors the real PATCH exactly; if `allowed:false`, the PATCH will 422 identically |
+| `POST /api/workspace/sandbox-run` | workflow must be in `workflowRefs` (or its object in scope) |
+| `POST /api/workspace/workflow/publish` | same workflow check; publish is never blocked by app health (it's how "not live" blockers clear) |
+| `POST /api/workspace/test-source` | `integrationId` must be in the app's `registryIds` |
+| `POST /api/workspace/refresh-sources` | every `sourceIds[]` entry must be in `dataSourceIds` (or a derived sidecar sourceId) |
+| `POST /api/workspace/helper/apply` | **operator-only** — always rejected under app scope (`route_operator_only`) |
+
+Need a wider scope? Register the object/ref on the app's registry row first — that edit is itself in scope via the registry object. Every scoped rejection and success lands in the receipt stream with `appId`, and receipts carry a server-side `seq` + `prevReceiptSha256` hash chain (tamper-evident; a signed anchor is future work).
 - **Humans see the same truth:** the Fleet lens renders in Workspace Lens (`/workspace-lens`, filter "Fleet") with one card step per app; `GET /api/workspace/swarm-condition?lensId=fleet` is the same state as an agent packet. SDK: `@growthub/api-contract/workspace-apps`.
 
 ## Workspace-first rule

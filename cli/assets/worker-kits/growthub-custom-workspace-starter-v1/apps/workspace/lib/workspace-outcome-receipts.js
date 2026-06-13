@@ -20,12 +20,14 @@
  *   - receipts carry summaries and references — never raw payloads.
  */
 
+import { createHash } from "node:crypto";
 import {
   readWorkspaceSourceRecords,
   writeWorkspaceSourceRecords,
   describePersistenceMode
 } from "@/lib/workspace-config";
 import { redactSecrets } from "@/lib/sandbox-agent-auth-redaction";
+import { stableStringify } from "@/lib/workspace-patch-policy";
 
 const AGENT_OUTCOMES_SOURCE_ID = "workspace:agent-outcomes";
 const MAX_RECEIPTS = 200;
@@ -88,7 +90,7 @@ function buildOutcomeReceipt(fields) {
       ...(Number.isFinite(f.schemaVerdict.errorCount) ? { errorCount: f.schemaVerdict.errorCount } : {})
     };
   }
-  for (const key of ["runId", "sourceId", "draftSha256", "publishedSha256", "version"]) {
+  for (const key of ["runId", "sourceId", "draftSha256", "publishedSha256", "version", "appId"]) {
     if (f[key]) receipt[key] = safeText(f[key], 160);
   }
   if (Array.isArray(f.nextActions)) receipt.nextActions = safeList(f.nextActions, 240);
@@ -115,6 +117,16 @@ async function appendOutcomeReceipt(fields) {
     if (!persistence.canSave) return { receipt, persisted: false };
     const existing = await readWorkspaceSourceRecords(AGENT_OUTCOMES_SOURCE_ID);
     const prior = Array.isArray(existing?.records) ? existing.records : [];
+    // Tamper-evidence (Paperclip pattern, scoped to what this runtime can
+    // honestly provide): server-side monotonic sequence + hash chain. Each
+    // receipt carries sha256(stableStringify(previous receipt)); a mutated
+    // or removed receipt breaks every subsequent link. No signing key /
+    // TEE exists in this runtime — that stronger anchor is named future work.
+    const last = prior.length > 0 ? prior[prior.length - 1] : null;
+    receipt.seq = (Number.isFinite(last?.seq) ? last.seq : prior.length - 1) + 1;
+    receipt.prevReceiptSha256 = last
+      ? createHash("sha256").update(stableStringify(last), "utf8").digest("hex")
+      : null;
     await writeWorkspaceSourceRecords(
       AGENT_OUTCOMES_SOURCE_ID,
       [...prior, receipt].slice(-MAX_RECEIPTS),

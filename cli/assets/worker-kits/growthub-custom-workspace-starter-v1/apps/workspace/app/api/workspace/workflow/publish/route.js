@@ -48,6 +48,7 @@ import {
   resolveWorkflowFieldNames
 } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
 
 function sha256(text) {
   return createHash("sha256").update(String(text), "utf8").digest("hex");
@@ -106,6 +107,25 @@ async function POST(request) {
   }
 
   const workspaceConfig = await readWorkspaceConfig();
+
+  // Unified app-scope gate (route-shopping closed): with x-growthub-app-scope,
+  // publish may only promote a workflow inside the app's governed scope.
+  // NB: publish is deliberately NOT blocked when the app's health is
+  // "blocked" — publishing is how the "workflow not live" blocker is cleared.
+  const scope = requireAppScope(request, workspaceConfig);
+  if (scope.scoped) {
+    const violation = scope.violation || checkScopedWorkflowAccess(scope.context, objectId, name);
+    if (violation) {
+      await appendOutcomeReceipt({
+        kind: "workflow-publish", lane: "server-authoritative", outcomeStatus: "blocked",
+        appId: violation.appScope || scope.appId,
+        summary: `publish rejected (422 app scope): ${violation.violationType}`,
+        nextActions: violation.repairPlan
+      });
+      return NextResponse.json(violation, { status: 422 });
+    }
+  }
+
   const { object, row, rowIndex } = findSandboxRow(workspaceConfig, objectId, name);
   if (!object) {
     return NextResponse.json(
@@ -261,6 +281,7 @@ async function POST(request) {
       kind: "workflow-publish",
       lane: "server-authoritative",
       outcomeStatus: "published",
+      ...(scope.scoped ? { appId: scope.appId } : {}),
       objectRefs: [{ objectId, rowName: name, objectType: "sandbox-environment" }],
       changedFields: ["dataModel"],
       runId: draftRunId,

@@ -117,7 +117,13 @@ export interface AppAssignmentPacket {
         objectId: string;
         rowName?: string;
     }>;
+    /**
+     * Truthful capability advertisement: every listed route ENFORCES
+     * `x-growthub-app-scope` at runtime. Routes the app-scoped agent may
+     * not call are in `operatorOnlyRoutes` — never silently omitted.
+     */
     allowedRoutes: string[];
+    operatorOnlyRoutes: string[];
     forbiddenActions: string[];
     expectedEvidence: string[];
 }
@@ -165,6 +171,22 @@ export interface WorkspaceAppsResponse {
     lens: Record<string, unknown>;
     summary: WorkspaceFleetSummary;
     warnings?: string[];
+}
+/**
+ * Structured scope-violation envelope every scoped route returns (422).
+ * Hermes-style: agents resolve programmatically from `repairPlan` instead
+ * of retrying variations.
+ */
+export type AppScopeViolationType = "app_not_registered" | "object_outside_app" | "dashboard_not_owned" | "global_surface" | "workflow_outside_app" | "data_source_outside_app" | "registry_outside_app" | "route_operator_only";
+export interface AppScopeViolation {
+    error: "app scope violation";
+    appScope: string;
+    violationType: AppScopeViolationType | (string & {});
+    offendingPaths: string[];
+    suggestedAction: string;
+    /** Ordered machine-followable repair steps. */
+    repairPlan: string[];
+    allowedObjectIds?: string[];
 }
 export declare function isAppAssignmentPacket(value: unknown): value is AppAssignmentPacket;
 /** Additive changes keep the literal `1`. */

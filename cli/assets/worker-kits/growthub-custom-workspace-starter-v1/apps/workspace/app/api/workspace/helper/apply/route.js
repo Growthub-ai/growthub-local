@@ -36,6 +36,7 @@ import {
   describePersistenceMode,
 } from "@/lib/workspace-config";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { buildAppScopeViolation } from "@/lib/workspace-app-registry";
 import {
   applyProposalToConfig,
   validateProposalForApply,
@@ -205,6 +206,23 @@ function normalizeSwarmRunProposal(proposal, workspaceConfig) {
 }
 
 async function POST(request) {
+  // helper/apply is the OPERATOR lane (human-reviewed proposals). It is not
+  // available under an app scope — app-scoped agents use preflight + scoped
+  // PATCH + sandbox-run + workflow/publish. Advertised truthfully in
+  // AppAssignmentPacket.operatorOnlyRoutes.
+  const scopedHeader = request.headers.get("x-growthub-app-scope");
+  if (scopedHeader && scopedHeader.trim()) {
+    const violation = buildAppScopeViolation(scopedHeader.trim(), "route_operator_only",
+      ["POST /api/workspace/helper/apply"],
+      "helper/apply is the human-reviewed operator lane; app-scoped agents mutate via preflight + scoped PATCH", null);
+    await appendOutcomeReceipt({
+      kind: "helper-apply", lane: "governed-proposal", outcomeStatus: "blocked",
+      appId: scopedHeader.trim(),
+      summary: "helper/apply rejected (422 app scope): operator-only lane",
+      nextActions: violation.repairPlan
+    });
+    return NextResponse.json(violation, { status: 422 });
+  }
   let body;
   try {
     body = await request.json();

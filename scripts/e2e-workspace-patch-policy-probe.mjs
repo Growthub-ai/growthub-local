@@ -494,6 +494,71 @@ registerSandboxAdapter({
     assert(res.status === 422, "unknown app scope must 422");
     ok("app-scope header enforces per-app mutation isolation at runtime");
 
+    // 27. route shopping is CLOSED: every governed route enforces the scope
+    const scopedFetch = (route, body, appId = "lc-app") =>
+      fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json", "x-growthub-app-scope": appId }, body: JSON.stringify(body) });
+    res = await scopedFetch("/api/workspace/workflow/publish", { objectId: "sbx-policy", name: "wf" }); // wf is NOT in lc-app's refs
+    let v = await res.json();
+    assert(res.status === 422 && v.violationType === "workflow_outside_app" && Array.isArray(v.repairPlan) && v.repairPlan.length > 0, `scoped publish out-of-scope expected 422 workflow_outside_app, got ${res.status} ${JSON.stringify(v).slice(0, 200)}`);
+    res = await scopedFetch("/api/workspace/sandbox-run", { objectId: "sbx-policy", name: "wf", useDraft: true });
+    assert(res.status === 422 && (await res.json()).violationType === "workflow_outside_app", "scoped sandbox-run out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/test-source", { integrationId: "not-my-integration" });
+    assert(res.status === 422 && (await res.json()).violationType === "registry_outside_app", "scoped test-source out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/refresh-sources", { sourceIds: ["not-my-source"] });
+    assert(res.status === 422 && (await res.json()).violationType === "data_source_outside_app", "scoped refresh-sources out-of-scope must 422");
+    res = await scopedFetch("/api/workspace/helper/apply", { proposals: [] });
+    assert(res.status === 422 && (await res.json()).violationType === "route_operator_only", "helper/apply under scope must be operator-only 422");
+    // in-scope execution still works (lc-app owns sbx-policy:wf3)
+    res = await scopedFetch("/api/workspace/sandbox-run", { objectId: "sbx-policy", name: "wf3", useDraft: true });
+    assert((await res.json()).ok === true, "scoped in-scope draft run must pass");
+    ok("route shopping closed: all governed routes enforce app scope");
+
+    // 28. preflight mirrors PATCH including the scope verdict
+    const cfg28 = await getConfig();
+    const outOfScopeBody = { dataModel: { ...cfg28.dataModel, objects: [...cfg28.dataModel.objects, { id: "rogue-obj", label: "X", rows: [] }] } };
+    res = await fetch(`${base}/api/workspace/patch/preflight`, { method: "POST", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(outOfScopeBody) });
+    const pre28 = await res.json();
+    assert(pre28.ok === false && pre28.appScopeVerdict?.allowed === false, "preflight must carry the failing appScopeVerdict");
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(outOfScopeBody) });
+    assert(res.status === 422, "the real PATCH must mirror preflight's scope verdict");
+    ok("preflight appScopeVerdict mirrors the real PATCH (single source of truth)");
+
+    // 29. violation → repair → success (the self-correction loop)
+    const cfg29 = await getConfig();
+    const registryGrow = {
+      dataModel: {
+        ...cfg29.dataModel,
+        objects: cfg29.dataModel.objects.map((o) =>
+          o.id !== "workspace-app-registry" ? o : { ...o, rows: o.rows.map((r) => (r.appId === "lc-app" ? { ...r, dataSourceIds: "lc-data" } : r)) }),
+      },
+    };
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(registryGrow) });
+    assert(res.status === 200, `growing own scope via the registry row must pass, got ${res.status} ${await res.text()}`);
+    const cfg29b = await getConfig();
+    const addOwned = { dataModel: { ...cfg29b.dataModel, objects: [...cfg29b.dataModel.objects, { id: "lc-data", label: "LC Data", columns: ["Name"], rows: [] }] } };
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(addOwned) });
+    assert(res.status === 200, `creating the now-referenced object must pass, got ${res.status} ${await res.text()}`);
+    ok("violation → register ref → retry succeeds (agent self-correction loop)");
+
+    // 30. overlapping refs + truthful packet + tamper-evident receipt chain
+    const fleet30 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    const lc = fleet30.apps.find((a) => a.appId === "lc-app");
+    assert(Array.isArray(lc.assignment.operatorOnlyRoutes) && lc.assignment.operatorOnlyRoutes.some((r) => r.includes("helper/apply")), "packet must name helper/apply operator-only");
+    assert(lc.assignment.allowedRoutes.every((r) => r.startsWith("GET ") || r.includes("x-growthub-app-scope") || r.includes("header")), `allowedRoutes must be truthful (all scoped or read-only), got ${JSON.stringify(lc.assignment.allowedRoutes)}`);
+    const stream30 = await (await fetch(`${base}/api/workspace/agent-outcomes?limit=200`)).json();
+    const chain = [...stream30.receipts].reverse(); // oldest first
+    const stable = (value) => JSON.stringify(value, (k, x) => (x && typeof x === "object" && !Array.isArray(x)) ? Object.keys(x).sort().reduce((acc, kk) => (acc[kk] = x[kk], acc), {}) : x);
+    const { createHash } = await import("node:crypto");
+    let chainOk = true;
+    for (let i = 1; i < chain.length; i++) {
+      if (!Number.isFinite(chain[i].seq) || chain[i].seq !== chain[i - 1].seq + 1) { chainOk = false; break; }
+      const expected = createHash("sha256").update(stable(chain[i - 1]), "utf8").digest("hex");
+      if (chain[i].prevReceiptSha256 !== expected) { chainOk = false; break; }
+    }
+    assert(chain.length > 5 && chainOk, "receipt stream must form an intact seq + hash chain");
+    assert(chain.some((r) => r.appId === "lc-app" && r.outcomeStatus === "blocked"), "scoped violations must be attributed to the app in the stream");
+    ok("truthful packet + overlapping-scope safety + tamper-evident receipt chain");
+
     process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
   } finally {
     try {
