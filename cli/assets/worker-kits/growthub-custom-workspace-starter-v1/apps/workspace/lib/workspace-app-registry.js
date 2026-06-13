@@ -376,6 +376,122 @@ function sameStable(a, b) {
   return stable(a) === stable(b);
 }
 
+/**
+ * Full scope context for the unified route gate (`requireAppScope`).
+ * Superset of resolveAppScopeObjectIds: adds workflowRefs ("objectId:Name"),
+ * dataSourceIds (registry-row references = Data Model object ids), the
+ * derived sidecar sourceIds of those objects, and registryIds
+ * (api-registry integrationIds). Null when the app is not registered.
+ */
+function resolveAppScopeContext(workspaceConfig, appId) {
+  const base = resolveAppScopeObjectIds(workspaceConfig, appId);
+  if (!base) return null;
+  const { row } = base;
+  const workflowRefs = new Set(splitIds(row.workflowRefs).map((r) => r.trim()));
+  const dataSourceIds = new Set(splitIds(row.dataSourceIds));
+  const registryIds = new Set(splitIds(row.registryIds));
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const sourceIds = new Set();
+  for (const object of objects) {
+    if (dataSourceIds.has(safeString(object?.id)) && safeString(object?.sourceId).trim()) {
+      sourceIds.add(safeString(object.sourceId).trim());
+    }
+  }
+  return {
+    appId: safeString(row.appId).trim() || safeString(row.Name).trim(),
+    row,
+    objectIds: base.objectIds,
+    dashboardIds: base.dashboardIds,
+    workflowRefs,
+    dataSourceIds,
+    sourceIds,
+    registryIds
+  };
+}
+
+/**
+ * Structured violation envelope (SDK: AppScopeViolation) — every scoped
+ * route returns this shape so agents self-correct programmatically.
+ */
+function buildAppScopeViolation(appScope, violationType, offendingPaths, suggestedAction, context) {
+  return {
+    error: "app scope violation",
+    appScope: safeString(appScope).trim(),
+    violationType,
+    offendingPaths: Array.isArray(offendingPaths) ? offendingPaths : [],
+    suggestedAction,
+    ...(context ? { allowedObjectIds: Array.from(context.objectIds) } : {})
+  };
+}
+
+/**
+ * The unified scope gate every governed mutation/execution route calls
+ * (Next route handlers are functions, so the "middleware" is this shared
+ * helper). Returns:
+ *   { scoped: false }                          — no header; route proceeds unscoped
+ *   { scoped: true, appId, context }           — verified scope context
+ *   { scoped: true, violation, status: 422 }   — structured rejection body
+ */
+function requireAppScope(request, workspaceConfig) {
+  const header = typeof request?.headers?.get === "function" ? request.headers.get("x-growthub-app-scope") : null;
+  const appScope = safeString(header).trim();
+  if (!appScope) return { scoped: false };
+  const context = resolveAppScopeContext(workspaceConfig, appScope);
+  if (!context) {
+    return {
+      scoped: true,
+      status: 422,
+      violation: buildAppScopeViolation(
+        appScope,
+        "app_not_registered",
+        [],
+        `Register appId "${appScope}" as a row of ${APP_REGISTRY_OBJECT_ID} before working app-scoped`,
+        null
+      )
+    };
+  }
+  return { scoped: true, appId: context.appId, context };
+}
+
+/** Pure per-route access checks against a verified scope context. */
+function checkScopedWorkflowAccess(context, objectId, rowName) {
+  const ref = `${safeString(objectId).trim()}:${safeString(rowName).trim()}`;
+  if (context.workflowRefs.has(ref) || context.objectIds.has(safeString(objectId).trim())) return null;
+  return buildAppScopeViolation(
+    context.appId,
+    "workflow_outside_app",
+    [ref],
+    `Add "${ref}" to the app's workflowRefs on its ${APP_REGISTRY_OBJECT_ID} row, or work on a workflow the app references`,
+    context
+  );
+}
+
+function checkScopedSourceAccess(context, sourceIds) {
+  const offending = (Array.isArray(sourceIds) ? sourceIds : [])
+    .map((id) => safeString(id).trim())
+    .filter((id) => id && !context.dataSourceIds.has(id) && !context.sourceIds.has(id));
+  if (offending.length === 0) return null;
+  return buildAppScopeViolation(
+    context.appId,
+    "data_source_outside_app",
+    offending,
+    "Reference these sources on the app's dataSourceIds before refreshing them app-scoped",
+    context
+  );
+}
+
+function checkScopedRegistryAccess(context, integrationId) {
+  const id = safeString(integrationId).trim();
+  if (context.registryIds.has(id)) return null;
+  return buildAppScopeViolation(
+    context.appId,
+    "registry_outside_app",
+    [id],
+    "Reference this integrationId on the app's registryIds before testing it app-scoped",
+    context
+  );
+}
+
 function summarizeFleet(apps) {
   return {
     total: apps.length,
@@ -390,12 +506,18 @@ export {
   APP_REGISTRY_OBJECT_ID,
   APP_SURFACE_OBJECT_TYPE,
   buildAppAssignmentPacket,
+  buildAppScopeViolation,
+  checkScopedRegistryAccess,
+  checkScopedSourceAccess,
+  checkScopedWorkflowAccess,
   deriveAppHealth,
   deriveAppNextAction,
   evaluateAppScope,
   findAppRegistryObject,
   listAppSurfaceRows,
+  requireAppScope,
   resolveAppLinks,
+  resolveAppScopeContext,
   resolveAppScopeObjectIds,
   summarizeFleet
 };

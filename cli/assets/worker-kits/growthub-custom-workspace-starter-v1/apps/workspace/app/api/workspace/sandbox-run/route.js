@@ -81,6 +81,7 @@ import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
 import {
   discoverRunInputSchema,
   normalizeRunInputsEnvelope,
@@ -810,6 +811,37 @@ async function executeSandboxRun(body, { emit } = {}) {
 
 async function POST(request) {
   const accept = request.headers.get("accept") || "";
+  // Unified app-scope gate: with x-growthub-app-scope, this run must target
+  // a workflow inside the app's governed scope (route-shopping closed).
+  let scopedAppId = null;
+  {
+    const cfgForScope = await readWorkspaceConfig().catch(() => ({}));
+    const scope = requireAppScope(request, cfgForScope);
+    if (scope.scoped && scope.violation) {
+      await appendOutcomeReceipt({
+        kind: "sandbox-run", lane: "execution-proof", outcomeStatus: "blocked",
+        appId: scope.violation.appScope,
+        summary: `sandbox-run rejected (422 app scope): ${scope.violation.violationType}`,
+        nextActions: [scope.violation.suggestedAction]
+      });
+      return NextResponse.json(scope.violation, { status: 422 });
+    }
+    if (scope.scoped) {
+      let peek = null;
+      try { peek = await request.clone().json(); } catch { peek = null; }
+      const violation = checkScopedWorkflowAccess(scope.context, peek?.objectId, peek?.name);
+      if (violation) {
+        await appendOutcomeReceipt({
+          kind: "sandbox-run", lane: "execution-proof", outcomeStatus: "blocked",
+          appId: scope.appId,
+          summary: `sandbox-run rejected (422 app scope): workflow ${peek?.objectId}:${peek?.name} outside app ${scope.appId}`,
+          nextActions: [violation.suggestedAction]
+        });
+        return NextResponse.json(violation, { status: 422 });
+      }
+      scopedAppId = scope.appId;
+    }
+  }
   let body;
   try {
     body = await request.json();
