@@ -138,6 +138,8 @@ test("B3: predictability report finds a safe concurrency and reports verdict", (
   assert.ok(Array.isArray(report.concurrencyLadder) && report.concurrencyLadder.length === 6);
   assert.ok(["safe-to-clone", "review-before-clone", "unsafe-diverging"].includes(report.verdict));
   assert.ok(report.behaviorProfiles.length >= 1);
+  // Closed-loop CTA: a concrete next action accompanies every verdict.
+  assert.ok(typeof report.nextAction === "string" && report.nextAction.length > 0);
 });
 
 test("B3: empty corpus ⇒ insufficient-evidence verdict", () => {
@@ -145,6 +147,7 @@ test("B3: empty corpus ⇒ insufficient-evidence verdict", () => {
   assert.equal(report.verdict, "insufficient-evidence");
   assert.equal(report.global.receiptCount, 0);
   assert.match(report.rationale, /No recorded agent-outcome receipts/i);
+  assert.match(report.nextAction, /receipts/i);
 });
 
 test("never throws on empty / garbage input", () => {

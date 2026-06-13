@@ -47,6 +47,19 @@ test("SimulationCockpit is strictly read-only (no mutation lanes)", () => {
   assert.ok(!/PATCH/.test(cockpit), "never PATCHes config");
 });
 
+test("SimulationCockpit closes the loop: first-run walkthrough, next action, read-only export", () => {
+  // First-run walkthrough empty state (purpose → how → outcome → repeat).
+  assert.match(cockpit, /data-sim-walkthrough/);
+  assert.match(cockpit, /data-sim-checklist/);
+  assert.match(cockpit, /First simulation run/);
+  // The derived next-action CTA is surfaced (step 9 of the loop).
+  assert.match(cockpit, /report\.nextAction/);
+  assert.match(cockpit, /Next action/);
+  // Export is read-only (clipboard copy, no fetch/POST/persist).
+  assert.match(cockpit, /data-sim-export/);
+  assert.match(cockpit, /clipboard/);
+});
+
 test("HelperSidecar mounts the simulation cockpit under a shared view", () => {
   assert.match(sidecar, /import \{ SimulationCockpit \} from "\.\/SimulationCockpit\.jsx"/);
   assert.match(sidecar, /inSimulationView\s*=\s*activeView === "simulation"/);

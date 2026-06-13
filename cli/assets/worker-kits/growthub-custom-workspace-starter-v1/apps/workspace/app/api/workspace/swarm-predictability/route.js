@@ -78,6 +78,7 @@ async function GET(request) {
       kind: PREDICTABILITY_KIND,
       version: VERSION,
       verdict: "insufficient-evidence",
+      nextAction: "Run governed actions to accumulate agent-outcome receipts, then simulate again.",
       fidelity: 0,
       expectedViolationRatePer1000: 0,
       meanTimeToResolveTicks: 0,

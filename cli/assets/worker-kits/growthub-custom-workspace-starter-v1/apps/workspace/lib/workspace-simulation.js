@@ -339,10 +339,13 @@ function predictFromSteps(steps, evidence, options = {}) {
  * @returns {object} typed simulation envelope (never throws)
  */
 function deriveWorkspaceSimulation(input = {}, options = {}) {
+  // Guard explicit non-object args (default params only catch `undefined`).
+  const inp = isPlainObject(input) ? input : {};
+  const opt = isPlainObject(options) ? options : {};
   const safeInput = {
-    workspaceConfig: isPlainObject(input.workspaceConfig) ? input.workspaceConfig : {},
-    workspaceSourceRecords: isPlainObject(input.workspaceSourceRecords) ? input.workspaceSourceRecords : {},
-    metadataGraph: isPlainObject(input.metadataGraph) ? input.metadataGraph : null,
+    workspaceConfig: isPlainObject(inp.workspaceConfig) ? inp.workspaceConfig : {},
+    workspaceSourceRecords: isPlainObject(inp.workspaceSourceRecords) ? inp.workspaceSourceRecords : {},
+    metadataGraph: isPlainObject(inp.metadataGraph) ? inp.metadataGraph : null,
   };
 
   let state;
@@ -352,10 +355,10 @@ function deriveWorkspaceSimulation(input = {}, options = {}) {
     state = { primary: { steps: [], complete: false, nextStepId: null }, lenses: {}, nextAction: null, complete: false };
   }
 
-  const { lensId, lensState } = resolveTargetLens(state, options.lensId);
+  const { lensId, lensState } = resolveTargetLens(state, opt.lensId);
   const steps = Array.isArray(lensState?.steps) ? lensState.steps : [];
   const evidence = collectRunEvidence(safeInput.workspaceConfig);
-  const core = predictFromSteps(steps, evidence, options);
+  const core = predictFromSteps(steps, evidence, opt);
 
   return {
     kind: SIMULATION_KIND,

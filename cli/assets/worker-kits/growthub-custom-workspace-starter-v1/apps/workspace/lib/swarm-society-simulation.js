@@ -102,8 +102,13 @@ function hasRepairGuidance(receipt) {
  * @returns {{ profiles: Array, global: object }}
  */
 function deriveSwarmBehaviorProfiles(receipts, options = {}) {
-  const stream = Array.isArray(receipts) ? receipts.filter(isPlainObject) : [];
-  const groupBy = ["actor", "lane", "kind"].includes(options.groupBy) ? options.groupBy : "actor";
+  // Only count receipt-shaped entries — an empty/garbage object is not a
+  // receipt and must not pollute the corpus or inflate fidelity.
+  const stream = Array.isArray(receipts)
+    ? receipts.filter((r) => isPlainObject(r) && (r.lane || r.outcomeStatus || r.actor || r.kind))
+    : [];
+  const opt = isPlainObject(options) ? options : {};
+  const groupBy = ["actor", "lane", "kind"].includes(opt.groupBy) ? opt.groupBy : "actor";
 
   // Chronological order so route-shopping (blocked PATCH → sandbox-run by the
   // same actor) is detectable as a sequence, not just a count.
@@ -360,6 +365,25 @@ function findSafeConcurrency({ profiles, global, environment, options }) {
 }
 
 /**
+ * Translate a verdict + metrics into the single concrete next move, in
+ * customer language. This is the closed-loop CTA the cockpit renders verbatim.
+ */
+function deriveNextAction({ verdict, safeConcurrency, topHotspot, requested }) {
+  const hotspot = topHotspot ? ` Inspect contention on "${topHotspot}".` : "";
+  switch (verdict) {
+    case "insufficient-evidence":
+      return "Run real governed actions (swarms, workflows) to accumulate agent-outcome receipts, then simulate again — the forecast sharpens with evidence.";
+    case "unsafe-diverging":
+      return `Do not clone yet. Cap concurrency at ${safeConcurrency} and tighten agent scopes to stop the violation cascade.${hotspot}`;
+    case "review-before-clone":
+      return `Cap concurrency at ${safeConcurrency}${requested > safeConcurrency ? ` (you ran ${requested})` : ""} before cloning, then re-simulate.${hotspot}`;
+    case "safe-to-clone":
+    default:
+      return `Safe to clone at concurrency ≤ ${safeConcurrency}. Proceed, and re-simulate as more receipts accumulate.`;
+  }
+}
+
+/**
  * The enterprise deliverable: a predictability report for a proposed workspace
  * config + workload, BEFORE cloning it to a new tenant.
  *
@@ -367,9 +391,10 @@ function findSafeConcurrency({ profiles, global, environment, options }) {
  * @returns {object} predictability report envelope (never throws)
  */
 function deriveSwarmPredictabilityReport(args = {}) {
-  const { profiles, global } = deriveSwarmBehaviorProfiles(args.receipts, { groupBy: args.options?.groupBy });
-  const environment = { objectIds: envObjectIds(isPlainObject(args.workspaceConfig) ? args.workspaceConfig : {}) };
-  const options = args.options || {};
+  const a = isPlainObject(args) ? args : {};
+  const { profiles, global } = deriveSwarmBehaviorProfiles(a.receipts, { groupBy: a.options?.groupBy });
+  const environment = { objectIds: envObjectIds(isPlainObject(a.workspaceConfig) ? a.workspaceConfig : {}) };
+  const options = isPlainObject(a.options) ? a.options : {};
 
   const simulation = simulateSwarmSociety({ profiles, global, environment, options });
   const { safeConcurrency, ladder } = findSafeConcurrency({ profiles, global, environment, options });
@@ -381,10 +406,16 @@ function deriveSwarmPredictabilityReport(args = {}) {
   else if (simulation.metrics.swarmStability === "diverging") verdict = "unsafe-diverging";
   else verdict = "review-before-clone";
 
+  // Closed-loop step 9: the report carries the concrete next move so the user
+  // (and an agent) never has to interpret raw metrics into an action.
+  const topHotspot = simulation.contentionHotspots[0]?.objectId;
+  const nextAction = deriveNextAction({ verdict, safeConcurrency, topHotspot, requested: simulation.config.concurrency });
+
   return {
     kind: PREDICTABILITY_KIND,
     version: VERSION,
     verdict,
+    nextAction,
     fidelity: global.fidelity, // confidence in the profile corpus (grows with receipts)
     expectedViolationRatePer1000: expectedViolationRate,
     meanTimeToResolveTicks: simulation.metrics.meanTimeToResolveTicks,

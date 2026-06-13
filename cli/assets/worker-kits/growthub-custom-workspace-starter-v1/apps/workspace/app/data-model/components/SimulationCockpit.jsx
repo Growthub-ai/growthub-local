@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useMemo, useState } from "react";
-import { Play } from "lucide-react";
+import { Play, Copy, Check } from "lucide-react";
 import {
   SIMULATION_PARAM_FIELDS,
   DEFAULT_SIMULATION_PARAMS,
@@ -37,7 +37,7 @@ function MetricRow({ label, value }) {
   );
 }
 
-function ReportCard({ report }) {
+function ReportCard({ report, onExport, exported }) {
   const v = verdictPresentation(report.verdict);
   return (
     <div className="dm-helper-toolcall dm-swarm-card" data-sim-report={report.verdict}>
@@ -45,6 +45,18 @@ function ReportCard({ report }) {
         <span className="dm-run-console__tree-dot" data-variant={v.variant} />
         <span className="dm-helper-toolcall-title dm-swarm-card-title">{v.label}</span>
         <span className="dm-run-console__hint">{`fidelity ${report.fidelity ?? 0}`}</span>
+        {onExport && (
+          <button
+            type="button"
+            className="dm-btn-ghost dm-swarm-card-action"
+            onClick={onExport}
+            aria-label="Copy simulation report"
+            title="Copy this run as JSON — export to learn from or seed a distillation corpus"
+            data-sim-export=""
+          >
+            {exported ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
+          </button>
+        )}
       </div>
       <MetricRow label="Expected violations / 1k" value={report.expectedViolationRatePer1000 ?? "—"} />
       <MetricRow label="Swarm stability" value={report.swarmStability ?? "—"} />
@@ -52,6 +64,12 @@ function ReportCard({ report }) {
       <MetricRow label="Mean time to resolve (ticks)" value={report.meanTimeToResolveTicks ?? "—"} />
       {report.rationale && (
         <div className="dm-helper-stream dm-swarm-card-desc">{report.rationale}</div>
+      )}
+      {report.nextAction && (
+        <div className="dm-swarm-card-meta" data-sim-next-action="">
+          <span className="dm-helper-toolcall-title">Next action</span>
+          <span className="dm-run-console__hint">{report.nextAction}</span>
+        </div>
       )}
       {Array.isArray(report.contentionHotspots) && report.contentionHotspots.length > 0 && (
         <div className="dm-swarm-phases">
@@ -86,8 +104,22 @@ export function SimulationCockpit({ onConfigRefresh }) {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
+  const [exported, setExported] = useState(false);
 
   const summary = useMemo(() => (report ? summarizeSimulationReport(report) : ""), [report]);
+
+  // Export is read-only: copy the run as JSON so users and agents can learn
+  // from it or seed an offline distillation corpus. Nothing is persisted.
+  const exportReport = useCallback(() => {
+    if (!report) return;
+    try {
+      navigator.clipboard?.writeText(JSON.stringify(report, null, 2));
+      setExported(true);
+      setTimeout(() => setExported(false), 1200);
+    } catch {
+      // Clipboard may be unavailable; export is best-effort and never fatal.
+    }
+  }, [report]);
 
   const setParam = useCallback((key, raw) => {
     setParams((prev) => ({ ...prev, [key]: raw }));
@@ -152,14 +184,30 @@ export function SimulationCockpit({ onConfigRefresh }) {
       {summary && <p className="dm-run-console__hint" data-sim-summary="">{summary}</p>}
 
       {report
-        ? <ReportCard report={report} />
+        ? <ReportCard report={report} onExport={exportReport} exported={exported} />
         : (
-          <p className="dm-run-console__hint">
-            Run a swarm-society simulation to forecast violation density, contention
-            hotspots, swarm stability, and the safe concurrency limit before cloning
-            this workspace to a new tenant. Profiles are learned from your governed
-            agent-outcome receipts — no execution, nothing is written.
-          </p>
+          <div className="dm-helper-stream dm-swarm-card-desc" data-sim-walkthrough="">
+            <span className="dm-helper-toolcall-title">First simulation run</span>
+            <p className="dm-run-console__hint">
+              A swarm-society simulation forecasts what your agents will do under
+              stress — before you scale. It learns behavior from your governed
+              agent-outcome receipts (the same activity that fills your Workspace
+              Lens contribution cells) and grows the macro pattern forward.
+            </p>
+            <ol className="dm-run-console__hint" data-sim-checklist="">
+              <li>Set the population, workload, concurrency, and seed above.</li>
+              <li>Run the simulation — read-only, nothing executes or is written.</li>
+              <li>
+                Read the forecast: expected violations, contention hotspots, swarm
+                stability, and your safe concurrency limit.
+              </li>
+              <li>Copy the run to learn from it or seed a distillation corpus.</li>
+            </ol>
+            <p className="dm-run-console__hint">
+              Same as agent swarms: invoke it anywhere with the <strong>/simulate</strong>
+              {" "}command, or from the Workspace Lens action — one shared cockpit.
+            </p>
+          </div>
         )}
     </div>
   );
