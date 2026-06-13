@@ -108,6 +108,7 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   const helperHandoffDismissed = helperConfigured || isHelperHandoffDismissed(effectiveConfig);
   const [setupOpen, setSetupOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
+  const [helperView, setHelperView] = useState("chat");
 
   useEffect(() => {
     setLocalConfig(workspaceConfig);
@@ -151,11 +152,24 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
   }, [dismissWalkthrough]);
 
   const openHelperHandoff = useMemo(() => () => {
+    setHelperView("chat");
     if (helperConfigured) {
       setHelperOpen(true);
       return;
     }
     setSetupOpen(true);
+  }, [helperConfigured]);
+
+  // Open the SAME helper sidecar directly in the read-only simulation cockpit
+  // (shared with the /simulate command). Setup gate is identical to the helper
+  // handoff — a simulation reads the receipt stream the configured agent emits.
+  const openSimulation = useMemo(() => () => {
+    if (!helperConfigured) {
+      setSetupOpen(true);
+      return;
+    }
+    setHelperView("simulation");
+    setHelperOpen(true);
   }, [helperConfigured]);
 
   const contributions = useMemo(
@@ -380,9 +394,14 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
             <BarChart3 size={28} aria-hidden="true" />
             <strong>{helperStatusLabel}</strong>
             <p>Workspace Lens actions run through the same helper widget sandbox.</p>
-            <button type="button" onClick={openHelperHandoff}>
-              {helperConfigured ? "Open helper" : "Set up helper"}
-            </button>
+            <div className="workspace-lens-helper-card-actions">
+              <button type="button" onClick={openHelperHandoff}>
+                {helperConfigured ? "Open helper" : "Set up helper"}
+              </button>
+              <button type="button" onClick={openSimulation} data-lens-action="simulate">
+                Run simulation
+              </button>
+            </div>
           </div>
         </article>
       </section>
@@ -482,6 +501,7 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
         workspaceConfig={effectiveConfig}
         initialIntent="explain"
         initialPrompt=""
+        initialView={helperView}
         onApplied={(nextConfig) => setLocalConfig(nextConfig)}
       />
     </div>

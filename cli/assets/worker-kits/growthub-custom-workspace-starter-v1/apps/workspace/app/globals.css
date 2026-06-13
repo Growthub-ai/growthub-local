@@ -9006,6 +9006,7 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-lens-helper-card-body p { margin: 0; color: #6b7280; font-size: 12px; line-height: 1.45; max-width: 260px; }
 .workspace-lens-helper-card-body button { margin-top: 4px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font-size: 12px; font-weight: 500; padding: 7px 12px; cursor: pointer; }
 .workspace-lens-helper-card-body button:hover { background: #f9fafb; }
+.workspace-lens-helper-card-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .workspace-lens-branches { margin: 24px 0 32px; }
 .workspace-lens-branches-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
 .workspace-lens-branches-head h2 { margin: 0; color: #111827; font-size: 18px; font-weight: 600; }

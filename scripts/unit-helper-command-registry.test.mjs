@@ -66,6 +66,15 @@ test("/workflows is read-only and opens the cockpit list view", () => {
   assert.equal(workflows.intent, undefined, "read-only command seeds no proposal intent");
 });
 
+test("/simulate is read-only and opens the simulation cockpit view", () => {
+  const simulate = HELPER_COMMANDS.find((c) => c.name === "/simulate");
+  assert.ok(simulate, "/simulate command must exist");
+  assert.equal(simulate.mutates, false);
+  assert.equal(simulate.view, "simulation");
+  assert.equal(simulate.intent, undefined, "read-only command seeds no proposal intent");
+  assert.equal(isGovernedHelperCommand(simulate).ok, true);
+});
+
 test("no command carries a direct mutation/execution hook", () => {
   for (const cmd of HELPER_COMMANDS) {
     // The only allowed behaviors are view switches and prompt/intent seeding.
