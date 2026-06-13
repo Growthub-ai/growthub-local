@@ -431,6 +431,69 @@ registerSandboxAdapter({
     assert(fleet.lens.lensId === "fleet" && fleet.lens.steps.length === 2, "fleet lens must emit one step per app");
     ok("app-scoped assignment packets + fleet lens (human + agent read one truth)");
 
+    // 24. human operator surface: /workspace-lens serves (the panel renders
+    // every registry lens — fleet inclusion in the panel's composed state is
+    // unit-proven; the page legitimately gates lens cards behind activation
+    // completeness), and the same fleet truth is served via the public
+    // swarm-condition projection.
+    const lensPage = await fetch(`${base}/workspace-lens`);
+    assert(lensPage.status === 200, `workspace-lens page must serve, got ${lensPage.status}`);
+    const fleetCondition = await (await fetch(`${base}/api/workspace/swarm-condition?lensId=fleet`)).json();
+    assert(fleetCondition.lensId === "fleet" && fleetCondition.goal.length > 0, "fleet lens state must be served to humans/agents alike");
+    ok("workspace-lens serves; fleet state flows through the panel registry + public projection");
+
+    // 25. lifecycle drives health: publishing a linked workflow clears the
+    // app's "not live" blocker (register app3 → blocked → publish → cleared)
+    const cfg25 = await getConfig();
+    res = await patch({
+      dataModel: {
+        ...cfg25.dataModel,
+        objects: cfg25.dataModel.objects.map((o) => {
+          if (o.id === "sbx-policy") {
+            return { ...o, rows: [...o.rows, { Name: "wf3", lifecycleStatus: "draft", version: "1", runLocality: "local", adapter: "local-agent-host", agentHost: "claude_local", runtime: "node", command: "", orchestrationDraftConfig: draftSerialized, orchestrationDraftStatus: "untested" }] };
+          }
+          if (o.id === "workspace-app-registry") {
+            return { ...o, rows: [...o.rows, { Name: "Lifecycle App", appId: "lc-app", workflowRefs: "sbx-policy:wf3" }] };
+          }
+          return o;
+        }),
+      },
+    });
+    assert(res.status === 200, `lifecycle setup PATCH expected 200, got ${res.status} ${await res.text()}`);
+    let fleet25 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    let lcApp = fleet25.apps.find((a) => a.appId === "lc-app");
+    assert(lcApp.health.status === "blocked" && lcApp.health.blockers.some((b) => b.includes("not live")), "unpublished workflow must block the app");
+    res = await sandboxRun({ objectId: "sbx-policy", name: "wf3", useDraft: true });
+    assert((await res.json()).ok === true, "wf3 draft proof must pass");
+    const cfg25b = await getConfig();
+    res = await patch({ dataModel: mergeRow(cfg25b, "wf3", { orchestrationDraftTestPassed: true, orchestrationDraftTestedConfig: draftSerialized }) });
+    assert(res.status === 200, "wf3 attestation must pass");
+    res = await publish({ objectId: "sbx-policy", name: "wf3" });
+    assert((await res.json()).ok === true, "wf3 publish must succeed");
+    fleet25 = await (await fetch(`${base}/api/workspace/apps`)).json();
+    lcApp = fleet25.apps.find((a) => a.appId === "lc-app");
+    assert(!lcApp.health.blockers.some((b) => b.includes("not live")), `publish must clear the app's not-live blocker, got ${JSON.stringify(lcApp.health.blockers)}`);
+    assert(lcApp.links.workflows.found[0].live === true && lcApp.links.workflows.found[0].lastRunOk === true, "app health must reflect live + proven workflow");
+    ok("workflow draft → proof → publish transitions app health (lifecycle is causal)");
+
+    // 26. app-scope runtime enforcement: x-growthub-app-scope restricts the
+    // mutation to the app's governed objects
+    const cfg26 = await getConfig();
+    const scopedPatch = (body) =>
+      fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "lc-app" }, body: JSON.stringify(body) });
+    // out of scope: a NEW unrelated object
+    res = await scopedPatch({ dataModel: { ...cfg26.dataModel, objects: [...cfg26.dataModel.objects, { id: "unrelated-obj", label: "X", rows: [] }] } });
+    assert(res.status === 422, `out-of-scope mutation expected 422, got ${res.status}`);
+    const scopeBody = await res.json();
+    assert(scopeBody.violations?.[0]?.code === "app_scope_violation", "must reject with app_scope_violation");
+    // in scope: a draft save on the app's own workflow object
+    res = await scopedPatch({ dataModel: mergeRow(cfg26, "wf3", { orchestrationDraftConfig: draftSerialized, orchestrationDraftStatus: "untested", orchestrationDraftTestPassed: false, orchestrationDraftTestedConfig: "" }) });
+    assert(res.status === 200, `in-scope mutation expected 200, got ${res.status} ${await res.text()}`);
+    // unknown app id
+    res = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json", "x-growthub-app-scope": "ghost-app" }, body: JSON.stringify({ dataModel: cfg26.dataModel }) });
+    assert(res.status === 422, "unknown app scope must 422");
+    ok("app-scope header enforces per-app mutation isolation at runtime");
+
     process.stdout.write(`[policy-e2e] all ${pass} probes passed.\n`);
   } finally {
     try {

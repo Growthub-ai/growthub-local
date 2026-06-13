@@ -87,7 +87,8 @@ export type WorkspacePatchViolationCode =
   | "history_smuggling"
   | "credential_field"
   | "live_workflow_field"
-  | "live_publish_via_patch";
+  | "live_publish_via_patch"
+  | "app_scope_violation";
 
 export interface WorkspacePatchViolation {
   code: WorkspacePatchViolationCode | (string & {});

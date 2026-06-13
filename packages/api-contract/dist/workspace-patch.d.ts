@@ -36,7 +36,7 @@ export type WorkspaceDraftWorkflowField = (typeof WORKSPACE_DRAFT_WORKFLOW_FIELD
  * Stable machine-readable violation codes emitted by the patch policy.
  * Additive: consumers must tolerate unknown codes.
  */
-export type WorkspacePatchViolationCode = "invalid_body" | "unknown_field" | "full_config_body" | "source_records_through_patch" | "oversized_patch" | "oversized_object" | "oversized_row" | "oversized_node_config" | "history_smuggling" | "credential_field" | "live_workflow_field" | "live_publish_via_patch";
+export type WorkspacePatchViolationCode = "invalid_body" | "unknown_field" | "full_config_body" | "source_records_through_patch" | "oversized_patch" | "oversized_object" | "oversized_row" | "oversized_node_config" | "history_smuggling" | "credential_field" | "live_workflow_field" | "live_publish_via_patch" | "app_scope_violation";
 export interface WorkspacePatchViolation {
     code: WorkspacePatchViolationCode | (string & {});
     /** JSON-path-ish locator, e.g. `dataModel.objects[0].rows[2].version`. */

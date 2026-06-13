@@ -18,6 +18,7 @@ import {
   repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { evaluateAppScope } from "@/lib/workspace-app-registry";
 
 // Workspace Config Contract V1 — PATCH is permanently restricted to these
 // four fields. Sidecar source records (`workspaceSourceRecords`) are exposed
@@ -123,6 +124,35 @@ async function PATCH(request) {
       },
       { status: 422 }
     );
+  }
+  // App-scope enforcement (opt-in tightening): a harness working from an
+  // AppAssignmentPacket sets `x-growthub-app-scope: <appId>` and this PATCH
+  // may then only mutate that app's governed objects/dashboards. Unscoped
+  // PATCHes are unaffected.
+  const appScope = request.headers.get("x-growthub-app-scope");
+  if (appScope && appScope.trim()) {
+    const scopeVerdict = evaluateAppScope(currentConfig, patch, appScope.trim());
+    if (!scopeVerdict.ok) {
+      await appendOutcomeReceipt({
+        kind: "direct-patch",
+        lane: "untrusted-direct",
+        outcomeStatus: "blocked",
+        actor: `app-scope:${appScope.trim()}`,
+        changedFields: Object.keys(sanitized),
+        policyVerdict: { ok: false, violationCodes: scopeVerdict.violations.map((v) => v.code) },
+        summary: `PATCH rejected (422): app-scope "${appScope.trim()}" violation — ${scopeVerdict.violations[0]?.message || ""}`,
+        nextActions: ["Mutate only the objects referenced by this app's registry row, or drop the x-growthub-app-scope header for unscoped operator work"]
+      });
+      return NextResponse.json(
+        {
+          error: "patch rejected by app scope",
+          appScope: appScope.trim(),
+          violations: scopeVerdict.violations,
+          repairPlan: ["Work inside the app's AppAssignmentPacket objectRefs; register additional objects on the app's registry row first if the scope must grow"]
+        },
+        { status: 422 }
+      );
+    }
   }
   try {
     const next = await writeWorkspaceConfig(sanitized);

@@ -227,8 +227,9 @@ function buildAppAssignmentPacket(workspaceConfig, workspaceSourceRecords, row, 
     ],
     allowedRoutes: [
       "GET /api/workspace",
+      "GET /api/workspace/apps",
       "POST /api/workspace/patch/preflight",
-      "PATCH /api/workspace (allowlisted keys, this app's objects only)",
+      `PATCH /api/workspace with header x-growthub-app-scope: ${appId} (runtime-enforced app scope)`,
       "POST /api/workspace/test-source",
       "POST /api/workspace/refresh-sources",
       "POST /api/workspace/sandbox-run (useDraft:true for drafts)",
@@ -250,6 +251,131 @@ function buildAppAssignmentPacket(workspaceConfig, workspaceSourceRecords, row, 
   };
 }
 
+/**
+ * The set of Data Model object ids inside an app's governed scope:
+ * the registry object itself, the app's workflow objects, its data-source
+ * objects, and every api-registry object holding one of its integrationIds.
+ * Returns null when the app is not registered.
+ */
+function resolveAppScopeObjectIds(workspaceConfig, appId) {
+  const wanted = safeString(appId).trim();
+  if (!wanted) return null;
+  const row = listAppSurfaceRows(workspaceConfig)
+    .find((r) => (safeString(r.appId).trim() || safeString(r.Name).trim()) === wanted);
+  if (!row) return null;
+  const registryObject = findAppRegistryObject(workspaceConfig);
+  const scope = new Set();
+  if (registryObject?.id) scope.add(safeString(registryObject.id));
+  for (const ref of splitIds(row.workflowRefs)) {
+    const at = ref.indexOf(":");
+    if (at > 0) scope.add(ref.slice(0, at).trim());
+  }
+  for (const id of splitIds(row.dataSourceIds)) scope.add(id);
+  const wantedIntegrations = new Set(splitIds(row.registryIds));
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "api-registry") continue;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    if (rows.some((r) => wantedIntegrations.has(safeString(r?.integrationId).trim()))) {
+      scope.add(safeString(object.id));
+    }
+  }
+  return { row, objectIds: scope, dashboardIds: new Set(splitIds(row.dashboardIds)) };
+}
+
+function stable(value) {
+  if (value === undefined) return "undefined";
+  return JSON.stringify(value, (key, v) => {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const sorted = {};
+      for (const k of Object.keys(v).sort()) sorted[k] = v[k];
+      return sorted;
+    }
+    return v;
+  });
+}
+
+/**
+ * Runtime enforcement for app-scoped agents (claim: "agents cannot mutate
+ * unrelated app infrastructure"). Opt-in: a harness working from an
+ * AppAssignmentPacket sets `x-growthub-app-scope: <appId>` on PATCH; the
+ * route then rejects any mutation outside the app's governed scope:
+ *
+ *   - dataModel objects that CHANGED (stable-compare vs persisted) or are
+ *     NEW must be in the app's object-id scope;
+ *   - dashboards that changed/appeared must be in the app's dashboardIds;
+ *   - `canvas` / `widgetTypes` are workspace-global surfaces — always out
+ *     of scope under an app-scoped mutation.
+ *
+ * Pure: (currentConfig, patch, appId) → { ok, violations[] }. Unscoped
+ * PATCHes (no header) are untouched — scope is a tightening, never a
+ * widening, of the mutation policy.
+ */
+function evaluateAppScope(currentConfig, patch, appId) {
+  const violations = [];
+  const scope = resolveAppScopeObjectIds(currentConfig, appId);
+  if (!scope) {
+    return {
+      ok: false,
+      violations: [{
+        code: "app_scope_violation",
+        path: "",
+        message: `appId "${safeString(appId).trim()}" is not registered in ${APP_REGISTRY_OBJECT_ID} — register the app row before working app-scoped`
+      }]
+    };
+  }
+  if (!isPlainObject(patch)) return { ok: true, violations };
+
+  for (const key of ["canvas", "widgetTypes"]) {
+    if (patch[key] !== undefined && !sameStable(patch[key], currentConfig?.[key])) {
+      violations.push({
+        code: "app_scope_violation",
+        path: key,
+        message: `${key} is a workspace-global surface — out of scope for app "${safeString(appId).trim()}"`
+      });
+    }
+  }
+
+  if (patch.dashboards !== undefined && Array.isArray(patch.dashboards)) {
+    const currentDashboards = Array.isArray(currentConfig?.dashboards) ? currentConfig.dashboards : [];
+    const currentById = new Map(currentDashboards.map((d) => [safeString(d?.id), d]));
+    patch.dashboards.forEach((dashboard, index) => {
+      const id = safeString(dashboard?.id);
+      if (sameStable(dashboard, currentById.get(id))) return;
+      if (!scope.dashboardIds.has(id)) {
+        violations.push({
+          code: "app_scope_violation",
+          path: `dashboards[${index}]`,
+          message: `dashboard "${id}" is not referenced by app "${safeString(appId).trim()}" (dashboardIds)`
+        });
+      }
+    });
+  }
+
+  if (patch.dataModel !== undefined && isPlainObject(patch.dataModel) && Array.isArray(patch.dataModel.objects)) {
+    const currentObjects = Array.isArray(currentConfig?.dataModel?.objects) ? currentConfig.dataModel.objects : [];
+    const currentById = new Map(currentObjects.map((o) => [safeString(o?.id), o]));
+    patch.dataModel.objects.forEach((object, index) => {
+      const id = safeString(object?.id);
+      if (sameStable(object, currentById.get(id))) return;
+      if (!scope.objectIds.has(id)) {
+        violations.push({
+          code: "app_scope_violation",
+          path: `dataModel.objects[${index}]`,
+          message: `object "${id}" is outside app "${safeString(appId).trim()}"'s governed scope — ` +
+            "only the app's registry object, workflows, data sources, and API registry objects may change"
+        });
+      }
+    });
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
+function sameStable(a, b) {
+  return stable(a) === stable(b);
+}
+
 function summarizeFleet(apps) {
   return {
     total: apps.length,
@@ -266,8 +392,10 @@ export {
   buildAppAssignmentPacket,
   deriveAppHealth,
   deriveAppNextAction,
+  evaluateAppScope,
   findAppRegistryObject,
   listAppSurfaceRows,
   resolveAppLinks,
+  resolveAppScopeObjectIds,
   summarizeFleet
 };

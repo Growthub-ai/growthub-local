@@ -205,3 +205,54 @@ test("fleet summary counts ready/blocked/empty", () => {
   ]);
   assert.deepEqual(summary, { total: 4, ready: 2, blocked: 1, empty: 1 });
 });
+
+// ── app-scope runtime enforcement ──────────────────────────────────────────
+
+test("app scope resolves to the app's governed object ids", async () => {
+  const { resolveAppScopeObjectIds } = await import(appLib);
+  const cfg = deepFreeze(fleetConfig());
+  const scope = resolveAppScopeObjectIds(cfg, "crm");
+  assert.ok(scope.objectIds.has(APP_REGISTRY_OBJECT_ID));
+  assert.ok(scope.objectIds.has("sbx"));
+  assert.ok(scope.objectIds.has("leads-source"));
+  assert.ok(scope.objectIds.has("apis"), "api-registry object holding the app's integrationId is in scope");
+  assert.ok(scope.dashboardIds.has("dash-crm"));
+  assert.equal(resolveAppScopeObjectIds(cfg, "nope"), null);
+});
+
+test("evaluateAppScope blocks out-of-scope mutations and passes in-scope + echoes", async () => {
+  const { evaluateAppScope } = await import(appLib);
+  const cfg = deepFreeze(fleetConfig());
+  // unrelated NEW object → violation
+  let verdict = evaluateAppScope(cfg, {
+    dataModel: { objects: [...cfg.dataModel.objects, { id: "other-app-data", label: "X", rows: [] }] },
+  }, "crm");
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.violations[0].code, "app_scope_violation");
+  // in-scope change (workflow row draft) + untouched echoes of others → ok
+  verdict = evaluateAppScope(cfg, {
+    dataModel: {
+      objects: cfg.dataModel.objects.map((o) =>
+        o.id !== "sbx" ? o : { ...o, rows: [{ ...o.rows[0], orchestrationDraftConfig: "{}" }] }),
+    },
+  }, "crm");
+  assert.equal(verdict.ok, true, JSON.stringify(verdict.violations));
+  // global surfaces are out of scope
+  verdict = evaluateAppScope(cfg, { canvas: { widgets: [] } }, "crm");
+  assert.equal(verdict.ok, false);
+  // unknown app id
+  verdict = evaluateAppScope(cfg, { dataModel: cfg.dataModel }, "ghost");
+  assert.equal(verdict.ok, false);
+});
+
+test("composed workspace state (the object WorkspaceLensPanel renders) includes the fleet lens", async () => {
+  const { deriveWorkspaceState } = await import(activationLib);
+  const state = deriveWorkspaceState({
+    workspaceConfig: fleetConfig(),
+    workspaceSourceRecords: hydratedRecords,
+    metadataGraph: { runtime: { persistenceMode: "filesystem", allowFsWrite: true, deploy: {} } },
+  });
+  assert.ok(state.lenses && state.lenses.fleet, "panel state must carry the fleet lens");
+  assert.equal(state.lenses.fleet.lensId, "fleet");
+  assert.ok(Array.isArray(state.lenses.fleet.steps) && state.lenses.fleet.steps.length === 2);
+});
