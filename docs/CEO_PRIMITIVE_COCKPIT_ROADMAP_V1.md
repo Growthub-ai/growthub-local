@@ -120,15 +120,31 @@ Ordering rule: **read-only projections first (highest value, lowest risk), then 
 smallest backwards-compatible mutation, then the loop-closing capstone.** Each item
 is a full instance of the cockpit entry-point spine.
 
-> **Implementation status.** Phase R1+R2 shipped as the **CEO Cockpit** surface: the
-> `/ceo` slash command opens a read-only `activeView: "ceo"` inside the shared
-> `HelperSidecar` (so it appears identically in Data Model, Workspace Lens, and the
-> Workflow canvas), rendering the pure `deriveCeoCockpit` projection
-> (`lib/ceo-cockpit-console.js`) over the existing `swarm-workflows` fleet. Every
-> "Open" hands off through the existing `swarm-run` artifact surface — no new route,
-> object, PATCH field, or execution path. Files: `lib/ceo-cockpit-console.js`,
-> `app/data-model/components/CeoCockpit.jsx`, additive edits to `helper-commands.js`
-> and `HelperSidecar.jsx`, test `scripts/unit-ceo-cockpit-console.test.mjs`.
+> **Implementation status.** Shipped as the **CEO Cockpit** surface — a single
+> `/ceo` view inside the shared `HelperSidecar` (so it appears identically in Data
+> Model, Workspace Lens, and the Workflow canvas), reachable via the `/ceo` slash
+> command and a **CEO rail pill** (`workspace-rail.jsx`, opening directly to the view
+> through an additive `initialView` prop). It has two state-derived modes:
+>
+> - **Operational (R1+R2)** — `deriveCeoCockpit` (`lib/ceo-cockpit-console.js`)
+>   projects the existing `swarm-workflows` fleet into per-workflow reports +
+>   readiness + a single "Needs your attention" pick; every "Open" hands off to the
+>   existing `swarm-run` surface.
+> - **Bootstrap (first-use closed loop)** — `deriveCeoBootstrapState`
+>   (`lib/ceo-bootstrap-console.js`) renders a governed first-use checklist that
+>   proves the loop end-to-end (create → test → launch → observe → review → govern →
+>   complete). Completion is stamped into workspace config (a marker on the
+>   well-known `workspace-helper` row) through a new `ceo.bootstrap.complete`
+>   proposal routed inside `helper/apply` — gated on config-provable evidence (a
+>   ready swarm with a completed run), idempotent, and then the checklist disappears
+>   for that workspace (mode flips to operational).
+>
+> No new API route, PATCH allowlist field, object type, executor, or browser state.
+> Files: `lib/ceo-cockpit-console.js`, `lib/ceo-bootstrap-console.js`,
+> `app/data-model/components/CeoCockpit.jsx`; additive edits to `helper-commands.js`,
+> `HelperSidecar.jsx`, `helper/apply/route.js`, `workspace-rail.jsx`,
+> `DataModelShell.jsx`, `workspace-builder.jsx`; tests
+> `scripts/unit-ceo-cockpit-console.test.mjs`, `scripts/unit-ceo-bootstrap-console.test.mjs`.
 
 ### Phase R — Read-only CEO projections (ship in any order; all zero-risk)
 

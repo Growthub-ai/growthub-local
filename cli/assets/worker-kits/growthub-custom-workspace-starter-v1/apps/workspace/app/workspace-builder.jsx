@@ -4337,6 +4337,9 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const [inspectorPath, setInspectorPath] = useState(SUB_PANEL_ROOT);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
+  // Deep-link view for the helper sidecar (rail CEO pill → CEO cockpit).
+  // Null → opens to chat, exactly as before.
+  const [helperInitialView, setHelperInitialView] = useState(null);
   const [helperIntent, setHelperIntent] = useState("build_dashboard");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
@@ -5918,6 +5921,13 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           setHelperIntent("build_dashboard");
           setHelperInitialPrompt("");
           setHelperInitialThread(null);
+          setHelperInitialView(null);
+          setHelperOpen(true);
+        }}
+        onOpenCeo={() => {
+          if (helperOpen && helperInitialView === "ceo") { setHelperOpen(false); return; }
+          setHelperInitialThread(null);
+          setHelperInitialView("ceo");
           setHelperOpen(true);
         }}
         onOpenThread={(row) => {
@@ -6390,8 +6400,9 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
 
       <HelperSidecar
         open={helperOpen}
-        onClose={() => setHelperOpen(false)}
+        onClose={() => { setHelperOpen(false); setHelperInitialView(null); }}
         workspaceConfig={config}
+        initialView={helperInitialView}
         initialIntent={helperIntent}
         initialPrompt={helperInitialPrompt}
         initialThread={helperInitialThread}

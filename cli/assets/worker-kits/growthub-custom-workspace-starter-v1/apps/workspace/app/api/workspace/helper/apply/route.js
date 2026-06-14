@@ -56,6 +56,10 @@ import {
   findSwarmRunRows,
   summarizeSwarmRunProposal,
 } from "@/lib/workspace-swarm-proposal";
+import {
+  CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE,
+  buildCeoBootstrapCompletion,
+} from "@/lib/ceo-bootstrap-console";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
 
@@ -267,8 +271,14 @@ async function POST(request) {
   );
   const resolverProposals = normalizedProposals.filter((p) => p?.type === RESOLVER_PROPOSAL_TYPE);
   const swarmProposals = normalizedProposals.filter((p) => SWARM_PROPOSAL_TYPES.includes(p?.type));
+  const ceoBootstrapProposals = normalizedProposals.filter(
+    (p) => p?.type === CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE
+  );
   const configProposals = normalizedProposals.filter(
-    (p) => p?.type !== RESOLVER_PROPOSAL_TYPE && !SWARM_PROPOSAL_TYPES.includes(p?.type)
+    (p) =>
+      p?.type !== RESOLVER_PROPOSAL_TYPE &&
+      !SWARM_PROPOSAL_TYPES.includes(p?.type) &&
+      p?.type !== CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE
   );
 
   for (const proposal of resolverProposals) {
@@ -307,6 +317,28 @@ async function POST(request) {
       ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
       artifact: result.artifact,
       summary: result.summary,
+    });
+  }
+
+  // CEO bootstrap lane — stamps the "CEO setup complete" marker onto the
+  // well-known workspace-helper sandbox row in the EXISTING dataModel patch
+  // field. The builder refuses unless the loop is config-provably done (a
+  // ready swarm with a completed run), so completion is evidence, not a
+  // client assertion. No new object, no execution.
+  for (const proposal of ceoBootstrapProposals) {
+    const result = buildCeoBootstrapCompletion({
+      workspaceConfig: workingConfig,
+      completedAt: appliedAt,
+      completedBy: reviewedBy || "user",
+    });
+    if (!result.ok) {
+      skipped.push({ proposal, reason: result.error || "CEO bootstrap not ready to complete" });
+      continue;
+    }
+    workingConfig = result.config;
+    applied.push({
+      ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
+      summary: "CEO setup marked complete",
     });
   }
 
