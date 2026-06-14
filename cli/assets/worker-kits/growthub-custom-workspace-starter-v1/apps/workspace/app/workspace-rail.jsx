@@ -1515,6 +1515,7 @@ export function WorkspaceRail({
   workspaceConfig,
   authority,
   helperOpen = false,
+  ceoActive = false,
   onOpenHelper,
   onOpenCeo,
   onOpenThread,
@@ -1820,11 +1821,11 @@ export function WorkspaceRail({
         </div>
         <button
           type="button"
-          className={"workspace-rail-helper-pill" + (helperOpen ? " active" : "")}
+          className={"workspace-rail-helper-pill" + (helperOpen && !ceoActive ? " active" : "")}
           data-helper-trigger="rail"
-          aria-label={helperOpen ? "Close workspace helper" : "Open workspace helper"}
-          aria-pressed={helperOpen}
-          title={helperOpen ? "Close helper" : "Ask helper"}
+          aria-label={helperOpen && !ceoActive ? "Close workspace helper" : "Open workspace helper"}
+          aria-pressed={helperOpen && !ceoActive}
+          title={helperOpen && !ceoActive ? "Close helper" : "Ask helper"}
           onClick={handleAskHelperClick}
         >
           <MessageCirclePlus size={13} aria-hidden="true" />
@@ -1833,9 +1834,10 @@ export function WorkspaceRail({
         {onOpenCeo && (
           <button
             type="button"
-            className={"workspace-rail-helper-pill" + (helperOpen ? " active" : "")}
+            className={"workspace-rail-helper-pill" + (ceoActive ? " active" : "")}
             data-helper-trigger="ceo"
-            aria-label="Open CEO cockpit"
+            aria-label={ceoActive ? "Close CEO cockpit" : "Open CEO cockpit"}
+            aria-pressed={ceoActive}
             title="CEO cockpit"
             onClick={handleOpenCeoClick}
           >

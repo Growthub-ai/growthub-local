@@ -5721,6 +5721,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
       setHelperIntent(i);
       setHelperInitialPrompt(p);
       setHelperInitialThread(null);
+      setHelperInitialView(null);
       setHelperOpen(true);
     };
     list.push({
@@ -5914,6 +5915,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
         authority={integrationAdapter.authority}
         defaultCollapsed={workspaceView === "builder"}
         helperOpen={helperOpen}
+        ceoActive={helperOpen && helperInitialView === "ceo"}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
           // Rail pill ALWAYS lands on a fresh thread (chip stack +
@@ -5931,6 +5933,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
           setHelperOpen(true);
         }}
         onOpenThread={(row) => {
+          setHelperInitialView(null);
           setHelperInitialThread(row);
           setHelperOpen(true);
         }}
@@ -6040,6 +6043,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
               setHelperIntent("explain");
               setHelperInitialPrompt("Help me finish setting up this workspace.");
               setHelperInitialThread(null);
+              setHelperInitialView(null);
               setHelperOpen(true);
             }}
           /> : null}

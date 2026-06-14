@@ -229,7 +229,7 @@ export function deriveCeoBootstrapState({ workspaceConfig, receipts = [] } = {})
   } else if (prereqsMet) {
     checklist.push(item("complete", "Mark CEO setup complete", "ready", {
       guidance: "You've proven the full CEO loop — lock it in. This checklist then disappears for this workspace.",
-      nextAction: { kind: "mark-complete", label: "Mark CEO setup complete" },
+      nextAction: { kind: "mark-complete", label: "Complete" },
     }));
   } else {
     checklist.push(item("complete", "Mark CEO setup complete", "pending", {

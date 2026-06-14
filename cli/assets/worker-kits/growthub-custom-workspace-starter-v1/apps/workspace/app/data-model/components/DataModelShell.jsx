@@ -3082,6 +3082,7 @@ export default function DataModelShell() {
     const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}`;
     if (routeKey === consumedHelperRouteRef.current) return;
     consumedHelperRouteRef.current = routeKey;
+    setHelperInitialView(null);
     if (threadParam) {
       const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
       const row = (ht?.rows || []).find((r) => r?.id === threadParam);
@@ -3327,6 +3328,7 @@ export default function DataModelShell() {
     setHelperIntent(intent);
     setHelperInitialPrompt(fill ? fill(table?.label || table?.source || "this object") : "");
     setHelperInitialThread(null);
+    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3334,6 +3336,7 @@ export default function DataModelShell() {
     setHelperIntent(intent);
     setHelperInitialPrompt(prompt || "");
     setHelperInitialThread(null);
+    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3456,6 +3459,7 @@ export default function DataModelShell() {
       prompt: typeof row.prompt === "string" ? row.prompt : "",
       result,
     });
+    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3500,6 +3504,7 @@ export default function DataModelShell() {
         authority={authority}
         workspaceConfig={workspaceConfig}
         helperOpen={helperOpen}
+        ceoActive={helperOpen && helperInitialView === "ceo"}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
           // Rail pill ALWAYS opens a fresh thread (empty state, chip
@@ -3518,6 +3523,7 @@ export default function DataModelShell() {
           setHelperOpen(true);
         }}
         onOpenThread={(row) => {
+          setHelperInitialView(null);
           setHelperInitialThread(row);
           setHelperOpen(true);
         }}

@@ -107,9 +107,20 @@ function CeoReportCard({ report, onOpen, emphasis }) {
   );
 }
 
+// Bound the rendered fleet so a workspace with hundreds of workflows stays a
+// tidy, scrollable list rather than an unbounded wall of cards. The attention
+// pick is always shown above this; the overflow count points to Background
+// Tasks for the full set. Records are never hidden by name collision — the
+// cap is purely by count and disclosed.
+const CEO_FLEET_VISIBLE_CAP = 50;
+
 function CeoFleetView({ model, onOpenArtifact }) {
   const { fleet, attention, reports, governance } = model;
-  const others = attention ? reports.filter((r) => r.name !== attention.name) : reports;
+  // Filter by stable reportId, not name — duplicate Names must never drop or
+  // merge a record from the fleet.
+  const others = attention ? reports.filter((r) => r.reportId !== attention.reportId) : reports;
+  const visible = others.slice(0, CEO_FLEET_VISIBLE_CAP);
+  const overflow = others.length - visible.length;
   return (
     <>
       <div className="dm-swarm-section-row">
@@ -141,9 +152,16 @@ function CeoFleetView({ model, onOpenArtifact }) {
       {others.length > 0 && (
         <>
           <span className="dm-run-console__hint">Fleet</span>
-          {others.map((report) => (
-            <CeoReportCard key={`${report.objectId}::${report.name}`} report={report} onOpen={onOpenArtifact} />
-          ))}
+          <div className="dm-ceo-report-list" data-ceo-report-list="">
+            {visible.map((report) => (
+              <CeoReportCard key={report.reportId} report={report} onOpen={onOpenArtifact} />
+            ))}
+          </div>
+          {overflow > 0 && (
+            <span className="dm-run-console__hint">
+              {`Showing ${visible.length} of ${others.length} workflows — open Background Tasks for the rest.`}
+            </span>
+          )}
         </>
       )}
     </>

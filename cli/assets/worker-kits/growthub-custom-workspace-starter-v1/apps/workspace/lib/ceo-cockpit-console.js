@@ -114,7 +114,7 @@ export function deriveCeoCockpit({ workspaceConfig, receipts = [] } = {}) {
   const entries = findSwarmRunRows(workspaceConfig);
   const safeReceipts = Array.isArray(receipts) ? receipts : [];
 
-  const reports = entries.map((entry) => {
+  const reports = entries.map((entry, index) => {
     const eligibility = deriveSwarmWorkflowExecutionEligibility(entry);
     const record = parseRowRecord(entry.row);
     const projection = record ? deriveSwarmRunProjection(record) : null;
@@ -123,6 +123,11 @@ export function deriveCeoCockpit({ workspaceConfig, receipts = [] } = {}) {
       ? Number(projection.agentCount)
       : Number(eligibility?.runnableNodeCount) || 0;
     const name = String(entry.row?.Name || "").trim();
+    // Stable, collision-proof identity: object + row id (or Name) + index.
+    // Two workflows that share a Name still get distinct reportIds, so the
+    // attention filter and React keys never drop or merge a record.
+    const rowKey = String(entry.row?.id || name || `row-${index}`).trim();
+    const reportId = `${entry.objectId}::${rowKey}::${index}`;
     const lastRun = projection
       ? {
           status: projection.status,
@@ -134,6 +139,7 @@ export function deriveCeoCockpit({ workspaceConfig, receipts = [] } = {}) {
       : null;
 
     return {
+      reportId,
       objectId: entry.objectId,
       name,
       objectLabel: entry.objectLabel || null,

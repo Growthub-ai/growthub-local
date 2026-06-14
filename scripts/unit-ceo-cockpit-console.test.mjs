@@ -153,3 +153,24 @@ test("receipts fold into a governance rollup", () => {
   assert.equal(model.governance.blockedAttempts, 2);
   assert.equal(model.generatedFromReceipts, true);
 });
+
+test("duplicate workflow names get distinct reportIds and none is dropped", () => {
+  const failed = JSON.stringify({ exitCode: 1, swarm: { tasks: [{ status: "failed" }] } });
+  const model = deriveCeoCockpit({
+    workspaceConfig: configWith([
+      row({ Name: "dup", lastResponse: failed }), // failing → attention pick
+      row({ Name: "dup" }),                         // ready, never-run duplicate name
+    ]),
+  });
+  assert.equal(model.reports.length, 2);
+  // Stable, collision-proof identity.
+  const ids = new Set(model.reports.map((r) => r.reportId));
+  assert.equal(ids.size, 2);
+  // The component filters the fleet by reportId, not name — the non-attention
+  // duplicate must survive (with name filtering it would vanish).
+  const attention = model.attention;
+  assert.equal(attention.name, "dup");
+  const others = model.reports.filter((r) => r.reportId !== attention.reportId);
+  assert.equal(others.length, 1);
+  assert.equal(others[0].name, "dup");
+});
