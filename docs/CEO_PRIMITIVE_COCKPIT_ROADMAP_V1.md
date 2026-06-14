@@ -120,6 +120,16 @@ Ordering rule: **read-only projections first (highest value, lowest risk), then 
 smallest backwards-compatible mutation, then the loop-closing capstone.** Each item
 is a full instance of the cockpit entry-point spine.
 
+> **Implementation status.** Phase R1+R2 shipped as the **CEO Cockpit** surface: the
+> `/ceo` slash command opens a read-only `activeView: "ceo"` inside the shared
+> `HelperSidecar` (so it appears identically in Data Model, Workspace Lens, and the
+> Workflow canvas), rendering the pure `deriveCeoCockpit` projection
+> (`lib/ceo-cockpit-console.js`) over the existing `swarm-workflows` fleet. Every
+> "Open" hands off through the existing `swarm-run` artifact surface — no new route,
+> object, PATCH field, or execution path. Files: `lib/ceo-cockpit-console.js`,
+> `app/data-model/components/CeoCockpit.jsx`, additive edits to `helper-commands.js`
+> and `HelperSidecar.jsx`, test `scripts/unit-ceo-cockpit-console.test.mjs`.
+
 ### Phase R — Read-only CEO projections (ship in any order; all zero-risk)
 
 **R1 — Swarm Fleet Cockpit** *(CEO: orchestrate + observe; "see every agent at a glance")*

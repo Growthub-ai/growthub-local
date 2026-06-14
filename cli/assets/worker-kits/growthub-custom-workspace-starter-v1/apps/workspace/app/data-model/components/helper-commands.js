@@ -50,6 +50,14 @@ export const HELPER_COMMANDS = [
     promptTemplate: "Propose a governed agent swarm:"
   },
   {
+    name: "/ceo",
+    label: "CEO",
+    description: "Open the CEO cockpit — oversee your swarm fleet and the next move, read-only",
+    scope: "workspace",
+    mutates: false,
+    view: "ceo"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",
