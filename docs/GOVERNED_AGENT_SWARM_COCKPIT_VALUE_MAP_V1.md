@@ -118,5 +118,4 @@ The release is complete when these checks pass together:
 - source records persist the final run;
 - cockpit renders phases, subagents, truthful tokens/tools/time, and transcript output;
 - workflow canvas opens the exact record and preserves node `sandboxRecordRef`;
-- package versions are aligned at `@growthub/cli@0.14.1` and `@growthub/create-growthub-local@0.14.1`.
-
+- package versions are aligned in the current branch manifests; read `cli/package.json` and `packages/create-growthub-local/package.json` per [`docs/ARTIFACT_VERSIONS.md`](./ARTIFACT_VERSIONS.md).

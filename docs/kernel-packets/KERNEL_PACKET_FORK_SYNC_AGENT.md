@@ -1,6 +1,6 @@
 # Fork Sync Agent Kernel Packet
 
-Version: `v2` (current package surface — `@growthub/cli@0.9.10`)
+Version: `v2` (historical packet surface; read current package versions from `cli/package.json`)
 
 This packet freezes the contract, invariants, and procedure for the Fork Sync Agent subsystem — the CLI-native, agent-first mechanism that enables users to fork any Growthub worker kit, apply their own customisations, and stay in sync with upstream kit releases on their terms, locally and/or through first-party native GitHub integration.
 
@@ -301,4 +301,4 @@ node scripts/check-fork-sync.mjs
 - Discovery Hub options `🔀 Fork Sync Agent` + `🐙 GitHub Integration` visible.
 - Zero `PAPERCLIP_HOME` / `resolvePaperclipHomeDir` references in fork-sync + github subsystems.
 - `bash scripts/pr-ready.sh` passes.
-- `@growthub/cli` version is `0.9.10`; `create-growthub-local` pins `@growthub/cli@0.9.10`.
+- `@growthub/cli` and `create-growthub-local` versions are read from the current branch manifests; do not copy historical packet versions into release work.

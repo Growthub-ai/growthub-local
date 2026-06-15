@@ -34,9 +34,9 @@ import {
 import {
   deriveAgentTeamsState,
   buildCreateAgentTeamsProposal,
-  buildSwarmIntentFromTeam,
   summarizeTeam,
 } from "@/lib/ceo-agent-teams";
+import { findSwarmRunRows } from "@/lib/workspace-swarm-proposal";
 
 // k-formatting identical to SwarmRunCockpit's truthful display.
 function formatCount(value) {
@@ -144,7 +144,7 @@ function CeoFleetView({ model, onOpenArtifact }) {
         <p className="dm-run-console__hint">
           Your Fleet is empty. Define a reusable Agent Team below (or use /swarm
           directly) to propose a governed swarm — once applied, the running
-          workflow appears here in the Fleet to oversee, launch, and review from
+          workflow appears here in History to oversee, launch, and review from
           Background Tasks.
         </p>
       )}
@@ -158,7 +158,7 @@ function CeoFleetView({ model, onOpenArtifact }) {
 
       {others.length > 0 && (
         <>
-          <span className="dm-run-console__hint">Fleet</span>
+          <span className="dm-run-console__hint">History</span>
           <div className="dm-ceo-report-list" data-ceo-report-list="">
             {visible.map((report) => (
               <CeoReportCard key={report.reportId} report={report} onOpen={onOpenArtifact} />
@@ -179,7 +179,28 @@ function CeoFleetView({ model, onOpenArtifact }) {
 // Agent Teams — the atomic, reusable configuration layer (not runtime)
 // ---------------------------------------------------------------------------
 
-function CeoAgentTeamsSection({ teams, onCreate, onUseTeam, busy, error }) {
+function CeoAgentTeamsSection({ teams, workflows, onCreate, busy, error }) {
+  const workflowByName = useMemo(() => {
+    const map = new Map();
+    for (const entry of workflows || []) {
+      const name = String(entry?.row?.Name || "").trim();
+      if (name && !map.has(name)) map.set(name, entry);
+    }
+    return map;
+  }, [workflows]);
+
+  const openLinkedWorkflow = useCallback((team) => {
+    const workflowName = String(team?.linkedSwarmWorkflowName || "").trim();
+    const entry = workflowName ? workflowByName.get(workflowName) : null;
+    if (!entry?.objectId || !entry?.row?.Name) return;
+    const params = new URLSearchParams({
+      object: entry.objectId,
+      row: entry.row.Name,
+      field: "orchestrationConfig",
+    });
+    window.location.assign(`/workflows?${params.toString()}`);
+  }, [workflowByName]);
+
   return (
     <>
       <div className="dm-swarm-section-row">
@@ -217,15 +238,17 @@ function CeoAgentTeamsSection({ teams, onCreate, onUseTeam, busy, error }) {
               <div className="dm-swarm-card-head">
                 <span className="dm-run-console__tree-dot" data-variant="pending" />
                 <span className="dm-helper-toolcall-title dm-swarm-card-title">{team.name}</span>
-                <button
-                  type="button"
-                  className="dm-btn-ghost dm-swarm-card-action"
-                  onClick={() => onUseTeam(team)}
-                  title="Propose a governed /swarm from this blueprint"
-                  aria-label={`Use ${team.name} in /swarm`}
-                >
-                  Use in /swarm
-                </button>
+                {team.linkedSwarmWorkflowName && workflowByName.has(team.linkedSwarmWorkflowName) && (
+                  <button
+                    type="button"
+                    className="dm-btn-ghost dm-swarm-card-action dm-ceo-card-redirect"
+                    onClick={() => openLinkedWorkflow(team)}
+                    title="Open linked workflow canvas"
+                    aria-label={`Open workflow canvas for ${team.name}`}
+                  >
+                    <ArrowUpRight size={12} aria-hidden="true" />
+                  </button>
+                )}
               </div>
               <div className="dm-swarm-card-meta">
                 <span className="dm-run-console__hint dm-swarm-card-kind">Blueprint</span>
@@ -315,6 +338,7 @@ function CeoBootstrapView({ model, onAction, actionBusy, error }) {
 export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, onSeedSwarm, onOpenSetup }) {
   // Optional governance rollup — read-only, graceful fallback to config-only.
   const [receipts, setReceipts] = useState([]);
+  const [activeOperationalTab, setActiveOperationalTab] = useState("history");
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState("");
   // Separate error channel for the Agent Teams section so it never collides
@@ -345,6 +369,10 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
   );
   const teamsModel = useMemo(
     () => deriveAgentTeamsState({ workspaceConfig }),
+    [workspaceConfig]
+  );
+  const swarmWorkflows = useMemo(
+    () => findSwarmRunRows(workspaceConfig),
     [workspaceConfig]
   );
 
@@ -420,15 +448,6 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
     }
   }, [onConfigRefresh]);
 
-  // Bridge a blueprint into the existing /swarm composer — propose-only seed
-  // copy; the server still builds the agent-swarm-v1 graph on apply.
-  const useTeam = useCallback(
-    (team) => {
-      if (typeof onSeedSwarm === "function") onSeedSwarm(buildSwarmIntentFromTeam(team));
-    },
-    [onSeedSwarm]
-  );
-
   const handleChecklistAction = useCallback(
     (item) => {
       const action = item?.nextAction;
@@ -456,24 +475,56 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
   return (
     <div className="dm-swarm-cockpit" data-ceo-cockpit="" data-ceo-mode={bootstrapModel.mode}>
       {bootstrapModel.mode === "bootstrap" ? (
-        <CeoBootstrapView
-          model={bootstrapModel}
-          onAction={handleChecklistAction}
-          actionBusy={actionBusy}
-          error={error}
-        />
+        <>
+          <CeoBootstrapView
+            model={bootstrapModel}
+            onAction={handleChecklistAction}
+            actionBusy={actionBusy}
+            error={error}
+          />
+          <CeoAgentTeamsSection
+            teams={teamsModel}
+            workflows={swarmWorkflows}
+            onCreate={createAgentTeams}
+            busy={actionBusy}
+            error={teamsError}
+          />
+        </>
       ) : (
-        <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+        <>
+          <div className="dm-ceo-tabs" role="tablist" aria-label="CEO cockpit sections">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeOperationalTab === "history"}
+              className={activeOperationalTab === "history" ? "is-active" : ""}
+              onClick={() => setActiveOperationalTab("history")}
+            >
+              History
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeOperationalTab === "teams"}
+              className={activeOperationalTab === "teams" ? "is-active" : ""}
+              onClick={() => setActiveOperationalTab("teams")}
+            >
+              Agent Teams
+            </button>
+          </div>
+          {activeOperationalTab === "history" ? (
+            <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+          ) : (
+            <CeoAgentTeamsSection
+              teams={teamsModel}
+              workflows={swarmWorkflows}
+              onCreate={createAgentTeams}
+              busy={actionBusy}
+              error={teamsError}
+            />
+          )}
+        </>
       )}
-      {/* Agent Teams (atomic config layer) is available in BOTH modes — the
-          configuration entry point should never be hidden behind bootstrap. */}
-      <CeoAgentTeamsSection
-        teams={teamsModel}
-        onCreate={createAgentTeams}
-        onUseTeam={useTeam}
-        busy={actionBusy}
-        error={teamsError}
-      />
     </div>
   );
 }

@@ -9211,6 +9211,10 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-body { display: flex; flex-direction: column; min-height: 0; }
 .dm-swarm-cockpit { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .dm-swarm-cockpit-list { display: flex; flex-direction: column; gap: 8px; }
+.dm-ceo-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: -4px 0 2px; }
+.dm-ceo-tabs button { min-height: 30px; padding: 5px 10px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fff; color: #374151; font-size: 12px; font-weight: 600; cursor: pointer; }
+.dm-ceo-tabs button:hover { border-color: #cbd5e1; color: #111827; }
+.dm-ceo-tabs button.is-active { background: #111827; border-color: #111827; color: #fff; }
 /* CEO fleet list — layout-only grouping; the parent .dm-swarm-cockpit owns the
    scroll, so this never introduces a second scrollbar. Visible count is capped
    in the component (CEO_FLEET_VISIBLE_CAP). */
@@ -9222,6 +9226,9 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-card-head { display: flex; align-items: center; gap: 8px; }
 .dm-swarm-card-title { flex: 1; }
 .dm-swarm-card-action { height: 24px; padding: 0 7px; }
+.dm-ceo-card-redirect { opacity: 0; transition: opacity .12s ease, border-color .12s ease, color .12s ease; }
+.dm-swarm-card:hover .dm-ceo-card-redirect,
+.dm-swarm-card:focus-within .dm-ceo-card-redirect { opacity: 1; }
 .dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; }
 .dm-swarm-card-meta .dm-run-console__hint { font-size: 12px; }
 .dm-swarm-card-kind { font-weight: 600; }

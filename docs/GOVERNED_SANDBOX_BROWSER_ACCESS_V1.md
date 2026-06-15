@@ -112,4 +112,4 @@ The release is complete when these checks pass together:
 - serverless flow state carries `browserAccess`;
 - swarm proposals inherit browser access from the live helper sandbox;
 - execution target switching remains valid for local and serverless rows;
-- package versions are aligned at `@growthub/cli@0.14.2` and `@growthub/create-growthub-local@0.14.2`.
+- package versions are aligned in the current branch manifests; read `cli/package.json` and `packages/create-growthub-local/package.json` per [`docs/ARTIFACT_VERSIONS.md`](./ARTIFACT_VERSIONS.md).

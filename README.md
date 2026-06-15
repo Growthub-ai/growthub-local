@@ -75,12 +75,13 @@ Growthub Local's current line is one coherent AWaC surface, not separate release
 - **0.14.0** added the governed creation cockpit: tested API Registry rows become profiled responses, optional helper-created resolvers, governed Data Sources, source-record refreshes, workflow persistence readiness, and Workspace Lens evidence.
 - **0.14.1** adds the governed agent swarm cockpit: helper-created swarm workflow rows inherit the active execution target, open thread-bounded Background Tasks, run through `sandbox-run`, render truthful subagent telemetry, and map canvas node delta tags back to the owning sandbox record.
 - **0.14.2** completes governed sandbox browser access: sandbox rows carry `browserAccess`, workflow and swarm nodes inherit it through the graph, local agents receive their native browser lanes, local processes receive the env contract, local intelligence executes browser tool intents through the local browser bridge, and serverless runs carry the same grant in the sandbox-run envelope.
+- **0.14.4** adds Workspace CEO Primitive V1: `/ceo` becomes the helper-sidecar oversight cockpit, first-use setup proves a governed swarm loop once, History shows runtime outcomes, Agent Teams stores reusable blueprints, and linked teams open the real workflow canvas.
 - **Growthub Browser agent protocol** packages the universal operating rule for agents: use the real in-app browser surface first, act through visible CUA when available, read back the DOM, and corroborate state through `/api/workspace`, source records, deployment status, or the configured store before claiming behavior.
 - **Hosted authority is C-tier**: useful after local workspace value is proven, but not required for the core AWaC loop and not front-page operating authority.
 
 This is the first-tier operating model for agents and humans: the browser is the no-code surface, helper proposals are reviewable, source records are evidence, workflows are governed rows, and Workspace Lens is the readiness surface.
 
-Read the unified map: [Workspace New Reality Value Map V1](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md). Browser execution details: [Governed Sandbox Browser Access V1](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md).
+Read the unified map: [Workspace New Reality Value Map V1](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md). CEO operating loop: [Workspace CEO Primitive V1](./docs/WORKSPACE_CEO_PRIMITIVE_V1.md). Browser execution details: [Governed Sandbox Browser Access V1](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md).
 
 ---
 
@@ -135,7 +136,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.2` and the guided installer `@growthub/create-growthub-local@0.14.2`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.4.0`.
+Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `@growthub/create-growthub-local@0.14.4`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.0`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -203,6 +204,7 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 
 - [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md)
 - [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md)
+- [**Workspace CEO Primitive V1**](./docs/WORKSPACE_CEO_PRIMITIVE_V1.md)
 - [**Governed Agent Swarm Cockpit Value Map V1**](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [**Governed Sandbox Browser Access V1**](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md)
 - [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
