@@ -28,6 +28,7 @@ const kitLib = path.join(
 
 const mod = await import(pathToFileURL(path.join(kitLib, "ceo-agent-teams.js")).href);
 const schema = await import(pathToFileURL(path.join(kitLib, "workspace-schema.js")).href);
+const swarm = await import(pathToFileURL(path.join(kitLib, "workspace-swarm-proposal.js")).href);
 const {
   AGENT_SWARM_TEAMS_OBJECT_ID,
   AGENT_SWARM_TEAMS_COLUMNS,
@@ -38,6 +39,7 @@ const {
   buildSwarmIntentFromTeam,
 } = mod;
 const { validateWorkspaceConfig } = schema;
+const { findSwarmRunRows } = swarm;
 
 test("the Agent Teams object uses the existing custom objectType (no new type)", () => {
   const obj = buildAgentSwarmTeamsObject();
@@ -50,6 +52,15 @@ test("the Agent Teams object uses the existing custom objectType (no new type)",
 test("the Agent Teams object validates through validateWorkspaceConfig", () => {
   const config = { dataModel: { objects: [buildAgentSwarmTeamsObject()] } };
   assert.doesNotThrow(() => validateWorkspaceConfig(config));
+});
+
+test("0.14.x compatibility: the swarm runtime never mis-scans the Agent Teams object as a swarm", () => {
+  // The teams object is objectType "custom"; the stabilized swarm scanner only
+  // matches objectType "sandbox-environment" with an agent-swarm-v1 graph. A
+  // teams blueprint must therefore be invisible to the Fleet/runtime — it is a
+  // configuration record, not a runnable swarm.
+  const config = { dataModel: { objects: [buildAgentSwarmTeamsObject()] } };
+  assert.deepEqual(findSwarmRunRows(config), []);
 });
 
 test("creation reuses the existing dataModel.object.create lane", () => {
