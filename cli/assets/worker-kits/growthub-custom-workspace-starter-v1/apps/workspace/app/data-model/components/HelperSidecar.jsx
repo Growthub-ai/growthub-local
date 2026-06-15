@@ -1110,10 +1110,14 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               workspaceConfig={workspaceConfig}
               onOpenArtifact={(artifact) => { if (artifact) handleOpenArtifact(artifact); }}
               onConfigRefresh={refreshWorkspaceConfig}
-              onSeedSwarm={() => {
+              onSeedSwarm={(seedPrompt) => {
                 setActiveView("chat");
                 onPickIntent("swarm");
-                setPrompt("Propose a governed agent swarm: ");
+                setPrompt(
+                  typeof seedPrompt === "string" && seedPrompt.trim()
+                    ? `${seedPrompt.trim()} `
+                    : "Propose a governed agent swarm: "
+                );
               }}
               onOpenSetup={() => setActiveTab("setup")}
             />

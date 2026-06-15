@@ -31,6 +31,12 @@ import {
   deriveCeoBootstrapState,
   CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE,
 } from "@/lib/ceo-bootstrap-console";
+import {
+  deriveAgentTeamsState,
+  buildCreateAgentTeamsProposal,
+  buildSwarmIntentFromTeam,
+  summarizeTeam,
+} from "@/lib/ceo-agent-teams";
 
 // k-formatting identical to SwarmRunCockpit's truthful display.
 function formatCount(value) {
@@ -136,9 +142,10 @@ function CeoFleetView({ model, onOpenArtifact }) {
 
       {reports.length === 0 && (
         <p className="dm-run-console__hint">
-          No agent swarms yet. Use /swarm in the composer to propose one — once
-          you apply it, the governed workflow appears here for you to oversee,
-          launch, and review from Background Tasks.
+          Your Fleet is empty. Define a reusable Agent Team below (or use /swarm
+          directly) to propose a governed swarm — once applied, the running
+          workflow appears here in the Fleet to oversee, launch, and review from
+          Background Tasks.
         </p>
       )}
 
@@ -163,6 +170,73 @@ function CeoFleetView({ model, onOpenArtifact }) {
             </span>
           )}
         </>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent Teams — the atomic, reusable configuration layer (not runtime)
+// ---------------------------------------------------------------------------
+
+function CeoAgentTeamsSection({ teams, onCreate, onUseTeam, busy, error }) {
+  return (
+    <>
+      <div className="dm-swarm-section-row">
+        <span className="dm-field-label">Agent Teams</span>
+        <span className="dm-run-console__hint">Reusable blueprints — configuration, not runtime</span>
+      </div>
+
+      {error && (
+        <div className="dm-helper-error" role="alert">
+          <span>{error}</span>
+        </div>
+      )}
+
+      {!teams.present ? (
+        <div className="dm-helper-toolcall dm-swarm-card" data-ceo-teams="empty">
+          <div className="dm-helper-stream dm-swarm-card-desc">
+            Save reusable swarm blueprints — orchestrator, sub-agent roles, skills,
+            processes, and outcome criteria — then launch them as governed swarms
+            with /swarm. Blueprints never run on their own; the run still lands in
+            the Fleet (Background Tasks) and emits receipts.
+          </div>
+          <button type="button" className="dm-btn-ghost" onClick={onCreate} disabled={busy}>
+            Create Agent Teams table
+          </button>
+        </div>
+      ) : teams.count === 0 ? (
+        <p className="dm-run-console__hint">
+          No Agent Teams yet. Add rows to the “Agent Swarm Teams” object in the
+          Data Model grid, then launch one as a governed swarm with /swarm.
+        </p>
+      ) : (
+        <div className="dm-ceo-report-list" data-ceo-team-list="">
+          {teams.teams.map((team) => (
+            <div key={team.name} className="dm-helper-toolcall dm-swarm-card" data-ceo-team={team.name}>
+              <div className="dm-swarm-card-head">
+                <span className="dm-run-console__tree-dot" data-variant="pending" />
+                <span className="dm-helper-toolcall-title dm-swarm-card-title">{team.name}</span>
+                <button
+                  type="button"
+                  className="dm-btn-ghost dm-swarm-card-action"
+                  onClick={() => onUseTeam(team)}
+                  title="Propose a governed /swarm from this blueprint"
+                  aria-label={`Use ${team.name} in /swarm`}
+                >
+                  Use in /swarm
+                </button>
+              </div>
+              <div className="dm-swarm-card-meta">
+                <span className="dm-run-console__hint dm-swarm-card-kind">Blueprint</span>
+                <span className="dm-run-console__hint">{summarizeTeam(team) || team.status}</span>
+              </div>
+              {team.teamPurpose && (
+                <div className="dm-helper-stream dm-swarm-card-desc">{team.teamPurpose}</div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </>
   );
@@ -266,6 +340,10 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
     () => deriveCeoBootstrapState({ workspaceConfig, receipts }),
     [workspaceConfig, receipts]
   );
+  const teamsModel = useMemo(
+    () => deriveAgentTeamsState({ workspaceConfig }),
+    [workspaceConfig]
+  );
 
   const handleOpenArtifact = useCallback(
     (artifact) => {
@@ -311,6 +389,43 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
     }
   }, [onConfigRefresh]);
 
+  // Create the governed Agent Teams table through the EXISTING
+  // dataModel.object.create helper/apply lane (objectType "custom"). No new
+  // object type, no new lane.
+  const createAgentTeams = useCallback(async () => {
+    setActionBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/workspace/helper/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposals: [buildCreateAgentTeamsProposal()], reviewedBy: "user" }),
+      });
+      const data = await res.json();
+      const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
+      if (data?.ok === false) {
+        setError(data?.error || "Could not create the Agent Teams table.");
+      } else if (skipped.length > 0) {
+        setError(skipped[0]?.reason || "Agent Teams table could not be created.");
+      } else if (typeof onConfigRefresh === "function") {
+        onConfigRefresh();
+      }
+    } catch (err) {
+      setError(err?.message || "Apply failed.");
+    } finally {
+      setActionBusy(false);
+    }
+  }, [onConfigRefresh]);
+
+  // Bridge a blueprint into the existing /swarm composer — propose-only seed
+  // copy; the server still builds the agent-swarm-v1 graph on apply.
+  const useTeam = useCallback(
+    (team) => {
+      if (typeof onSeedSwarm === "function") onSeedSwarm(buildSwarmIntentFromTeam(team));
+    },
+    [onSeedSwarm]
+  );
+
   const handleChecklistAction = useCallback(
     (item) => {
       const action = item?.nextAction;
@@ -345,7 +460,16 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
           error={error}
         />
       ) : (
-        <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+        <>
+          <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+          <CeoAgentTeamsSection
+            teams={teamsModel}
+            onCreate={createAgentTeams}
+            onUseTeam={useTeam}
+            busy={actionBusy}
+            error={error}
+          />
+        </>
       )}
     </div>
   );

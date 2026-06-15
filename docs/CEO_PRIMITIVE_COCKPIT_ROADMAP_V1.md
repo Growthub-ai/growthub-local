@@ -141,6 +141,19 @@ is a full instance of the cockpit entry-point spine.
 >
 > No new API route, PATCH allowlist field, object type, executor, or browser state.
 >
+> **Fleet vs Agent Teams (two levels, one /ceo surface).** *Fleet* is the
+> runtime/oversight level — the existing `swarm-workflows` rows, readiness, run
+> state, failures, and receipts (Background Tasks). *Agent Teams* is the atomic
+> *configuration* level — reusable blueprints (orchestrator, sub-agent roles,
+> skills, processes, workflow responsibilities, outcome criteria) saved as rows in
+> a governed `agent-swarm-teams` Data Model object of the existing `custom`
+> objectType (`lib/ceo-agent-teams.js`). The CEO cockpit can create that table
+> through the existing `dataModel.object.create` helper/apply lane and bridge a
+> blueprint into the existing `/swarm` composer — the server still builds the
+> `agent-swarm-v1` graph, the run still lands in `swarm-workflows`, and execution
+> still happens through `sandbox-run`. **Agent Team records never execute** — they
+> are configuration, not runtime. No new objectType, route, PATCH field, or executor.
+>
 > **Companion surface.** A `CEO Daily Operating Dashboard` template ships in the
 > existing `DASHBOARD_TEMPLATES` (`lib/workspace-schema.js`) — an outside-the-assistant
 > executive operating surface (today's focus, loop scorecard, direct reports, blocked

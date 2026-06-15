@@ -43,7 +43,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/swarm",
     label: "Swarm",
-    description: "Propose a governed agent swarm — you review and apply before any run",
+    description: "Propose a governed agent swarm — review and apply before any run (or start from an Agent Team blueprint in /ceo)",
     scope: "swarm",
     mutates: true,
     intent: "swarm",
@@ -52,7 +52,7 @@ export const HELPER_COMMANDS = [
   {
     name: "/ceo",
     label: "CEO",
-    description: "Open the CEO cockpit — oversee your swarm fleet and the next move, read-only",
+    description: "Open the CEO cockpit — fleet oversight, reusable Agent Teams, and your next move (read-only)",
     scope: "workspace",
     mutates: false,
     view: "ceo"
