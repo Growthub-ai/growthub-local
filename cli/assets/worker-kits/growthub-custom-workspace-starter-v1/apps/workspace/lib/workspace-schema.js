@@ -301,13 +301,13 @@ const DASHBOARD_TEMPLATES = [
   {
     id: "ceo-daily-operating",
     name: "CEO Daily Operating Dashboard",
-    description: "An executive operating surface for the CEO loop: today's focus, the loop scorecard, direct reports, blocked work, and governance receipts. Companion to the CEO Cockpit (/ceo) — the live next move lives there.",
+    description: "An executive operating surface for the CEO loop: today's focus, the loop scorecard, direct reports, blocked work, reusable Agent Team blueprints, and governance receipts. Companion to the CEO Cockpit (/ceo) — Agent Teams are the atomic config layer, the Fleet is the runtime, and the live next move lives in the cockpit.",
     category: "reporting",
     bestFor: ["Founders", "Operators", "Workspace orchestrators"],
-    tags: ["ceo", "operating", "executive", "daily"],
+    tags: ["ceo", "operating", "executive", "daily", "agent-teams"],
     preview: {
       layout: "operating-grid",
-      summary: "Today's focus, loop scorecard, direct reports, blocked work, governance receipts, and ritual notes"
+      summary: "Today's focus, loop scorecard, direct reports, blocked work, Agent Team blueprints, governance receipts, and ritual notes"
     },
     dashboard: { name: "CEO Daily Operating Dashboard", status: "draft" },
     widgets: [
@@ -340,7 +340,17 @@ const DASHBOARD_TEMPLATES = [
         ],
         binding: { mode: "manual", source: "Sample rows — live blockers are in the CEO Cockpit (/ceo)", rows: [] }
       }),
-      createWidget("view", "Governance Receipts / Decisions", { x: 0, y: 9, w: 8, h: 5 }, {
+      createWidget("view", "Agent Team Blueprints", { x: 0, y: 9, w: 6, h: 4 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Team", "Orchestrator", "Sub-agents", "Outcome"],
+        rows: [
+          { Team: "Research & Synthesis", Orchestrator: "Research Lead", "Sub-agents": "Researcher; Analyst; Synthesizer", Outcome: "Cited brief + recommendation" },
+          { Team: "Outreach", Orchestrator: "Campaign Lead", "Sub-agents": "Writer; Reviewer", Outcome: "Approved sequence" }
+        ],
+        binding: { mode: "manual", source: "Sample blueprints — manage real teams in the Agent Swarm Teams object and launch via /ceo (config layer, not runtime)", rows: [] }
+      }),
+      createWidget("view", "Governance Receipts / Decisions", { x: 6, y: 9, w: 6, h: 4 }, {
         source: "Sample",
         layout: "Table",
         columns: ["Time", "Lane", "Action", "Outcome", "Receipt"],
@@ -351,8 +361,8 @@ const DASHBOARD_TEMPLATES = [
         ],
         binding: { mode: "manual", source: "Sample rows — live stream: GET /api/workspace/agent-outcomes", rows: [] }
       }),
-      createWidget("rich-text", "Daily Ritual Notes", { x: 8, y: 9, w: 4, h: 5 }, {
-        text: "Morning: set today's focus. Midday: launch or review. Afternoon: unblock the failing one first. End of day: confirm the receipts. Open /ceo for the live next move.",
+      createWidget("rich-text", "Daily Ritual Notes", { x: 0, y: 13, w: 12, h: 3 }, {
+        text: "Morning: set today's focus. Midday: launch or review. Afternoon: unblock the failing one first. End of day: confirm the receipts. Define reusable Agent Teams, then launch them as governed swarms — runs land in the Fleet. Open /ceo for the live next move.",
         binding: { mode: "manual", source: "Manual text", rows: [] }
       })
     ]

@@ -213,7 +213,7 @@ function CeoAgentTeamsSection({ teams, onCreate, onUseTeam, busy, error }) {
       ) : (
         <div className="dm-ceo-report-list" data-ceo-team-list="">
           {teams.teams.map((team) => (
-            <div key={team.name} className="dm-helper-toolcall dm-swarm-card" data-ceo-team={team.name}>
+            <div key={team.teamId} className="dm-helper-toolcall dm-swarm-card" data-ceo-team={team.teamId}>
               <div className="dm-swarm-card-head">
                 <span className="dm-run-console__tree-dot" data-variant="pending" />
                 <span className="dm-helper-toolcall-title dm-swarm-card-title">{team.name}</span>
@@ -317,6 +317,9 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
   const [receipts, setReceipts] = useState([]);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState("");
+  // Separate error channel for the Agent Teams section so it never collides
+  // with the bootstrap completion error (both can be on screen at once).
+  const [teamsError, setTeamsError] = useState("");
 
   const refreshReceipts = useCallback(async () => {
     try {
@@ -394,7 +397,7 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
   // object type, no new lane.
   const createAgentTeams = useCallback(async () => {
     setActionBusy(true);
-    setError("");
+    setTeamsError("");
     try {
       const res = await fetch("/api/workspace/helper/apply", {
         method: "POST",
@@ -404,14 +407,14 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
       const data = await res.json();
       const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
       if (data?.ok === false) {
-        setError(data?.error || "Could not create the Agent Teams table.");
+        setTeamsError(data?.error || "Could not create the Agent Teams table.");
       } else if (skipped.length > 0) {
-        setError(skipped[0]?.reason || "Agent Teams table could not be created.");
+        setTeamsError(skipped[0]?.reason || "Agent Teams table could not be created.");
       } else if (typeof onConfigRefresh === "function") {
         onConfigRefresh();
       }
     } catch (err) {
-      setError(err?.message || "Apply failed.");
+      setTeamsError(err?.message || "Apply failed.");
     } finally {
       setActionBusy(false);
     }
@@ -460,17 +463,17 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
           error={error}
         />
       ) : (
-        <>
-          <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
-          <CeoAgentTeamsSection
-            teams={teamsModel}
-            onCreate={createAgentTeams}
-            onUseTeam={useTeam}
-            busy={actionBusy}
-            error={error}
-          />
-        </>
+        <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
       )}
+      {/* Agent Teams (atomic config layer) is available in BOTH modes — the
+          configuration entry point should never be hidden behind bootstrap. */}
+      <CeoAgentTeamsSection
+        teams={teamsModel}
+        onCreate={createAgentTeams}
+        onUseTeam={useTeam}
+        busy={actionBusy}
+        error={teamsError}
+      />
     </div>
   );
 }

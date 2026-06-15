@@ -105,3 +105,48 @@ test("the /swarm bridge is propose-only seed text", () => {
   // Seed text describes intent only — it contains no execution directive.
   assert.doesNotMatch(seed, /sandbox-run|execute now|run immediately/i);
 });
+
+test("duplicate Agent Team names get distinct teamIds (no key collision)", () => {
+  const config = {
+    dataModel: {
+      objects: [
+        { id: AGENT_SWARM_TEAMS_OBJECT_ID, label: "Agent Swarm Teams", objectType: "custom", columns: AGENT_SWARM_TEAMS_COLUMNS, rows: [
+          { Name: "Growth", subAgentRoles: "A" },
+          { Name: "Growth", subAgentRoles: "B" },
+        ] },
+      ],
+    },
+  };
+  const teams = findAgentTeams(config);
+  assert.equal(teams.length, 2);
+  // Stable, collision-proof identity even when Names collide.
+  assert.notEqual(teams[0].teamId, teams[1].teamId);
+});
+
+test("the /swarm bridge carries the full atomic configuration forward", () => {
+  const team = {
+    name: "Ops Team",
+    teamPurpose: "Run weekly ops review.",
+    orchestratorRole: "Ops Lead",
+    orchestratorPrompt: "Plan the review.",
+    subAgentRoles: "Analyst; Reporter",
+    skills: "data-analysis; reporting",
+    processes: "collect → analyze → report",
+    workflowResponsibilities: "Analyst computes; Reporter writes",
+    outcomeCriteria: "A weekly ops brief",
+    defaultRunLocality: "local",
+    defaultAdapter: "local-intelligence",
+    governanceNotes: "Blueprint only — launch via /swarm.",
+  };
+  const seed = buildSwarmIntentFromTeam(team);
+  for (const fragment of [
+    "data-analysis; reporting",
+    "collect → analyze → report",
+    "Analyst computes; Reporter writes",
+    "local-intelligence",
+    "local run target",
+    "Blueprint only",
+  ]) {
+    assert.ok(seed.includes(fragment), `seed carries: ${fragment}`);
+  }
+});

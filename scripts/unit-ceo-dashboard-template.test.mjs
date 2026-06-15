@@ -49,7 +49,8 @@ test("the CEO Daily Operating Dashboard template exists with a clean identity", 
   assert.equal(tpl.name, "CEO Daily Operating Dashboard");
   assert.equal(typeof tpl.description, "string");
   assert.ok(tpl.description.length > 20);
-  assert.ok(Array.isArray(tpl.widgets) && tpl.widgets.length === 6, "six widgets");
+  assert.ok(Array.isArray(tpl.widgets) && tpl.widgets.length === 7, "seven widgets");
+  assert.ok(tpl.widgets.some((w) => w.title === "Agent Team Blueprints"), "includes the Agent Team Blueprints widget");
 });
 
 test("every widget uses a known kind and an in-bounds, non-overlapping grid slot", () => {
@@ -96,5 +97,5 @@ test("the template clones and the resulting dashboard passes validateWorkspaceCo
   };
   // Throws on any schema error — a clean return means the dashboard is valid.
   assert.doesNotThrow(() => validateWorkspaceConfig(config));
-  assert.equal(tab.widgets.length, 6);
+  assert.equal(tab.widgets.length, 7);
 });

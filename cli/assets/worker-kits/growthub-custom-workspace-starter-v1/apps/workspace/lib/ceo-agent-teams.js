@@ -27,6 +27,7 @@ export const AGENT_SWARM_TEAMS_LABEL = "Agent Swarm Teams";
 // convention). Array-shaped fields are stored as readable strings so we never
 // fight the row-value contract (no typed arrays in rows).
 export const AGENT_SWARM_TEAMS_COLUMNS = [
+  "id",
   "Name",
   "status",
   "teamPurpose",
@@ -49,10 +50,15 @@ function clean(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function slugify(value) {
+  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
 // One clearly-labeled blueprint row so a freshly-created table shows the shape
 // (and is honestly an example, not live state).
 function blueprintRow() {
   return {
+    id: "team-research-synthesis",
     Name: "Example — Research & Synthesis Team",
     status: "blueprint",
     teamPurpose: "Reusable blueprint: research a topic and synthesize a cited brief.",
@@ -106,20 +112,35 @@ export function findAgentTeamsObject(workspaceConfig) {
 export function findAgentTeams(workspaceConfig) {
   const object = findAgentTeamsObject(workspaceConfig);
   const rows = Array.isArray(object?.rows) ? object.rows : [];
+  const seen = new Set();
   return rows
     .filter((row) => row && clean(row.Name))
-    .map((row) => ({
-      name: clean(row.Name),
-      status: clean(row.status) || "blueprint",
-      teamPurpose: clean(row.teamPurpose),
-      orchestratorRole: clean(row.orchestratorRole),
-      orchestratorPrompt: clean(row.orchestratorPrompt),
-      subAgentRoles: clean(row.subAgentRoles),
-      skills: clean(row.skills),
-      outcomeCriteria: clean(row.outcomeCriteria),
-      defaultAdapter: clean(row.defaultAdapter),
-      linkedSwarmWorkflowName: clean(row.linkedSwarmWorkflowName),
-    }));
+    .map((row, index) => {
+      const name = clean(row.Name);
+      // Stable atomic identity: explicit id, else a slug of Name, else index —
+      // de-duplicated so two same-named blueprints never collide as React keys
+      // (the same fix applied to fleet reports).
+      let teamId = clean(row.id) || slugify(name) || `team-${index + 1}`;
+      while (seen.has(teamId)) teamId = `${teamId}-${index + 1}`;
+      seen.add(teamId);
+      return {
+        teamId,
+        name,
+        status: clean(row.status) || "blueprint",
+        teamPurpose: clean(row.teamPurpose),
+        orchestratorRole: clean(row.orchestratorRole),
+        orchestratorPrompt: clean(row.orchestratorPrompt),
+        subAgentRoles: clean(row.subAgentRoles),
+        skills: clean(row.skills),
+        processes: clean(row.processes),
+        workflowResponsibilities: clean(row.workflowResponsibilities),
+        outcomeCriteria: clean(row.outcomeCriteria),
+        defaultRunLocality: clean(row.defaultRunLocality),
+        defaultAdapter: clean(row.defaultAdapter),
+        linkedSwarmWorkflowName: clean(row.linkedSwarmWorkflowName),
+        governanceNotes: clean(row.governanceNotes),
+      };
+    });
 }
 
 /**
@@ -155,6 +176,13 @@ function joinAgents(subAgentRoles) {
 export function buildSwarmIntentFromTeam(team) {
   if (!team) return "Propose a governed agent swarm:";
   const agents = joinAgents(team.subAgentRoles);
+  const target = [
+    team.defaultAdapter ? `adapter ${team.defaultAdapter}` : "",
+    team.defaultRunLocality ? `${team.defaultRunLocality} run target` : "",
+  ].filter(Boolean).join(", ");
+  // Carry the full atomic configuration forward so the blueprint is a true
+  // configuration inversion of the swarm — still propose-only seed copy; the
+  // server builds the agent-swarm-v1 graph and nothing executes here.
   const parts = [
     `Propose a governed agent swarm from the Agent Team blueprint "${team.name}".`,
     team.teamPurpose ? `Objective: ${team.teamPurpose}` : "",
@@ -162,7 +190,12 @@ export function buildSwarmIntentFromTeam(team) {
       ? `Orchestrator${team.orchestratorRole ? ` (${team.orchestratorRole})` : ""}: ${team.orchestratorPrompt || "plan the work for the team"}.`
       : "",
     agents.length ? `Sub-agents: ${agents.join(", ")}.` : "",
+    team.skills ? `Skills: ${team.skills}.` : "",
+    team.processes ? `Process: ${team.processes}.` : "",
+    team.workflowResponsibilities ? `Workflow responsibilities: ${team.workflowResponsibilities}.` : "",
     team.outcomeCriteria ? `Outcome criteria: ${team.outcomeCriteria}.` : "",
+    target ? `Preferred execution target: ${target}.` : "",
+    team.governanceNotes ? `Governance notes: ${team.governanceNotes}.` : "",
   ];
   return parts.filter(Boolean).join(" ");
 }
