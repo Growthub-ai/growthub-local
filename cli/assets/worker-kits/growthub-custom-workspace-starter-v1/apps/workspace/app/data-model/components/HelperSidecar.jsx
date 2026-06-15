@@ -347,7 +347,7 @@ function summarizePayload(proposal) {
   }
 }
 
-export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, initialView, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
+export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, initialPrompt, initialThread, onApplied, onOpenArtifact, onOpenSwarmWorkflow }) {
   const [activeTab, setActiveTab] = useState("assistant");
   const [intent, setIntent] = useState(initialIntent || "create_object");
   const [prompt, setPrompt] = useState(initialPrompt || "");
@@ -487,13 +487,6 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     }, 30);
     return () => clearTimeout(t);
   }, [open]);
-
-  // Optional deep-link view (e.g. the rail's CEO pill opens directly to the
-  // CEO cockpit). Additive: when no initialView is passed the sidecar opens to
-  // "chat" exactly as before.
-  useEffect(() => {
-    if (open && initialView) setActiveView(initialView);
-  }, [open, initialView]);
 
   useEffect(() => {
     if (!open) {

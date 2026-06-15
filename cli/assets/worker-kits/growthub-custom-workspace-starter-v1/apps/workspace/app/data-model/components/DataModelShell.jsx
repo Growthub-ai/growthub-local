@@ -3052,9 +3052,6 @@ export default function DataModelShell() {
   const [selectedSource, setSelectedSource] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [helperOpen, setHelperOpen] = useState(false);
-  // Deep-link view for the helper sidecar (e.g. the rail CEO pill opens
-  // directly on the CEO cockpit). Null → opens to chat, exactly as before.
-  const [helperInitialView, setHelperInitialView] = useState(null);
   const [helperIntent, setHelperIntent] = useState("create_object");
   const [helperInitialPrompt, setHelperInitialPrompt] = useState("");
   const [helperInitialThread, setHelperInitialThread] = useState(null);
@@ -3082,7 +3079,6 @@ export default function DataModelShell() {
     const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}`;
     if (routeKey === consumedHelperRouteRef.current) return;
     consumedHelperRouteRef.current = routeKey;
-    setHelperInitialView(null);
     if (threadParam) {
       const ht = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === "helper-threads");
       const row = (ht?.rows || []).find((r) => r?.id === threadParam);
@@ -3328,7 +3324,6 @@ export default function DataModelShell() {
     setHelperIntent(intent);
     setHelperInitialPrompt(fill ? fill(table?.label || table?.source || "this object") : "");
     setHelperInitialThread(null);
-    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3336,7 +3331,6 @@ export default function DataModelShell() {
     setHelperIntent(intent);
     setHelperInitialPrompt(prompt || "");
     setHelperInitialThread(null);
-    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3459,7 +3453,6 @@ export default function DataModelShell() {
       prompt: typeof row.prompt === "string" ? row.prompt : "",
       result,
     });
-    setHelperInitialView(null);
     setHelperOpen(true);
   };
 
@@ -3504,7 +3497,6 @@ export default function DataModelShell() {
         authority={authority}
         workspaceConfig={workspaceConfig}
         helperOpen={helperOpen}
-        ceoActive={helperOpen && helperInitialView === "ceo"}
         onOpenHelper={() => {
           if (helperOpen) { setHelperOpen(false); return; }
           // Rail pill ALWAYS opens a fresh thread (empty state, chip
@@ -3513,17 +3505,9 @@ export default function DataModelShell() {
           setHelperInitialThread(null);
           setHelperIntent("create_object");
           setHelperInitialPrompt("");
-          setHelperInitialView(null);
-          setHelperOpen(true);
-        }}
-        onOpenCeo={() => {
-          if (helperOpen && helperInitialView === "ceo") { setHelperOpen(false); return; }
-          setHelperInitialThread(null);
-          setHelperInitialView("ceo");
           setHelperOpen(true);
         }}
         onOpenThread={(row) => {
-          setHelperInitialView(null);
           setHelperInitialThread(row);
           setHelperOpen(true);
         }}
@@ -3585,9 +3569,8 @@ export default function DataModelShell() {
 
         <HelperSidecar
           open={helperOpen}
-          onClose={() => { setHelperOpen(false); setHelperInitialView(null); }}
+          onClose={() => setHelperOpen(false)}
           workspaceConfig={workspaceConfig}
-          initialView={helperInitialView}
           initialIntent={helperIntent}
           initialPrompt={helperInitialPrompt}
           initialThread={helperInitialThread}

@@ -241,7 +241,9 @@ function checkSandboxRow(row, currentRow, path, violations) {
 
   const incomingStatus = String(row.lifecycleStatus ?? "").trim().toLowerCase();
   const currentStatus = String(currentRow?.lifecycleStatus ?? "").trim().toLowerCase();
+  const isHelperSetupRow = rowName(row) === "workspace-helper";
   if (incomingStatus === "live" && currentStatus !== "live") {
+    if (isHelperSetupRow) return;
     violations.push(violation(
       "live_publish_via_patch",
       `${path}.lifecycleStatus`,
