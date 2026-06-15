@@ -140,6 +140,15 @@ is a full instance of the cockpit entry-point spine.
 >   for that workspace (mode flips to operational).
 >
 > No new API route, PATCH allowlist field, object type, executor, or browser state.
+>
+> **Companion surface.** A `CEO Daily Operating Dashboard` template ships in the
+> existing `DASHBOARD_TEMPLATES` (`lib/workspace-schema.js`) — an outside-the-assistant
+> executive operating surface (today's focus, loop scorecard, direct reports, blocked
+> work, governance receipts, ritual notes). It is a **product-taste companion, not a
+> runtime authority surface**: every widget is a manual/sample binding (no live-data
+> claim, no new object), it clones through the existing template path and passes
+> `validateWorkspaceConfig`, and it points the operator back to the CEO Cockpit (`/ceo`)
+> for the live computed next move. The live loop authority remains the cockpit + receipts.
 > Files: `lib/ceo-cockpit-console.js`, `lib/ceo-bootstrap-console.js`,
 > `app/data-model/components/CeoCockpit.jsx`; additive edits to `helper-commands.js`,
 > `HelperSidecar.jsx`, `helper/apply/route.js`, `workspace-rail.jsx`,

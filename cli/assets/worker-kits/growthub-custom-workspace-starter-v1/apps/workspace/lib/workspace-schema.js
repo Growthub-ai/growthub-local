@@ -299,6 +299,65 @@ const DASHBOARD_TEMPLATES = [
     widgets: []
   },
   {
+    id: "ceo-daily-operating",
+    name: "CEO Daily Operating Dashboard",
+    description: "An executive operating surface for the CEO loop: today's focus, the loop scorecard, direct reports, blocked work, and governance receipts. Companion to the CEO Cockpit (/ceo) — the live next move lives there.",
+    category: "reporting",
+    bestFor: ["Founders", "Operators", "Workspace orchestrators"],
+    tags: ["ceo", "operating", "executive", "daily"],
+    preview: {
+      layout: "operating-grid",
+      summary: "Today's focus, loop scorecard, direct reports, blocked work, governance receipts, and ritual notes"
+    },
+    dashboard: { name: "CEO Daily Operating Dashboard", status: "draft" },
+    widgets: [
+      createWidget("rich-text", "Today's CEO Focus", { x: 0, y: 0, w: 8, h: 4 }, {
+        text: "Set this each morning: the one highest-leverage move today, what is blocked, what needs review, and what to launch next. The live, computed next move is always in the CEO Cockpit — open it with /ceo.",
+        binding: { mode: "manual", source: "Manual text", rows: [] }
+      }),
+      createWidget("chart", "CEO Loop Scorecard", { x: 8, y: 0, w: 4, h: 4 }, {
+        values: [5, 4, 3, 3, 1, 3],
+        binding: { mode: "manual", source: "Sample — Created · Ready · Launched · Completed · Blocked · Reviewed", rows: [] }
+      }),
+      createWidget("view", "Direct Reports / Swarm Fleet", { x: 0, y: 4, w: 7, h: 5 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Workflow", "State", "Readiness", "Last Outcome", "Next Move"],
+        rows: [
+          { Workflow: "Example research swarm", State: "Completed", Readiness: "Ready", "Last Outcome": "Success", "Next Move": "Review output" },
+          { Workflow: "Example outreach swarm", State: "Not run yet", Readiness: "Ready", "Last Outcome": "—", "Next Move": "Launch" },
+          { Workflow: "Example audit swarm", State: "Blocked", Readiness: "Needs target", "Last Outcome": "—", "Next Move": "Set execution target" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — the live fleet is in the CEO Cockpit (/ceo)", rows: [] }
+      }),
+      createWidget("view", "Blocked or Failing Work", { x: 7, y: 4, w: 5, h: 5 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Workflow", "Blocker", "Severity", "Next Action"],
+        rows: [
+          { Workflow: "Example audit swarm", Blocker: "No execution target", Severity: "High", "Next Action": "Set local adapter" },
+          { Workflow: "Example billing swarm", Blocker: "Last run failed", Severity: "High", "Next Action": "Review + re-run" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — live blockers are in the CEO Cockpit (/ceo)", rows: [] }
+      }),
+      createWidget("view", "Governance Receipts / Decisions", { x: 0, y: 9, w: 8, h: 5 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Time", "Lane", "Action", "Outcome", "Receipt"],
+        rows: [
+          { Time: "09:14", Lane: "execution-proof", Action: "sandbox-run", Outcome: "completed", Receipt: "rcpt_sample_1" },
+          { Time: "09:31", Lane: "governed-proposal", Action: "helper/apply", Outcome: "applied", Receipt: "rcpt_sample_2" },
+          { Time: "09:42", Lane: "untrusted-direct", Action: "PATCH", Outcome: "blocked", Receipt: "rcpt_sample_3" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — live stream: GET /api/workspace/agent-outcomes", rows: [] }
+      }),
+      createWidget("rich-text", "Daily Ritual Notes", { x: 8, y: 9, w: 4, h: 5 }, {
+        text: "Morning: set today's focus. Midday: launch or review. Afternoon: unblock the failing one first. End of day: confirm the receipts. Open /ceo for the live next move.",
+        binding: { mode: "manual", source: "Manual text", rows: [] }
+      })
+    ]
+  },
+  {
     id: "client-portal",
     name: "Client Portal",
     description: "Client status, documents, and embedded portal area",
