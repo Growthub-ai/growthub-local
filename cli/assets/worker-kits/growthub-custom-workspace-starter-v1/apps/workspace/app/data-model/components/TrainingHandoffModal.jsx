@@ -63,9 +63,16 @@ function eligibleTraceRows(workspaceConfig, minScore) {
   return rows
     .map((row, index) => ({ row, index }))
     .filter(({ row }) =>
-      Number(row?.qualityScore) >= minScore
+      String(row?.redactionStatus || "").toLowerCase() !== "blocked"
+      && Number(row?.qualityScore) >= minScore
       && String(row?.inputPrompt || "").trim()
       && String(row?.agentOutput || "").trim());
+}
+
+/** Count redaction-blocked traces so the curate step can explain exclusions. */
+function blockedTraceCount(workspaceConfig) {
+  const object = (workspaceConfig?.dataModel?.objects || []).find((o) => o?.id === TRACES_OBJECT_ID);
+  return (Array.isArray(object?.rows) ? object.rows : []).filter((r) => String(r?.redactionStatus || "").toLowerCase() === "blocked").length;
 }
 
 function toJsonlLine(row) {
@@ -142,6 +149,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
   const selected = candidates.filter(({ index }) => !excluded.has(index));
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
+  const blocked = blockedTraceCount(workspaceConfig);
   const target = resolveFineTuneTarget(targetId);
   const profile = resolveTrainingProfile(profileId);
   const baseModel = String(workspaceConfig?.dataModel?.objects?.find((o) => o?.objectType === TRAINING_OBJECT_TYPE)?.rows?.[0]?.baseModel || "").trim();
@@ -421,6 +429,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   {floorMet ? " met" : ` — ${MIN_FINETUNE_TRACES - selected.length} more required`}
                   {target.requiredEnv.length ? ` · target env: ${target.requiredEnv.join(", ")}` : ""}
                 </div>
+                {blocked > 0 ? (
+                  <div className="dm-run-console__hint" data-handoff-redaction-blocked={blocked}>
+                    {blocked} trace{blocked === 1 ? " is" : "s are"} blocked by redaction policy and cannot enter the training corpus.
+                  </div>
+                ) : null}
               </div>
               <div className="training-handoff-trace-list">
               {candidates.map(({ row, index }) => (

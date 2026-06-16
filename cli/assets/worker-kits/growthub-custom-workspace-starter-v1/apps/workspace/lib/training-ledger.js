@@ -245,7 +245,11 @@ export function deriveDistillationPipelineState({ workspaceConfig, minScore = DE
   let graded = 0;
   let unexported = 0;
   let exportedCount = 0;
+  let blocked = 0;
   for (const row of rows) {
+    // Redaction policy: a trace marked redactionStatus="blocked" can NEVER
+    // enter the governed corpus, regardless of quality (Layer 1 invariant).
+    if (String(row?.redactionStatus || "").toLowerCase() === "blocked") { blocked += 1; continue; }
     const qualifies = Number(row?.qualityScore) >= minScore
       && String(row?.inputPrompt || "").trim()
       && String(row?.agentOutput || "").trim();
@@ -261,6 +265,7 @@ export function deriveDistillationPipelineState({ workspaceConfig, minScore = DE
     graded,
     unexported,
     exportedCount,
+    blocked,
     minScore,
     threshold: MIN_FINETUNE_TRACES,
     ready: graded >= MIN_FINETUNE_TRACES,

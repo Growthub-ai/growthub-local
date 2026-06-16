@@ -29,6 +29,7 @@ const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("tr
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
 const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions } = await import(lib("training-runtime-drivers.js"));
+const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
 // Profiles
@@ -329,6 +330,17 @@ test("persistence: v1 default target does not compress or offload (deferred to V
   assert.equal(PERSISTENCE_UPGRADE_SEAM.v1Default.compress, false);
   assert.equal(PERSISTENCE_UPGRADE_SEAM.v1Default.offload, false);
   assert.ok(PERSISTENCE_UPGRADE_SEAM.deferredTargets.length > 0);
+});
+
+test("redaction: a blocked trace never enters the corpus, regardless of quality (Layer 1)", () => {
+  const rows = [
+    { qualityScore: 5, inputPrompt: "p1", agentOutput: "o1" },
+    { qualityScore: 5, inputPrompt: "p2", agentOutput: "o2", redactionStatus: "blocked" },
+    { qualityScore: 5, inputPrompt: "p3", agentOutput: "o3", redactionStatus: "redacted" },
+  ];
+  const p = deriveDistillationPipelineState({ workspaceConfig: { dataModel: { objects: [{ id: "training-traces", objectType: "training-traces", rows }] } } });
+  assert.equal(p.graded, 2, "blocked trace excluded, redacted trace kept");
+  assert.equal(p.blocked, 1);
 });
 
 test("artifact types are the documented closed set", () => {

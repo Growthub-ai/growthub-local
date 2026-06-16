@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { deriveCustomModelsState, buildCapabilityManifest } from "../../../lib/custom-models-ledger.js";
+import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
 
 function exportManifest(model, workspaceConfig) {
   const manifest = buildCapabilityManifest(model, { workspaceConfig });
@@ -96,6 +97,23 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
   const verified = state.models.filter((m) => ["verified", "sandbox-ready", "complete"].includes(m.evidenceState)).length;
   const sandboxReady = state.models.filter((m) => ["sandbox-ready", "complete"].includes(m.evidenceState)).length;
   const latest = state.filters.versions[state.filters.versions.length - 1] || "—";
+  // Feedback awareness: a complete model is never demoted by new gaps, but
+  // the cockpit surfaces them as the next training cycle's opportunity.
+  const gaps = useMemo(() => deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecords }), [workspaceConfig, workspaceSourceRecords]);
+  const hasComplete = state.models.some((m) => m.evidenceState === "complete");
+
+  // Empty state — read-first, one clear destination. Never a blank screen.
+  if (!error && state.models.length === 0) {
+    return (
+      <div data-custom-models-ledger="" data-custom-models-empty="">
+        <div className="dm-helper-toolcall dm-swarm-card">
+          <div className="dm-helper-toolcall-title dm-swarm-card-title">No verified custom models yet</div>
+          <div className="dm-helper-stream dm-swarm-card-desc">A custom model appears here only once it has real evidence — a training run, an imported artifact, a verified endpoint. Open Training to turn governed workspace traces into a custom model.</div>
+          <a className="dm-btn-ghost" href="/training" data-custom-models-open-training="">Open Training</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-custom-models-ledger="">
@@ -106,6 +124,9 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
           {state.models.length} custom models · {verified} verified · {sandboxReady} sandbox-ready · latest {latest}
         </div>
         <div className="dm-helper-stream dm-swarm-card-desc">{state.guidance}</div>
+        {hasComplete && gaps.hasGaps ? (
+          <div className="dm-run-console__hint" data-custom-models-gaps={gaps.totalGapSignals}>Complete — and {gaps.totalGapSignals} new improvement signal(s) are ready for the next training cycle. {gaps.recommendation}</div>
+        ) : null}
         <div className="dm-helper-toolcall-row" style={{ gap: 8, flexWrap: "wrap" }}>
           <input className="dm-run-console__hint" placeholder="search name/version" value={query} onChange={(e) => setQuery(e.target.value)} data-models-search="" />
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-models-status-filter="">

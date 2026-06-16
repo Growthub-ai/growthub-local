@@ -586,6 +586,18 @@ export function registerIntelligenceCommands(program: Command): void {
           return;
         }
         const surfaceLine = Object.entries(result.surfaces).map(([k, n]) => `${k} ${n}`).join(" · ") || "no traces";
+        // Honest empty-state copy — never imply a corpus was produced when it
+        // was not. Distinguish "nothing new" (incremental) from "nothing
+        // matched the filters" (capability / min-score / gaps-only).
+        if (result.recordCount === 0) {
+          if (result.incremental && result.skippedDuplicates > 0) {
+            console.log(pc.yellow(`No new traces since last export (${result.skippedDuplicates} already exported and skipped). The ledger is up to date.`));
+          } else {
+            const filters = [result.capability ? `capability=${result.capability}` : "", opts.gapsOnly ? "gaps-only" : "", opts.minScore ? `min-score=${opts.minScore}` : ""].filter(Boolean).join(", ");
+            console.log(pc.yellow(`No eligible governed traces matched the export filters${filters ? ` (${filters})` : ""}. Do governed work (helper applies, sandbox runs, self-evals) and try again.`));
+          }
+          return;
+        }
         console.log(pc.green(`corpus exported — ${result.recordCount} records (${surfaceLine})`));
         console.log(`  exportId   ${result.exportId}`);
         console.log(`  corpus     ${result.outPath}`);
