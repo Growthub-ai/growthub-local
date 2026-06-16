@@ -41,6 +41,23 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    name: "/training",
+    label: "Training",
+    description: "Open your model training ledger — read-only, no writes",
+    scope: "workspace",
+    mutates: false,
+    view: "training"
+  },
+  {
+    name: "/custom-models",
+    label: "Custom Models",
+    description: "View and test verified custom model endpoints",
+    scope: "workspace",
+    mutates: false,
+    view: "custom-models",
+    requiresEvidence: "custom-models"
+  },
+  {
     name: "/swarm",
     label: "Swarm",
     description: "Propose a governed agent swarm — review and apply before any run (or start from an Agent Team blueprint in /ceo)",
@@ -86,6 +103,7 @@ export const HELPER_COMMAND_ALLOWED_KEYS = [
   "scope",
   "mutates",
   "promptTemplate",
+  "requiresEvidence",
   "view",
   "intent"
 ];
@@ -147,12 +165,26 @@ export function matchHelperCommands(query, commands = HELPER_COMMANDS) {
  * when "/" is the FIRST character of the prompt — a slash mid-sentence
  * (URLs, paths) never hijacks typing.
  */
-export function parseSlashInput(value) {
+export function parseSlashInput(value, visibleNames) {
   const text = String(value || "");
   if (!text.startsWith("/")) return { active: false, query: "", matches: [] };
   // Once whitespace follows the command token the user is writing the
   // body — keep the menu closed.
   const token = text.slice(1);
   if (/\s/.test(token)) return { active: false, query: "", matches: [] };
-  return { active: true, query: token, matches: matchHelperCommands(token) };
+  let matches = matchHelperCommands(token);
+  if (visibleNames instanceof Set) matches = matches.filter((c) => visibleNames.has(c.name));
+  return { active: true, query: token, matches };
+}
+
+/**
+ * Evidence-gated command visibility — commands declaring `requiresEvidence`
+ * appear only when the workspace carries that evidence (pure derivation,
+ * never hardcoded). All other commands are always visible.
+ */
+export function deriveVisibleHelperCommands(commands, evidence = {}) {
+  return commands.filter((cmd) => {
+    if (!cmd.requiresEvidence) return true;
+    return Boolean(evidence[cmd.requiresEvidence]);
+  });
 }

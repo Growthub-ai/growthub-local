@@ -74,6 +74,7 @@ import { registerIntegrationsCommands } from "./commands/integrations.js";
 import { registerStatusCommands, runStatuspage } from "./commands/status.js";
 import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerSkillsCommands } from "./commands/skills.js";
+import { registerIntelligenceCommands } from "./commands/intelligence.js";
 import { registerMemoryCommands } from "./commands/memory.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
 import { registerSetupCommands } from "./commands/setup.js";
@@ -2605,6 +2606,7 @@ registerIntegrationsCommands(program);
 registerStatusCommands(program);
 registerStarterCommands(program);
 registerSkillsCommands(program);
+registerIntelligenceCommands(program);
 registerMemoryCommands(program);
 registerFleetCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
