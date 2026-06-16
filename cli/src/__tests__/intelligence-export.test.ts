@@ -174,4 +174,40 @@ describe("runIntelligenceExport", () => {
     expect(records[second.sourceKey].records).toHaveLength(2);
     expect(records[second.sourceKey].records.at(-1).exportId).toBe(second.exportId);
   });
+
+  it("--incremental dedupes by sourceHash; a second run emits zero new records", () => {
+    const dir = makeWorkspace();
+    const outDir = path.join(dir, "out");
+    const first = runIntelligenceExport({ workspaceDir: dir, outDir, incremental: true, now: () => new Date("2026-06-11T01:00:00.000Z") });
+    expect(first.recordCount).toBeGreaterThan(0);
+    const again = runIntelligenceExport({ workspaceDir: dir, outDir, incremental: true, now: () => new Date("2026-06-11T02:00:00.000Z") });
+    expect(again.recordCount).toBe(0);
+    expect(again.skippedDuplicates).toBeGreaterThanOrEqual(first.recordCount);
+  });
+
+  it("--gaps-only keeps ONLY correction/rejection/failure signal (the feedback corpus)", () => {
+    const dir = makeWorkspace();
+    const outDir = path.join(dir, "out");
+    const result = runIntelligenceExport({ workspaceDir: dir, outDir, gapsOnly: true, now: () => new Date("2026-06-11T01:00:00.000Z") });
+    expect(result.recordCount).toBeGreaterThan(0);
+    const labels = fs.readFileSync(result.outPath, "utf8").trim().split("\n")
+      .map((l) => JSON.parse(l).provenance.labelType);
+    const gapLabels = new Set(["rejected", "corrected", "eval_fail", "smoke_fail"]);
+    for (const label of labels) expect(gapLabels.has(label)).toBe(true);
+    // The applied/passing surfaces are excluded.
+    expect(labels).not.toContain("accepted");
+  });
+
+  it("every exported record carries provenance (sourceHash/sourceRef/labelType/capabilityTag/redactionStatus)", () => {
+    const dir = makeWorkspace();
+    const result = runIntelligenceExport({ workspaceDir: dir, outDir: path.join(dir, "out"), now: () => new Date("2026-06-11T01:00:00.000Z") });
+    const lines = fs.readFileSync(result.outPath, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    for (const rec of lines) {
+      expect(rec.provenance.sourceHash).toBeTruthy();
+      expect(rec.provenance.sourceRef).toBeTruthy();
+      expect(rec.provenance.labelType).toBeTruthy();
+      expect(rec.provenance.capabilityTag).toBeTruthy();
+      expect(["clean", "redacted", "blocked"]).toContain(rec.provenance.redactionStatus);
+    }
+  });
 });

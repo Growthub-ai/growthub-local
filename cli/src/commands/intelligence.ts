@@ -229,9 +229,12 @@ const SURFACE_CAPABILITY: Record<string, string> = {
   "swarm-task": "workflow",
 };
 
+/** Gap / correction label types — the negative-signal feedback corpus. */
+export const GAP_LABEL_TYPES = new Set(["rejected", "corrected", "eval_fail", "smoke_fail"]);
+
 export function buildTrainingTraceRecords(
   evidence: TrainingEvidence,
-  { modelId, createdAt, capability, minScore = 0 }: { modelId: string; createdAt: string; capability?: string; minScore?: number },
+  { modelId, createdAt, capability, minScore = 0, gapsOnly = false }: { modelId: string; createdAt: string; capability?: string; minScore?: number; gapsOnly?: boolean },
 ): LocalIntelligenceTraceRecordV1[] {
   const records: LocalIntelligenceTraceRecordV1[] = [];
   let index = 0;
@@ -249,6 +252,9 @@ export function buildTrainingTraceRecords(
     const capabilityTag = SURFACE_CAPABILITY[surface] || "custom";
     // Capability filter: skip anything that is not the requested family.
     if (capability && capabilityTag !== capability) return;
+    // Gap-only filter: keep only correction/rejection/failure signal — the
+    // feedback corpus that improves the NEXT model (§ feedback loop).
+    if (gapsOnly && !GAP_LABEL_TYPES.has(labelType)) return;
 
     // Redaction status: compare sanitized vs raw to classify honestly.
     const sanitizedJson = outputJson ? (sanitizeForExport(outputJson) as Record<string, unknown>) : undefined;
@@ -454,6 +460,7 @@ export function runIntelligenceExport({
   capability,
   minScore = 0,
   incremental = false,
+  gapsOnly = false,
   now = () => new Date(),
 }: {
   workspaceDir: string;
@@ -463,6 +470,7 @@ export function runIntelligenceExport({
   capability?: string;
   minScore?: number;
   incremental?: boolean;
+  gapsOnly?: boolean;
   now?: () => Date;
 }): IntelligenceExportResult {
   const workspace = readWorkspaceFiles(workspaceDir);
@@ -484,7 +492,7 @@ export function runIntelligenceExport({
   if (!modelId) modelId = "local";
 
   const at = now().toISOString();
-  const built = buildTrainingTraceRecords(evidence, { modelId, createdAt: at, capability, minScore });
+  const built = buildTrainingTraceRecords(evidence, { modelId, createdAt: at, capability, minScore, gapsOnly });
 
   // Incremental dedupe — always dedupe within this run by sourceHash; in
   // --incremental mode also skip anything already exported for this slug.
@@ -559,8 +567,9 @@ export function registerIntelligenceCommands(program: Command): void {
     .option("--since-last", "alias for --incremental: export only evidence new since the last run", false)
     .option("--capability <tag>", "limit corpus to one capability family (codegen|workflow|crm|creative|ops|eval|custom)")
     .option("--min-score <n>", "minimum reward score for swarm evidence to qualify", (v) => Number(v), 0)
+    .option("--gaps-only", "export ONLY gap/correction signal (rejected/corrected/eval_fail/smoke_fail) — the feedback corpus for the next model", false)
     .option("--json", "emit JSON envelope", false)
-    .action((opts: { workspace: string; fork?: string; out?: string; slug: string; incremental: boolean; sinceLast: boolean; capability?: string; minScore: number; json: boolean }) => {
+    .action((opts: { workspace: string; fork?: string; out?: string; slug: string; incremental: boolean; sinceLast: boolean; capability?: string; minScore: number; gapsOnly: boolean; json: boolean }) => {
       try {
         const result = runIntelligenceExport({
           workspaceDir: path.resolve(opts.workspace),
@@ -570,6 +579,7 @@ export function registerIntelligenceCommands(program: Command): void {
           capability: opts.capability,
           minScore: Number.isFinite(opts.minScore) ? opts.minScore : 0,
           incremental: Boolean(opts.incremental || opts.sinceLast),
+          gapsOnly: Boolean(opts.gapsOnly),
         });
         if (opts.json) {
           process.stdout.write(`${JSON.stringify({ kind: "growthub-intelligence-export-v1", ...result }, null, 2)}\n`);
