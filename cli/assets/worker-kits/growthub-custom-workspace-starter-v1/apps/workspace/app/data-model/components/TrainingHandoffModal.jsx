@@ -228,6 +228,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         modelTrainingRowId: SLUG, datasetExportId: exportId, baseModel,
         trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared",
       });
+      // Atomic proof-chain links on the API Registry row (§7/§11): the row
+      // references the model-training row, the training run, and the tuned tag
+      // the endpoint must serve to verify — so the chain is traceable from the
+      // atomic row, not only reverse-derived.
+      registryRow.modelTrainingRowId = `${SLUG}-v${version}`;
+      registryRow.trainingRunId = preparedReceipt.trainingRunId;
+      registryRow.expectedModelTag = reservedTag;
       const selectedIdx = new Set(selected.map(({ index }) => index));
 
       const fresh = await patchObjects((objects) => {
@@ -241,7 +248,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           next.push({ id: TRAINING_OBJECT_ID, label: "Model Training", source: "Model Training", objectType: TRAINING_OBJECT_TYPE, icon: "Terminal", columns: TRAINING_COLUMNS, rows: [versionRow], binding: { mode: "manual", source: "Model Training" }, relations: [], fieldSettings: { hidden: [], order: TRAINING_COLUMNS } });
         }
         if (!next.some((o) => o?.objectType === "api-registry")) {
-          const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane"];
+          const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane", "modelTrainingRowId", "trainingRunId", "expectedModelTag"];
           next.push({ id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } });
         }
         next = upsertRunRow(next, runReceiptToRow(preparedReceipt));

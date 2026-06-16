@@ -20,18 +20,25 @@
 import { deriveDistillationPipelineState, DEFAULT_MIN_SCORE, MIN_FINETUNE_TRACES } from "./training-ledger.js";
 import { deriveTrainingRuntimeState } from "./training-runtime.js";
 
-/** Lifecycle driver definitions in dependency order. */
+/**
+ * Lifecycle driver definitions in dependency order. Action tokens are the
+ * §13 canonical vocabulary so page / sidecar / modal / cockpit all speak one
+ * language. `choose_profile` is the action the `export → prepared` gap emits
+ * (the user opens the modal and picks a profile); `fix_redaction`,
+ * `export_gap_traces`, `prepare_next_training_run`, and `open_custom_models`
+ * are conditional overrides applied below, not lifecycle rows.
+ */
 const DRIVER_DEFS = [
   { id: "collect", label: "Collect governed traces", action: "collect_traces" },
   { id: "curate", label: "Curate qualified traces", action: "curate_traces" },
-  { id: "export", label: "Export training corpus", action: "export_corpus" },
-  { id: "prepare", label: "Prepare training run", action: "prepare_run" },
+  { id: "export", label: "Export training dataset", action: "export_dataset" },
+  { id: "prepare", label: "Prepare training run", action: "prepare_training_run" },
   { id: "train", label: "Run training", action: "run_training" },
   { id: "import", label: "Import model artifact", action: "import_artifact" },
   { id: "register", label: "Register model endpoint", action: "register_endpoint" },
-  { id: "verify", label: "Verify tuned tag", action: "test_endpoint" },
-  { id: "bind", label: "Bind into sandbox/workflow", action: "bind_sandbox" },
-  { id: "smoke", label: "Run sandbox smoke", action: "run_smoke" },
+  { id: "verify", label: "Verify tuned model", action: "verify_tuned_model" },
+  { id: "bind", label: "Bind smoke workflow", action: "bind_smoke_workflow" },
+  { id: "smoke", label: "Run smoke test", action: "run_smoke_test" },
 ];
 
 /**
@@ -43,15 +50,20 @@ const DRIVER_DEFS = [
  */
 const ACTION_DESTINATIONS = {
   collect_traces: { route: "/data-model", cta: "Open Data Model", authority: "training-traces" },
+  fix_redaction: { route: "/data-model", cta: "Resolve redaction in Data Model", authority: "training-traces" },
   curate_traces: { route: "/training", cta: "Open training runtime", authority: "model-training" },
-  export_corpus: { route: "/training", cta: "Export corpus", authority: "model-training" },
-  prepare_run: { route: "/training", cta: "Prepare training run", authority: "model-training-run" },
+  export_dataset: { route: "/training", cta: "Export dataset", authority: "model-training" },
+  choose_profile: { route: "/training", cta: "Choose training profile", authority: "model-training-run" },
+  prepare_training_run: { route: "/training", cta: "Prepare training run", authority: "model-training-run" },
   run_training: { route: "/training", cta: "Open training runtime", authority: "model-training-run" },
   import_artifact: { route: "/training", cta: "Import artifact", authority: "model-training-run" },
   register_endpoint: { route: "/data-model", cta: "Open API Registry", authority: "api-registry" },
-  test_endpoint: { route: "/data-model", cta: "Open API Registry test", authority: "api-registry" },
-  bind_sandbox: { route: "/workflows", cta: "Open Workflow Canvas", authority: "sandbox-environment" },
-  run_smoke: { route: "/workflows", cta: "Run smoke workflow", authority: "sandbox-environment" },
+  verify_tuned_model: { route: "/data-model", cta: "Open API Registry test", authority: "api-registry" },
+  bind_smoke_workflow: { route: "/workflows", cta: "Open Workflow Canvas", authority: "sandbox-environment" },
+  run_smoke_test: { route: "/workflows", cta: "Run smoke workflow", authority: "sandbox-environment" },
+  export_gap_traces: { route: "/training", cta: "Export gap traces", authority: "training-traces" },
+  prepare_next_training_run: { route: "/training", cta: "Prepare next training run", authority: "model-training-run" },
+  open_custom_models: { route: "/custom-models", cta: "Open Custom Models", authority: "model-training" },
   complete: { route: "/custom-models", cta: "Open Custom Models", authority: "model-training" },
 };
 
@@ -125,10 +137,16 @@ export function deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceR
   // the ledger badge.
   const reached = (s) => RUNTIME_RANK[runtime.state] >= RUNTIME_RANK[s];
   const completion = {
-    collect: pipeline.total > 0,
-    curate: pipeline.graded >= MIN_FINETUNE_TRACES,
+    // Monotonic with runtime state: once the lifecycle has reached `exported`,
+    // collection and curation are by definition done — a completed model never
+    // regresses to "collect" just because traces were since cleared/exported.
+    collect: pipeline.total > 0 || reached("exported"),
+    curate: pipeline.graded >= MIN_FINETUNE_TRACES || reached("exported"),
     export: reached("exported"),
-    prepare: reached("prepared") && runState.present,
+    // Monotonic: a model that reached a later stage (incl. the registry-first
+    // `complete` path with no run receipt — surfaced separately as runGap) has
+    // a prepared run behind it. The missing receipt is a gap flag, not a demotion.
+    prepare: reached("prepared"),
     train: reached("trained"),
     import: reached("imported"),
     register: reached("deployed"),
@@ -160,28 +178,53 @@ export function deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceR
     if (completion[def.id]) state = "complete";
     else if (i === activeIndex) state = "active";
     else state = "pending";
-    // Hard blocker: the active step has a real evidence obstacle (vs. just
-    // being the next pending step). Redaction-blocked traces block curate.
-    if (state === "active" && def.id === "curate" && pipeline.graded === 0 && pipeline.total > 0) state = "blocked";
-    const dest = destinationForAction(def.action);
+    // Conditional action overrides on the ACTIVE step (the derivers decide,
+    // never the JSX):
+    //   - redaction-blocked traces are the obstacle → fix_redaction
+    //   - exported-but-no-run → the next move is choosing a profile
+    let action = def.action;
+    let reason = completion[def.id] ? "complete" : blockedReason[def.id];
+    if (state !== "complete" && i === activeIndex) {
+      if (def.id === "curate" && pipeline.blocked > 0 && pipeline.graded < MIN_FINETUNE_TRACES) {
+        action = "fix_redaction";
+        reason = `${pipeline.blocked} trace(s) are redaction-blocked and cannot enter the corpus; resolve or replace them.`;
+        state = "blocked";
+      } else if (def.id === "curate" && pipeline.graded === 0 && pipeline.total > 0) {
+        state = "blocked";
+      } else if (def.id === "prepare" && runtime.state === "exported") {
+        action = "choose_profile";
+      }
+    }
+    const dest = destinationForAction(action);
     return {
       id: def.id,
       label: def.label,
-      action: def.action,
+      action,
       state,
+      // §13 exact field names + back-compat aliases.
       impact: scoreTrainingDriverImpact(i, activeIndex, total),
-      reason: completion[def.id] ? "complete" : blockedReason[def.id],
-      // Canonical handoff (CEO discipline): where the user goes to act.
+      impactScore: scoreTrainingDriverImpact(i, activeIndex, total),
+      reason,
+      blockingProof: completion[def.id] ? "" : reason,
       destination: dest.route,
       cta: dest.cta,
+      ctaLabel: dest.cta,
+      canonicalDestination: dest.route,
       canonicalObject: dest.authority,
     };
   });
 
+  // Feedback awareness for the complete state — a completed model is never
+  // demoted; new gaps become the next cycle's action.
+  const gapState = activeIndex < 0 ? deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecords, slug, minScore }) : { hasGaps: false };
   const active = drivers.find((d) => d.state === "active" || d.state === "blocked") || null;
-  const nextBestAction = activeIndex < 0 ? "complete" : (active?.action || "complete");
+  let nextBestAction;
+  if (activeIndex < 0) nextBestAction = gapState.hasGaps ? "export_gap_traces" : "open_custom_models";
+  else nextBestAction = active?.action || "complete";
   const nextDest = destinationForAction(nextBestAction);
-  const topBlocker = activeIndex < 0 ? "Loop complete — improve from new usage evidence." : (active?.reason || "");
+  const topBlocker = activeIndex < 0
+    ? (gapState.hasGaps ? `Complete — ${gapState.totalGapSignals} improvement signal(s) ready for the next cycle.` : "Loop complete — verified, runnable, and improving from usage.")
+    : (active?.reason || "");
 
   // Confidence = evidence depth: fraction of the lifecycle proven, lightly
   // boosted by corroborating run-receipt evidence. Deterministic, 0..1.
@@ -257,7 +300,7 @@ export function deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecor
       if (served && tunedTags.size > 0 && !tunedTags.has(served) && String(r?.baseModel || "") === served) baseModelResponses += 1;
     } catch { /* ignore */ }
   }
-  add("base_model_response", "Endpoint served the base model where a tuned tag was expected", baseModelResponses, "test_endpoint");
+  add("base_model_response", "Endpoint served the base model where a tuned tag was expected", baseModelResponses, "verify_tuned_model");
 
   // Rejected / corrected helper proposals → preference data.
   const receipts = workspaceSourceRecords?.["helper:apply:receipts"];
@@ -279,7 +322,7 @@ export function deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecor
 
   // Failed training runs.
   const runState = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug }).runState;
-  add("failed_training_run", "Failed training runs — adjust profile/dataset and re-run", runState.failed ? runState.runs.filter((r) => r.stage === "failed").length : 0, "prepare_run");
+  add("failed_training_run", "Failed training runs — adjust profile/dataset and re-run", runState.failed ? runState.runs.filter((r) => r.stage === "failed").length : 0, "prepare_next_training_run");
 
   const totalGapSignals = gaps.reduce((acc, g) => acc + g.count, 0);
   return {

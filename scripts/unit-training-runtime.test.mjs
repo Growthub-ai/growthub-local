@@ -222,7 +222,7 @@ test("drivers: next-best action advances along the lifecycle as evidence accrues
   // 12 qualified traces but no export → curate complete, export active.
   const traceRows = Array.from({ length: 12 }, (_, i) => ({ qualityScore: 5, inputPrompt: `p${i}`, agentOutput: `o${i}` }));
   const curated = deriveTrainingRuntimeDrivers({ workspaceConfig: { dataModel: { objects: [{ id: "training-traces", objectType: "training-traces", rows: traceRows }] } }, workspaceSourceRecords: {} });
-  assert.equal(curated.nextBestAction, "export_corpus");
+  assert.equal(curated.nextBestAction, "export_dataset");
 
   // exported + prepared run → next is run_training.
   const cfg = exportedConfig();
@@ -233,6 +233,44 @@ test("drivers: next-best action advances along the lifecycle as evidence accrues
   });
   assert.equal(prepared.nextBestAction, "run_training");
   assert.ok(prepared.confidence > empty.confidence, "confidence rises with evidence depth");
+});
+
+test("drivers: redaction-blocked traces below the floor emit fix_redaction (not curate)", () => {
+  // 9 qualified + 5 blocked → still below the 10 floor, redaction is the obstacle.
+  const rows = [
+    ...Array.from({ length: 9 }, (_, i) => ({ qualityScore: 5, inputPrompt: `p${i}`, agentOutput: `o${i}` })),
+    ...Array.from({ length: 5 }, (_, i) => ({ qualityScore: 5, inputPrompt: `b${i}`, agentOutput: `o${i}`, redactionStatus: "blocked" })),
+  ];
+  const d = deriveTrainingRuntimeDrivers({ workspaceConfig: { dataModel: { objects: [{ id: "training-traces", objectType: "training-traces", rows }] } }, workspaceSourceRecords: {} });
+  assert.equal(d.nextBestAction, "fix_redaction");
+  assert.equal(d.nextActionDestination, "/data-model");
+});
+
+test("drivers: a complete loop with new gaps emits export_gap_traces, never a demotion", () => {
+  // Build a complete model + a failed sandbox run (gap source).
+  const cfg = { dataModel: { objects: [
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", baseModel: "qwen:4b", lastExportId: "exp_1", lastSourceId: "training:model-training:workspace-local", lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", status: "connected", baseModel: "qwen:4b", lastResponse: JSON.stringify({ model: "gh-v1", choices: [{ message: { content: "ok" } }] }) }] },
+    { objectType: "sandbox-environment", rows: [
+      // The failed run is a GAP source; the successful run (last match wins in
+      // the ledger deriver) carries the outputHash that proves complete.
+      { Name: "smoke-fail", schedulerRegistryId: "workspace-local-model", lastRunId: "r2", lastResponse: JSON.stringify({ ok: false, exitCode: 1 }) },
+      { Name: "smoke", schedulerRegistryId: "workspace-local-model", lastRunId: "r1", lastResponse: JSON.stringify({ ok: true, exitCode: 0, outputHash: "abc123" }) },
+    ] },
+  ] } };
+  const records = { "training:model-training:workspace-local": { records: [{ exportId: "exp_1", recordCount: 12 }] } };
+  const d = deriveTrainingRuntimeDrivers({ workspaceConfig: cfg, workspaceSourceRecords: records });
+  assert.equal(d.state, "complete", "stays complete — never demoted");
+  assert.equal(d.nextBestAction, "export_gap_traces");
+});
+
+test("drivers: every driver carries §13 fields (blockingProof, canonicalDestination, ctaLabel, impactScore)", () => {
+  const d = deriveTrainingRuntimeDrivers({ workspaceConfig: {}, workspaceSourceRecords: {} });
+  for (const dr of d.drivers) {
+    for (const f of ["blockingProof", "canonicalDestination", "ctaLabel", "impactScore", "canonicalObject"]) {
+      assert.ok(f in dr, `${dr.id} carries ${f}`);
+    }
+  }
 });
 
 test("drivers: next action carries a canonical destination + CTA (CEO link discipline)", () => {

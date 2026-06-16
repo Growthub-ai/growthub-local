@@ -23,18 +23,23 @@ import { deriveTrainingLedgerState, deriveDistillationPipelineState } from "../.
 import { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
 import TrainingHandoffModal from "./TrainingHandoffModal.jsx";
 
-/** Human labels for the runtime drivers' next-best-action tokens. */
+/** Human labels for the runtime drivers' §13 next-best-action tokens. */
 const ACTION_LABELS = {
   collect_traces: "Collect governed traces",
+  fix_redaction: "Resolve redaction-blocked traces",
   curate_traces: "Curate qualified traces",
-  export_corpus: "Export training corpus",
-  prepare_run: "Prepare a training run",
+  export_dataset: "Export training dataset",
+  choose_profile: "Choose a training profile",
+  prepare_training_run: "Prepare a training run",
   run_training: "Run training",
   import_artifact: "Import the model artifact",
   register_endpoint: "Register the model endpoint",
-  test_endpoint: "Test the model endpoint",
-  bind_sandbox: "Bind into a sandbox workflow",
-  run_smoke: "Run the sandbox smoke",
+  verify_tuned_model: "Verify the tuned model endpoint",
+  bind_smoke_workflow: "Bind a smoke workflow",
+  run_smoke_test: "Run the sandbox smoke test",
+  export_gap_traces: "Export gap traces for the next cycle",
+  prepare_next_training_run: "Prepare the next training run",
+  open_custom_models: "Open Custom Models",
   complete: "Keep improving from new usage",
 };
 

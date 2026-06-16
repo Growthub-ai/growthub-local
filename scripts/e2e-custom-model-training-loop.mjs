@@ -94,7 +94,7 @@ console.log("\n[1] Initial state — traces exist, nothing exported");
   const rt = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug: SLUG });
   const drivers = deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceRecords, slug: SLUG });
   eq("runtime state is eligible", rt.state, "eligible");
-  eq("next best action is export_corpus", drivers.nextBestAction, "export_corpus");
+  eq("next best action is export_dataset", drivers.nextBestAction, "export_dataset");
   ok("confidence is low at the start", drivers.confidence < 0.5);
 }
 
