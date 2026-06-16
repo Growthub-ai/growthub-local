@@ -1145,7 +1145,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Training ledger view — same shell as the swarm cockpit, read-only. */}
         {activeTab === "assistant" && inTrainingView && (
           <div className="dm-sidecar-body dm-swarm-body" data-training-view="">
-            <TrainingLedger />
+            <TrainingLedger
+              onOpenHelperPrompt={(seedPrompt) => {
+                setActiveView("chat");
+                onPickIntent("repair");
+                setPrompt(typeof seedPrompt === "string" ? seedPrompt : "");
+              }}
+            />
           </div>
         )}
 

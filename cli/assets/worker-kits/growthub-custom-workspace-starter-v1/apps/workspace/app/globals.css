@@ -6679,6 +6679,32 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.training-bootstrap-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.training-bootstrap-stack .dm-helper-toolcall-row {
+  cursor: default;
+}
+.training-bootstrap-stack .dm-helper-toolcall-title {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+.training-bootstrap-stack .dm-swarm-card-desc {
+  margin: 0 12px 10px;
+}
+.training-bootstrap-stack .dm-btn-ghost[data-setup-action],
+.training-bootstrap-toggle {
+  align-self: flex-start;
+  margin: 0 12px 12px;
+}
+.training-bootstrap-toggle {
+  margin: -4px 0 0;
+}
 .dm-helper-toolcall-chevron {
   color: #9ca3af;
   transition: transform .15s ease;
@@ -9565,4 +9591,3 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
-

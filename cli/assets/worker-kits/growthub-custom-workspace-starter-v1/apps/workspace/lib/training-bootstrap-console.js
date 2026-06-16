@@ -27,7 +27,7 @@
  */
 
 import { deriveTrainingRuntimeState } from "./training-runtime.js";
-import { deriveDistillationPipelineState, MIN_FINETUNE_TRACES } from "./training-ledger.js";
+import { deriveDistillationPipelineState, DEFAULT_MIN_SCORE, MIN_FINETUNE_TRACES } from "./training-ledger.js";
 import { deriveCustomModelsState } from "./custom-models-ledger.js";
 
 export const WORKSPACE_HELPER_SANDBOX_OBJECT_ID = "workspace-helper-sandbox";
@@ -69,6 +69,19 @@ function item(id, label, status, { guidance = "", evidenceRefs = [], nextAction 
   return { id, label, status, guidance, evidenceRefs, nextAction };
 }
 
+function buildTraceGenerationPrompt(pipeline) {
+  const eligible = Number(pipeline?.graded || 0);
+  const needed = Math.max(0, MIN_FINETUNE_TRACES - eligible);
+  const threshold = Number(pipeline?.minScore || DEFAULT_MIN_SCORE);
+  return [
+    `Help me generate ${needed} more eligible training traces for this workspace.`,
+    `Current state: ${eligible} of ${MIN_FINETUNE_TRACES} eligible traces are detected.`,
+    `Eligible traces must include a real inputPrompt, a real agentOutput, qualityScore >= ${threshold}, and no redaction block.`,
+    "Use governed workspace work only: helper proposals/applies, sandbox runs, or real workspace actions that write traceable source records.",
+    "Do not fabricate traces. Start by proposing the concrete workspace tasks I should run now to create the missing eligible traces, then guide me through them.",
+  ].join("\n");
+}
+
 /**
  * Derive the training bootstrap state from workspace config (+ source records).
  * Pure. Returns { title, mode, completed, completionRef, checklist,
@@ -102,18 +115,18 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
     }));
   } else if (pipeline.blocked > 0 && pipeline.graded < MIN_FINETUNE_TRACES) {
     checklist.push(item("curate", "Curate governed traces", "blocked", {
-      guidance: `${pipeline.blocked} trace(s) are redaction-blocked and cannot enter the corpus. Resolve or replace them, then reach ${MIN_FINETUNE_TRACES}.`,
-      nextAction: { kind: "open-data-model", label: "Resolve in Data Model" },
+      guidance: `${pipeline.blocked} trace(s) are redaction-blocked and cannot enter the corpus. Replace them with eligible governed traces before opening the training runtime.`,
+      nextAction: { kind: "open-helper", label: "Create eligible traces", prompt: buildTraceGenerationPrompt(pipeline) },
     }));
   } else if (pipeline.total > 0) {
     checklist.push(item("curate", "Curate governed traces", "ready", {
-      guidance: `${pipeline.graded} of ${MIN_FINETUNE_TRACES} qualified — open the runtime to curate the rest.`,
-      nextAction: { kind: "open-runtime", label: "Open training runtime" },
+      guidance: `${pipeline.graded} of ${MIN_FINETUNE_TRACES} eligible traces detected. Generate the missing eligible traces before opening the training runtime.`,
+      nextAction: { kind: "open-helper", label: "Create eligible traces", prompt: buildTraceGenerationPrompt(pipeline) },
     }));
   } else {
     checklist.push(item("curate", "Curate governed traces", "ready", {
-      guidance: "Do governed workspace work (helper applies, sandbox runs), then harvest traces with `growthub intelligence export`.",
-      nextAction: { kind: "open-runtime", label: "Open training runtime" },
+      guidance: `0 of ${MIN_FINETUNE_TRACES} eligible traces detected. Generate eligible governed traces before opening the training runtime.`,
+      nextAction: { kind: "open-helper", label: "Create eligible traces", prompt: buildTraceGenerationPrompt(pipeline) },
     }));
   }
 

@@ -44,6 +44,13 @@ const ACTION_LABELS = {
   complete: "Keep improving from new usage",
 };
 
+function checklistDotVariant(status) {
+  if (status === "complete") return "ok";
+  if (status === "ready") return "active";
+  if (status === "blocked") return "fail";
+  return "pending";
+}
+
 function formatWhen(iso) {
   if (!iso) return "—";
   const t = Date.parse(iso);
@@ -85,7 +92,7 @@ function modelOptionsFromDataModel(workspaceConfig) {
   return [...options];
 }
 
-export default function TrainingLedger({ workspaceConfig: providedConfig, workspaceSourceRecords: providedRecords }) {
+export default function TrainingLedger({ workspaceConfig: providedConfig, workspaceSourceRecords: providedRecords, onOpenHelperPrompt }) {
   const [workspaceConfig, setWorkspaceConfig] = useState(providedConfig || null);
   const [workspaceSourceRecords, setWorkspaceSourceRecords] = useState(providedRecords || null);
   const [error, setError] = useState("");
@@ -171,6 +178,13 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   // First-use setup checklist — the cockpit bootstrap pattern (mirrors CEO).
   const bootstrap = deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceRecords });
   const [busy, setBusy] = useState("");
+  const [showBootstrapSteps, setShowBootstrapSteps] = useState(false);
+  const bootstrapCurrentStep = bootstrap.checklist.find((step) => step.status === "blocked" || step.status === "ready")
+    || bootstrap.checklist.find((step) => step.status !== "complete")
+    || bootstrap.checklist[0];
+  const visibleBootstrapSteps = showBootstrapSteps
+    ? bootstrap.checklist
+    : bootstrap.checklist.filter((step) => step.id === bootstrapCurrentStep?.id);
 
   // INVOKE — the "Next" button that fires the real API Registry chat-completions
   // call to the user's local custom model. The canonical test lane executes it
@@ -216,6 +230,13 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   function runChecklistAction(action) {
     if (!action) return;
     if (action.kind === "open-runtime") setHandoffOpen(true);
+    else if (action.kind === "open-helper") {
+      if (typeof onOpenHelperPrompt === "function") {
+        onOpenHelperPrompt(action.prompt || "");
+      } else {
+        setError(action.prompt || "Open the workspace helper to generate eligible training traces.");
+      }
+    }
     else if (action.kind === "invoke-endpoint") invokeEndpoint(action.apiRegistryId);
     else if (action.kind === "mark-complete") markComplete();
     else if (action.kind === "open-data-model") window.location.href = "/data-model";
@@ -225,18 +246,20 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   // BOOTSTRAP MODE — hyper-focused first-use setup, nothing else competes.
   if (bootstrap.mode === "bootstrap") {
     return (
-      <div data-training-ledger="" data-training-bootstrap="bootstrap">
+      <div className="training-bootstrap-stack" data-training-ledger="" data-training-bootstrap="bootstrap">
         {error ? <div className="dm-helper-error">{error}</div> : null}
         <div className="dm-helper-toolcall dm-swarm-card" data-training-setup-head="">
           <div className="dm-helper-toolcall-row">
+            <span className="dm-run-console__tree-dot" data-variant="active" aria-hidden="true" />
             <span className="dm-helper-toolcall-title dm-swarm-card-title">Set up your first custom model</span>
-            <span className="dm-run-console__hint">{bootstrap.progress.completed}/{bootstrap.progress.total}</span>
+            <span className="dm-run-console__hint">{bootstrap.progress.completed} of {bootstrap.progress.total}</span>
           </div>
           <div className="dm-helper-stream dm-swarm-card-desc">Prove the loop once: train a model, verify it responds, then run it in a workflow. This checklist disappears once the workflow run writes proof.</div>
         </div>
-        {bootstrap.checklist.map((step) => (
+        {visibleBootstrapSteps.map((step) => (
           <div key={step.id} className="dm-helper-toolcall dm-swarm-card" data-setup-step={step.id} data-setup-status={step.status}>
             <div className="dm-helper-toolcall-row">
+              <span className="dm-run-console__tree-dot" data-variant={checklistDotVariant(step.status)} aria-hidden="true" />
               <span className="dm-helper-toolcall-title">{step.label}</span>
               <span className="dm-run-console__hint">{step.status}</span>
             </div>
@@ -250,6 +273,9 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
             ) : null}
           </div>
         ))}
+        <button type="button" className="dm-btn-ghost training-bootstrap-toggle" onClick={() => setShowBootstrapSteps((v) => !v)}>
+          {showBootstrapSteps ? "Show current step" : `Show all ${bootstrap.checklist.length} steps`}
+        </button>
         <TrainingHandoffModal
           open={handoffOpen}
           onClose={() => setHandoffOpen(false)}
