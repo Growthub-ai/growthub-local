@@ -115,15 +115,18 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     const sandbox = sandboxLinkFor(workspaceConfig, registryId);
 
     // Evidence ladder per model — same demotion semantics as /training:
-    // a row claim never outranks live proof.
+    // a row claim never outranks live proof. The product invariant is strict:
+    // NO outputHash means NO complete state. A smoke run that succeeded but
+    // wrote no output hash stays sandbox-ready (proof incomplete), never
+    // complete.
     let evidenceState = "recorded";
     if (registryRow) evidenceState = "deployed";
     if (m.bondedRegistry?.validated) evidenceState = "verified";
     if (m.bondedRegistry?.validated && sandbox) evidenceState = "sandbox-ready";
-    if (m.bondedRegistry?.validated && sandbox?.runId && sandbox?.runOk) evidenceState = "complete";
+    if (m.bondedRegistry?.validated && sandbox?.runId && sandbox?.runOk && sandbox?.outputHash) evidenceState = "complete";
 
     const nextAction = evidenceState === "complete" ? "Run again"
-      : evidenceState === "sandbox-ready" ? "Run"
+      : evidenceState === "sandbox-ready" ? (sandbox?.runId && sandbox?.runOk ? "Smoke ran — output hash missing; re-run to capture proof" : "Run")
         : evidenceState === "verified" ? "Create/Open workflow"
           : evidenceState === "deployed" ? "Test"
             : "Open Training";
@@ -146,6 +149,12 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
       // snippetHash and never masquerades as output proof.
       modelOutputHash: sandbox?.outputHash || "",
       snippetHash: m.bondedRegistry?.validated?.snippet ? djb2(m.bondedRegistry.validated.snippet) : "",
+      // Endpoint verification proof — auditable fields (item 9): the actual
+      // served model tag, a response-content hash, and a verification status
+      // that never overclaims. Derived from the bonded registry validation.
+      lastResponseModel: m.bondedRegistry?.validated?.model || "",
+      lastResponseHash: m.bondedRegistry?.validated?.snippet ? djb2(m.bondedRegistry.validated.snippet) : "",
+      verificationStatus: m.bondedRegistry?.validated ? "verified" : (registryRow ? "unverified" : "unregistered"),
       links: {
         workflow: sandbox ? `/workflows?object=${encodeURIComponent(sandbox.objectId)}&row=${encodeURIComponent(sandbox.rowName)}${sandbox.runId ? `&run=${encodeURIComponent(sandbox.runId)}` : ""}` : "",
         dataModel: "/data-model",
@@ -198,7 +207,12 @@ export function buildCapabilityManifest(model, { workspaceConfig } = {}) {
     lastInvocationSourceId: model.lastInvocationSourceId,
     lastSandboxObjectId: model.lastSandboxObjectId,
     lastSandboxRunId: model.lastSandboxRunId,
-    lastOutputHash: model.lastOutputHash,
+    // Real proof hash from the sandbox run — was incorrectly reading a
+    // nonexistent model.lastOutputHash, dropping the proof.
+    lastOutputHash: model.modelOutputHash || "",
+    lastResponseModel: model.lastResponseModel || "",
+    lastResponseHash: model.lastResponseHash || "",
+    verificationStatus: model.verificationStatus || "",
     requestContract: {
       method: String(registryRow.method || "POST"),
       baseUrl: String(registryRow.baseUrl || ""),

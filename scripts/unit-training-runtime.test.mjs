@@ -344,7 +344,40 @@ test("never-throws: every deriver tolerates empty/garbage input", () => {
 // custom objects, or standardized workflow/nango paths.
 // --------------------------------------------------------------------------
 
-const { deriveCustomModelsState, isCustomModelRegistryRow } = await import(lib("custom-models-ledger.js"));
+const { deriveCustomModelsState, isCustomModelRegistryRow, buildCapabilityManifest } = await import(lib("custom-models-ledger.js"));
+
+function completeModelConfig({ outputHash = "abc123" } = {}) {
+  return { dataModel: { objects: [
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", baseModel: "qwen:4b", lastExportSummary: JSON.stringify({ registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", kind: "custom-model", status: "connected", baseModel: "qwen:4b", lastResponse: JSON.stringify({ model: "gh-v1", choices: [{ message: { content: "ok" } }] }), lastTested: "2026-06-16" }] },
+    { objectType: "sandbox-environment", id: "smoke", rows: [{ Name: "smoke", schedulerRegistryId: "workspace-local-model", lastRunId: "r1", lastResponse: JSON.stringify({ ok: true, exitCode: 0, ...(outputHash ? { outputHash } : {}) }) }] },
+  ] } };
+}
+
+test("custom-models: complete REQUIRES outputHash — runOk without it stays sandbox-ready", () => {
+  const noHash = deriveCustomModelsState({ workspaceConfig: completeModelConfig({ outputHash: "" }) });
+  assert.equal(noHash.models[0].evidenceState, "sandbox-ready", "smoke ran ok but no outputHash → not complete");
+  const withHash = deriveCustomModelsState({ workspaceConfig: completeModelConfig({ outputHash: "abc123" }) });
+  assert.equal(withHash.models[0].evidenceState, "complete", "outputHash present → complete");
+});
+
+test("custom-models: capability manifest carries the REAL output hash (was dropped via lastOutputHash)", () => {
+  const state = deriveCustomModelsState({ workspaceConfig: completeModelConfig({ outputHash: "deadbeef" }) });
+  const manifest = buildCapabilityManifest(state.models[0], { workspaceConfig: completeModelConfig({ outputHash: "deadbeef" }) });
+  assert.equal(manifest.lastOutputHash, "deadbeef", "manifest maps modelOutputHash, not a nonexistent field");
+});
+
+test("custom-models: verification proof fields are exposed (lastResponseModel / verificationStatus)", () => {
+  const m = deriveCustomModelsState({ workspaceConfig: completeModelConfig() }).models[0];
+  assert.equal(m.lastResponseModel, "gh-v1");
+  assert.equal(m.verificationStatus, "verified");
+  // A deployed-but-unverified row reports unverified, not verified.
+  const unver = deriveCustomModelsState({ workspaceConfig: { dataModel: { objects: [
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportSummary: JSON.stringify({ registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", kind: "custom-model", status: "connected", lastResponse: JSON.stringify({ model: "qwen:4b" }) }] },
+  ] } } }).models[0];
+  assert.equal(unver.verificationStatus, "unverified");
+});
 
 test("isolation: the trait gate recognizes only tagged/linked rows; generic rows are never custom-model", () => {
   assert.equal(isCustomModelRegistryRow({ integrationId: "nango-hubspot", connectorKind: "nango" }), false, "generic nango row");
@@ -470,7 +503,7 @@ test("bootstrap: deployed-but-unverified exposes the INVOKE next action with the
   assert.equal(b.primaryAction.kind, "invoke-endpoint");
 });
 
-test("bootstrap: a verified tuned-tag response completes invoke and unlocks completion", () => {
+test("bootstrap: verified completes invoke but does NOT unlock completion without smoke outputHash", () => {
   const cfg = { dataModel: { objects: [
     helperObj(),
     { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportId: "exp_1", lastSourceId: "training:model-training:workspace-local", lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: "workspace-local-model" }) }] },
@@ -479,8 +512,24 @@ test("bootstrap: a verified tuned-tag response completes invoke and unlocks comp
   ] } };
   const records = { "training:model-training:workspace-local": { records: [{ exportId: "exp_1", recordCount: 10 }] } };
   const b = deriveTrainingBootstrapState({ workspaceConfig: cfg, workspaceSourceRecords: records });
-  assert.equal(b.checklist.find((s) => s.id === "invoke").status, "complete");
-  assert.equal(b.checklist.find((s) => s.id === "complete").status, "ready", "completion unlocked after a real verified invocation");
+  assert.equal(b.checklist.find((s) => s.id === "invoke").status, "complete", "verified invocation completes invoke");
+  assert.equal(b.checklist.find((s) => s.id === "smoke").status, "ready", "smoke proof is the next required step");
+  assert.equal(b.checklist.find((s) => s.id === "complete").status, "pending", "completion blocked until smoke outputHash — verified ≠ complete");
+  assert.equal(b.primaryAction.kind, "open-workflows", "next move routes to the smoke workflow, not completion");
+});
+
+test("bootstrap: a verified model with a smoke outputHash unlocks completion", () => {
+  const cfg = { dataModel: { objects: [
+    helperObj(),
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportId: "exp_1", lastSourceId: "training:model-training:workspace-local", lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", kind: "custom-model", status: "connected", lastResponse: JSON.stringify({ model: "gh-v1", choices: [{ message: { content: "hi" } }] }) }] },
+    { objectType: "sandbox-environment", id: "smoke", rows: [{ Name: "smoke", schedulerRegistryId: "workspace-local-model", lastRunId: "r1", lastResponse: JSON.stringify({ ok: true, exitCode: 0, outputHash: "abc123" }) }] },
+    { id: "training-traces", objectType: "training-traces", rows: Array.from({ length: 10 }, (_, i) => ({ qualityScore: 5, inputPrompt: `p${i}`, agentOutput: `o${i}`, exported: "true" })) },
+  ] } };
+  const records = { "training:model-training:workspace-local": { records: [{ exportId: "exp_1", recordCount: 10 }] } };
+  const b = deriveTrainingBootstrapState({ workspaceConfig: cfg, workspaceSourceRecords: records });
+  assert.equal(b.checklist.find((s) => s.id === "smoke").status, "complete", "smoke complete with outputHash");
+  assert.equal(b.checklist.find((s) => s.id === "complete").status, "ready", "completion unlocked only after smoke proof");
   assert.equal(b.primaryAction.kind, "mark-complete");
 });
 

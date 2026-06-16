@@ -12,7 +12,7 @@ Custom Model Training Runtime is **not** a new route, a separate runtime, a trai
 /training
   -> first-use training readiness checklist
   -> governed distillation trace selection
-  -> helper/apply reviewed mutation
+  -> governed PATCH (dataModel allowlist) write
   -> model-training custom object row
   -> model-training-run atomic receipt row
   -> API Registry row
@@ -21,11 +21,13 @@ Custom Model Training Runtime is **not** a new route, a separate runtime, a trai
   -> sandbox/workflow smoke proof
   -> custom model completion marker
   -> operational cockpit
-  -> Runtime history + Custom Models / Gaps views
+  -> Custom Models / Gaps cockpit (runtime history = model-training-run rows + source records)
   -> linked API Registry test + workflow canvas
 ```
 
-Compute may run through a local runner, container, manual attestation, Ollama / Unsloth / llama.cpp / GGUF, or any OpenAI-compatible endpoint — but **Growthub Local owns the lifecycle, the run receipts, the artifact identity, the verification, the invocation proof, and the user-facing processing experience.** The primitive uses existing workspace state only: Data Model objects, API Registry rows, sandbox/workflow rows, `training:*` source records, helper/apply proposals, and pure causation derivers. It adds no third mutation lane and no separate runtime object model.
+Compute may run through a local runner, container, manual attestation, Ollama / Unsloth / llama.cpp / GGUF, or any OpenAI-compatible endpoint — but **Growthub Local owns the lifecycle, the run receipts, the artifact identity, the verification, the invocation proof, and the user-facing processing experience.** The primitive uses existing workspace state only: Data Model objects, API Registry rows, sandbox/workflow rows, `training:*` source records, and pure causation derivers. All app-side writes go through the **existing governed PATCH (dataModel allowlist)** — the same lane the rest of the workspace uses; the CLI export writes through its own CLI-owned lane. There is no third mutation lane and no browser/local storage.
+
+**On the `model-training-run` object:** it is the **atomic Data Model object** for governed run receipts (`growthub-local-model-training-run-v1`), read alongside the CLI `training-run:*` sidecar. It is *not* a parallel runtime subsystem or a duplicate of the object-creation model — it is one more governed custom-object table, created through the existing `uniqueObjectId` / object pattern and classified (not created) by the workspace genome.
 
 ## What 0.14.5 Adds
 
@@ -86,7 +88,7 @@ After completion, `/custom-models` becomes a clean read-first cockpit: each mode
 ## Required Product Invariants
 
 - No `/training` rail button or side route as a separate runtime.
-- No third mutation lane — all writes go through the existing governed helper/apply PATCH.
+- No third mutation lane — all app-side writes go through the existing governed PATCH (dataModel allowlist); the CLI export uses its own CLI-owned write lane.
 - No duplicate runtime object model; receipts reuse Data Model rows + source records.
 - The Custom Models cockpit is read-first — duplicate/delete route to Data Model; test routes to API Registry; workflow routes to Workflow Canvas.
 - No fake proof: dataset export ≠ trained, trained ≠ imported, imported ≠ verified, verified ≠ complete.
@@ -117,5 +119,6 @@ The following belong to a later **Growthub Bridge Training Persistence V2** modu
 - Hosted fleet training dashboards, multi-tenant persistence, budget governance.
 - Remote trace offload, account-pool teacher systems.
 - A separate simulation cockpit / swarm-predictability product.
+- A dedicated **Runtime History** tab. In V1 runtime history is represented by the `model-training-run` rows + `training-run:*` / `training:*` source records (inspectable in the Data Model and surfaced in `/custom-models`); a separate History cockpit tab is deferred.
 
 The compression/persistence seam (`training-persistence.js`) is laid but off by default so V2 can flip the codec without touching V1 derivers, routes, or governance.

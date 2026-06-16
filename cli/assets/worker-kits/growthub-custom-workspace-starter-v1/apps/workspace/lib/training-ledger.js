@@ -209,7 +209,10 @@ export function deriveTrainingLedgerState({ workspaceConfig, workspaceSourceReco
   if (deployedModel) { state = "deployed"; next = "Test model endpoint."; }
   if (verifiedModel) { state = "verified"; next = "Create sandbox workflow."; }
   if (sandboxLink) { state = "sandbox-ready"; next = "Run sandbox smoke."; }
-  if (sandboxLink && sandboxLink.runId && sandboxLink.runOk) { state = "complete"; next = "Ready: latest trained model is verified and runnable."; }
+  // Invariant: NO outputHash means NO complete. A smoke run that succeeded but
+  // wrote no output hash stays sandbox-ready until the proof hash exists.
+  if (sandboxLink && sandboxLink.runId && sandboxLink.runOk && sandboxLink.outputHash) { state = "complete"; next = "Ready: latest trained model is verified and runnable."; }
+  else if (sandboxLink && sandboxLink.runId && sandboxLink.runOk) { state = "sandbox-ready"; next = "Smoke ran but wrote no outputHash — re-run to capture run proof."; }
   const eligibility = { state, next };
 
   // Identity chain — the exact proof spine; every link evidence-resolved or "".

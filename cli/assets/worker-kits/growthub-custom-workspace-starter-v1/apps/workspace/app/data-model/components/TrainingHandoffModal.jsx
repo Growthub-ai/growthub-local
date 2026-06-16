@@ -48,6 +48,7 @@ import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TY
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
+import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -169,6 +170,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const reservedTag = (tunedTag || `${SLUG}-tuned-v${version}`).trim();
   const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
   const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `./artifacts/${reservedTag}` });
+  // Live proof state — the SAME derivation /training and /custom-models use, so
+  // the modal can never claim "complete" before the smoke run wrote outputHash.
+  const liveRuntime = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug: SLUG });
+  const smokeProven = liveRuntime.state === "complete";
+  const liveOutputHash = liveRuntime.identityChain?.modelOutputHash || "";
+  const liveSandboxRunId = liveRuntime.identityChain?.sandboxRunId || "";
 
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
@@ -529,6 +536,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "train" && result && (
             <div className="dm-orch-modal-list" data-handoff-train={trainPhase}>
+              {/* Exactly what the governed prepare wrote — no hidden scaffold. */}
+              <div className="dm-helper-toolcall dm-swarm-card" data-prepare-scaffold="">
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Created in this workspace</div>
+                <div className="dm-run-console__hint">API Registry row: {result.integrationId} (kind: custom-model)</div>
+                <div className="dm-run-console__hint">Expected model tag: {result.modelTag}</div>
+                <div className="dm-run-console__hint">model-training row: {SLUG}-v{result.version} · run: {result.trainingRunId} · export: {result.exportId}</div>
+                <div className="dm-run-console__hint">Endpoint: {target.baseUrl}{target.endpoint} · auth: {target.authRef ? `authRef ${target.authRef}` : "none (Ollama local)"}</div>
+              </div>
               <div className="dm-helper-toolcall dm-swarm-card">
                 <div className="dm-helper-toolcall-title">
                   {trainPhase === "running" ? "Fine-tuning in progress" : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
@@ -614,8 +629,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   </>
                 ) : null}
                 {verifyResult && !verifying ? (
-                  <div className="dm-run-console__hint" data-verify-result={verifyResult.verified ? "verified" : verifyResult.demotion}>
-                    {verifyResult.verified ? `✓ ${verifyResult.reason}` : `Not verified — ${verifyResult.reason}`}
+                  <div data-verify-result={verifyResult.verified ? "verified" : verifyResult.demotion}>
+                    <div className="dm-run-console__hint">
+                      {verifyResult.verified
+                        ? `✓ Custom model verified — actual response model matched the expected tuned tag`
+                        : verifyResult.demotion === "base-model"
+                          ? `Endpoint reachable · custom model NOT verified — returned the base model`
+                          : verifyResult.demotion === "mismatch"
+                            ? `Endpoint reachable · model tag mismatch`
+                            : `Not verified — ${verifyResult.reason}`}
+                    </div>
+                    <div className="dm-run-console__hint">expected tag: <strong>{artifact.modelTag || reservedTag}</strong> · actual response model: <strong>{verifyResult.servedModel || "—"}</strong></div>
+                    <div className="dm-run-console__hint">registry: {result.integrationId} · run: {result.trainingRunId} · model row: {SLUG}-v{result.version}</div>
+                    {verifyResult.snippet ? <div className="dm-helper-stream dm-swarm-card-desc">response excerpt: {verifyResult.snippet}</div> : null}
+                    {!verifyResult.verified ? <div className="dm-run-console__hint">{verifyResult.reason}</div> : null}
                   </div>
                 ) : null}
               </div>
@@ -629,11 +656,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card">
                 <div className="dm-helper-toolcall-title dm-swarm-card-title">Bind into a sandbox/workflow smoke</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">Reference registry row <strong>{result.integrationId}</strong> from a sandbox row or an api-registry-call workflow node, then run it once. A successful run writes the outputHash that completes the capability.</div>
-                <a className="dm-run-console__hint" href={`/workflows`} data-bind-open-workflow="">Open Workflows →</a>
+                <div className="dm-helper-stream dm-swarm-card-desc">Reference registry row <strong>{result.integrationId}</strong> from a sandbox row or an api-registry-call workflow node, then run it once. Completion is BLOCKED until the run writes an outputHash.</div>
+                {/* Smoke proof checklist — derived live, never a guess. */}
+                <div className="dm-run-console__hint">API Registry row: {result.integrationId}</div>
+                <div className="dm-run-console__hint">Expected model tag: {artifact.modelTag || reservedTag}</div>
+                <div className="dm-run-console__hint">Workflow/sandbox link: {liveRuntime.identityChain?.sandboxObjectId ? "linked" : "missing"}</div>
+                <div className="dm-run-console__hint">Smoke run: {liveSandboxRunId ? (liveRuntime.state === "complete" ? "passed" : "ran") : "not run"}</div>
+                <div className="dm-run-console__hint">Output hash: {liveOutputHash ? `present (#${liveOutputHash})` : "missing"}</div>
+                <div className="dm-run-console__hint" data-bind-completion={smokeProven ? "complete" : "blocked"}>Completion: {smokeProven ? "complete" : "blocked until outputHash exists"}</div>
+                <a className="dm-run-console__hint" href={`/workflows`} data-bind-open-workflow="">Open Workflow Canvas →</a>
               </div>
+              <button type="button" className="dm-btn-ghost" data-bind-refresh="" onClick={async () => {
+                const probe = await fetch("/api/workspace", { cache: "no-store" });
+                const fresh = await probe.json();
+                if (fresh?.workspaceConfig) setLiveConfig(fresh.workspaceConfig);
+              }}>
+                Refresh proof
+              </button>
               <button type="button" className="dm-btn-ghost" data-bind-done="" onClick={() => setPanel("done")}>
-                Done — track completion on the ledger
+                {smokeProven ? "View completed capability" : "View status (smoke proof still required)"}
               </button>
             </div>
           )}
@@ -658,12 +699,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "done" && result && (
             <div className="dm-orch-modal-list">
-              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-done="">
-                <div className="dm-helper-toolcall-title">Custom model {result.modelTag} — lifecycle owned end to end</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">
-                  v{result.version}: {result.records} records → run {result.trainingRunId} → imported artifact → registry `{result.integrationId}`{verifyResult?.verified ? " → verified tuned tag" : ""}. Bind it into a workflow and run once to write the final outputHash — /training and /custom-models track the proof live.
+              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-done="" data-handoff-terminal-state={smokeProven ? "complete" : verifyResult?.verified ? "verified-smoke-required" : "pending"}>
+                {/* Proof-aware terminal state — "complete" ONLY when the same
+                    derivation /custom-models uses proves verified endpoint +
+                    sandbox run + outputHash. Otherwise it says exactly what is
+                    still required. No fake completion. */}
+                <div className="dm-helper-toolcall-title">
+                  {smokeProven
+                    ? `Custom model capability complete — ${result.modelTag}`
+                    : verifyResult?.verified
+                      ? `Endpoint verified — smoke proof still required`
+                      : `Custom model ${result.modelTag} — not yet verified`}
                 </div>
-                <div className="dm-run-console__hint">Identity chain: {SLUG}-v{result.version} → {result.exportId} → {result.trainingRunId} → {result.modelTag} → {result.integrationId}{verifyResult?.verified ? " → verified" : ""}</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">
+                  {smokeProven
+                    ? `Proven end to end: ${result.records} records → run ${result.trainingRunId} → imported artifact → registry ${result.integrationId} → verified tuned tag → sandbox run ${liveSandboxRunId} → outputHash #${liveOutputHash}.`
+                    : `v${result.version}: ${result.records} records → run ${result.trainingRunId} → imported artifact → registry ${result.integrationId}${verifyResult?.verified ? " → verified tuned tag" : ""}. Bind it into a workflow and run once — completion is blocked until the smoke run writes an outputHash.`}
+                </div>
+                <div className="dm-run-console__hint">Identity chain: {SLUG}-v{result.version} → {result.exportId} → {result.trainingRunId} → {result.modelTag} → {result.integrationId}{verifyResult?.verified ? " → verified" : ""}{smokeProven ? ` → ${liveSandboxRunId} → #${liveOutputHash}` : ""}</div>
+                {!smokeProven ? <a className="dm-run-console__hint" href="/workflows" data-done-open-workflow="">Open Workflow Canvas to run the smoke →</a> : null}
               </div>
             </div>
           )}

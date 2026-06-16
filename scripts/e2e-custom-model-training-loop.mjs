@@ -248,34 +248,19 @@ console.log("\n[8] Bind sandbox → sandbox-ready; run smoke (outputHash) → co
 }
 
 // --------------------------------------------------------------------------
-// STEP 9 — feedback loop: a failed custom-model run surfaces as a gap.
+// STEP 9 — first-use bootstrap checklist touchpoints, on the COMPLETE state
+//          (positive + negative + rollback + graceful failure).
 // --------------------------------------------------------------------------
-console.log("\n[9] Future failed run becomes a training gap");
+console.log("\n[9] First-use setup checklist (bootstrap) touchpoints");
 {
-  const { workspaceConfig, workspaceSourceRecords } = readWorkspace();
-  workspaceConfig.dataModel.objects.find((o) => o.id === "smoke-sandbox").rows.push(
-    { Name: "smoke-fail", schedulerRegistryId: `${SLUG}-model`, lastRunId: "run_fail_1", lastResponse: JSON.stringify({ ok: false, exitCode: 1 }) },
-  );
-  writeWorkspace(workspaceConfig, workspaceSourceRecords);
-  const gaps = deriveTrainingGapDrivers({ ...readWorkspace(), slug: SLUG });
-  ok("gap classifier detects the failed run", gaps.gaps.some((g) => g.id === "failed_sandbox_run"));
-  ok("gap recommendation points the next cycle", gaps.hasGaps && gaps.recommendation.length > 0);
-}
-
-// --------------------------------------------------------------------------
-// STEP 10 — first-use bootstrap checklist touchpoints (positive + negative +
-//           rollback + graceful failure).
-// --------------------------------------------------------------------------
-console.log("\n[10] First-use setup checklist (bootstrap) touchpoints");
-{
-  // At this point the workspace has a complete, verified, invoked model — but
-  // NO completion marker yet, so the checklist is still in bootstrap mode and
-  // the invoke step reads complete (the endpoint returned the tuned tag).
+  // The model is complete (verified + smoke run + outputHash) but has NO
+  // completion marker yet, so the checklist is still in bootstrap mode.
   const ws = readWorkspace();
   const b = deriveTrainingBootstrapState({ workspaceConfig: ws.workspaceConfig, workspaceSourceRecords: ws.workspaceSourceRecords });
   eq("checklist is in bootstrap mode until a marker is stamped", b.mode, "bootstrap");
   eq("invoke step is complete after a real verified chat-completions response", b.checklist.find((s) => s.id === "invoke").status, "complete");
-  eq("completion is unlocked (mark-complete)", b.primaryAction.kind, "mark-complete");
+  eq("smoke step is complete only with outputHash proof", b.checklist.find((s) => s.id === "smoke").status, "complete");
+  eq("completion is unlocked (mark-complete) only after smoke proof", b.primaryAction.kind, "mark-complete");
 
   // POSITIVE: stamp the governed completion marker → checklist flips operational.
   const objects = buildTrainingBootstrapMarkerPatch(ws.workspaceConfig, { at: "2026-06-16T15:00:00.000Z", by: "user" });
@@ -291,6 +276,16 @@ console.log("\n[10] First-use setup checklist (bootstrap) touchpoints");
   writeWorkspace(rolled.workspaceConfig, rolled.workspaceSourceRecords);
   eq("ROLLBACK: removing the marker returns to bootstrap (no sticky flag)", deriveTrainingBootstrapState({ ...readWorkspace() }).mode, "bootstrap");
 
+  // NEGATIVE: a verified endpoint WITHOUT smoke outputHash must NOT allow
+  // completion (the final invariant — verified ≠ complete).
+  const verifiedOnly = deriveTrainingBootstrapState({ workspaceConfig: { dataModel: { objects: [
+    { id: "workspace-helper-sandbox", objectType: "sandbox-environment", rows: [{ Name: "workspace-helper" }] },
+    { objectType: "model-training", rows: [{ Name: SLUG, localModel: "gh-v1", lastExportId: "exp_1", lastSourceId: `training:model-training:${SLUG}`, lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: `${SLUG}-model` }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: `${SLUG}-model`, kind: "custom-model", status: "connected", lastResponse: JSON.stringify({ model: "gh-v1" }) }] },
+    { id: "training-traces", objectType: "training-traces", rows: Array.from({ length: 10 }, (_, i) => ({ qualityScore: 5, inputPrompt: `p${i}`, agentOutput: `o${i}`, exported: "true" })) },
+  ] } }, workspaceSourceRecords: { [`training:model-training:${SLUG}`]: { records: [{ exportId: "exp_1" }] } } });
+  eq("NEGATIVE: verified-only (no smoke outputHash) does NOT unlock completion", verifiedOnly.checklist.find((s) => s.id === "complete").status, "pending");
+
   // GRACEFUL: a workspace with no helper row cannot be stamped — the builder
   // returns null and the caller no-ops instead of crashing.
   ok("GRACEFUL: marker builder returns null when the helper row is absent", buildTrainingBootstrapMarkerPatch({ dataModel: { objects: [] } }, { at: "x" }) === null);
@@ -300,6 +295,21 @@ console.log("\n[10] First-use setup checklist (bootstrap) touchpoints");
   const fresh = deriveTrainingBootstrapState({ workspaceConfig: { dataModel: { objects: [{ id: "workspace-helper-sandbox", objectType: "sandbox-environment", rows: [{ Name: "workspace-helper" }] }] } }, workspaceSourceRecords: {} });
   eq("fresh workspace: invoke is pending (not invokable yet)", fresh.checklist.find((s) => s.id === "invoke").status, "pending");
   ok("fresh workspace: there is always a next move", Boolean(fresh.primaryAction));
+}
+
+// --------------------------------------------------------------------------
+// STEP 10 — feedback loop: a failed custom-model run surfaces as a gap.
+// --------------------------------------------------------------------------
+console.log("\n[10] Future failed run becomes a training gap");
+{
+  const { workspaceConfig, workspaceSourceRecords } = readWorkspace();
+  workspaceConfig.dataModel.objects.find((o) => o.id === "smoke-sandbox").rows.push(
+    { Name: "smoke-fail", schedulerRegistryId: `${SLUG}-model`, lastRunId: "run_fail_1", lastResponse: JSON.stringify({ ok: false, exitCode: 1 }) },
+  );
+  writeWorkspace(workspaceConfig, workspaceSourceRecords);
+  const gaps = deriveTrainingGapDrivers({ ...readWorkspace(), slug: SLUG });
+  ok("gap classifier detects the failed run", gaps.gaps.some((g) => g.id === "failed_sandbox_run"));
+  ok("gap recommendation points the next cycle", gaps.hasGaps && gaps.recommendation.length > 0);
 }
 
 // --------------------------------------------------------------------------

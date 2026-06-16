@@ -156,8 +156,26 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
     }));
   }
 
-  // 7 — Mark setup complete (the only mutation; the marker disappears this UI).
-  const prereqsMet = ["curate", "dataset", "model", "register", "invoke"].every(
+  // 7 — Prove it in a sandbox/workflow smoke. The final invariant requires the
+  // run to write an outputHash; verified invocation alone is NOT enough.
+  if (sandboxProven) {
+    checklist.push(item("smoke", "Prove it in a workflow smoke", "complete", {
+      guidance: "A sandbox/workflow run invoked the custom model and wrote an outputHash — real, runnable proof.",
+    }));
+  } else if (tunedTagVerified) {
+    checklist.push(item("smoke", "Prove it in a workflow smoke", "ready", {
+      guidance: "Bind the verified model into a sandbox/workflow and run it once. Completion is blocked until the run writes an outputHash.",
+      nextAction: { kind: "open-workflows", label: "Open Workflow Canvas" },
+    }));
+  } else {
+    checklist.push(item("smoke", "Prove it in a workflow smoke", "pending", {
+      guidance: "Verify the endpoint first, then run a smoke to capture the outputHash.",
+    }));
+  }
+
+  // 8 — Mark setup complete (the only mutation; the marker disappears this UI).
+  // Completion requires the full proof chain INCLUDING the smoke outputHash.
+  const prereqsMet = ["curate", "dataset", "model", "register", "invoke", "smoke"].every(
     (id) => checklist.find((c) => c.id === id)?.status === "complete",
   );
   if (completionRef) {

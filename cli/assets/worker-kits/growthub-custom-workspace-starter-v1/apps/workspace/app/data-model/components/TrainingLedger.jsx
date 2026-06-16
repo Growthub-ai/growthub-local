@@ -219,6 +219,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
     else if (action.kind === "invoke-endpoint") invokeEndpoint(action.apiRegistryId);
     else if (action.kind === "mark-complete") markComplete();
     else if (action.kind === "open-data-model") window.location.href = "/data-model";
+    else if (action.kind === "open-workflows") window.location.href = "/workflows";
   }
 
   // BOOTSTRAP MODE — hyper-focused first-use setup, nothing else competes.
