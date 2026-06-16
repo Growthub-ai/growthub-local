@@ -57,6 +57,14 @@ const RUN_COLUMNS = [
   "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization", "schema",
 ];
 const SLUG = "workspace-local";
+/** Human labels for raw artifact types — the customer never sees bare "gguf". */
+const ARTIFACT_TYPE_LABELS = {
+  gguf: "A local model file (GGUF)",
+  adapter: "A local adapter file",
+  "merged-model": "A merged local model file",
+  "ollama-model": "An Ollama model name",
+  "openai-compatible-endpoint": "A running compatible endpoint",
+};
 
 function eligibleTraceRows(workspaceConfig, minScore) {
   const objects = workspaceConfig?.dataModel?.objects || [];
@@ -391,10 +399,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   }
 
   const headTitle = ({
-    curate: "Review training data", profile: "Choose training profile", prepare: "Preparing handoff",
-    train: "Fine-tuning in progress", import: "Import the trained model", verify: "Verify the endpoint",
-    bind: "Bind into a workflow", recover: "Recovery", done: "Custom model ready",
-  })[panel] || "Train custom model";
+    curate: "Review examples", profile: "Choose training path", prepare: "Prepare training data",
+    train: "Run training", import: "Attach model result", verify: "Test model reply",
+    bind: "Run in workflow", recover: "Recovery", done: "Completion",
+  })[panel] || "Start model training";
 
   return createPortal((
     <div className="dm-orch-modal-backdrop" role="presentation" onClick={onClose}>
@@ -410,7 +418,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         {/* Lifecycle rail — the user always sees where they are; no dark
             states. Reuses the run-console dot grammar; labels via title. */}
         <div className="dm-run-console__tree" data-training-rail={panel} style={{ padding: "8px 16px 0" }} aria-label="Training lifecycle">
-          {[["curate", "Distill"], ["profile", "Profile"], ["prepare", "Dataset"], ["train", "Train"], ["import", "Import"], ["verify", "Verify"], ["bind", "Run"]].map(([id, label]) => {
+          {[["curate", "Examples"], ["profile", "Path"], ["prepare", "Prepare"], ["train", "Train"], ["import", "Attach"], ["verify", "Test"], ["bind", "Run"]].map(([id, label]) => {
             const order = ["curate", "profile", "prepare", "train", "import", "verify", "bind", "done"];
             const cur = order.indexOf(panel === "recover" ? "prepare" : panel);
             const me = order.indexOf(id);
@@ -430,13 +438,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {panel === "checklist" && (
             <div className="dm-orch-modal-list">
               <div className="training-handoff-process">
-                <div><strong>1. Distill</strong><span>Select high-quality traces from real workspace activity.</span></div>
-                <div><strong>2. Train</strong><span>Pick a training profile; Growthub Local prepares and tracks the run.</span></div>
-                <div><strong>3. Import</strong><span>Attach the trained artifact — the tuned model becomes real and provable.</span></div>
-                <div><strong>4. Verify & Run</strong><span>Prove the tuned tag, then invoke it in a workflow.</span></div>
+                <div><strong>1. Review examples</strong><span>Pick the best examples from your real workspace activity.</span></div>
+                <div><strong>2. Train</strong><span>Choose how the model trains; Growthub Local prepares and tracks the run.</span></div>
+                <div><strong>3. Attach result</strong><span>Attach your trained model — it becomes real and provable.</span></div>
+                <div><strong>4. Test & run</strong><span>Confirm your model replies, then run it once in a workflow.</span></div>
               </div>
               <button type="button" className="dm-btn-ghost" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
-                {candidates.length > 0 ? `Review ${candidates.length} traces` : "No qualified traces yet"}
+                {candidates.length > 0 ? `Review ${candidates.length} examples` : "No qualified examples yet"}
               </button>
             </div>
           )}
@@ -539,9 +547,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               {/* Exactly what the governed prepare wrote — no hidden scaffold. */}
               <div className="dm-helper-toolcall dm-swarm-card" data-prepare-scaffold="">
                 <div className="dm-helper-toolcall-title dm-swarm-card-title">Created in this workspace</div>
-                <div className="dm-run-console__hint">API Registry row: {result.integrationId} (kind: custom-model)</div>
-                <div className="dm-run-console__hint">Expected model tag: {result.modelTag}</div>
-                <div className="dm-run-console__hint">model-training row: {SLUG}-v{result.version} · run: {result.trainingRunId} · export: {result.exportId}</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">Model record · Training run record · Connection record · Training data export</div>
+                {/* Proof details — IDs are visible but secondary. */}
+                <div className="dm-run-console__hint">Proof details — model row: {SLUG}-v{result.version} · run: {result.trainingRunId} · export: {result.exportId} · connection: {result.integrationId} · expected reply: {result.modelTag}</div>
                 <div className="dm-run-console__hint">Endpoint: {target.baseUrl}{target.endpoint} · auth: {target.authRef ? `authRef ${target.authRef}` : "none (Ollama local)"}</div>
               </div>
               <div className="dm-helper-toolcall dm-swarm-card">
@@ -575,7 +583,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </button>
               ) : (
                 <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>
-                  My run finished — import the artifact
+                  My run finished — attach the result
                 </button>
               )}
             </div>
@@ -584,24 +592,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {panel === "import" && result && (
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Attach the trained artifact</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">Growthub Local records the artifact identity so the tuned model is provable, not assumed. File artifacts need a path + sha256; served/named runtimes need only the model tag.</div>
-                <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>type{" "}
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Attach your model result</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">What did training produce? Growthub Local records its identity so your model is provable, not assumed.</div>
+                <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Result type{" "}
                   <select value={artifact.type} onChange={(e) => setArtifact({ ...artifact, type: e.target.value })} data-import-type="">
-                    {profile.outputs.concat(["openai-compatible-endpoint", "ollama-model"]).filter((v, i, a) => a.indexOf(v) === i).map((t) => <option key={t} value={t}>{t}</option>)}
+                    {profile.outputs.concat(["openai-compatible-endpoint", "ollama-model"]).filter((v, i, a) => a.indexOf(v) === i).map((t) => <option key={t} value={t}>{ARTIFACT_TYPE_LABELS[t] || t}</option>)}
                   </select>
                 </label>
-                <label className="dm-run-console__hint" style={{ display: "block" }}>model tag{" "}
+                <label className="dm-run-console__hint" style={{ display: "block" }}>Model name{" "}
                   <input type="text" value={artifact.modelTag} onChange={(e) => setArtifact({ ...artifact, modelTag: e.target.value })} data-import-tag="" />
                 </label>
-                <label className="dm-run-console__hint" style={{ display: "block" }}>artifact path{" "}
+                <label className="dm-run-console__hint" style={{ display: "block" }}>File path{" "}
                   <input type="text" value={artifact.path} placeholder="./artifacts/…" onChange={(e) => setArtifact({ ...artifact, path: e.target.value })} data-import-path="" />
                 </label>
-                <label className="dm-run-console__hint" style={{ display: "block" }}>sha256{" "}
+                <label className="dm-run-console__hint" style={{ display: "block" }}>File hash (sha256){" "}
                   <input type="text" value={artifact.sha256} onChange={(e) => setArtifact({ ...artifact, sha256: e.target.value })} data-import-sha="" />
                 </label>
                 <div className="dm-run-console__hint" data-import-state={deriveArtifactState(artifact).identified ? "ok" : "incomplete"}>
-                  {deriveArtifactState(artifact).identified ? "Artifact is provable — ready to import." : deriveArtifactState(artifact).reason}
+                  {deriveArtifactState(artifact).identified ? "Your model result is provable — ready to attach." : deriveArtifactState(artifact).reason}
                 </div>
               </div>
               {busy ? (
@@ -612,7 +620,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </div>
               ) : null}
               <button type="button" className="dm-btn-ghost" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={importArtifact}>
-                {busy ? "Setting up model record…" : "Import artifact & activate tuned tag"}
+                {busy ? "Setting up your model record…" : "Attach model & activate"}
               </button>
             </div>
           )}
@@ -620,34 +628,33 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {panel === "verify" && result && (
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Verify the endpoint serves the tuned weights</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">The registry test must return <strong>{artifact.modelTag || reservedTag}</strong>. A base-model, malformed, or error response will NOT verify — there is no fake proof.</div>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Test your custom model</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">Send a real prompt to your model. It only verifies if the reply comes back as <strong>{artifact.modelTag || reservedTag}</strong> — not the base model.</div>
                 {verifying ? (
                   <>
                     <div style={{ borderBottom: "2px solid currentColor", width: "70%", transition: "width 160ms linear" }} aria-hidden="true" />
-                    <div className="dm-run-console__hint">Calling the registered endpoint and checking the response model tag…</div>
+                    <div className="dm-run-console__hint">Sending a prompt and checking who replied…</div>
                   </>
                 ) : null}
                 {verifyResult && !verifying ? (
                   <div data-verify-result={verifyResult.verified ? "verified" : verifyResult.demotion}>
-                    <div className="dm-run-console__hint">
+                    <div className="dm-helper-stream dm-swarm-card-desc">
                       {verifyResult.verified
-                        ? `✓ Custom model verified — actual response model matched the expected tuned tag`
+                        ? `✓ Your custom model answered as ${verifyResult.servedModel}.`
                         : verifyResult.demotion === "base-model"
-                          ? `Endpoint reachable · custom model NOT verified — returned the base model`
+                          ? `The connection answered, but it was not your custom model — it returned the base model.`
                           : verifyResult.demotion === "mismatch"
-                            ? `Endpoint reachable · model tag mismatch`
-                            : `Not verified — ${verifyResult.reason}`}
+                            ? `The connection answered, but it was not your custom model.`
+                            : `Not your custom model yet — ${verifyResult.reason}`}
                     </div>
-                    <div className="dm-run-console__hint">expected tag: <strong>{artifact.modelTag || reservedTag}</strong> · actual response model: <strong>{verifyResult.servedModel || "—"}</strong></div>
-                    <div className="dm-run-console__hint">registry: {result.integrationId} · run: {result.trainingRunId} · model row: {SLUG}-v{result.version}</div>
-                    {verifyResult.snippet ? <div className="dm-helper-stream dm-swarm-card-desc">response excerpt: {verifyResult.snippet}</div> : null}
-                    {!verifyResult.verified ? <div className="dm-run-console__hint">{verifyResult.reason}</div> : null}
+                    {/* Proof details — secondary. */}
+                    <div className="dm-run-console__hint">Proof details — expected: {artifact.modelTag || reservedTag} · actual: {verifyResult.servedModel || "—"} · run: {result.trainingRunId} · model row: {SLUG}-v{result.version} · registry: {result.integrationId}</div>
+                    {verifyResult.snippet ? <div className="dm-run-console__hint">reply excerpt: {verifyResult.snippet}</div> : null}
                   </div>
                 ) : null}
               </div>
               <button type="button" className="dm-btn-ghost" data-verify-run="" onClick={runVerify} disabled={verifying}>
-                {verifying ? "Testing endpoint…" : verifyResult && !verifyResult.verified ? "Re-test endpoint" : "Test endpoint"}
+                {verifying ? "Testing your model…" : verifyResult && !verifyResult.verified ? "Test again" : "Test my model"}
               </button>
             </div>
           )}
@@ -655,15 +662,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {panel === "bind" && result && (
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Bind into a sandbox/workflow smoke</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">Reference registry row <strong>{result.integrationId}</strong> from a sandbox row or an api-registry-call workflow node, then run it once. Completion is BLOCKED until the run writes an outputHash.</div>
-                {/* Smoke proof checklist — derived live, never a guess. */}
-                <div className="dm-run-console__hint">API Registry row: {result.integrationId}</div>
-                <div className="dm-run-console__hint">Expected model tag: {artifact.modelTag || reservedTag}</div>
-                <div className="dm-run-console__hint">Workflow/sandbox link: {liveRuntime.identityChain?.sandboxObjectId ? "linked" : "missing"}</div>
-                <div className="dm-run-console__hint">Smoke run: {liveSandboxRunId ? (liveRuntime.state === "complete" ? "passed" : "ran") : "not run"}</div>
-                <div className="dm-run-console__hint">Output hash: {liveOutputHash ? `present (#${liveOutputHash})` : "missing"}</div>
-                <div className="dm-run-console__hint" data-bind-completion={smokeProven ? "complete" : "blocked"}>Completion: {smokeProven ? "complete" : "blocked until outputHash exists"}</div>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Run it once in a workflow</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">Use your model <strong>{result.integrationId}</strong> in a workflow and run it once. Completion is blocked until the run writes proof.</div>
+                {/* Proof checklist — derived live, never a guess. */}
+                <div className="dm-run-console__hint">Connected in a workflow: {liveRuntime.identityChain?.sandboxObjectId ? "yes" : "not yet"}</div>
+                <div className="dm-run-console__hint">Workflow run: {liveSandboxRunId ? (liveRuntime.state === "complete" ? "passed" : "ran") : "not run"}</div>
+                <div className="dm-run-console__hint">Proof hash: {liveOutputHash ? "present" : "missing"}</div>
+                <div className="dm-run-console__hint" data-bind-completion={smokeProven ? "complete" : "blocked"}>Completion: {smokeProven ? "complete" : "blocked until the run writes proof"}</div>
+                {/* Proof details — secondary. */}
+                {liveOutputHash || liveRuntime.identityChain?.sandboxObjectId ? <div className="dm-run-console__hint">Proof details — expected: {artifact.modelTag || reservedTag} · outputHash: {liveOutputHash || "—"} · sandbox: {liveRuntime.identityChain?.sandboxObjectId || "—"} · registry: {result.integrationId}</div> : null}
                 <a className="dm-run-console__hint" href={`/workflows`} data-bind-open-workflow="">Open Workflow Canvas →</a>
               </div>
               <button type="button" className="dm-btn-ghost" data-bind-refresh="" onClick={async () => {
@@ -706,10 +713,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     still required. No fake completion. */}
                 <div className="dm-helper-toolcall-title">
                   {smokeProven
-                    ? `Custom model capability complete — ${result.modelTag}`
+                    ? `Custom model complete — ${result.modelTag}`
                     : verifyResult?.verified
-                      ? `Endpoint verified — smoke proof still required`
-                      : `Custom model ${result.modelTag} — not yet verified`}
+                      ? `Model tested — workflow proof still required`
+                      : `Model result attached — test still required`}
                 </div>
                 <div className="dm-helper-stream dm-swarm-card-desc">
                   {smokeProven

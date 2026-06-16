@@ -33,7 +33,7 @@ Compute may run through a local runner, container, manual attestation, Ollama / 
 
 - `/training` opens the Training Ledger cockpit; `/custom-models` (evidence-gated) opens the completed-capability cockpit.
 - A **Next best action** card derived from `deriveTrainingRuntimeDrivers()` — one evidence-backed action that **links** to the canonical authority (Data Model / API Registry / Workflow Canvas / Custom Models), never executing from the card.
-- The **Training Runtime Modal**: `curate → profile → dataset → train → import → verify → bind → done`, with continuous in-modal progress + status text during the real API Registry + Data Model setup. No dark states.
+- The **Training Runtime Modal**: `review examples → train → attach model → test reply → run in workflow → complete`, with continuous in-modal progress + status text during the real API Registry + Data Model setup. No dark states. ("complete" is shown only once verified + workflow run + proof hash exist — never before.)
 - A governed **`model-training-run`** receipt layer (`growthub-local-model-training-run-v1`), read from both the CLI `training-run:*` sidecar lane and the governed `model-training-run` Data Model object.
 - Five **training runtime profiles** (Unsloth QLoRA, llama.cpp GGUF, Ollama Modelfile, OpenAI-compatible endpoint, manual attestation).
 - Strict proof gates: `imported` requires a provable artifact (path + sha256 + tag); `verified` requires the endpoint to return the tuned tag (base / malformed / error all demote); `complete` requires sandbox run + outputHash.

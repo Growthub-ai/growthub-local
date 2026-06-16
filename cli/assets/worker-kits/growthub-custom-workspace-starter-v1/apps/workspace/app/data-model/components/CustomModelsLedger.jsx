@@ -45,10 +45,11 @@ function ActionMenu({ model, workspaceConfig }) {
         onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setConfirming(""); } }}>⋮</button>
       {open ? (
         <span className="dm-helper-toolcall" role="menu" style={{ position: "absolute", right: 0, zIndex: 5, display: "block", maxHeight: 220, overflowY: "auto" }}>
-          {model.canExport ? item("Export capability manifest", () => { setOpen(false); exportManifest(model, workspaceConfig); }) : null}
-          {item("Open API Registry test", null, model.links.registry)}
-          {model.links.workflow ? item("Open Workflow Canvas", null, model.links.workflow) : null}
+          {item("Improve from gaps", null, model.links.training)}
+          {item("View proof", null, model.links.registry)}
+          {model.links.workflow ? item("Open workflow", null, model.links.workflow) : null}
           {item("Open model row", null, model.links.dataModel)}
+          {model.canExport ? item("Export developer manifest", () => { setOpen(false); exportManifest(model, workspaceConfig); }) : null}
           {twoStep("duplicate", "Duplicate in Data Model", model.links.dataModel)}
           {twoStep("delete", "Delete in Data Model", model.links.dataModel)}
         </span>
@@ -150,7 +151,7 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
                 cockpit where the real test runs and writes proof; it does
                 not invoke anything from here, so it never says "Test". */}
             {model.canTest
-              ? <a className="dm-btn-ghost" href={model.links.registry} data-model-test="">Open test</a>
+              ? <a className="dm-btn-ghost" href={model.links.registry} data-model-test="">Use model</a>
               : <a className="dm-btn-ghost" href={model.links.training} data-model-test="">Open Training</a>}
             <ActionMenu model={model} workspaceConfig={workspaceConfig} />
           </div>

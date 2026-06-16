@@ -141,35 +141,35 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
   // Registry chat-completions call to the user's local model. Completion is
   // gated on the response carrying the TUNED tag (not the base model).
   if (tunedTagVerified) {
-    checklist.push(item("invoke", "Invoke your custom model", "complete", {
-      guidance: `Verified: the endpoint returned the tuned tag ${focusModel?.localModel || ""} — your local custom model answered as itself, not the base model.`,
+    checklist.push(item("invoke", "Test your custom model", "complete", {
+      guidance: `Your custom model answered as ${focusModel?.localModel || "itself"} — not the base model.`,
       evidenceRefs: [focusModel?.lastVerifiedAt].filter(Boolean),
     }));
   } else if (reached("deployed") && apiRegistryId) {
-    checklist.push(item("invoke", "Invoke your custom model", "ready", {
-      guidance: "Run a real chat-completions call against your local custom model endpoint. Start your local model (e.g. `ollama run`/`ollama serve`), then invoke — the response must carry your tuned tag to verify.",
-      nextAction: { kind: "invoke-endpoint", label: "Invoke custom model", apiRegistryId },
+    checklist.push(item("invoke", "Test your custom model", "ready", {
+      guidance: "Send a real prompt to your local model. Start it locally (ollama serve), then test — its reply must come back as your model, not the base model, to verify.",
+      nextAction: { kind: "invoke-endpoint", label: "Test custom model", apiRegistryId },
     }));
   } else {
-    checklist.push(item("invoke", "Invoke your custom model", "pending", {
-      guidance: "Register the endpoint first, then invoke it.",
+    checklist.push(item("invoke", "Test your custom model", "pending", {
+      guidance: "Connect the model first, then test its reply.",
     }));
   }
 
   // 7 — Prove it in a sandbox/workflow smoke. The final invariant requires the
   // run to write an outputHash; verified invocation alone is NOT enough.
   if (sandboxProven) {
-    checklist.push(item("smoke", "Prove it in a workflow smoke", "complete", {
-      guidance: "A sandbox/workflow run invoked the custom model and wrote an outputHash — real, runnable proof.",
+    checklist.push(item("smoke", "Run it once in a workflow", "complete", {
+      guidance: "A workflow run used your custom model and wrote proof — it works inside the workspace.",
     }));
   } else if (tunedTagVerified) {
-    checklist.push(item("smoke", "Prove it in a workflow smoke", "ready", {
-      guidance: "Bind the verified model into a sandbox/workflow and run it once. Completion is blocked until the run writes an outputHash.",
+    checklist.push(item("smoke", "Run it once in a workflow", "ready", {
+      guidance: "Use the verified model in a workflow and run it once. Completion is blocked until the run writes proof.",
       nextAction: { kind: "open-workflows", label: "Open Workflow Canvas" },
     }));
   } else {
-    checklist.push(item("smoke", "Prove it in a workflow smoke", "pending", {
-      guidance: "Verify the endpoint first, then run a smoke to capture the outputHash.",
+    checklist.push(item("smoke", "Run it once in a workflow", "pending", {
+      guidance: "Test your model first, then run it in a workflow to capture proof.",
     }));
   }
 

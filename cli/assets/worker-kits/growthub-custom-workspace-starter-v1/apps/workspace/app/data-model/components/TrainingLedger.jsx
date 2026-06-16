@@ -232,7 +232,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
             <span className="dm-helper-toolcall-title dm-swarm-card-title">Set up your first custom model</span>
             <span className="dm-run-console__hint">{bootstrap.progress.completed}/{bootstrap.progress.total}</span>
           </div>
-          <div className="dm-helper-stream dm-swarm-card-desc">Prove the loop once: curate → export → train → import → register → invoke. This checklist disappears once your local custom model answers a real chat-completions call.</div>
+          <div className="dm-helper-stream dm-swarm-card-desc">Prove the loop once: train a model, verify it responds, then run it in a workflow. This checklist disappears once the workflow run writes proof.</div>
         </div>
         {bootstrap.checklist.map((step) => (
           <div key={step.id} className="dm-helper-toolcall dm-swarm-card" data-setup-step={step.id} data-setup-status={step.status}>
@@ -271,7 +271,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
       <div className="dm-helper-toolcall dm-swarm-card" data-training-next-action={drivers.nextBestAction} data-training-runtime-state={drivers.state}>
         <div className="dm-helper-toolcall-row">
           <span className="dm-helper-toolcall-title">Next: {nextActionLabel}</span>
-          <span className="dm-run-console__hint">{confidencePct}% confidence</span>
+          {gaps.hasGaps ? <span className="dm-run-console__hint">Improvement signals: {gaps.totalGapSignals}</span> : null}
         </div>
         {drivers.topBlocker ? <div className="dm-helper-stream dm-swarm-card-desc">{drivers.topBlocker}</div> : null}
         {/* Canonical handoff — link to the authority that owns the next write
@@ -280,46 +280,49 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
           <a className="dm-btn-ghost" href={drivers.nextActionDestination} data-training-next-cta={drivers.nextBestAction} data-training-next-authority={drivers.nextActionCanonicalObject}>{drivers.nextActionCta} →</a>
         ) : null}
         {drivers.runGap ? (
-          <div className="dm-run-console__hint" data-training-run-gap="">Endpoint proof exists without a recorded training run — prepare a governed run so the lifecycle is fully provable.</div>
+          <div className="dm-run-console__hint" data-training-run-gap="">A model is connected but has no recorded training run — prepare a run so every step is provable.</div>
         ) : null}
         <div className="dm-run-console__tree" aria-label="Training loop drivers">
           {drivers.drivers.map((d) => (
             <span key={d.id} className="dm-run-console__tree-dot" data-variant={d.state === "complete" ? "ok" : d.state === "active" ? "active" : d.state === "blocked" ? "fail" : "pending"} title={`${d.label}${d.state === "complete" ? "" : ` — ${d.reason}`}`} />
           ))}
         </div>
-        {gaps.hasGaps ? <div className="dm-run-console__hint" data-training-gaps={gaps.totalGapSignals}>Re-train from gaps · {gaps.recommendation}</div> : null}
+        {gaps.hasGaps ? <div className="dm-run-console__hint" data-training-gaps={gaps.totalGapSignals}>Improve from gaps · {gaps.recommendation}</div> : null}
+        {/* Proof details — kept available, never the headline. */}
+        <div className="dm-run-console__hint" data-training-proof-details="">Proof details: {confidencePct}% confidence · state {drivers.state}</div>
       </div>
 
       <div className="training-stats-card" data-training-eligibility={state.eligibility.state}>
         <div className="training-stats-head">
           <div>
-            <div className="training-stats-title">Distillation Stats</div>
+            <div className="training-stats-title">Your model</div>
             <div className="training-stats-subtitle">{formatWhen(primaryModel.lastExportAt)}</div>
           </div>
         </div>
 
         <div className="training-section training-config-section">
           <div className="training-section-title">Configuration</div>
+          <div className="dm-run-console__hint">Choose the model this training starts from and the trace export it learns from.</div>
           <label className="training-field-row">
-            <span>Model</span>
+            <span>Model basis</span>
             <select
               className="training-model-select"
               value={modelLabel === "Not selected" ? "" : modelLabel}
               onChange={(event) => updateModelSelection(event.target.value)}
               disabled={modelOptions.length === 0}
-              aria-label="Training model"
+              aria-label="Model basis"
             >
               {modelOptions.length === 0 ? <option value="">Not selected</option> : null}
               {modelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
           <label className="training-field-row">
-            <span>Training data</span>
+            <span>Training data source</span>
             <select
               className="training-model-select"
               value={selectedSource?.value || ""}
               onChange={(event) => setSelectedSourceId(event.target.value)}
-              aria-label="Training data"
+              aria-label="Training data source"
             >
               {sourceOptions.length === 0 ? <option value="">No export selected</option> : null}
               {sourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -329,37 +332,38 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
 
         <div className="training-progress-block">
           <div className="training-progress-meta">
-            <span>Next Training Milestone</span>
+            <span>Training examples</span>
             <strong>{curatedTraces >= 50 ? `${curatedTraces}+` : `${curatedTraces} / ${nextMilestone}`}</strong>
           </div>
-          <div className={`training-progress-track${pipeline.ready ? " is-ready" : ""}`} aria-label={`Training depth ${curatedTraces} toward ${nextMilestone} qualified traces`}>
+          <div className={`training-progress-track${pipeline.ready ? " is-ready" : ""}`} aria-label={`${curatedTraces} examples toward ${nextMilestone}`}>
             <span style={{ width: `${readinessProgress}%` }} />
           </div>
           <div className="training-progress-marks">
             <span>{priorMilestone === 0 ? "start" : priorMilestone}</span>
-            <span>{nextMilestone}{nextMilestone === readinessTarget ? " fine-tune gate" : " next"}</span>
+            <span>{nextMilestone}{nextMilestone === readinessTarget ? " ready to train" : " next"}</span>
           </div>
           <div className="training-readiness-grid">
             <span>
               <strong>{curatedTraces}</strong>
-              <small>qualified traces</small>
+              <small>examples ready</small>
             </span>
             <span>
               <strong>{readinessTarget}</strong>
-              <small>fine-tune gate</small>
+              <small>minimum examples</small>
             </span>
             <span>
-              <strong>{nextMilestone}</strong>
-              <small>next milestone</small>
+              <strong>{pipeline.ready ? "enough" : "needs review"}</strong>
+              <small>quality</small>
             </span>
           </div>
         </div>
 
         <div className="training-section">
-          <div className="training-section-title">Training Quality</div>
+          <div className="training-section-title">Proof details</div>
           <div className="training-chip-row">
             <span className="training-chip">Escalations: <strong>{state.coverage.escalations}</strong></span>
-            <span className="training-chip">Reward Mean: <strong>{Number.isFinite(summary.rewardMean) ? summary.rewardMean : "—"}</strong></span>
+            <span className="training-chip">Reward mean: <strong>{Number.isFinite(summary.rewardMean) ? summary.rewardMean : "—"}</strong></span>
+            <span className="training-chip">Fine-tune gate: <strong>{readinessTarget}</strong></span>
           </div>
         </div>
 
@@ -373,12 +377,12 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
               onClick={() => setHandoffOpen(true)}
               aria-describedby="training-action-help"
             >
-              Train Custom Model
+              Start model training
             </button>
             <div className="training-action-help" id="training-action-help" role="tooltip">
-              <strong>Train Custom Model</strong>
-              <span>Uses the selected training data and model setting to prepare a governed fine-tune handoff.</span>
-              <span>The model is not marked custom or verified until the real training run and endpoint test write evidence back to the Data Model.</span>
+              <strong>Start model training</strong>
+              <span>Prepare the training data, choose how the model will run, and track every proof step.</span>
+              <span>Your model is not marked custom or verified until the real training run and endpoint test write proof back to the workspace.</span>
             </div>
           </div>
         </div>
