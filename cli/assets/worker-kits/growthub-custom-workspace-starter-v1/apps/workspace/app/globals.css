@@ -9582,6 +9582,61 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   font-size: 11px;
   line-height: 1.35;
 }
+.training-handoff-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.training-handoff-eligibility {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.training-handoff-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(220px, 2fr);
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+}
+.training-handoff-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.training-handoff-controls select {
+  width: 100%;
+  min-width: 0;
+}
+.training-handoff-trace-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 12px 6px;
+}
+.training-handoff-trace-title {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.training-handoff-trace-title input {
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+.training-handoff-trace-title span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .training-handoff-trace-list {
   display: grid;
   gap: 8px;

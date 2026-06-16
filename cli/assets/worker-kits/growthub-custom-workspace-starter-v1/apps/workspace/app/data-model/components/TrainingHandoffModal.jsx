@@ -415,18 +415,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           <button type="button" className="dm-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close">Close</button>
         </div>
 
-        {/* Lifecycle rail — the user always sees where they are; no dark
-            states. Reuses the run-console dot grammar; labels via title. */}
-        <div className="dm-run-console__tree" data-training-rail={panel} style={{ padding: "8px 16px 0" }} aria-label="Training lifecycle">
-          {[["curate", "Examples"], ["profile", "Path"], ["prepare", "Prepare"], ["train", "Train"], ["import", "Attach"], ["verify", "Test"], ["bind", "Run"]].map(([id, label]) => {
-            const order = ["curate", "profile", "prepare", "train", "import", "verify", "bind", "done"];
-            const cur = order.indexOf(panel === "recover" ? "prepare" : panel);
-            const me = order.indexOf(id);
-            const variant = panel === "done" || me < cur ? "ok" : me === cur ? "active" : "pending";
-            return <span key={id} className="dm-run-console__tree-dot" data-variant={variant} data-rail-step={id} title={`${label}${variant === "ok" ? " — done" : variant === "active" ? " — current" : ""}`} />;
-          })}
-        </div>
-
         <div className="dm-orch-modal-body">
           <div className="training-handoff-summary">
             <div><strong>{selected.length}</strong><span>qualified traces</span></div>
@@ -443,24 +431,29 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div><strong>3. Attach result</strong><span>Attach your trained model — it becomes real and provable.</span></div>
                 <div><strong>4. Test & run</strong><span>Confirm your model replies, then run it once in a workflow.</span></div>
               </div>
-              <button type="button" className="dm-btn-ghost" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
-                {candidates.length > 0 ? `Review ${candidates.length} examples` : "No qualified examples yet"}
-              </button>
+              <div className="training-handoff-action-row">
+                <button type="button" className="training-action-primary" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
+                  {candidates.length > 0 ? `Review ${candidates.length} examples` : "No qualified examples yet"}
+                </button>
+                <span className="training-handoff-eligibility" data-handoff-eligibility="">
+                  {selected.length} eligible · {MIN_FINETUNE_TRACES} required
+                </span>
+              </div>
             </div>
           )}
 
           {panel === "curate" && (
             <div className="dm-orch-modal-list">
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-row">
-                  <label className="dm-run-console__hint">
-                    min quality{" "}
+                <div className="training-handoff-controls">
+                  <label>
+                    <span>Min quality</span>
                     <select value={minScore} onChange={(e) => { setMinScore(Number(e.target.value)); setExcluded(new Set()); }} data-handoff-min-score="">
                       <option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
                     </select>
                   </label>
-                  <label className="dm-run-console__hint" style={{ marginLeft: 12 }}>
-                    deploy target{" "}
+                  <label>
+                    <span>Deploy target</span>
                     <select value={targetId} onChange={(e) => setTargetId(e.target.value)} data-handoff-target="">
                       {FINE_TUNE_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
@@ -480,8 +473,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               <div className="training-handoff-trace-list">
               {candidates.map(({ row, index }) => (
                 <div key={index} className="dm-helper-toolcall dm-swarm-card" data-handoff-trace={index}>
-                  <div className="dm-helper-toolcall-row">
-                    <label className="dm-helper-toolcall-title" style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                  <div className="training-handoff-trace-row">
+                    <label className="training-handoff-trace-title">
                       <input type="checkbox" checked={!excluded.has(index)} onChange={() => { const next = new Set(excluded); if (next.has(index)) next.delete(index); else next.add(index); setExcluded(next); }} />
                       <span>{String(row.inputPrompt).slice(0, 90)}</span>
                     </label>
@@ -492,9 +485,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </div>
               ))}
               </div>
-              <button type="button" className="dm-btn-ghost" data-handoff-to-profile="" disabled={!floorMet} onClick={() => setPanel("profile")}>
-                {floorMet ? "Choose training profile" : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
-              </button>
+              <div className="training-handoff-action-row">
+                <button type="button" className="training-action-primary" data-handoff-to-profile="" disabled={!floorMet} onClick={() => setPanel("profile")}>
+                  {floorMet ? "Choose training profile" : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
+                </button>
+                <span className="training-handoff-eligibility" data-handoff-eligibility="">
+                  {selected.length} selected · floor {MIN_FINETUNE_TRACES}
+                </span>
+              </div>
             </div>
           )}
 
@@ -520,7 +518,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-run-console__hint">verification expects response model = <strong>{runConfig.verification.expectedModel}</strong></div>
                 {!runConfig.ready ? <div className="dm-run-console__hint" data-runconfig-missing="">missing: {runConfig.missingRequirements.join(", ")}</div> : null}
               </div>
-              <button type="button" className="dm-btn-ghost" data-handoff-confirm="" disabled={!floorMet} onClick={runPrepare}>
+              <button type="button" className="training-action-primary" data-handoff-confirm="" disabled={!floorMet} onClick={runPrepare}>
                 Prepare dataset & training run
               </button>
             </div>
@@ -578,11 +576,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               )}
 
               {trainPhase !== "running" ? (
-                <button type="button" className="dm-btn-ghost" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting"}>
+                <button type="button" className="training-action-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting"}>
                   {trainPhase === "starting" ? "Starting…" : "Start fine-tuning"}
                 </button>
               ) : (
-                <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>
+                <button type="button" className="training-action-primary" data-train-to-import="" onClick={() => setPanel("import")}>
                   My run finished — attach the result
                 </button>
               )}
@@ -619,7 +617,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   <div className="dm-helper-stream dm-swarm-card-desc">{busyMsg}</div>
                 </div>
               ) : null}
-              <button type="button" className="dm-btn-ghost" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={importArtifact}>
+              <button type="button" className="training-action-primary" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={importArtifact}>
                 {busy ? "Setting up your model record…" : "Attach model & activate"}
               </button>
             </div>
@@ -653,7 +651,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   </div>
                 ) : null}
               </div>
-              <button type="button" className="dm-btn-ghost" data-verify-run="" onClick={runVerify} disabled={verifying}>
+              <button type="button" className="training-action-primary" data-verify-run="" onClick={runVerify} disabled={verifying}>
                 {verifying ? "Testing your model…" : verifyResult && !verifyResult.verified ? "Test again" : "Test my model"}
               </button>
             </div>
@@ -680,7 +678,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               }}>
                 Refresh proof
               </button>
-              <button type="button" className="dm-btn-ghost" data-bind-done="" onClick={() => setPanel("done")}>
+              <button type="button" className="training-action-primary" data-bind-done="" onClick={() => setPanel("done")}>
                 {smokeProven ? "View completed capability" : "View status (smoke proof still required)"}
               </button>
             </div>
@@ -697,7 +695,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   <div className="dm-helper-stream dm-swarm-card-desc">{item.description}</div>
                 </div>
               ))}
-              <button type="button" className="dm-btn-ghost" data-handoff-retry="" disabled={!recovery.retryable} onClick={runPrepare}>
+              <button type="button" className="training-action-primary" data-handoff-retry="" disabled={!recovery.retryable} onClick={runPrepare}>
                 {recovery.retryable ? "Retry — resumes from where it stopped" : "Resolve blocked items above, then reopen"}
               </button>
               <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")}>Back to curation</button>
@@ -734,9 +732,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {["curate", "profile", "done"].includes(panel) ? (
             <button type="button" className="dm-btn-ghost" onClick={() => setPanel("checklist")}>Back to checklist</button>
           ) : null}
-          <span className="dm-run-console__hint" style={{ marginLeft: "auto" }}>
-            {panel === "train" ? "Growthub Local owns the run lifecycle — you stay informed at every step." : "Nothing is marked custom or verified without real artifact + endpoint proof."}
-          </span>
         </div>
       </div>
     </div>
