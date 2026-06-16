@@ -47,6 +47,7 @@ import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConf
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
+import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -246,7 +247,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         let next = objects.map((o) => {
           if (o?.id === TRACES_OBJECT_ID) return { ...o, rows: (o.rows || []).map((row, i) => (selectedIdx.has(i) ? { ...row, exported: "true" } : row)) };
           if (o?.objectType === TRAINING_OBJECT_TYPE) return { ...o, rows: [...(o.rows || []), versionRow] };
-          if (o?.objectType === "api-registry") return { ...o, rows: [...(o.rows || []), registryRow] };
+          if (o?.objectType === "api-registry") {
+            // Genome field visibility: now that a custom-model record is
+            // present, reveal its binding fields in this table — without
+            // touching the object's generic/nango fields (no leak).
+            const withRow = { ...o, rows: [...(o.rows || []), registryRow] };
+            return { ...withRow, fieldSettings: applyGenomeFieldSettings(withRow) };
+          }
           return o;
         });
         if (!next.some((o) => o?.objectType === TRAINING_OBJECT_TYPE)) {
@@ -254,7 +261,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         }
         if (!next.some((o) => o?.objectType === "api-registry")) {
           const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane", "kind", "capabilityType", "modelTrainingRowId", "trainingRunId", "expectedModelTag"];
-          next.push({ id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } });
+          const apiObj = { id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } };
+          // Genome field visibility from the start — the custom-model record is
+          // present, so its binding fields show; nango fields stay hidden.
+          next.push({ ...apiObj, fieldSettings: applyGenomeFieldSettings(apiObj) });
         }
         next = upsertRunRow(next, runReceiptToRow(preparedReceipt));
         return next;

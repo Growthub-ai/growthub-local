@@ -385,6 +385,59 @@ test("isolation: a custom-model row coexists with generic rows without poisoning
 });
 
 // --------------------------------------------------------------------------
+// Workspace genome — causation classifier + field visibility + sidecar gate
+// --------------------------------------------------------------------------
+
+const { deriveRecordGenome, deriveGenomeFieldVisibility, applyGenomeFieldSettings, deriveRecordSidecar } = await import(lib("workspace-genome.js"));
+
+test("genome: causation classifies first-party structures; user-generic records are `generic`", () => {
+  assert.equal(deriveRecordGenome({ integrationId: "wl-model", kind: "custom-model" }).genome, "custom-model");
+  assert.equal(deriveRecordGenome({ integrationId: "hub", connectorKind: "nango" }).genome, "nango");
+  assert.equal(deriveRecordGenome({ integrationId: "my-thing" }).genome, "generic", "a plain user record expresses no genome");
+  assert.equal(deriveRecordGenome(null).genome, "generic");
+});
+
+test("genome: field visibility HIDES custom-model binding fields until a record expresses the genome", () => {
+  // Generic + nango rows only → custom-model fields hidden.
+  const generic = { objectType: "api-registry", rows: [{ integrationId: "hub", connectorKind: "nango" }, { integrationId: "stripe" }] };
+  const v1 = deriveGenomeFieldVisibility({ object: generic });
+  assert.ok(v1.hidden.includes("modelTrainingRowId") && v1.hidden.includes("expectedModelTag"), "custom-model fields hidden when absent");
+  assert.ok(v1.present.includes("nango"), "nango genome is present so its fields show");
+
+  // A custom-model record present → its fields are revealed.
+  const withModel = { objectType: "api-registry", rows: [{ integrationId: "hub", connectorKind: "nango" }, { integrationId: "wl-model", kind: "custom-model" }] };
+  const v2 = deriveGenomeFieldVisibility({ object: withModel });
+  assert.ok(v2.shown.includes("modelTrainingRowId"), "custom-model fields shown once present");
+  assert.ok(!v2.hidden.includes("modelTrainingRowId"));
+});
+
+test("genome: user-added value also reveals the field (works backwards-compatibly)", () => {
+  const obj = { objectType: "api-registry", rows: [{ integrationId: "x", expectedModelTag: "gh-v1" }] };
+  const v = deriveGenomeFieldVisibility({ object: obj });
+  assert.ok(v.shown.includes("expectedModelTag"), "a user-added value keeps the field visible");
+});
+
+test("genome: applyGenomeFieldSettings preserves prior hidden, reveals expressed genome fields, never mutates", () => {
+  const obj = { objectType: "api-registry", rows: [{ integrationId: "wl-model", kind: "custom-model" }], fieldSettings: { hidden: ["authRef"], order: ["integrationId"] } };
+  const fs = applyGenomeFieldSettings(obj);
+  assert.ok(fs.hidden.includes("authRef"), "prior user-hidden field stays hidden");
+  assert.ok(!fs.hidden.includes("modelTrainingRowId"), "expressed custom-model field is revealed");
+  assert.deepEqual(obj.fieldSettings.hidden, ["authRef"], "input not mutated");
+});
+
+test("genome: sidecar selector renders per-record genome and never crosses paths", () => {
+  assert.deepEqual(
+    (({ sidecar, renders }) => ({ sidecar, renders }))(deriveRecordSidecar({ integrationId: "wl", kind: "custom-model" })),
+    { sidecar: "custom-model", renders: true },
+  );
+  assert.deepEqual(
+    (({ sidecar, renders }) => ({ sidecar, renders }))(deriveRecordSidecar({ integrationId: "hub", connectorKind: "nango" })),
+    { sidecar: "nango", renders: true },
+  );
+  assert.equal(deriveRecordSidecar({ integrationId: "plain" }).renders, false, "generic record gets no special sidecar");
+});
+
+// --------------------------------------------------------------------------
 // First-use bootstrap checklist (mirrors CEO bootstrap)
 // --------------------------------------------------------------------------
 
