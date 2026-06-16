@@ -235,6 +235,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       registryRow.modelTrainingRowId = `${SLUG}-v${version}`;
       registryRow.trainingRunId = preparedReceipt.trainingRunId;
       registryRow.expectedModelTag = reservedTag;
+      // Unambiguous, deterministic custom-model identity — recognized by tag,
+      // not only by reverse link. This is THE atomic custom-model object every
+      // agent/sandbox/workflow binds to via apiRegistryId.
+      registryRow.kind = "custom-model";
+      registryRow.capabilityType = "custom-model-inference";
       const selectedIdx = new Set(selected.map(({ index }) => index));
 
       const fresh = await patchObjects((objects) => {
@@ -248,7 +253,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           next.push({ id: TRAINING_OBJECT_ID, label: "Model Training", source: "Model Training", objectType: TRAINING_OBJECT_TYPE, icon: "Terminal", columns: TRAINING_COLUMNS, rows: [versionRow], binding: { mode: "manual", source: "Model Training" }, relations: [], fieldSettings: { hidden: [], order: TRAINING_COLUMNS } });
         }
         if (!next.some((o) => o?.objectType === "api-registry")) {
-          const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane", "modelTrainingRowId", "trainingRunId", "expectedModelTag"];
+          const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane", "kind", "capabilityType", "modelTrainingRowId", "trainingRunId", "expectedModelTag"];
           next.push({ id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } });
         }
         next = upsertRunRow(next, runReceiptToRow(preparedReceipt));
