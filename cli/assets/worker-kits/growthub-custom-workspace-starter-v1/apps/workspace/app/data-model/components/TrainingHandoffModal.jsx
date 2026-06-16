@@ -47,7 +47,7 @@ import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConf
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
-import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
+import { applyGenomeFieldSettings, foldRecordIntoGovernedObject } from "../../../lib/workspace-genome.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -101,25 +101,24 @@ function runReceiptToRow(receipt) {
   };
 }
 
-/** Upsert the model-training-run object + a run row into a dataModel objects array. */
+/**
+ * Upsert the model-training-run row through the genome fold-or-create rule —
+ * a second run folds into the one governed table (no duplicate, no dropdown
+ * bloat), upserting by trainingRunId. The same DNA pattern the whole workspace
+ * uses upstream and downstream.
+ */
 function upsertRunRow(objects, runRow) {
-  let found = false;
-  const next = (objects || []).map((o) => {
-    if (o?.objectType !== TRAINING_RUN_OBJECT_TYPE) return o;
-    found = true;
-    const rows = Array.isArray(o.rows) ? o.rows : [];
-    const idx = rows.findIndex((r) => String(r?.trainingRunId || "") === runRow.trainingRunId);
-    return { ...o, rows: idx >= 0 ? rows.map((r, i) => (i === idx ? { ...r, ...runRow } : r)) : [...rows, runRow] };
-  });
-  if (!found) {
-    next.push({
+  return foldRecordIntoGovernedObject(objects, {
+    objectType: TRAINING_RUN_OBJECT_TYPE,
+    row: runRow,
+    upsertKey: "trainingRunId",
+    template: {
       id: TRAINING_RUN_OBJECT_ID, label: "Model Training Runs", source: "Model Training Runs",
-      objectType: TRAINING_RUN_OBJECT_TYPE, icon: "Cpu", columns: RUN_COLUMNS, rows: [runRow],
+      objectType: TRAINING_RUN_OBJECT_TYPE, icon: "Cpu", columns: RUN_COLUMNS, rows: [],
       binding: { mode: "manual", source: "Model Training Runs" },
       relations: [], fieldSettings: { hidden: [], order: RUN_COLUMNS },
-    });
-  }
-  return next;
+    },
+  });
 }
 
 export default function TrainingHandoffModal({ open, onClose, workspaceConfig: providedConfig, workspaceSourceRecords, onApplied }) {

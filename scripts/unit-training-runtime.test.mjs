@@ -388,7 +388,47 @@ test("isolation: a custom-model row coexists with generic rows without poisoning
 // Workspace genome — causation classifier + field visibility + sidecar gate
 // --------------------------------------------------------------------------
 
-const { deriveRecordGenome, deriveGenomeFieldVisibility, applyGenomeFieldSettings, deriveRecordSidecar } = await import(lib("workspace-genome.js"));
+const { deriveRecordGenome, deriveGenomeFieldVisibility, applyGenomeFieldSettings, deriveRecordSidecar, resolveGovernedObjectTarget, foldRecordIntoGovernedObject, deriveObjectGenome } = await import(lib("workspace-genome.js"));
+
+test("genome: resolver folds a second governed-object creation into the existing singleton table", () => {
+  const ws = { dataModel: { objects: [{ id: "model-training", objectType: "model-training", rows: [{ Name: "a" }] }] } };
+  const r = resolveGovernedObjectTarget({ workspaceConfig: ws, objectType: "model-training" });
+  assert.equal(r.fold, true);
+  assert.equal(r.targetObjectId, "model-training");
+
+  // First creation in an empty workspace → create once under the well-known id.
+  const r0 = resolveGovernedObjectTarget({ workspaceConfig: { dataModel: { objects: [] } }, objectType: "api-registry" });
+  assert.equal(r0.fold, false);
+  assert.equal(r0.createWellKnownId, true);
+  assert.equal(r0.targetObjectId, "api-registry");
+});
+
+test("genome: a user-generated object is NEVER folded (full backwards compatibility, no new constraint)", () => {
+  const r = resolveGovernedObjectTarget({ workspaceConfig: { dataModel: { objects: [{ id: "crm", objectType: "custom" }] } }, objectType: "custom", proposedId: "deals" });
+  assert.equal(r.fold, false);
+  assert.equal(r.genome, null);
+  assert.equal(r.targetObjectId, "deals", "creates exactly as proposed");
+});
+
+test("genome: foldRecordIntoGovernedObject — creating the same governed object twice yields ONE table", () => {
+  let objects = [];
+  // First record creates the canonical singleton table.
+  objects = foldRecordIntoGovernedObject(objects, { objectType: "model-training-run", row: { trainingRunId: "r1", status: "prepared" }, upsertKey: "trainingRunId" });
+  // Second record FOLDS into it (no duplicate table).
+  objects = foldRecordIntoGovernedObject(objects, { objectType: "model-training-run", row: { trainingRunId: "r2", status: "imported" }, upsertKey: "trainingRunId" });
+  const tables = objects.filter((o) => o.objectType === "model-training-run");
+  assert.equal(tables.length, 1, "exactly one governed table — no dropdown bloat");
+  assert.equal(tables[0].rows.length, 2, "both records folded in");
+  // Upsert by key updates in place (no duplicate row).
+  objects = foldRecordIntoGovernedObject(objects, { objectType: "model-training-run", row: { trainingRunId: "r2", status: "verified" }, upsertKey: "trainingRunId" });
+  assert.equal(objects.find((o) => o.objectType === "model-training-run").rows.length, 2, "upsert, not duplicate");
+});
+
+test("genome: object-level classifier recognizes frozen first-party primitives, not user objects", () => {
+  assert.equal(deriveObjectGenome({ objectType: "api-registry" })?.id, "api-registry");
+  assert.equal(deriveObjectGenome({ objectType: "agent-swarm-teams" })?.id, "agent-swarm-teams");
+  assert.equal(deriveObjectGenome({ objectType: "custom" }), null);
+});
 
 test("genome: causation classifies first-party structures; user-generic records are `generic`", () => {
   assert.equal(deriveRecordGenome({ integrationId: "wl-model", kind: "custom-model" }).genome, "custom-model");

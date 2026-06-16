@@ -63,6 +63,82 @@ function genomesForObjectType(objectType) {
 }
 
 /**
+ * Object-level genomes — first-party well-known GOVERNED objects that are
+ * SINGLETON tables in a workspace (the frozen business + feature primitives).
+ * When a user or agent tries to create one that already exists, the record
+ * FOLDS into the existing table instead of spawning a duplicate — so the Data
+ * Model dropdown never bloats and the workspace stays manageable. A genuinely
+ * user-generated object (no genome) is never folded. Additive: new first-party
+ * primitives register here once and inherit the fold-or-create behavior.
+ */
+export const GOVERNED_OBJECT_GENOMES = [
+  { id: "model-training", objectType: "model-training", label: "Model Training", singleton: true },
+  { id: "model-training-run", objectType: "model-training-run", label: "Model Training Runs", singleton: true },
+  { id: "training-traces", objectType: "training-traces", label: "Training Traces", singleton: true },
+  { id: "api-registry", objectType: "api-registry", label: "API Registry", singleton: true },
+  { id: "agent-swarm-teams", objectType: "agent-swarm-teams", label: "Agent Teams", singleton: true },
+];
+
+/** Classify an object (existing or proposed) into its governed genome, else null. */
+export function deriveObjectGenome(object) {
+  const objectType = String(object?.objectType || object || "");
+  return GOVERNED_OBJECT_GENOMES.find((g) => g.objectType === objectType) || null;
+}
+
+/**
+ * Resolve where a proposed governed object/record should land. Pure.
+ *
+ *   - fold=true  → a singleton genome table already exists; append the record
+ *                  to `targetObjectId` instead of creating a duplicate table.
+ *   - fold=false, createWellKnownId set → first instance of a singleton genome;
+ *                  create it once under the canonical well-known id.
+ *   - fold=false, genome=null → a user-generated object; create as proposed
+ *                  (no constraint added, full backwards compatibility).
+ *
+ * @returns {{ fold: boolean, targetObjectId: string|null, genome: string|null, createWellKnownId: boolean }}
+ */
+export function resolveGovernedObjectTarget({ workspaceConfig, objectType, proposedId } = {}) {
+  const genome = deriveObjectGenome(objectType);
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  if (!genome || !genome.singleton) {
+    return { fold: false, targetObjectId: proposedId || null, genome: genome?.id || null, createWellKnownId: false };
+  }
+  const existing = objects.find((o) => String(o?.objectType || "") === genome.objectType);
+  if (existing) return { fold: true, targetObjectId: String(existing.id || genome.id), genome: genome.id, createWellKnownId: false };
+  return { fold: false, targetObjectId: genome.id, genome: genome.id, createWellKnownId: true };
+}
+
+/**
+ * Fold-or-create through the genome — the unified upstream/downstream write.
+ * Pure: returns a NEW objects array, never mutates. Appends `row` to the
+ * existing singleton genome table when present (optionally upserting by a key
+ * field), else creates the canonical well-known table from `template`. For a
+ * non-genome objectType it creates/appends exactly as proposed.
+ *
+ * @param {object[]} objects - dataModel.objects
+ * @param {object} spec - { objectType, row, upsertKey?, template? }
+ */
+export function foldRecordIntoGovernedObject(objects, { objectType, row, upsertKey = "", template = null } = {}) {
+  const list = Array.isArray(objects) ? objects : [];
+  const target = resolveGovernedObjectTarget({ workspaceConfig: { dataModel: { objects: list } }, objectType, proposedId: template?.id });
+  const appendRow = (o) => {
+    const rows = Array.isArray(o.rows) ? o.rows : [];
+    if (upsertKey) {
+      const idx = rows.findIndex((r) => String(r?.[upsertKey] ?? "") === String(row?.[upsertKey] ?? "") && String(row?.[upsertKey] ?? "") !== "");
+      if (idx >= 0) return { ...o, rows: rows.map((r, i) => (i === idx ? { ...r, ...row } : r)) };
+    }
+    return { ...o, rows: [...rows, row] };
+  };
+
+  if (target.fold) {
+    return list.map((o) => (String(o?.id || "") === target.targetObjectId || String(o?.objectType || "") === objectType ? appendRow(o) : o));
+  }
+  // Create once: canonical well-known id for a singleton genome, else proposed.
+  const base = template || { id: target.targetObjectId || objectType, objectType, rows: [], binding: { mode: "manual" }, relations: [], fieldSettings: { hidden: [], order: [] } };
+  return [...list, { ...base, id: target.createWellKnownId ? (target.targetObjectId || base.id) : base.id, objectType, rows: [...(Array.isArray(base.rows) ? base.rows : []), row] }];
+}
+
+/**
  * Classify one record into its genome (first match), else `generic`. Pure.
  * `ctx.linkedIds` (Set) is optional — only the custom-model genome consults it
  * for the bonded-link signal; explicit traits classify standalone.
