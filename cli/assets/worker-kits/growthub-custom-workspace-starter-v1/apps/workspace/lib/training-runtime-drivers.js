@@ -35,6 +35,31 @@ const DRIVER_DEFS = [
 ];
 
 /**
+ * Canonical destination per action — the CEO/Agent-Teams discipline: the
+ * cockpit LINKS to the authority that owns the write, it never executes from
+ * the card. Data Model = edit authority, API Registry = endpoint authority,
+ * Workflow Canvas = graph/execution authority, /training = the runtime modal,
+ * /custom-models = the completed-capability cockpit.
+ */
+const ACTION_DESTINATIONS = {
+  collect_traces: { route: "/data-model", cta: "Open Data Model", authority: "training-traces" },
+  curate_traces: { route: "/training", cta: "Open training runtime", authority: "model-training" },
+  export_corpus: { route: "/training", cta: "Export corpus", authority: "model-training" },
+  prepare_run: { route: "/training", cta: "Prepare training run", authority: "model-training-run" },
+  run_training: { route: "/training", cta: "Open training runtime", authority: "model-training-run" },
+  import_artifact: { route: "/training", cta: "Import artifact", authority: "model-training-run" },
+  register_endpoint: { route: "/data-model", cta: "Open API Registry", authority: "api-registry" },
+  test_endpoint: { route: "/data-model", cta: "Open API Registry test", authority: "api-registry" },
+  bind_sandbox: { route: "/workflows", cta: "Open Workflow Canvas", authority: "sandbox-environment" },
+  run_smoke: { route: "/workflows", cta: "Run smoke workflow", authority: "sandbox-environment" },
+  complete: { route: "/custom-models", cta: "Open Custom Models", authority: "model-training" },
+};
+
+export function destinationForAction(action) {
+  return ACTION_DESTINATIONS[action] || ACTION_DESTINATIONS.complete;
+}
+
+/**
  * Counterfactual marginal impact: the FIRST incomplete driver unblocks
  * everything downstream, so it carries the highest impact; each subsequent
  * pending step is discounted by distance. Completed drivers have zero
@@ -138,6 +163,7 @@ export function deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceR
     // Hard blocker: the active step has a real evidence obstacle (vs. just
     // being the next pending step). Redaction-blocked traces block curate.
     if (state === "active" && def.id === "curate" && pipeline.graded === 0 && pipeline.total > 0) state = "blocked";
+    const dest = destinationForAction(def.action);
     return {
       id: def.id,
       label: def.label,
@@ -145,11 +171,16 @@ export function deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceR
       state,
       impact: scoreTrainingDriverImpact(i, activeIndex, total),
       reason: completion[def.id] ? "complete" : blockedReason[def.id],
+      // Canonical handoff (CEO discipline): where the user goes to act.
+      destination: dest.route,
+      cta: dest.cta,
+      canonicalObject: dest.authority,
     };
   });
 
   const active = drivers.find((d) => d.state === "active" || d.state === "blocked") || null;
   const nextBestAction = activeIndex < 0 ? "complete" : (active?.action || "complete");
+  const nextDest = destinationForAction(nextBestAction);
   const topBlocker = activeIndex < 0 ? "Loop complete — improve from new usage evidence." : (active?.reason || "");
 
   // Confidence = evidence depth: fraction of the lifecycle proven, lightly
@@ -160,6 +191,9 @@ export function deriveTrainingRuntimeDrivers({ workspaceConfig, workspaceSourceR
 
   return {
     nextBestAction,
+    nextActionDestination: nextDest.route,
+    nextActionCta: nextDest.cta,
+    nextActionCanonicalObject: nextDest.authority,
     topBlocker,
     confidence,
     drivers,

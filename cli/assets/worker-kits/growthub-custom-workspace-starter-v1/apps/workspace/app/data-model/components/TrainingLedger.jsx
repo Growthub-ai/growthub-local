@@ -175,6 +175,11 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
           <span className="dm-run-console__hint">{confidencePct}% confidence</span>
         </div>
         {drivers.topBlocker ? <div className="dm-helper-stream dm-swarm-card-desc">{drivers.topBlocker}</div> : null}
+        {/* Canonical handoff — link to the authority that owns the next write
+            (CEO discipline: the card links, it never executes). */}
+        {drivers.nextActionDestination && drivers.nextBestAction !== "complete" ? (
+          <a className="dm-btn-ghost" href={drivers.nextActionDestination} data-training-next-cta={drivers.nextBestAction} data-training-next-authority={drivers.nextActionCanonicalObject}>{drivers.nextActionCta} →</a>
+        ) : null}
         {drivers.runGap ? (
           <div className="dm-run-console__hint" data-training-run-gap="">Endpoint proof exists without a recorded training run — prepare a governed run so the lifecycle is fully provable.</div>
         ) : null}

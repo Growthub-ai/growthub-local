@@ -235,6 +235,18 @@ test("drivers: next-best action advances along the lifecycle as evidence accrues
   assert.ok(prepared.confidence > empty.confidence, "confidence rises with evidence depth");
 });
 
+test("drivers: next action carries a canonical destination + CTA (CEO link discipline)", () => {
+  const empty = deriveTrainingRuntimeDrivers({ workspaceConfig: {}, workspaceSourceRecords: {} });
+  assert.equal(empty.nextBestAction, "collect_traces");
+  assert.equal(empty.nextActionDestination, "/data-model");
+  assert.ok(empty.nextActionCta && empty.nextActionCanonicalObject);
+  // Every driver links to an authority route — the UI only renders it.
+  for (const d of empty.drivers) {
+    assert.ok(["/training", "/data-model", "/workflows", "/custom-models"].includes(d.destination), `${d.action} routes to a canonical authority`);
+    assert.ok(d.cta && d.canonicalObject);
+  }
+});
+
 test("drivers: evidence object reports the lifecycle proof flags", () => {
   const d = deriveTrainingRuntimeDrivers({ workspaceConfig: exportedConfig(), workspaceSourceRecords: exportedRecords() });
   assert.equal(typeof d.evidence.totalTraces, "number");
