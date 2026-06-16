@@ -69,11 +69,24 @@ export function deriveEndpointMode(registryRow) {
   return "unknown";
 }
 
-function isCustomModelRegistryRow(row, linkedIds) {
-  if (!row) return false;
+/**
+ * THE isolation gate for the custom-model "genome": a registry row is a
+ * custom-model endpoint ONLY when it carries the explicit trait
+ * (kind=custom-model / capabilityType=custom-model-inference) or is bonded to
+ * a model-training row (linkedIds). A generic integration / nango / standard
+ * HTTP registry row is NEVER mistaken for a custom model. Exported so the Data
+ * Model shell and the API Registry sidecar can gate any custom-model-specific
+ * rendering on the SAME trait — the custom-model phenotype never leaks into
+ * generic records or poisons other causation derivers.
+ *
+ * `linkedIds` is optional: when omitted, recognition is by explicit trait only
+ * (the strictest, fully self-contained gate for a single clicked record).
+ */
+export function isCustomModelRegistryRow(row, linkedIds = new Set()) {
+  if (!row || typeof row !== "object") return false;
   if (String(row.kind || "") === "custom-model") return true;
   if (String(row.capabilityType || "") === "custom-model-inference") return true;
-  if (linkedIds.has(String(row.integrationId || ""))) return true;
+  if (linkedIds instanceof Set && linkedIds.has(String(row.integrationId || ""))) return true;
   return false;
 }
 

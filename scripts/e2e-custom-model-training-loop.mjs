@@ -32,6 +32,7 @@ const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers } = await import(
 const { deriveCustomModelsState } = await import(lib("custom-models-ledger.js"));
 const { buildTrainingRunReceipt, trainingRunSourceKey } = await import(lib("training-run-receipts.js"));
 const { buildTrainingRunConfig } = await import(lib("training-runtime-profiles.js"));
+const { deriveTrainingBootstrapState, buildTrainingBootstrapMarkerPatch, TRAINING_BOOTSTRAP_MARKER_FIELD } = await import(lib("training-bootstrap-console.js"));
 
 const cliModulePath = process.env.GROWTHUB_INTELLIGENCE_MODULE || "/tmp/intelligence.mjs";
 let runIntelligenceExport = null;
@@ -71,6 +72,8 @@ const traceRows = Array.from({ length: 12 }, (_, i) => ({
 }));
 const seedConfig = {
   dataModel: { objects: [
+    // The well-known helper row the bootstrap completion marker lives on.
+    { id: "workspace-helper-sandbox", objectType: "sandbox-environment", rows: [{ Name: "workspace-helper" }] },
     { id: "model-training", objectType: "model-training", rows: [{ Name: SLUG, baseModel: "qwen2.5-coder:4b", localModel: "" }] },
     { id: "training-traces", objectType: "training-traces", rows: traceRows },
   ] },
@@ -224,14 +227,16 @@ console.log("\n[7] Endpoint serves the tuned tag → verified");
 console.log("\n[8] Bind sandbox → sandbox-ready; run smoke (outputHash) → complete");
 {
   let { workspaceConfig, workspaceSourceRecords } = readWorkspace();
-  workspaceConfig.dataModel.objects.push({ id: "sandbox-environment", objectType: "sandbox-environment", rows: [
+  // Distinct id from the workspace-helper sandbox object so the probe can
+  // target the smoke row unambiguously (the derivers scan all rows anyway).
+  workspaceConfig.dataModel.objects.push({ id: "smoke-sandbox", objectType: "sandbox-environment", rows: [
     { Name: "smoke", schedulerRegistryId: `${SLUG}-model`, lastRunId: "", lastResponse: "" },
   ] });
   writeWorkspace(workspaceConfig, workspaceSourceRecords);
   eq("sandbox references registry → sandbox-ready", deriveTrainingRuntimeState({ ...readWorkspace(), slug: SLUG }).state, "sandbox-ready");
 
   ({ workspaceConfig, workspaceSourceRecords } = readWorkspace());
-  const sb = workspaceConfig.dataModel.objects.find((o) => o.objectType === "sandbox-environment").rows[0];
+  const sb = workspaceConfig.dataModel.objects.find((o) => o.id === "smoke-sandbox").rows[0];
   sb.lastRunId = "run_smoke_1";
   sb.lastResponse = JSON.stringify({ ok: true, exitCode: 0, outputHash: "8dccc820abc12345" });
   writeWorkspace(workspaceConfig, workspaceSourceRecords);
@@ -248,13 +253,53 @@ console.log("\n[8] Bind sandbox → sandbox-ready; run smoke (outputHash) → co
 console.log("\n[9] Future failed run becomes a training gap");
 {
   const { workspaceConfig, workspaceSourceRecords } = readWorkspace();
-  workspaceConfig.dataModel.objects.find((o) => o.objectType === "sandbox-environment").rows.push(
+  workspaceConfig.dataModel.objects.find((o) => o.id === "smoke-sandbox").rows.push(
     { Name: "smoke-fail", schedulerRegistryId: `${SLUG}-model`, lastRunId: "run_fail_1", lastResponse: JSON.stringify({ ok: false, exitCode: 1 }) },
   );
   writeWorkspace(workspaceConfig, workspaceSourceRecords);
   const gaps = deriveTrainingGapDrivers({ ...readWorkspace(), slug: SLUG });
   ok("gap classifier detects the failed run", gaps.gaps.some((g) => g.id === "failed_sandbox_run"));
   ok("gap recommendation points the next cycle", gaps.hasGaps && gaps.recommendation.length > 0);
+}
+
+// --------------------------------------------------------------------------
+// STEP 10 — first-use bootstrap checklist touchpoints (positive + negative +
+//           rollback + graceful failure).
+// --------------------------------------------------------------------------
+console.log("\n[10] First-use setup checklist (bootstrap) touchpoints");
+{
+  // At this point the workspace has a complete, verified, invoked model — but
+  // NO completion marker yet, so the checklist is still in bootstrap mode and
+  // the invoke step reads complete (the endpoint returned the tuned tag).
+  const ws = readWorkspace();
+  const b = deriveTrainingBootstrapState({ workspaceConfig: ws.workspaceConfig, workspaceSourceRecords: ws.workspaceSourceRecords });
+  eq("checklist is in bootstrap mode until a marker is stamped", b.mode, "bootstrap");
+  eq("invoke step is complete after a real verified chat-completions response", b.checklist.find((s) => s.id === "invoke").status, "complete");
+  eq("completion is unlocked (mark-complete)", b.primaryAction.kind, "mark-complete");
+
+  // POSITIVE: stamp the governed completion marker → checklist flips operational.
+  const objects = buildTrainingBootstrapMarkerPatch(ws.workspaceConfig, { at: "2026-06-16T15:00:00.000Z", by: "user" });
+  ok("marker PATCH builder stamps the helper row", Boolean(objects));
+  const stampedConfig = { ...ws.workspaceConfig, dataModel: { ...ws.workspaceConfig.dataModel, objects } };
+  writeWorkspace(stampedConfig, ws.workspaceSourceRecords);
+  eq("after marker, checklist disappears (operational mode)", deriveTrainingBootstrapState({ ...readWorkspace() }).mode, "operational");
+
+  // NEGATIVE / ROLLBACK: removing the marker rolls back to bootstrap — state is
+  // derived from config, never a sticky browser flag.
+  const rolled = readWorkspace();
+  delete rolled.workspaceConfig.dataModel.objects.find((o) => o.id === "workspace-helper-sandbox").rows[0][TRAINING_BOOTSTRAP_MARKER_FIELD];
+  writeWorkspace(rolled.workspaceConfig, rolled.workspaceSourceRecords);
+  eq("ROLLBACK: removing the marker returns to bootstrap (no sticky flag)", deriveTrainingBootstrapState({ ...readWorkspace() }).mode, "bootstrap");
+
+  // GRACEFUL: a workspace with no helper row cannot be stamped — the builder
+  // returns null and the caller no-ops instead of crashing.
+  ok("GRACEFUL: marker builder returns null when the helper row is absent", buildTrainingBootstrapMarkerPatch({ dataModel: { objects: [] } }, { at: "x" }) === null);
+
+  // GRACEFUL: a brand-new workspace (no model yet) still derives a checklist
+  // with a safe next action and a pending invoke (never a dark/blank state).
+  const fresh = deriveTrainingBootstrapState({ workspaceConfig: { dataModel: { objects: [{ id: "workspace-helper-sandbox", objectType: "sandbox-environment", rows: [{ Name: "workspace-helper" }] }] } }, workspaceSourceRecords: {} });
+  eq("fresh workspace: invoke is pending (not invokable yet)", fresh.checklist.find((s) => s.id === "invoke").status, "pending");
+  ok("fresh workspace: there is always a next move", Boolean(fresh.primaryAction));
 }
 
 // --------------------------------------------------------------------------

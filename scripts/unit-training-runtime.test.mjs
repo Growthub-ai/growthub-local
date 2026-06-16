@@ -340,6 +340,118 @@ test("never-throws: every deriver tolerates empty/garbage input", () => {
 });
 
 // --------------------------------------------------------------------------
+// Custom-model genome ISOLATION — no leak into generic registry rows, other
+// custom objects, or standardized workflow/nango paths.
+// --------------------------------------------------------------------------
+
+const { deriveCustomModelsState, isCustomModelRegistryRow } = await import(lib("custom-models-ledger.js"));
+
+test("isolation: the trait gate recognizes only tagged/linked rows; generic rows are never custom-model", () => {
+  assert.equal(isCustomModelRegistryRow({ integrationId: "nango-hubspot", connectorKind: "nango" }), false, "generic nango row");
+  assert.equal(isCustomModelRegistryRow({ integrationId: "stripe", capabilities: "payments" }), false, "generic integration");
+  assert.equal(isCustomModelRegistryRow({ integrationId: "wl-model", kind: "custom-model" }), true, "explicit trait");
+  assert.equal(isCustomModelRegistryRow({ integrationId: "wl-model", capabilityType: "custom-model-inference" }), true, "explicit capabilityType");
+  assert.equal(isCustomModelRegistryRow({ integrationId: "wl-model" }, new Set(["wl-model"])), true, "bonded link");
+  assert.equal(isCustomModelRegistryRow(null), false);
+});
+
+test("isolation: generic registry + unrelated custom objects do NOT surface custom models or flip /custom-models visibility", () => {
+  const cfg = { dataModel: { objects: [
+    // A standard integration registry row + a nango path + an unrelated custom object.
+    { objectType: "api-registry", rows: [
+      { integrationId: "nango-hubspot", connectorKind: "nango", status: "connected", lastResponse: JSON.stringify({ ok: true }) },
+      { integrationId: "stripe-billing", connectorKind: "http", status: "connected" },
+    ] },
+    { objectType: "custom", id: "crm-deals", rows: [{ Name: "Acme", stage: "won" }] },
+    { objectType: "sandbox-environment", id: "some-workflow", rows: [{ Name: "nightly", schedulerRegistryId: "nango-hubspot" }] },
+  ] } };
+  const state = deriveCustomModelsState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  assert.equal(state.commandVisible, false, "/custom-models stays hidden — no custom-model evidence");
+  assert.equal(state.models.length, 0, "no generic row is mistaken for a custom model");
+});
+
+test("isolation: a custom-model row coexists with generic rows without poisoning them", () => {
+  const cfg = { dataModel: { objects: [
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportSummary: JSON.stringify({ registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [
+      { integrationId: "nango-hubspot", connectorKind: "nango", status: "connected" },
+      { integrationId: "workspace-local-model", kind: "custom-model", capabilityType: "custom-model-inference", status: "connected", lastResponse: JSON.stringify({ model: "gh-v1" }) },
+    ] },
+  ] } };
+  const state = deriveCustomModelsState({ workspaceConfig: cfg, workspaceSourceRecords: {} });
+  assert.equal(state.commandVisible, true);
+  assert.equal(state.models.length, 1, "exactly the one custom model — the generic nango row is untouched");
+  assert.equal(state.models[0].apiRegistryId, "workspace-local-model");
+});
+
+// --------------------------------------------------------------------------
+// First-use bootstrap checklist (mirrors CEO bootstrap)
+// --------------------------------------------------------------------------
+
+const { deriveTrainingBootstrapState, buildTrainingBootstrapMarkerPatch, TRAINING_BOOTSTRAP_MARKER_FIELD } = await import(lib("training-bootstrap-console.js"));
+
+function helperObj(extra = {}) {
+  return { id: "workspace-helper-sandbox", objectType: "sandbox-environment", rows: [{ Name: "workspace-helper", ...extra }] };
+}
+
+test("bootstrap: empty workspace shows the first-use checklist (mode=bootstrap), invoke pending", () => {
+  const b = deriveTrainingBootstrapState({ workspaceConfig: { dataModel: { objects: [helperObj()] } }, workspaceSourceRecords: {} });
+  assert.equal(b.mode, "bootstrap");
+  assert.equal(b.completed, false);
+  assert.equal(b.checklist.find((s) => s.id === "invoke").status, "pending");
+  assert.equal(b.checklist.find((s) => s.id === "complete").status, "pending");
+  assert.ok(b.primaryAction, "there is always a next move");
+});
+
+test("bootstrap: deployed-but-unverified exposes the INVOKE next action with the bonded apiRegistryId", () => {
+  const cfg = { dataModel: { objects: [
+    helperObj(),
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportId: "exp_1", lastSourceId: "training:model-training:workspace-local", lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", kind: "custom-model", status: "connected", lastResponse: "" }] },
+  ] } };
+  const b = deriveTrainingBootstrapState({ workspaceConfig: cfg, workspaceSourceRecords: { "training:model-training:workspace-local": { records: [{ exportId: "exp_1" }] } } });
+  const invoke = b.checklist.find((s) => s.id === "invoke");
+  assert.equal(invoke.status, "ready");
+  assert.equal(invoke.nextAction.kind, "invoke-endpoint");
+  assert.equal(invoke.nextAction.apiRegistryId, "workspace-local-model");
+  assert.equal(b.primaryAction.kind, "invoke-endpoint");
+});
+
+test("bootstrap: a verified tuned-tag response completes invoke and unlocks completion", () => {
+  const cfg = { dataModel: { objects: [
+    helperObj(),
+    { objectType: "model-training", rows: [{ Name: "workspace-local", localModel: "gh-v1", lastExportId: "exp_1", lastSourceId: "training:model-training:workspace-local", lastExportSummary: JSON.stringify({ exportId: "exp_1", registryId: "workspace-local-model" }) }] },
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", kind: "custom-model", status: "connected", lastResponse: JSON.stringify({ model: "gh-v1", choices: [{ message: { content: "hi from your model" } }] }) }] },
+    { id: "training-traces", objectType: "training-traces", rows: Array.from({ length: 10 }, (_, i) => ({ qualityScore: 5, inputPrompt: `p${i}`, agentOutput: `o${i}`, exported: "true" })) },
+  ] } };
+  const records = { "training:model-training:workspace-local": { records: [{ exportId: "exp_1", recordCount: 10 }] } };
+  const b = deriveTrainingBootstrapState({ workspaceConfig: cfg, workspaceSourceRecords: records });
+  assert.equal(b.checklist.find((s) => s.id === "invoke").status, "complete");
+  assert.equal(b.checklist.find((s) => s.id === "complete").status, "ready", "completion unlocked after a real verified invocation");
+  assert.equal(b.primaryAction.kind, "mark-complete");
+});
+
+test("bootstrap: completion marker flips to operational; removing it rolls back to bootstrap (no browser flag)", () => {
+  const withMarker = { dataModel: { objects: [helperObj({ [TRAINING_BOOTSTRAP_MARKER_FIELD]: "2026-06-16T00:00:00.000Z" })] } };
+  assert.equal(deriveTrainingBootstrapState({ workspaceConfig: withMarker }).mode, "operational");
+  const without = { dataModel: { objects: [helperObj()] } };
+  assert.equal(deriveTrainingBootstrapState({ workspaceConfig: without }).mode, "bootstrap");
+});
+
+test("bootstrap: marker PATCH builder stamps the helper row, returns null when absent (graceful)", () => {
+  const cfg = { dataModel: { objects: [helperObj()] } };
+  const objects = buildTrainingBootstrapMarkerPatch(cfg, { at: "2026-06-16T01:00:00.000Z", by: "user" });
+  assert.ok(objects, "stamps when helper row exists");
+  assert.equal(objects[0].rows[0][TRAINING_BOOTSTRAP_MARKER_FIELD], "2026-06-16T01:00:00.000Z");
+  assert.equal(buildTrainingBootstrapMarkerPatch({ dataModel: { objects: [] } }, { at: "x" }), null, "null when no helper row — caller no-ops, never crashes");
+});
+
+test("bootstrap: deriver never throws on empty/garbage input", () => {
+  assert.doesNotThrow(() => deriveTrainingBootstrapState({}));
+  assert.doesNotThrow(() => deriveTrainingBootstrapState({ workspaceConfig: { dataModel: { objects: "no" } } }));
+});
+
+// --------------------------------------------------------------------------
 // Persistence seam (compression / future-module upgrade)
 // --------------------------------------------------------------------------
 
