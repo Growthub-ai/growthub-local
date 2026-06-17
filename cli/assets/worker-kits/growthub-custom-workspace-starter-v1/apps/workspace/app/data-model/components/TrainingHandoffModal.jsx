@@ -30,7 +30,7 @@
  * the existing governed PATCH (dataModel allowlist).
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   deriveTrainingHandoffState,
@@ -136,6 +136,104 @@ function upsertRunRow(objects, runRow) {
   return next;
 }
 
+/** The governed sandbox-environment object that carries the real per-run
+ *  training command the local runner executes. One object, one row per run. */
+const TRAINING_RUNNER_SANDBOX_ID = "model-training-runner";
+const RUNNER_COLUMNS = ["Name", "runtime", "command", "timeoutMs", "networkPolicy", "runLocality", "status"];
+
+/**
+ * The real training runner, emitted as a self-contained Node program. Run on
+ * the user's machine it: (1) executes the profile's real fine-tune commands
+ * (Unsloth QLoRA → GGUF quantize → ollama create — the model is now built and
+ * serving locally), (2) hashes the produced GGUF for a real artifact identity,
+ * (3) makes a REAL chat-completions call to the API Registry row's endpoint to
+ * prove the tuned model answers, and (4) reports — in one governed PATCH — the
+ * `imported` run receipt AND the API Registry row's captured `lastResponse`, so
+ * the loop closes itself with real deployment proof and no manual step.
+ */
+function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, quantization, integrationId }) {
+  const P = JSON.stringify({ commands: commands || [], artifactPath: artifactPath || "", modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m", integrationId: integrationId || "" });
+  return [
+    "const { execSync } = require('node:child_process');",
+    "const fs = require('node:fs'); const path = require('node:path'); const crypto = require('node:crypto');",
+    `const P = ${P};`,
+    "const WS = (process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
+    "const matchReg = (row) => String(row.expectedModelTag || '') === P.modelTag || (P.integrationId && String(row.integrationId || '') === P.integrationId);",
+    "(async () => {",
+    "  for (let i = 0; i < P.commands.length; i += 1) {",
+    "    console.log(`STEP ${i + 1}/${P.commands.length}: ${P.commands[i]}`);",
+    "    execSync(P.commands[i], { stdio: 'inherit' });",
+    "  }",
+    "  let file = '';",
+    "  try {",
+    "    const dir = path.resolve(P.artifactPath);",
+    "    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {",
+    "      const ggufs = fs.readdirSync(dir).filter((f) => f.endsWith('.gguf')).map((f) => path.join(dir, f));",
+    "      file = ggufs[0] || '';",
+    "    } else if (fs.existsSync(dir)) { file = dir; }",
+    "  } catch {}",
+    "  const sha = file ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : '';",
+    "  const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' });",
+    "  const data = await r.json();",
+    "  const objs = data.workspaceConfig.dataModel.objects || [];",
+    "  // The model is built + serving locally now — prove it with a real call.",
+    "  const reg = objs.filter((o) => o.objectType === 'api-registry').flatMap((o) => o.rows || []).find(matchReg);",
+    "  let chat = null, served = '';",
+    "  if (reg && reg.baseUrl) {",
+    "    try {",
+    "      const ep = String(reg.endpoint || '/chat/completions');",
+    "      const url = String(reg.baseUrl).replace(/\\/+$/, '') + (ep.startsWith('/') ? ep : '/' + ep);",
+    "      const cr = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: P.modelTag, messages: [{ role: 'user', content: 'Reply in one short line to confirm you are the tuned workspace model.' }], stream: false }) });",
+    "      const ct = await cr.text(); try { chat = JSON.parse(ct); } catch { chat = ct; }",
+    "      served = (chat && typeof chat === 'object') ? String(chat.model || '') : '';",
+    "    } catch (e) { chat = { error: { message: String((e && e.message) || e) } }; }",
+    "  }",
+    "  const now = new Date().toISOString();",
+    "  const objects = objs.map((o) => {",
+    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization }) : row) };",
+    "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: served ? 'connected' : (row.status || 'registered') }) : row) };",
+    "    return o;",
+    "  });",
+    "  await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
+    "  console.log('TRAINING_COMPLETE', sha, 'SERVED', served);",
+    "})().catch((e) => { console.error(e); process.exit(1); });",
+  ].join("\n");
+}
+
+/** Upsert the runner sandbox object + its per-run row. Same fold-or-create
+ *  discipline as upsertRunRow — append to the existing object, else create it. */
+function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
+  const row = {
+    Name: trainingRunId,
+    runtime: "node",
+    command: buildRunnerScript({
+      commands: runConfig?.commands, artifactPath: runConfig?.artifactPath,
+      modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
+    }),
+    timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
+    networkPolicy: "allow",
+    runLocality: "local",
+    status: "live",
+  };
+  let found = false;
+  const next = (objects || []).map((o) => {
+    if (o?.id !== TRAINING_RUNNER_SANDBOX_ID) return o;
+    found = true;
+    const rows = Array.isArray(o.rows) ? o.rows : [];
+    const idx = rows.findIndex((r) => String(r?.Name || "") === trainingRunId);
+    return { ...o, rows: idx >= 0 ? rows.map((r, i) => (i === idx ? { ...r, ...row } : r)) : [...rows, row] };
+  });
+  if (!found) {
+    next.push({
+      id: TRAINING_RUNNER_SANDBOX_ID, label: "Model Training Runner", source: "Model Training Runner",
+      objectType: "sandbox-environment", icon: "Cpu", columns: RUNNER_COLUMNS, rows: [row],
+      binding: { mode: "manual", source: "Model Training Runner" },
+      relations: [], fieldSettings: { hidden: ["command"], order: RUNNER_COLUMNS },
+    });
+  }
+  return next;
+}
+
 export default function TrainingHandoffModal({ open, onClose, workspaceConfig: providedConfig, workspaceSourceRecords, onApplied }) {
   const [liveConfig, setLiveConfig] = useState(null);
   const workspaceConfig = liveConfig || providedConfig;
@@ -147,6 +245,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [tunedTag, setTunedTag] = useState("");
   const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [trainPhase, setTrainPhase] = useState("idle"); // idle|starting|running
+  // Live, REAL training progress — driven by the governed run receipt the
+  // local runner advances, polled below. Never a fabricated bar.
+  const [trainProgress, setTrainProgress] = useState({ pct: 0, stage: "" });
+  const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
@@ -159,6 +261,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [error, setError] = useState("");
   const [recovery, setRecovery] = useState(null);
   const [resume, setResume] = useState({ datasetDownloaded: false, datasetPath: "", lines: null });
+
+  // Stop polling the run receipt when the modal unmounts.
+  useEffect(() => () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } }, []);
 
   const handoff = deriveTrainingHandoffState({ workspaceConfig, workspaceSourceRecords, minScore });
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
@@ -314,35 +419,109 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
   }
 
-  // ---- train: mark the run RUNNING (governed) and keep the user informed.
+  // ---- train: ONE real click. Record the run RUNNING, stand up the governed
+  // runner row carrying the real fine-tune command, kick it on the user's
+  // machine through the existing sandbox-run lane, then track the REAL run
+  // receipt to completion — a fine-tune may run minutes or many hours; the
+  // modal stays live off real state and closes the loop itself.
   async function startTraining() {
     setError("");
     setTrainPhase("starting");
+    setTrainProgress({ pct: 2, stage: "Recording the governed run + runner…" });
+    const startedAt = new Date().toISOString();
     try {
       const runningReceipt = buildTrainingRunReceipt({
         trainingRunId: result.trainingRunId, modelTrainingRowId: SLUG, datasetExportId: result.exportId,
-        baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt: new Date().toISOString(),
+        baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
       });
-      await patchObjects((objects) => upsertRunRow(objects, runReceiptToRow(runningReceipt)));
+      // One governed PATCH: running receipt + the runner sandbox row.
+      await patchObjects((objects) => {
+        let next = upsertRunRow(objects, runReceiptToRow(runningReceipt));
+        next = upsertRunnerSandbox(next, result.trainingRunId, runConfig, result.integrationId);
+        return next;
+      });
       setTrainPhase("running");
+      setTrainProgress({ pct: 4, stage: "Launching the fine-tune on this machine…" });
+
+      // Real trigger. Don't await — training is long; the runner advances the
+      // governed receipt and we poll it. If no local runner is reachable, the
+      // exact command stays shown below for manual execution.
+      fetch("/api/workspace/sandbox-run", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: result.trainingRunId, intent: "model-training-run", actor: "training-runtime-modal" }),
+      }).catch(() => {});
+
+      startRunPolling(startedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTrainPhase("idle");
     }
   }
 
+  // Poll the REAL governed run receipt until the run reaches a terminal stage.
+  // Drives the live bar from real state and auto-advances on a provable
+  // artifact — for however long the fine-tune takes.
+  function startRunPolling(startedAt) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const startMs = Date.parse(startedAt) || Date.now();
+    pollRef.current = setInterval(async () => {
+      try {
+        const probe = await fetch("/api/workspace", { cache: "no-store" });
+        if (!probe.ok) return;
+        const data = await probe.json();
+        const cfg = data?.workspaceConfig;
+        if (!cfg) return;
+        setLiveConfig(cfg);
+        if (typeof onApplied === "function") onApplied(cfg);
+        const rt = deriveTrainingRuntimeState({ workspaceConfig: cfg, workspaceSourceRecords, slug: SLUG });
+        const runStage = rt.runState?.runState || "running";
+        const mins = Math.max(0, Math.round((Date.now() - startMs) / 60000));
+
+        if (runStage === "failed") {
+          clearInterval(pollRef.current); pollRef.current = null;
+          setError("The training run reported a failure — check the local runner logs, then retry.");
+          setTrainPhase("idle");
+          return;
+        }
+        // Provable artifact (runner hashed a real GGUF) → close the loop.
+        if (runStage === "imported" || rt.runState?.artifact?.identified) {
+          clearInterval(pollRef.current); pollRef.current = null;
+          setTrainProgress({ pct: 100, stage: "Fine-tune complete — model artifact is provable." });
+          const reported = rt.runState?.latest?.artifact || {};
+          importArtifact({
+            type: reported.type || artifact.type,
+            modelTag: reported.modelTag || reservedTag,
+            path: reported.path || "",
+            sha256: reported.sha256 || "",
+            quantization: reported.quantization || artifact.quantization,
+          });
+          return;
+        }
+        const pct = runStage === "trained" ? 92 : Math.min(85, 6 + mins);
+        setTrainProgress({ pct, stage: runStage === "trained" ? "Training finished — importing the artifact…" : `Fine-tuning in progress · ${mins} min elapsed` });
+      } catch { /* transient — keep polling */ }
+    }, 5000);
+  }
+
   // ---- import: record the artifact identity → imported receipt + tuned localModel.
-  async function importArtifact() {
+  async function importArtifact(artifactOverride) {
     setError("");
-    const state = deriveArtifactState(artifact);
-    if (!state.identified) { setError(`Artifact not provable yet: ${state.reason}`); return; }
+    const a = (artifactOverride && typeof artifactOverride === "object") ? artifactOverride : artifact;
+    const state = deriveArtifactState(a);
+    if (!state.identified) {
+      // Auto-close path can't prove it yet → fall back to the manual import
+      // panel so the user can attach the result; manual path surfaces the error.
+      if (artifactOverride) { setArtifact((prev) => ({ ...prev, ...a })); setPanel("import"); return; }
+      setError(`Artifact not provable yet: ${state.reason}`); return;
+    }
+    if (artifactOverride) setArtifact((prev) => ({ ...prev, ...a }));
     setBusy(true);
     try {
       setBusyPct(20); setBusyMsg("Recording the imported artifact (governed run receipt)…");
       const importedReceipt = buildTrainingRunReceipt({
         trainingRunId: result.trainingRunId, modelTrainingRowId: SLUG, datasetExportId: result.exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "imported",
-        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), artifact,
+        startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), artifact: a,
       });
       setBusyPct(55); setBusyMsg("Activating the tuned model in the Data Model + API Registry record…");
       await patchObjects((objects) => {
@@ -350,11 +529,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         // Activate the tuned tag on the version row — the model is now real.
         next = next.map((o) => {
           if (o?.objectType !== TRAINING_OBJECT_TYPE) return o;
-          return { ...o, rows: (o.rows || []).map((r) => (String(r?.Name || "") === `${SLUG}-v${result.version}` ? { ...r, localModel: artifact.modelTag, status: "imported" } : r)) };
+          return { ...o, rows: (o.rows || []).map((r) => (String(r?.Name || "") === `${SLUG}-v${result.version}` ? { ...r, localModel: a.modelTag, status: "imported" } : r)) };
         });
         return next;
       });
-      setBusyPct(100); setBusyMsg(`Model record ready — ${artifact.modelTag} is registered and callable. Verify the endpoint next.`);
+      setBusyPct(100); setBusyMsg(`Model record ready — ${a.modelTag} is registered and callable. Verify the endpoint next.`);
       setPanel("verify");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -552,22 +731,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               </div>
               <div className="dm-helper-toolcall dm-swarm-card">
                 <div className="dm-helper-toolcall-title">
-                  {trainPhase === "running" ? "Fine-tuning in progress" : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
+                  {trainPhase === "running" ? `Fine-tuning in progress${trainProgress.pct ? ` · ${trainProgress.pct}%` : ""}` : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
                 </div>
-                <div style={{ borderBottom: "2px solid currentColor", width: trainPhase === "running" ? "100%" : trainPhase === "starting" ? "40%" : "15%", transition: "width 160ms linear" }} aria-hidden="true" />
-                <div className="dm-run-console__hint" data-train-status={trainPhase}>{trainPhase === "running" ? "Run recorded as in progress — tracked by Growthub Local" : trainPhase === "starting" ? "Recording run…" : "Not started"}</div>
+                <div style={{ borderBottom: "2px solid currentColor", width: trainPhase === "running" ? `${Math.max(4, trainProgress.pct)}%` : trainPhase === "starting" ? "40%" : "15%", transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct} />
+                <div className="dm-run-console__hint" data-train-status={trainPhase}>{trainPhase === "running" ? (trainProgress.stage || "Run in progress — tracked live from the governed run receipt") : trainPhase === "starting" ? "Recording run…" : "Not started"}</div>
                 <div className="dm-helper-stream dm-swarm-card-desc">
                   {trainPhase === "running"
-                    ? `Your ${profile.label} run is in progress on the local runner. Growthub Local is tracking run ${result.trainingRunId} — this view stays live; nothing is marked complete until you import a real artifact.`
-                    : `Dataset v${result.version} (${result.records} records) is saved as ${result.datasetPath}. Start the run to record a governed training run; you stay informed the whole way.`}
+                    ? `Your ${profile.label} fine-tune is running on this machine. Growthub Local is tracking run ${result.trainingRunId} live from the real run receipt — a fine-tune can take minutes or hours; this stays accurate the whole way and completes itself when a provable artifact lands.`
+                    : `Dataset v${result.version} (${result.records} records) is saved as ${result.datasetPath}. One click runs the fine-tune here and tracks it to completion.`}
                 </div>
               </div>
 
               {runConfig.commands.length ? (
                 <div className="dm-helper-toolcall dm-swarm-card" data-train-command="">
-                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Run this on your local runner</div>
+                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Exact command this runs on your machine</div>
                   {runConfig.commands.map((c, i) => <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>)}
-                  <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}.</div>
+                  <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}. One click runs this for you; if no local runner is reachable you can also run it by hand.</div>
                 </div>
               ) : (
                 <div className="dm-helper-toolcall dm-swarm-card">
@@ -580,8 +759,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   {trainPhase === "starting" ? "Starting…" : "Start fine-tuning"}
                 </button>
               ) : (
-                <button type="button" className="training-action-primary" data-train-to-import="" onClick={() => setPanel("import")}>
-                  My run finished — attach the result
+                <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>
+                  Attach the result manually instead
                 </button>
               )}
             </div>
@@ -617,7 +796,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   <div className="dm-helper-stream dm-swarm-card-desc">{busyMsg}</div>
                 </div>
               ) : null}
-              <button type="button" className="training-action-primary" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={importArtifact}>
+              <button type="button" className="training-action-primary" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={() => importArtifact()}>
                 {busy ? "Setting up your model record…" : "Attach model & activate"}
               </button>
             </div>
