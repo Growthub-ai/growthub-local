@@ -144,17 +144,21 @@ const RUNNER_COLUMNS = ["Name", "runtime", "command", "timeoutMs", "networkPolic
 /**
  * The real training runner, emitted as a self-contained Node program. Run on
  * the user's machine it: (1) executes the profile's real fine-tune commands
- * (Unsloth QLoRA → GGUF quantize → ollama create), (2) hashes the produced
- * GGUF for a real artifact identity, (3) reports an `imported` run receipt
- * back to the governed workspace so the loop closes itself — no manual step.
+ * (Unsloth QLoRA → GGUF quantize → ollama create — the model is now built and
+ * serving locally), (2) hashes the produced GGUF for a real artifact identity,
+ * (3) makes a REAL chat-completions call to the API Registry row's endpoint to
+ * prove the tuned model answers, and (4) reports — in one governed PATCH — the
+ * `imported` run receipt AND the API Registry row's captured `lastResponse`, so
+ * the loop closes itself with real deployment proof and no manual step.
  */
-function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, quantization }) {
-  const P = JSON.stringify({ commands: commands || [], artifactPath: artifactPath || "", modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m" });
+function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, quantization, integrationId }) {
+  const P = JSON.stringify({ commands: commands || [], artifactPath: artifactPath || "", modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m", integrationId: integrationId || "" });
   return [
     "const { execSync } = require('node:child_process');",
     "const fs = require('node:fs'); const path = require('node:path'); const crypto = require('node:crypto');",
     `const P = ${P};`,
     "const WS = (process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
+    "const matchReg = (row) => String(row.expectedModelTag || '') === P.modelTag || (P.integrationId && String(row.integrationId || '') === P.integrationId);",
     "(async () => {",
     "  for (let i = 0; i < P.commands.length; i += 1) {",
     "    console.log(`STEP ${i + 1}/${P.commands.length}: ${P.commands[i]}`);",
@@ -171,27 +175,40 @@ function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, qu
     "  const sha = file ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : '';",
     "  const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' });",
     "  const data = await r.json();",
-    "  const objects = (data.workspaceConfig.dataModel.objects || []).map((o) => o.objectType !== 'model-training-run' ? o : ({",
-    "    ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({",
-    "      ...row, status: 'imported', completedAt: new Date().toISOString(),",
-    "      artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization,",
-    "    }) : row),",
-    "  }));",
+    "  const objs = data.workspaceConfig.dataModel.objects || [];",
+    "  // The model is built + serving locally now — prove it with a real call.",
+    "  const reg = objs.filter((o) => o.objectType === 'api-registry').flatMap((o) => o.rows || []).find(matchReg);",
+    "  let chat = null, served = '';",
+    "  if (reg && reg.baseUrl) {",
+    "    try {",
+    "      const ep = String(reg.endpoint || '/chat/completions');",
+    "      const url = String(reg.baseUrl).replace(/\\/+$/, '') + (ep.startsWith('/') ? ep : '/' + ep);",
+    "      const cr = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: P.modelTag, messages: [{ role: 'user', content: 'Reply in one short line to confirm you are the tuned workspace model.' }], stream: false }) });",
+    "      const ct = await cr.text(); try { chat = JSON.parse(ct); } catch { chat = ct; }",
+    "      served = (chat && typeof chat === 'object') ? String(chat.model || '') : '';",
+    "    } catch (e) { chat = { error: { message: String((e && e.message) || e) } }; }",
+    "  }",
+    "  const now = new Date().toISOString();",
+    "  const objects = objs.map((o) => {",
+    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization }) : row) };",
+    "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: served ? 'connected' : (row.status || 'registered') }) : row) };",
+    "    return o;",
+    "  });",
     "  await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
-    "  console.log('TRAINING_COMPLETE', sha);",
+    "  console.log('TRAINING_COMPLETE', sha, 'SERVED', served);",
     "})().catch((e) => { console.error(e); process.exit(1); });",
   ].join("\n");
 }
 
 /** Upsert the runner sandbox object + its per-run row. Same fold-or-create
  *  discipline as upsertRunRow — append to the existing object, else create it. */
-function upsertRunnerSandbox(objects, trainingRunId, runConfig) {
+function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
   const row = {
     Name: trainingRunId,
     runtime: "node",
     command: buildRunnerScript({
       commands: runConfig?.commands, artifactPath: runConfig?.artifactPath,
-      modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization,
+      modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
     }),
     timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
     networkPolicy: "allow",
@@ -420,7 +437,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // One governed PATCH: running receipt + the runner sandbox row.
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(runningReceipt));
-        next = upsertRunnerSandbox(next, result.trainingRunId, runConfig);
+        next = upsertRunnerSandbox(next, result.trainingRunId, runConfig, result.integrationId);
         return next;
       });
       setTrainPhase("running");
