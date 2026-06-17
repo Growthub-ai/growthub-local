@@ -130,8 +130,11 @@ if (runIntelligenceExport) {
 } else {
   console.log("  ! /tmp/intelligence.mjs not found — skipping live CLI export (build it per the header)");
   // Fall back: stamp the ledger as the CLI would so the ladder walk continues.
+  // Target the model-training object by objectType (NOT index 0 — the seed
+  // prepends a helper-sandbox object, so the model row is not at index 0).
   const { workspaceConfig, workspaceSourceRecords } = readWorkspace();
-  workspaceConfig.dataModel.objects[0].rows[0] = {
+  const mt = workspaceConfig.dataModel.objects.find((o) => o?.objectType === "model-training");
+  mt.rows[0] = {
     Name: SLUG, baseModel: "qwen2.5-coder:4b", localModel: "",
     status: "exported", lastExportId: "exp_seed", lastSourceId: `training:model-training:${SLUG}`,
     lastExportSummary: JSON.stringify({ recordCount: 12, exportId: "exp_seed" }),
@@ -142,7 +145,8 @@ if (runIntelligenceExport) {
 
 const exportId = (() => {
   const { workspaceConfig } = readWorkspace();
-  return String(workspaceConfig.dataModel.objects[0].rows[0].lastExportId || "exp_seed");
+  const mt = workspaceConfig.dataModel.objects.find((o) => o?.objectType === "model-training");
+  return String(mt?.rows?.[0]?.lastExportId || "exp_seed");
 })();
 
 // --------------------------------------------------------------------------
