@@ -71,9 +71,24 @@ function safeJsString(value) {
  */
 function generateResolverCode({ integrationId, baseUrl, endpoint, method, authRef, headerName, prefix, rootPath, idField, entityType, recordRef }) {
   const id = slugify(integrationId, "integration");
-  const recordTag = clean(recordRef?.objectId)
-    ? `${clean(recordRef.objectId)}:${clean(recordRef.rowName) || id}`
-    : "";
+  // Slug/whitespace-safe machine tag: base64url(JSON) — a human row name with
+  // spaces, colons, slashes, emoji, quotes, or newlines cannot corrupt the
+  // header. Decoded by parseResolverFileHeader back into the full recordRef.
+  let recordTag = "";
+  if (recordRef && (clean(recordRef.objectId) || clean(recordRef.rowName))) {
+    try {
+      recordTag = Buffer.from(
+        JSON.stringify({
+          objectId: clean(recordRef.objectId),
+          rowName: clean(recordRef.rowName) || id,
+          integrationId: id,
+        }),
+        "utf8",
+      ).toString("base64url");
+    } catch {
+      recordTag = "";
+    }
+  }
   const url = `${clean(baseUrl).replace(/\/+$/, "")}/${clean(endpoint).replace(/^\/+/, "")}`.replace(/\/$/, "") || clean(baseUrl) || clean(endpoint);
   const m = (clean(method).toUpperCase() || "GET");
   const candidates = envCandidates(authRef);

@@ -24,7 +24,9 @@
  *   - app/api/resolvers/[integrationId]/route.js (governed endpoint — Phase 3)
  *   - app/api/workspace/resolvers/route.js      (read surface, additive `registry`)
  *
- * Type-only plus frozen vocabulary constants.
+ * Additive contract: type definitions plus runtime-safe vocabulary constants
+ * and one runtime guard (`isResolverRegistryIndex`). No existing 1.5 export is
+ * changed; the package is tree-shakeable (`sideEffects: false`).
  */
 /** Frozen connector-kind vocabulary. */
 export const RESOLVER_CONNECTOR_KINDS = [

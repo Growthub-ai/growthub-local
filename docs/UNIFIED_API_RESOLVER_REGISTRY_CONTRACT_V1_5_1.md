@@ -10,8 +10,10 @@ under the hood and agents can read one index instead of re-deriving the
 workspace.
 
 - **Package:** `@growthub/api-contract` — version `1.5.0` → `1.5.1` (additive).
-- **New sub-export:** `@growthub/api-contract/resolver-registry` (type-only +
-  frozen vocabulary). No existing export changed.
+- **New sub-export:** `@growthub/api-contract/resolver-registry` — an **additive
+  contract**: type definitions plus runtime-safe vocabulary constants and one
+  runtime guard (`isResolverRegistryIndex`). The package stays tree-shakeable
+  (`sideEffects: false`). No existing export changed.
 - **Sentinels stay `1`:** `API_CONTRACT_VERSION` and
   `WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION` are both `1` — additive changes
   never bump the literal.
@@ -42,16 +44,17 @@ type ResolverProvenance    = "config-driven" | "static-file" | "helper-generated
 
 interface ResolverRegistryEntry {
   recordRef:     { objectId: string; rowName: string; integrationId: string }; // the governed record
-  integrationId: string;
+  integrationId: string;          // the human id on the row (source of truth)
+  resolverId:    string;          // CANONICAL slug — file, registry key, endpoint all use this
   connectorKind: ResolverConnectorKind;
   provenance:    ResolverProvenance;
   filePath:      string | null;   // materialized resolver file, when present
-  registered:    boolean;         // present in the in-memory resolver registry
+  registered:    boolean;         // present in the registry (checked vs raw id AND slug)
   tested:        boolean;         // row's last test succeeded
-  shape:         { arrayPath; idField; entityType; hasPagination } | null; // from profileApiResponse
+  shape:         { arrayPath; idField; entityType; hasPagination } | null; // DERIVED facts only, never values
   score:         number;          // milestone activation score 0–100
   nextAction:    { stepId; id; label } | null;
-  endpoint:      string | null;   // /api/resolvers/<integrationId> when registered
+  endpoint:      string | null;   // /api/resolvers/<resolverId> when registered
 }
 
 interface ResolverRegistryIndex {
@@ -59,15 +62,42 @@ interface ResolverRegistryIndex {
   version: 1;
   generatedAt: string;
   entries: ResolverRegistryEntry[];
-  summary: { total; registered; tested; needsResolver; exposed };
+  summary: { total; registered; tested; needsResolver; exposed; collisions };
+  collisions: Array<{ resolverId: string; records: string[] }>; // distinct ids → same slug (hard error)
 }
 
-// Additive response of GET /api/workspace/resolvers (legacy fields preserved):
+// Additive response of GET /api/workspace/resolvers (legacy fields preserved).
+// Derivation failure is NEVER hidden — registry is null with explicit status.
 interface UnifiedResolverRegistryResponse {
   files: string[]; registeredIds: string[]; resolvers: object[]; canUpload: boolean;
-  registry: ResolverRegistryIndex;
+  registry: ResolverRegistryIndex | null;
+  registryStatus: "ok" | "degraded";
+  registryError: { reason: string; message: string } | null;
+  artifactWritten: boolean;        // writable-runtime write-through outcome
+  artifactReason: string | null;
 }
 ```
+
+### Identity, collisions, and degradation (hardening)
+
+- **Canonical identity.** The governed record keeps its human `integrationId`;
+  the resolver file, registry key, and endpoint all use `resolverId =
+  slugify(integrationId)`. `registered` is checked against **both** the raw id
+  and the slug, so a resolver registered under either form (generated files use
+  the slug; Nango uses the raw id) is never a blind spot.
+- **Collisions are hard errors.** Two governed ids that normalize to the same
+  `resolverId` are reported in `collisions` and **fail the drift guard** — the
+  system never silently picks one.
+- **No silent failure.** Derivation failure → `registry: null` +
+  `registryStatus: "degraded"` + `registryError` (and a governance receipt). A
+  writable runtime that fails to persist artifacts reports `artifactWritten:
+  false` with a reason and emits a receipt; read-only runtimes are live-only by
+  design.
+- **Drift guard enforces its claim.** `scripts/check-resolver-registry.mjs`
+  (via the shared pure `diffResolverArtifacts`) fails on: orphan generated
+  files, identity collisions, any saved-index drift (entry content + summary),
+  and any endpoint-manifest mismatch (stale or missing endpoint, wrong path,
+  connectorKind, or recordRef).
 
 Frozen constants: `RESOLVER_CONNECTOR_KINDS`, `RESOLVER_PROVENANCE_VALUES`,
 `RESOLVER_REGISTRY_INDEX_KIND`, `RESOLVER_ENDPOINT_MANIFEST_KIND`,

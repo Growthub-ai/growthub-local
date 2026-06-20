@@ -44,7 +44,7 @@ const appPath = forkArg
 const libDir = path.join(appPath, "lib");
 const resolversDir = path.join(libDir, "adapters/integrations/resolvers");
 
-const { deriveResolverRegistry, parseResolverFileHeader, slugifyIntegrationId } = await import(
+const { deriveResolverRegistry, diffResolverArtifacts, parseResolverFileHeader, slugifyIntegrationId } = await import(
   pathToFileURL(path.join(libDir, "unified-resolver-registry.js")).href
 );
 
@@ -108,7 +108,10 @@ for (const [slug, meta] of Object.entries(fileMeta)) {
   }
 }
 
-// Re-derive the registry from current truth.
+// Re-derive the registry from current truth. registeredIds mirrors the runtime:
+// generated/static files register under the slug, so the file slugs ARE the
+// registered ids for drift purposes (the live registry is the authority at
+// request time; here we verify the persisted projection against fresh truth).
 const registeredIds = files.map((f) => slugifyIntegrationId(f, "")).filter(Boolean);
 const fresh = deriveResolverRegistry({
   workspaceConfig,
@@ -117,33 +120,17 @@ const fresh = deriveResolverRegistry({
   fileMeta,
   generatedAt: "drift-check",
 });
-const freshSet = new Set(fresh.entries.map((e) => `${e.integrationId}:${e.provenance}`));
 
-// (2) Index artifact, if present, must match the re-derivation.
+// (2)+(3)+collisions — delegate to the shared pure comparison so the guard and
+// the route can never disagree about what "drift" means.
 const indexPath = path.join(resolversDir, "_registry.generated.json");
-if (fs.existsSync(indexPath)) {
-  const saved = readJsonSafe(indexPath);
-  if (!saved || saved.kind !== "growthub-resolver-registry-index-v1") {
-    errors.push("_registry.generated.json is malformed — re-run GET /api/workspace/resolvers to regenerate it.");
-  } else {
-    const savedSet = new Set((saved.entries || []).map((e) => `${e.integrationId}:${e.provenance}`));
-    const drifted = [...savedSet].filter((k) => !freshSet.has(k)).concat([...freshSet].filter((k) => !savedSet.has(k)));
-    if (drifted.length > 0) {
-      errors.push(
-        `_registry.generated.json drifted from the governed records (${drifted.join(", ")}) — do not hand-edit; regenerate via GET /api/workspace/resolvers.`,
-      );
-    }
-  }
-}
-
-// (3) Endpoint manifest, if present, must list exactly the exposed endpoints.
 const manifestPath = path.join(resolversDir, "_endpoints.generated.json");
-if (fs.existsSync(manifestPath)) {
-  const manifest = readJsonSafe(manifestPath);
-  if (!manifest || manifest.kind !== "growthub-resolver-endpoint-manifest-v1") {
-    errors.push("_endpoints.generated.json is malformed — regenerate via GET /api/workspace/resolvers.");
-  }
-}
+const { errors: driftErrors } = diffResolverArtifacts({
+  fresh,
+  savedIndex: fs.existsSync(indexPath) ? readJsonSafe(indexPath) : null,
+  savedManifest: fs.existsSync(manifestPath) ? readJsonSafe(manifestPath) : null,
+});
+for (const e of driftErrors) errors.push(e);
 
 const result = {
   ok: errors.length === 0,

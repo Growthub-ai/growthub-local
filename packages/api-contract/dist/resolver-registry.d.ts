@@ -24,7 +24,9 @@
  *   - app/api/resolvers/[integrationId]/route.js (governed endpoint — Phase 3)
  *   - app/api/workspace/resolvers/route.js      (read surface, additive `registry`)
  *
- * Type-only plus frozen vocabulary constants.
+ * Additive contract: type definitions plus runtime-safe vocabulary constants
+ * and one runtime guard (`isResolverRegistryIndex`). No existing 1.5 export is
+ * changed; the package is tree-shakeable (`sideEffects: false`).
  */
 /**
  * Connector kind a governed API Registry row resolves through. Provider-
@@ -76,6 +78,13 @@ export interface ResolverNextAction {
 export interface ResolverRegistryEntry {
     recordRef: ResolverRecordRef;
     integrationId: string;
+    /**
+     * Canonical resolver identity — the slug of `integrationId`. The governed
+     * record keeps its human integrationId; the resolver file, registry key, and
+     * endpoint path all use `resolverId`. Two integrationIds that normalize to the
+     * same resolverId are reported in `ResolverRegistryIndex.collisions`.
+     */
+    resolverId: string;
     connectorKind: ResolverConnectorKind;
     provenance: ResolverProvenance;
     /** Resolver file path when materialized (helper-generated / static-file); null otherwise. */
@@ -92,10 +101,16 @@ export interface ResolverRegistryEntry {
     nextAction: ResolverNextAction | null;
     /**
      * The addressable governed endpoint this record is exposed at across the
-     * monorepo when registered (Phase 3): `/api/resolvers/<integrationId>`.
+     * monorepo when registered (Phase 3): `/api/resolvers/<resolverId>`.
      * null when the resolver is not registered (nothing to expose).
      */
     endpoint: string | null;
+}
+/** Two records normalizing to the same `resolverId` — a hard governance error. */
+export interface ResolverIdentityCollision {
+    resolverId: string;
+    /** `"<objectId>:<rowName>:<integrationId>"` for each colliding record. */
+    records: string[];
 }
 /** Rollup over all entries — the aggregate-first surface for the cockpit and Fleet lens. */
 export interface ResolverRegistrySummary {
@@ -106,6 +121,8 @@ export interface ResolverRegistrySummary {
     needsResolver: number;
     /** Records exposed as governed endpoints. */
     exposed: number;
+    /** Number of resolverId collisions (must be 0 in a healthy workspace). */
+    collisions: number;
 }
 /**
  * The unified, externalizable index. Written (gated) to the resolvers dir as a
@@ -119,18 +136,34 @@ export interface ResolverRegistryIndex {
     generatedAt: string;
     entries: ResolverRegistryEntry[];
     summary: ResolverRegistrySummary;
+    /** resolverId collisions — empty in a healthy workspace. */
+    collisions: ResolverIdentityCollision[];
 }
+export type ResolverRegistryStatus = "ok" | "degraded";
 /**
  * Additive response of `GET /api/workspace/resolvers`. The legacy fields
  * (`files`, `registeredIds`, `resolvers`, `canUpload`) are preserved verbatim
  * for back-compat; `registry` is the 1.5.1 correlation surface.
+ *
+ * Registry derivation failure is NEVER hidden: `registry` is `null` with
+ * `registryStatus: "degraded"` and a structured `registryError`, so an agent
+ * can distinguish "no entries" from "registry failed". On a writable runtime
+ * the artifact write-through outcome is reported (`artifactWritten` / reason),
+ * not swallowed.
  */
 export interface UnifiedResolverRegistryResponse {
     files: string[];
     registeredIds: string[];
     resolvers: Array<Record<string, unknown>>;
     canUpload: boolean;
-    registry: ResolverRegistryIndex;
+    registry: ResolverRegistryIndex | null;
+    registryStatus: ResolverRegistryStatus;
+    registryError: {
+        reason: string;
+        message: string;
+    } | null;
+    artifactWritten: boolean;
+    artifactReason: string | null;
 }
 /** Manifest of governed resolver endpoints exposed across the monorepo (Phase 3). */
 export interface ResolverEndpointManifest {

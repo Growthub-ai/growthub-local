@@ -18,9 +18,16 @@
  */
 
 import { buildResolverProposal } from "./workspace-resolver-proposal.js";
+import { slugifyIntegrationId, RESOLVER_ENDPOINT_BASE } from "./unified-resolver-registry.js";
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
+}
+
+/** The canonical governed endpoint a row will be exposed at once registered. */
+function endpointFor(integrationId) {
+  const slug = slugifyIntegrationId(integrationId, "");
+  return slug ? `${RESOLVER_ENDPOINT_BASE}/${slug}` : null;
 }
 
 /**
@@ -62,12 +69,43 @@ function constructCustomHttpProposal({ row, profile, recommendation, recordRef }
     ok: blanks.length === 0,
     mode: "file",
     connectorKind: "custom-http",
+    endpoint: endpointFor(row?.integrationId),
     proposal,
     prefill: { rootPath, idField, entityType, headerName, prefix },
     blanks,
     reason: blanks.length
       ? `Fill ${blanks.join(", ")} on the row before constructing a resolver.`
       : (recommendation?.reason || "Resolver constructed from the tested response shape."),
+  };
+}
+
+/**
+ * Honest readiness for a config-driven (Nango) row. A resolver registers from
+ * the row automatically — but only if the row actually carries the minimum
+ * binding. We never report "nothing to apply / done" when the endpoint would not
+ * be usable; missing config returns an actionable next step instead.
+ */
+function constructNangoReadiness({ row }) {
+  const blanks = [];
+  const providerKey = clean(row?.providerConfigKey) || clean(row?.integrationId);
+  if (!providerKey) blanks.push("providerConfigKey (or integrationId)");
+  const hasConnection =
+    clean(row?.connectionIds) || clean(row?.connectionId) || clean(row?.nangoConnectionId);
+  if (!hasConnection) blanks.push("connectionIds");
+  if (!clean(row?.endpoint)) blanks.push("endpoint (Nango proxy path)");
+  const ready = blanks.length === 0;
+  return {
+    ok: ready,
+    mode: "config-driven",
+    connectorKind: "nango",
+    endpoint: endpointFor(row?.integrationId),
+    proposal: null,
+    prefill: null,
+    blanks,
+    state: ready ? "config-driven-ready" : "config-driven-missing-config",
+    reason: ready
+      ? "Config-driven via Nango — the resolver registers from this row automatically once it loads; no file to write. Confirm it appears as registered in the registry."
+      : `Config-driven via Nango, but the row is missing ${blanks.join(", ")}. Add these so the resolver can register and the endpoint becomes usable.`,
   };
 }
 
@@ -81,26 +119,18 @@ function constructCustomHttpProposal({ row, profile, recommendation, recordRef }
 function getResolverBuilder(connectorKind) {
   const kind = clean(connectorKind).toLowerCase();
   if (kind === "nango") {
-    return () => ({
-      ok: true,
-      mode: "config-driven",
-      connectorKind: "nango",
-      proposal: null,
-      prefill: null,
-      blanks: [],
-      reason:
-        "This API is config-driven via Nango — the resolver is built from the row automatically; no resolver file is needed.",
-    });
+    return (args) => constructNangoReadiness(args);
   }
   if (["mcp", "webhook", "chrome"].includes(kind)) {
-    return () => ({
+    return (args) => ({
       ok: false,
       mode: "unsupported",
       connectorKind: kind,
+      endpoint: endpointFor(args?.row?.integrationId),
       proposal: null,
       prefill: null,
       blanks: [],
-      reason: `Auto-construction for "${kind}" connectors is not available yet — wire it with a custom-http resolver or the helper.`,
+      reason: `Auto-construction for "${kind}" connectors is reserved (future). For now, wire it with a custom-http resolver or the governed helper — your record stays governed either way.`,
     });
   }
   return (args) => constructCustomHttpProposal(args);

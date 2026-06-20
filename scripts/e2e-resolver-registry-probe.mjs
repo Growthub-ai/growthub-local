@@ -3,8 +3,18 @@
  * E2E probe — Unified API Resolver Registry (CMS SDK v1.5.1) against a REAL
  * exported workspace runtime. Not a unit test: it reconstructs the export the
  * CLI produces (the bundled growthub-custom-workspace-starter-v1 apps/workspace),
- * installs it, boots `next dev`, and drives the full no-code customer journey
+ * installs it, boots `next dev`, and drives the GOVERNED SERVER-PATH journey
  * against a deterministic local fixture API — positive AND negative paths.
+ *
+ * SCOPE / honest claim: this probe exercises the server contract end-to-end by
+ * POSTing the same `resolver.create` proposal the cockpit's constructor produces
+ * to the governed `helper/apply` lane. It does NOT drive the React drawer click.
+ * The cockpit constructor derivation itself (constructResolverProposal →
+ * prefilled, governed, valid proposal with provenance recordRef, WITHOUT the
+ * user typing rootPath/idField/entityType) is proven at the unit level in
+ * scripts/unit-resolver-registry.test.mjs ("constructor-integration"), and the
+ * edited drawer is compile-checked here (step 8b). Together they cover the
+ * no-code journey; this file alone proves the server path it rides on.
  *
  * Journey proven:
  *   1. GET /api/workspace/resolvers              → additive `registry` index present
@@ -150,9 +160,11 @@ async function main() {
     {
       const r = await jfetch(`${base}/api/workspace/resolvers`);
       const ok = r.ok && r.body?.registry?.kind === "growthub-resolver-registry-index-v1"
-        && Array.isArray(r.body.registry.entries);
-      record("1. GET /api/workspace/resolvers → registry index", ok,
-        ok ? `${r.body.registry.entries.length} entries` : `status ${r.status}`);
+        && Array.isArray(r.body.registry.entries)
+        && r.body.registryStatus === "ok"
+        && r.body.artifactWritten === true; // writable dev runtime persists projections
+      record("1. GET /api/workspace/resolvers → registry index (status ok + artifacts written)", ok,
+        ok ? `${r.body.registry.entries.length} entries, artifactWritten=${r.body.artifactWritten}` : `status ${r.status} registryStatus=${r.body?.registryStatus} artifactWritten=${r.body?.artifactWritten}`);
     }
 
     // ── 2. NEGATIVE: unknown resolver endpoint → 404 ─────────────────────────
@@ -223,7 +235,9 @@ async function main() {
       record("5. PATCH /api/workspace → tested state persisted", r.ok, `status ${r.status}`);
     }
 
-    // ── 6. CONSTRUCT the governed resolver (the v1.5.1 no-code core) ──────────
+    // ── 6. Apply the constructed resolver via the governed lane ──────────────
+    // NB: this posts the SAME proposal shape the cockpit constructor produces
+    // (see unit "constructor-integration"); it proves the server file lane.
     {
       const r = await jfetch(`${base}/api/workspace/helper/apply`, {
         method: "POST",
@@ -257,9 +271,11 @@ async function main() {
     {
       const r = await jfetch(`${base}/api/resolvers/${INTEGRATION_ID}`);
       const ok = r.ok && r.body?.ok === true && r.body.recordCount === FIXTURE_RECORDS.length
-        && Array.isArray(r.body.records) && r.body.records[0]?.id === "r1";
-      record("8. POSITIVE GET /api/resolvers/<id> → governed endpoint returns records", ok,
-        ok ? `${r.body.recordCount} records` : `status ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
+        && Array.isArray(r.body.records) && r.body.records[0]?.id === "r1"
+        && r.body.resolverId === INTEGRATION_ID
+        && r.body.recordRef?.objectId === "workspace-api-registry"; // downstream knows the governed row
+      record("8. POSITIVE GET /api/resolvers/<id> → governed endpoint returns records + recordRef", ok,
+        ok ? `${r.body.recordCount} records, recordRef=${r.body.recordRef?.objectId}` : `status ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
     }
 
     // ── 8b. the edited no-code surface compiles (cockpit + construct panel) ──

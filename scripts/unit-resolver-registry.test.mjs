@@ -225,30 +225,178 @@ test("deriver — shape derived from tested response; secret-safe", () => {
   assert.equal(e.shape.arrayPath, "data");
   assert.equal(e.shape.idField, "id");
   assert.ok(e.score >= 50);
-  // secret-safe — serialized index must not contain any value-shaped secret
+});
+
+test("deriver — registry is secret-safe AND PII-safe (active assertions, no || true)", () => {
+  const PII_RESPONSE = JSON.stringify({
+    data: [{ id: "1", name: "Jane Secret", email: "jane@private.example", ssn: "123-45-6789" }],
+  });
+  const workspaceConfig = {
+    dataModel: {
+      objects: [
+        apiRegistryObject([
+          {
+            Name: "Sensitive",
+            integrationId: "sensitive",
+            baseUrl: "https://api.sensitive.test",
+            endpoint: "/people",
+            authRef: "CRM",
+            authHeaderName: "authorization",
+            authPrefix: "Bearer",
+            status: "connected",
+            lastResponse: PII_RESPONSE,
+          },
+        ]),
+      ],
+    },
+  };
+  // Simulate a runtime where the env value is set (must never appear in output).
+  const index = deriveResolverRegistry({
+    workspaceConfig,
+    runtime: { configuredEnvRefs: ["CRM"] },
+  });
   const serialized = JSON.stringify(index);
-  assert.ok(!serialized.includes("ada@x.io") || true); // sample values may appear in shape? ensure no auth values
-  assert.ok(!/authorization|bearer|api_key=/i.test(serialized));
+  // No env values / auth header values / bearer tokens.
+  assert.ok(!/Bearer\s+\S/i.test(serialized), "no bearer token material");
+  assert.ok(!serialized.includes("CRM_API_KEY"), "no env value keys");
+  // No raw record payload values — only DERIVED shape facts (field names).
+  assert.ok(!serialized.includes("Jane Secret"), "no PII name value");
+  assert.ok(!serialized.includes("jane@private.example"), "no PII email value");
+  assert.ok(!serialized.includes("123-45-6789"), "no PII ssn value");
+  // It DOES carry the derived shape (field name only) — useful, not leaky.
+  const e = index.entries[0];
+  assert.equal(e.shape.idField, "id");
+  assert.equal(e.shape.arrayPath, "data");
+});
+
+test("identity — human integrationId normalizes to a canonical slug end-to-end", () => {
+  const workspaceConfig = {
+    dataModel: { objects: [apiRegistryObject([{ Name: "HubSpot CRM", integrationId: "HubSpot CRM", baseUrl: "https://x", endpoint: "/y" }])] },
+  };
+  // resolver registered under the SLUG (as generated files do) — dual-check must
+  // still see it as registered and expose the canonical endpoint.
+  const index = deriveResolverRegistry({
+    workspaceConfig,
+    files: ["hubspot-crm.js"],
+    registeredIds: ["hubspot-crm"],
+    fileMeta: { "hubspot-crm": { generated: true } },
+  });
+  const e = index.entries[0];
+  assert.equal(e.integrationId, "HubSpot CRM");
+  assert.equal(e.resolverId, "hubspot-crm");
+  assert.equal(e.registered, true);
+  assert.equal(e.provenance, "helper-generated");
+  assert.equal(e.endpoint, "/api/resolvers/hubspot-crm");
+  assert.equal(e.filePath, "lib/adapters/integrations/resolvers/hubspot-crm.js");
+});
+
+test("identity — colliding integrationIds (same slug) are reported, never silently merged", () => {
+  const workspaceConfig = {
+    dataModel: {
+      objects: [
+        apiRegistryObject([
+          { Name: "A", integrationId: "ACME/API v2", baseUrl: "https://x", endpoint: "/y" },
+          { Name: "B", integrationId: "acme api v2", baseUrl: "https://x", endpoint: "/y" },
+        ]),
+      ],
+    },
+  };
+  const index = deriveResolverRegistry({ workspaceConfig });
+  assert.equal(index.summary.collisions, 1);
+  assert.equal(index.collisions[0].resolverId, "acme-api-v2");
+  assert.equal(index.collisions[0].records.length, 2);
+});
+
+test("constructor-integration — cockpit-derived proposal is a valid, governed, prefilled resolver", () => {
+  // This is the UNIT-LEVEL proof of the no-code path the cockpit takes:
+  // stageResolverConstruct() calls constructResolverProposal(); we assert it
+  // produces exactly the governed resolver.create the apply lane accepts — with
+  // shape derived for the user (they never type rootPath/idField/entityType).
+  const row = {
+    Name: "Orders", integrationId: "orders-api", baseUrl: "https://api.shop.test",
+    endpoint: "/v1/orders", method: "GET", authRef: "SHOP", authHeaderName: "x-api-key",
+    status: "connected", lastResponse: JSON.stringify({ data: [{ id: "o1", total: 9 }], nextCursor: "z" }),
+  };
+  const profile = responseProfile.profileApiResponse(row.lastResponse);
+  const recommendation = responseProfile.recommendResolver(profile);
+  const result = constructor.constructResolverProposal({
+    row, profile, recommendation,
+    recordRef: { objectId: "workspace-api-registry", rowName: "Orders" },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.endpoint, "/api/resolvers/orders-api");
+  assert.equal(result.prefill.rootPath, "data");           // derived, not typed
+  assert.equal(result.prefill.idField, "id");
+  // governed: a valid resolver.create the apply lane will accept + write
+  const v = proposal.validateResolverProposal(result.proposal);
+  assert.equal(v.ok, true);
+  // carries provenance recordRef so the written file is traceable to the record
+  const header = reg.parseResolverFileHeader(result.proposal.code);
+  assert.equal(header.generated, true);
+  assert.equal(header.recordRef.rowName, "Orders");
+});
+
+test("adversarial — messy lastResponse fixtures never throw and classify sanely", () => {
+  const cases = [
+    { name: "empty array", lastResponse: "[]" },
+    { name: "malformed", lastResponse: "{not json" },
+    { name: "nested", lastResponse: JSON.stringify({ result: { items: [{ id: 1 }] } }) },
+    { name: "top-level", lastResponse: JSON.stringify([{ id: 1 }]) },
+  ];
+  for (const c of cases) {
+    const workspaceConfig = {
+      dataModel: { objects: [apiRegistryObject([{ Name: c.name, integrationId: `adv-${c.name.replace(/\s+/g, "-")}`, baseUrl: "https://x", endpoint: "/y", status: "connected", lastResponse: c.lastResponse }])] },
+    };
+    assert.doesNotThrow(() => deriveResolverRegistry({ workspaceConfig }), c.name);
+    const idx = deriveResolverRegistry({ workspaceConfig });
+    assert.equal(idx.entries.length, 1, c.name);
+    assert.ok(["passthrough", "missing", "config-driven", "static-file", "helper-generated"].includes(idx.entries[0].provenance), c.name);
+  }
+});
+
+test("adversarial — baseUrl-only and duplicate-slash rows still derive an entry", () => {
+  const workspaceConfig = {
+    dataModel: {
+      objects: [
+        apiRegistryObject([
+          { Name: "BaseOnly", integrationId: "base-only", baseUrl: "https://api.x.test/" },
+          { Name: "Slashes", integrationId: "slashes", baseUrl: "https://api.x.test/", endpoint: "/records/" },
+        ]),
+      ],
+    },
+  };
+  const idx = deriveResolverRegistry({ workspaceConfig });
+  assert.equal(idx.entries.length, 2);
 });
 
 // ───────────────────────────────────────────────────────────────────────────
 // Header parsing + endpoint manifest + generated code round-trip
 // ───────────────────────────────────────────────────────────────────────────
 
-test("parseResolverFileHeader — recognizes generated banner + tags", () => {
-  const code = proposal.generateResolverCode({
-    integrationId: "round-trip",
-    baseUrl: "https://x",
-    endpoint: "/y",
-    authRef: "ROUND",
-    recordRef: { objectId: "workspace-api-registry", rowName: "Round Trip" },
-  });
-  const header = parseResolverFileHeader(code);
-  assert.equal(header.generated, true);
-  assert.equal(header.integrationId, "round-trip");
-  assert.equal(header.record, "workspace-api-registry:Round");
-  assert.ok(code.includes(RESOLVER_GENERATED_BANNER));
-  assert.ok(code.includes("registerSourceResolver"));
+test("parseResolverFileHeader — full recordRef survives spaces/special chars (no truncation)", () => {
+  for (const rowName of ["Round Trip", "ACME: Prod/v2", 'He said "hi" 🚀', "line\nbreak"]) {
+    const code = proposal.generateResolverCode({
+      integrationId: "round-trip",
+      baseUrl: "https://x",
+      endpoint: "/y",
+      authRef: "ROUND",
+      recordRef: { objectId: "workspace-api-registry", rowName },
+    });
+    const header = parseResolverFileHeader(code);
+    assert.equal(header.generated, true);
+    assert.equal(header.integrationId, "round-trip");
+    // base64url tag decodes back to the FULL row name — no whitespace truncation,
+    // and no special char can corrupt the single-line header.
+    assert.ok(header.recordRef, `recordRef should decode for ${JSON.stringify(rowName)}`);
+    assert.equal(header.recordRef.rowName, rowName.trim());
+    assert.equal(header.recordRef.objectId, "workspace-api-registry");
+    assert.ok(code.includes(RESOLVER_GENERATED_BANNER));
+    assert.ok(code.includes("registerSourceResolver"));
+    // the provenance header is slug/base64 only — the raw row name never appears
+    // in the first lines, so no special char can break out of the comment.
+    const firstLines = code.split("\n").slice(0, 3).join("\n");
+    assert.ok(!firstLines.includes(rowName));
+  }
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -293,11 +441,24 @@ test("constructor — surfaces blanks when the row has no target", () => {
   assert.ok(result.blanks.includes("target (baseUrl or endpoint)"));
 });
 
-test("constructor — nango is config-driven (no file proposal)", () => {
-  const result = constructor.constructResolverProposal({ row: { integrationId: "asana", connectorKind: "nango" } });
-  assert.equal(result.mode, "config-driven");
-  assert.equal(result.proposal, null);
-  assert.equal(result.ok, true);
+test("constructor — nango readiness is honest (ready vs missing-config)", () => {
+  // Bare nango row → NOT ready: missing connectionIds + endpoint surfaced.
+  const bare = constructor.constructResolverProposal({ row: { integrationId: "asana", connectorKind: "nango" } });
+  assert.equal(bare.mode, "config-driven");
+  assert.equal(bare.proposal, null);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.state, "config-driven-missing-config");
+  assert.ok(bare.blanks.includes("connectionIds"));
+  assert.ok(bare.blanks.includes("endpoint (Nango proxy path)"));
+
+  // Fully-bound nango row → ready, no blanks, endpoint advertised.
+  const ready = constructor.constructResolverProposal({
+    row: { integrationId: "asana", connectorKind: "nango", providerConfigKey: "asana", connectionIds: "conn_1", endpoint: "/tasks" },
+  });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.state, "config-driven-ready");
+  assert.equal(ready.blanks.length, 0);
+  assert.equal(ready.endpoint, "/api/resolvers/asana");
 });
 
 test("constructor — mcp/webhook/chrome advertised truthfully, not blank", () => {
@@ -307,6 +468,82 @@ test("constructor — mcp/webhook/chrome advertised truthfully, not blank", () =
     assert.equal(result.ok, false);
     assert.ok(result.reason.includes(kind));
   }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Drift guard — diffResolverArtifacts enforces what the contract claims
+// ───────────────────────────────────────────────────────────────────────────
+
+function exposedWorkspace() {
+  return {
+    dataModel: { objects: [apiRegistryObject([{ Name: "On", integrationId: "on-api", connectorKind: "nango" }])] },
+  };
+}
+
+test("drift — clean (no artifacts) passes", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const { errors } = reg.diffResolverArtifacts({ fresh });
+  assert.deepEqual(errors, []);
+});
+
+test("drift — matching saved artifacts pass (generatedAt ignored)", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"], generatedAt: "A" });
+  const savedIndex = { ...deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"], generatedAt: "B" }) };
+  const savedManifest = reg.buildEndpointManifest(savedIndex, "B");
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedIndex, savedManifest });
+  assert.deepEqual(errors, []);
+});
+
+test("drift — saved manifest with EXTRA (stale) endpoint fails", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const savedManifest = reg.buildEndpointManifest(fresh, "x");
+  savedManifest.endpoints.push({ integrationId: "ghost", path: "/api/resolvers/ghost", connectorKind: "custom-http", recordRef: { objectId: "x", rowName: "G", integrationId: "ghost" } });
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedManifest });
+  assert.ok(errors.some((e) => e.includes("stale endpoint")), errors.join("|"));
+});
+
+test("drift — saved manifest MISSING an exposed endpoint fails", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const savedManifest = reg.buildEndpointManifest(fresh, "x");
+  savedManifest.endpoints = [];
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedManifest });
+  assert.ok(errors.some((e) => e.includes("missing")), errors.join("|"));
+});
+
+test("drift — saved manifest with WRONG path fails", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const savedManifest = reg.buildEndpointManifest(fresh, "x");
+  savedManifest.endpoints[0].path = "/api/resolvers/WRONG";
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedManifest });
+  assert.ok(errors.length > 0);
+});
+
+test("drift — saved registry with wrong endpoint (same provenance) fails", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const savedIndex = JSON.parse(JSON.stringify(fresh));
+  savedIndex.entries[0].endpoint = "/api/resolvers/tampered";
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedIndex });
+  assert.ok(errors.some((e) => e.includes("drifted")), errors.join("|"));
+});
+
+test("drift — saved registry with wrong summary count fails", () => {
+  const fresh = deriveResolverRegistry({ workspaceConfig: exposedWorkspace(), registeredIds: ["on-api"] });
+  const savedIndex = JSON.parse(JSON.stringify(fresh));
+  savedIndex.summary.registered = 999;
+  const { errors } = reg.diffResolverArtifacts({ fresh, savedIndex });
+  assert.ok(errors.some((e) => e.includes("summary")), errors.join("|"));
+});
+
+test("drift — collisions fail the guard even with no artifacts", () => {
+  const workspaceConfig = {
+    dataModel: { objects: [apiRegistryObject([
+      { Name: "A", integrationId: "Dup API", baseUrl: "https://x", endpoint: "/y" },
+      { Name: "B", integrationId: "dup-api", baseUrl: "https://x", endpoint: "/y" },
+    ])] },
+  };
+  const fresh = deriveResolverRegistry({ workspaceConfig });
+  const { errors } = reg.diffResolverArtifacts({ fresh });
+  assert.ok(errors.some((e) => e.includes("collision")), errors.join("|"));
 });
 
 test("buildEndpointManifest — projects only exposed endpoints", () => {

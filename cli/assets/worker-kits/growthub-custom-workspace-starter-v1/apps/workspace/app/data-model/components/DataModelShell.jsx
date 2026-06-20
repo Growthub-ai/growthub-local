@@ -2084,10 +2084,22 @@ function DataModelRecordDrawer({
                       {resolverConstruct.proposal?.target?.path ? (
                         <span className="dm-cockpit-field"><b>file</b>{resolverConstruct.proposal.target.path}</span>
                       ) : null}
+                      {resolverConstruct.endpoint ? (
+                        <span className="dm-cockpit-field"><b>endpoint</b>{resolverConstruct.endpoint}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {resolverConstruct.mode === "config-driven" && resolverConstruct.endpoint ? (
+                    <div className="dm-cockpit-fields">
+                      <span className="dm-cockpit-field"><b>type</b>config-driven (no file)</span>
+                      <span className="dm-cockpit-field"><b>endpoint</b>{resolverConstruct.endpoint}</span>
                     </div>
                   ) : null}
                   {resolverConstruct.blanks?.length ? (
                     <p className="dm-cockpit-step-hint">Missing on the row: {resolverConstruct.blanks.join(", ")}</p>
+                  ) : null}
+                  {resolverConstruct.mode === "file" && resolverConstruct.ok ? (
+                    <p className="dm-cockpit-step-hint">After apply: the resolver file is written via the governed lane, the row is marked wired, and it's re-tested automatically. If the re-test fails, the resolver is still written — the receipt distinguishes &ldquo;written&rdquo; from &ldquo;runtime failed&rdquo;.</p>
                   ) : null}
                   {resolverConstructMessage ? <p className="dm-cockpit-step-hint">{resolverConstructMessage}</p> : null}
                   <div className="dm-cockpit-shape-head">
