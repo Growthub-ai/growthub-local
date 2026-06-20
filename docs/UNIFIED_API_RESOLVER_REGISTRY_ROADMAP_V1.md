@@ -24,6 +24,36 @@ already ships — nothing here invents a new architecture, it unifies what exist
 
 ---
 
+## Implementation status — all three phases shipped
+
+The roadmap is implemented in-repo against the bundled
+`growthub-custom-workspace-starter-v1` app, codified as **API contract v1.5.1**
+([`docs/UNIFIED_API_RESOLVER_REGISTRY_CONTRACT_V1_5_1.md`](./UNIFIED_API_RESOLVER_REGISTRY_CONTRACT_V1_5_1.md)),
+additive and non-destabilizing to the existing API Registry contract:
+
+- **Phase 1 (keystone) — unify + trace.** `lib/unified-resolver-registry.js`
+  (`deriveResolverRegistry`) + additive `registry` on `GET /api/workspace/resolvers`
+  + externalized `_registry.generated.json` / `_endpoints.generated.json`
+  artifacts + provenance banner on generated files. ✅ shipped
+- **Phase 2 — construct, don't fill.** `lib/resolver-constructor.js`
+  (`constructResolverProposal` / `getResolverBuilder`) + cockpit wiring
+  (`construct-resolver` step → thin in-drawer review → governed `helper/apply`
+  → auto re-test). ✅ shipped
+- **Phase 3 — governed endpoints across the monorepo.**
+  `app/api/resolvers/[integrationId]/route.js` (one dynamic, runtime-agnostic
+  handler; `x-growthub-app-scope` enforced + outcome receipts) + drift guard
+  `scripts/check-resolver-registry.mjs` wired into the CI `verify` gate. ✅ shipped
+- **Contract.** `@growthub/api-contract@1.5.1` → `@growthub/api-contract/resolver-registry`
+  (type-only). ✅ shipped
+- **Tests.** `scripts/unit-resolver-registry.test.mjs` (14) + a full exported-workspace
+  E2E probe (positive/negative + the end-to-end customer journey). ✅ shipped
+
+Every deriver stays pure; the only governed writes flow through `PATCH /api/workspace`
+and the server-file resolver write lane; generated code is a projection of the
+governed record, never hand-edited.
+
+---
+
 ## The one idea this roadmap is built on
 
 A **resolver** is already the workspace's provider-agnostic abstraction for "how
