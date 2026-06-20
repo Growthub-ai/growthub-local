@@ -9,6 +9,7 @@
     "check:worker-kits": "node ./scripts/check-worker-kits.mjs",
     "check:resolver-registry": "node ./scripts/check-resolver-registry.mjs",
     "test:resolver-registry": "node --test ./scripts/unit-resolver-registry.test.mjs",
+    "e2e:resolver-registry": "node ./scripts/e2e-resolver-registry-probe.mjs",
     "score:worker-kits": "node ./scripts/score-worker-kits.mjs",
     "check:kernel:custom-workspaces": "bash ./scripts/check-custom-workspace-kernel.sh",
     "sync:monorepo": "bash ./scripts/sync-from-monorepo.sh",
