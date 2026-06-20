@@ -30,6 +30,8 @@ const kitLib = path.join(
 
 const reg = await import(pathToFileURL(path.join(kitLib, "unified-resolver-registry.js")).href);
 const proposal = await import(pathToFileURL(path.join(kitLib, "workspace-resolver-proposal.js")).href);
+const constructor = await import(pathToFileURL(path.join(kitLib, "resolver-constructor.js")).href);
+const responseProfile = await import(pathToFileURL(path.join(kitLib, "api-response-profile.js")).href);
 
 const {
   deriveResolverRegistry,
@@ -247,6 +249,64 @@ test("parseResolverFileHeader — recognizes generated banner + tags", () => {
   assert.equal(header.record, "workspace-api-registry:Round");
   assert.ok(code.includes(RESOLVER_GENERATED_BANNER));
   assert.ok(code.includes("registerSourceResolver"));
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 2 — resolver constructor (construct, don't fill)
+// ───────────────────────────────────────────────────────────────────────────
+
+test("constructor — custom-http prefills from tested shape (no blanks)", () => {
+  const row = {
+    Name: "CRM",
+    integrationId: "crm",
+    baseUrl: "https://api.crm.test",
+    endpoint: "/users",
+    method: "GET",
+    authRef: "CRM",
+    authHeaderName: "x-api-key",
+    lastResponse: TESTED_RESPONSE,
+  };
+  const profile = responseProfile.profileApiResponse(row.lastResponse);
+  const recommendation = responseProfile.recommendResolver(profile);
+  const result = constructor.constructResolverProposal({
+    row,
+    profile,
+    recommendation,
+    recordRef: { objectId: "workspace-api-registry", rowName: "CRM" },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "file");
+  assert.equal(result.connectorKind, "custom-http");
+  assert.equal(result.prefill.rootPath, "data");
+  assert.equal(result.prefill.idField, "id");
+  assert.equal(result.blanks.length, 0);
+  // the proposal is a valid resolver.create that the apply lane accepts
+  const validation = proposal.validateResolverProposal(result.proposal);
+  assert.equal(validation.ok, true);
+  // secret-safe — no header VALUE, only the header name + env candidate refs
+  assert.ok(!/x-api-key:\s*\S+secret\S+/.test(JSON.stringify(result.prefill)));
+});
+
+test("constructor — surfaces blanks when the row has no target", () => {
+  const result = constructor.constructResolverProposal({ row: { integrationId: "x" } });
+  assert.equal(result.ok, false);
+  assert.ok(result.blanks.includes("target (baseUrl or endpoint)"));
+});
+
+test("constructor — nango is config-driven (no file proposal)", () => {
+  const result = constructor.constructResolverProposal({ row: { integrationId: "asana", connectorKind: "nango" } });
+  assert.equal(result.mode, "config-driven");
+  assert.equal(result.proposal, null);
+  assert.equal(result.ok, true);
+});
+
+test("constructor — mcp/webhook/chrome advertised truthfully, not blank", () => {
+  for (const kind of ["mcp", "webhook", "chrome"]) {
+    const result = constructor.constructResolverProposal({ row: { integrationId: "x", connectorKind: kind } });
+    assert.equal(result.mode, "unsupported");
+    assert.equal(result.ok, false);
+    assert.ok(result.reason.includes(kind));
+  }
 });
 
 test("buildEndpointManifest — projects only exposed endpoints", () => {

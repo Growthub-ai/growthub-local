@@ -85,6 +85,7 @@ import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
+import { constructResolverProposal } from "@/lib/resolver-constructor";
 import { classifyCreationError } from "@/lib/creation-error-recovery";
 import {
   buildSandboxRowFromApiRegistry,
@@ -1239,6 +1240,11 @@ function DataModelRecordDrawer({
   const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [cockpitBusy, setCockpitBusy] = useState("");
   const [cockpitCollapsed, setCockpitCollapsed] = useState(false);
+  // CMS SDK v1.5.1 — a staged, constructed resolver awaiting one-screen review.
+  // null until the operator clicks "Construct resolver"; cleared on apply/cancel.
+  const [resolverConstruct, setResolverConstruct] = useState(null);
+  const [resolverConstructBusy, setResolverConstructBusy] = useState(false);
+  const [resolverConstructMessage, setResolverConstructMessage] = useState("");
   // Real runtime truth for the creation cockpit: which auth refs resolve in the
   // server runtime, and the live source-records sidecar. Fetched (never guessed)
   // so auth/refresh readiness reflect actual state, and refreshed after actions.
@@ -1633,6 +1639,98 @@ function DataModelRecordDrawer({
     }
   }
 
+  // CMS SDK v1.5.1 — construct the governed resolver from the tested response
+  // shape and stage it for one-screen review. No blank form: rootPath / idField
+  // / entityType / auth header are all derived (or surfaced as `blanks` when the
+  // row is missing a target). Nothing is written until the operator confirms.
+  function stageResolverConstruct() {
+    const integrationId = String(draft?.integrationId || "").trim();
+    if (!integrationId) {
+      setResolverConstructMessage("This API Registry row needs an integrationId before a resolver can be constructed.");
+      return;
+    }
+    const profile = profileApiResponse(draft?.lastResponse);
+    const recommendation = profile ? recommendResolver(profile) : null;
+    const result = constructResolverProposal({
+      row: draft,
+      profile,
+      recommendation,
+      recordRef: { objectId: table?.objectId, rowName: draft?.Name || integrationId },
+    });
+    setResolverConstructMessage("");
+    setResolverConstruct(result);
+  }
+
+  // Apply the staged resolver through the GOVERNED lane only (helper/apply →
+  // writeResolverProposalFile), mark the row wired (resolverTemplateId), then
+  // re-test through the resolver so the user sees green without leaving the
+  // drawer. config-driven (Nango) and unsupported kinds never reach here.
+  async function applyResolverConstruct() {
+    const staged = resolverConstruct;
+    if (!staged || staged.mode !== "file" || !staged.proposal || !staged.ok) return;
+    const integrationId = String(draft?.integrationId || "").trim();
+    setResolverConstructBusy(true);
+    setResolverConstructMessage("");
+    try {
+      const res = await fetch("/api/workspace/helper/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposals: [staged.proposal], reviewedBy: "cockpit" }),
+      });
+      const payload = await res.json();
+      const appliedOne = Array.isArray(payload.applied)
+        ? payload.applied.find((a) => a.type === "resolver.create")
+        : null;
+      if (!res.ok || !appliedOne) {
+        const skip = Array.isArray(payload.skipped) ? payload.skipped[0]?.reason : null;
+        const msg = redactSecretsFromText(skip || payload.error || payload.guidance || "Resolver apply failed");
+        setResolverConstructMessage(msg);
+        pushReceipt({ kind: "resolver-construct", ok: false, detail: msg });
+        return;
+      }
+      // Mark the row wired so the creation journey closes (resolverTemplateId
+      // becomes a real registered resolver id, not the "custom-http" passthrough).
+      onSave((config) => {
+        const t = listWorkspaceDataModelTables(config).find((x) => x.objectId === table?.objectId);
+        if (!t) return config;
+        const idx = (t.rows || []).findIndex((r) => String(r?.integrationId || "").trim() === integrationId);
+        if (idx < 0) return config;
+        return updateTableCell(config, t, idx, "resolverTemplateId", integrationId);
+      });
+      pushReceipt({
+        kind: "resolver-construct",
+        ok: true,
+        detail: `Resolver "${appliedOne.resolverFilename || integrationId}" constructed and wired.`,
+      });
+      // Re-test through the new resolver — the secret stays server-side.
+      try {
+        const testRes = await fetch("/api/workspace/test-source", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ integrationId, binding: {} }),
+        });
+        const testPayload = await testRes.json();
+        if (testPayload?.ok) {
+          pushReceipt({ kind: "resolver-test", ok: true, detail: `Resolver returned ${testPayload.recordCount ?? 0} record(s).` });
+        } else {
+          pushReceipt({
+            kind: "resolver-test",
+            ok: false,
+            detail: redactSecretsFromText(testPayload?.error || testPayload?.reason || "test-source did not return ok"),
+          });
+        }
+      } catch {
+        /* non-fatal — the resolver is written; refresh re-tests it later */
+      }
+      setResolverConstruct(null);
+      await reloadCreationSignals();
+    } catch (err) {
+      setResolverConstructMessage(redactSecretsFromText(err.message || "Resolver apply failed"));
+    } finally {
+      setResolverConstructBusy(false);
+    }
+  }
+
   // The creation cockpit emits a single action descriptor per step; map it to
   // the drawer's existing governed handlers. No new mutation paths.
   async function handleCockpitAction(action) {
@@ -1648,6 +1746,11 @@ function DataModelRecordDrawer({
         case "open-settings":
           onClose();
           router.push(action.href || "/settings");
+          break;
+        case "construct-resolver":
+          // CMS SDK v1.5.1 — construct the governed resolver from the tested
+          // response shape (no blank form) and stage it for one-screen review.
+          stageResolverConstruct();
           break;
         case "open-resolver":
           // Hand off to the governed helper widget — the resolver proposal lane.
@@ -1966,6 +2069,50 @@ function DataModelRecordDrawer({
               hideWhenComplete
               onCollapsedChange={setCockpitCollapsed}
             />
+            {resolverConstruct ? (
+              <section className="dm-api-action-card dm-cockpit" aria-label="Construct resolver review">
+                <div className="dm-cockpit-shape">
+                  <div className="dm-cockpit-shape-head">
+                    <p className="dm-api-action-card-eyebrow">Construct resolver · {resolverConstruct.connectorKind}</p>
+                  </div>
+                  <p className="dm-cockpit-step-desc">{resolverConstruct.reason}</p>
+                  {resolverConstruct.mode === "file" && resolverConstruct.prefill ? (
+                    <div className="dm-cockpit-fields">
+                      <span className="dm-cockpit-field"><b>records at</b>{resolverConstruct.prefill.rootPath || "top-level"}</span>
+                      <span className="dm-cockpit-field"><b>row id</b>{resolverConstruct.prefill.idField}</span>
+                      <span className="dm-cockpit-field"><b>entity</b>{resolverConstruct.prefill.entityType}</span>
+                      {resolverConstruct.proposal?.target?.path ? (
+                        <span className="dm-cockpit-field"><b>file</b>{resolverConstruct.proposal.target.path}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {resolverConstruct.blanks?.length ? (
+                    <p className="dm-cockpit-step-hint">Missing on the row: {resolverConstruct.blanks.join(", ")}</p>
+                  ) : null}
+                  {resolverConstructMessage ? <p className="dm-cockpit-step-hint">{resolverConstructMessage}</p> : null}
+                  <div className="dm-cockpit-shape-head">
+                    {resolverConstruct.mode === "file" && resolverConstruct.ok ? (
+                      <button
+                        type="button"
+                        className="dm-btn-primary-sm"
+                        disabled={resolverConstructBusy}
+                        onClick={applyResolverConstruct}
+                      >
+                        {resolverConstructBusy ? "Applying…" : "Apply resolver"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="dm-btn-outline"
+                      disabled={resolverConstructBusy}
+                      onClick={() => { setResolverConstruct(null); setResolverConstructMessage(""); }}
+                    >
+                      {resolverConstruct.mode === "file" && resolverConstruct.ok ? "Cancel" : "Dismiss"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
             {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
           </>
         )}

@@ -213,8 +213,11 @@ function deriveApiRegistryCreationState(input = {}) {
     status: resolverWired ? "complete" : (tested ? "optional" : "blocked"),
     description: resolverWired
       ? `Resolver "${resolverTemplate}" shapes the response into rows.`
-      : "Optional: add a resolver to normalize the response into governed rows. Raw passthrough works without one.",
-    action: tested && !resolverWired ? { id: "open-resolver", label: "Add resolver", href: "/api/workspace/resolver-templates" } : null,
+      : "Optional: construct a resolver to normalize the response into governed rows. Raw passthrough works without one.",
+    // CMS SDK v1.5.1 — the action constructs the governed resolver from the
+    // tested response shape (no blank form). The cockpit stages it for one-screen
+    // review, applies through the governed lane, and re-tests.
+    action: tested && !resolverWired ? { id: "construct-resolver", label: "Construct resolver" } : null,
   });
 
   step({
