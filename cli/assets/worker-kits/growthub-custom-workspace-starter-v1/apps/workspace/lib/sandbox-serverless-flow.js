@@ -17,6 +17,8 @@
  * (slugs/ids/booleans only).
  */
 
+import { normalizeCadence, cadenceToCron, describeCadence } from "./scheduler-cadence.js";
+
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -81,6 +83,15 @@ function deriveSandboxServerlessState(input = {}) {
   const schedulerAuthRef = clean(schedulerRow?.authRef).toUpperCase();
   const schedulerAuthConfigured = !schedulerAuthRef || configuredRefs.has(schedulerAuthRef);
 
+  // No-code cadence — how often the workflow runs. Hoisted so scoring + the
+  // returned state can reference it. Cron is derived from the named cadence
+  // server-side; "recurring" is the only cadence that needs an explicit cron.
+  const cadence = normalizeCadence(row.scheduleCadence);
+  const cadenceResolved = cadenceToCron(cadence, { cron: row.scheduleCron });
+  const cron = cadenceResolved.cron;
+  const cronError = cadenceResolved.error;
+  const cadenceScheduled = cadence !== "manual" && !cronError;
+
   // Durable persistence: any real adapter that is env-ready. provider-managed is
   // always "ready" (the deploy provider owns persistence). qstash-kv/postgres
   // require their env keys — surfaced honestly with the missing keys.
@@ -140,6 +151,27 @@ function deriveSandboxServerlessState(input = {}) {
       action: schedulerAuthRef && !schedulerAuthConfigured ? { id: "open-settings", label: "Manage in Settings", href: "/settings/apis-webhooks" } : null,
     });
 
+    // No-code cadence: the user picks how often the workflow runs. "manual"
+    // delegates only on invocation; a named cadence (daily/weekly/monthly) or a
+    // custom "recurring" cron makes it a real schedule. Cron is derived
+    // server-side so non-technical users never type it (unless recurring).
+    steps.push({
+      id: "cadence",
+      label: "Choose how often it runs",
+      status: cronError
+        ? "blocked"
+        : cadenceScheduled
+          ? "complete"
+          : "active",
+      description: cronError
+        ? cronError
+        : describeCadence(cadence, { cron: row.scheduleCron }),
+      hint: cadence === "manual" && !cronError
+        ? "Pick daily, weekly, monthly, or a custom recurring schedule to run this automatically."
+        : undefined,
+      action: inline({ id: "edit-cadence", label: cadenceScheduled ? "Change cadence" : "Set cadence" }),
+    });
+
     steps.push({
       id: "persistence",
       label: "Enable durable persistence",
@@ -184,7 +216,8 @@ function deriveSandboxServerlessState(input = {}) {
   if (adapterChosen) score = Math.max(score, isServerless ? 25 : 70);
   if (isServerless && schedulerLinked) score = Math.max(score, 45);
   if (isServerless && schedulerHealthy) score = Math.max(score, 60);
-  if (isServerless && schedulerAuthConfigured && schedulerLinked) score = Math.max(score, 75);
+  if (isServerless && schedulerAuthConfigured && schedulerLinked) score = Math.max(score, 70);
+  if (isServerless && cadenceScheduled) score = Math.max(score, 80);
   if (isServerless && durableReady) score = Math.max(score, 90);
   if (complete) score = 100;
 
@@ -198,6 +231,10 @@ function deriveSandboxServerlessState(input = {}) {
     schedulerLinked,
     schedulerHealthy,
     schedulerAuthConfigured,
+    cadence,
+    cron: cron || null,
+    cronError: cronError || null,
+    cadenceScheduled,
     durableReady,
     completedCount,
     totalCount,

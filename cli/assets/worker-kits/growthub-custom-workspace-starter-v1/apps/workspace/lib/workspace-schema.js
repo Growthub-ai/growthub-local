@@ -69,6 +69,13 @@ const KNOWN_SANDBOX_RUNTIMES = ["python", "node", "bash"];
 /** Where execution is delegated: locally (process / agent-host CLI) or to a scheduler webhook (Supabase Edge, QStash, Vercel cron hitting your URL, etc.). */
 const KNOWN_SANDBOX_RUN_LOCALITY = ["local", "serverless"];
 const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
+/** No-code schedule cadence vocabulary (see lib/scheduler-cadence.js). Inlined
+ *  here so the validator stays dependency-light, mirroring the other KNOWN_ sets. */
+const KNOWN_SCHEDULE_CADENCES = ["manual", "daily", "weekly", "monthly", "recurring"];
+/** First-party serverless scheduler providers (see lib/workspace-scheduler-proposal.js). */
+const KNOWN_SCHEDULER_PROVIDERS = ["supabase-edge", "qstash-schedule"];
+/** Server-stamped lifecycle of a provisioned schedule. */
+const KNOWN_SCHEDULE_STATUSES = ["", "unprovisioned", "provisioning", "scheduled", "paused", "needs-reconfirm", "failed"];
 const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
@@ -1142,6 +1149,35 @@ function validateSandboxEnvironmentRow(row, path, errors) {
       errors.push(`${path}.${traceField} must be a string when present`);
     }
   }
+  // No-Code Workflow Persistence V1 — schedule cadence + provisioned-schedule
+  // lifecycle. Cadence/cron are user-chosen (PATCH-writable, draft-like); the
+  // scheduleStatus / scheduleLastConfirmedAt fields are server-stamped by
+  // POST /api/workspace/scheduler/{provision,lifecycle} from a confirmed 200,
+  // exactly as status/lastResponse are stamped by sandbox-run.
+  const scheduleCadenceNorm = String(row.scheduleCadence || "").trim().toLowerCase();
+  if (row.scheduleCadence !== undefined && row.scheduleCadence !== "" && !KNOWN_SCHEDULE_CADENCES.includes(scheduleCadenceNorm)) {
+    errors.push(`${path}.scheduleCadence must be one of ${KNOWN_SCHEDULE_CADENCES.join(", ")}`);
+  }
+  if (scheduleCadenceNorm === "recurring" && String(row.scheduleCron || "").trim() === "") {
+    errors.push(`${path}.scheduleCron is required when scheduleCadence is "recurring"`);
+  }
+  for (const scheduleStrField of ["scheduleCron", "scheduleTimezone", "scheduleProvider", "scheduleNextRunAt", "scheduleLastRunAt", "scheduleLastConfirmedAt", "scheduleLastResponse"]) {
+    if (row[scheduleStrField] !== undefined && row[scheduleStrField] !== null && row[scheduleStrField] !== "" && typeof row[scheduleStrField] !== "string") {
+      errors.push(`${path}.${scheduleStrField} must be a string when present`);
+    }
+  }
+  if (row.scheduleProvider !== undefined && row.scheduleProvider !== "" && row.scheduleProvider !== null && !KNOWN_SCHEDULER_PROVIDERS.includes(String(row.scheduleProvider).trim().toLowerCase())) {
+    errors.push(`${path}.scheduleProvider must be one of ${KNOWN_SCHEDULER_PROVIDERS.join(", ")}`);
+  }
+  if (row.scheduleStatus !== undefined && row.scheduleStatus !== null && !KNOWN_SCHEDULE_STATUSES.includes(String(row.scheduleStatus).trim().toLowerCase())) {
+    errors.push(`${path}.scheduleStatus must be one of ${KNOWN_SCHEDULE_STATUSES.filter(Boolean).join(", ")}`);
+  }
+  if (row.schedulePaused !== undefined) {
+    const value = String(row.schedulePaused).trim().toLowerCase();
+    if (!["", "true", "false", "0", "1", "on", "off"].includes(value)) {
+      errors.push(`${path}.schedulePaused must coerce to a boolean (true/false/on/off)`);
+    }
+  }
   // Sandbox Local Agent Auth Onboarding V1 — governance for the safe auth
   // metadata fields stamped by the auth helper / API routes.
   const KNOWN_AGENT_AUTH_STATUSES_INLINE = [
@@ -1231,6 +1267,17 @@ function validateApiRegistryRow(row, path, errors) {
     if (Object.prototype.hasOwnProperty.call(row, forbidden)) {
       errors.push(`${path}.${forbidden} is not allowed on an api-registry row — store the env-ref name in authRef and keep the secret in env`);
     }
+  }
+  // No-Code Workflow Persistence V1 — a "scheduler" connectorKind row delegates
+  // serverless runs (sandbox-environment.schedulerRegistryId → this row). The
+  // provider + cron are optional, governed scalars; the secret stays in authRef.
+  if (row.schedulerProvider !== undefined && row.schedulerProvider !== null && row.schedulerProvider !== "") {
+    if (typeof row.schedulerProvider !== "string" || !KNOWN_SCHEDULER_PROVIDERS.includes(row.schedulerProvider.trim().toLowerCase())) {
+      errors.push(`${path}.schedulerProvider must be one of ${KNOWN_SCHEDULER_PROVIDERS.join(", ")} when present`);
+    }
+  }
+  if (row.cronExpression !== undefined && row.cronExpression !== null && row.cronExpression !== "" && typeof row.cronExpression !== "string") {
+    errors.push(`${path}.cronExpression must be a string when present`);
   }
   if (row.connectorKind !== "nango") return;
   // Nango-specific binding fields. All are optional individually, but
