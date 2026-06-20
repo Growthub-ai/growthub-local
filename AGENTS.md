@@ -42,6 +42,22 @@ When behavior conflicts, use this order:
 
 Do not preserve older prose "for history" in active docs.
 
+## Mono-Repo Provenance & Traversal
+
+Before editing **any** file, know which provenance zone you are in. This repo is a **publish mirror** of upstream `growthub-core`, not the build root — `scripts/sync-from-monorepo.sh` overwrites the synced zones, and `cli/dist` ships prebuilt. The full map is [`docs/MONOREPO_PROVENANCE_MAP_V1.md`](./docs/MONOREPO_PROVENANCE_MAP_V1.md); the enforced form is `pnpm check:monorepo-boundary` (`scripts/check-monorepo-boundary.mjs`, `--json` for machine output).
+
+| Zone | Paths | Edit here? |
+| --- | --- | --- |
+| **Owned (authoritative)** | `packages/api-contract/`, `docs/`, `scripts/`, root contracts (`README.md`, `ARCHITECTURE.md`, `AGENTS.md`), `.github/`, `.claude/` | **Yes** |
+| **Synced (upstream source-of-truth)** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/create-growthub-local/` | **No — edit in `growthub-core`, then sync** |
+| **Vendored runtime (Paperclip)** | `server/`, `ui/`, `packages/shared/` | **No — upstream-owned local runtime, not the product** |
+| **Orphan/derived** | `packages/db/` (stub used by dist verify), `pnpm-workspace.upstream.yaml` (sync snapshot) | Only with explicit coordination |
+
+Rules:
+1. Stale-code removal in a **synced/vendored** zone must happen **upstream** (it is clobbered on next sync and unverifiable here). Record it as an upstream worklist item in the provenance map.
+2. Removing/deprecating a worker kit is a **CLI change**: edit `cli/src/kits/catalog.ts` (upstream) **before** dropping the kit directory, so `dist/index.js` never references a missing kit. Keep `@growthub/cli` + `@growthub/create-growthub-local` backwards-compatible around the workspace.
+3. There is **no top-level `apps/`** in this repo. `apps/` is a property of an **exported workspace** (`apps/workspace`); its frozen topology is `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`.
+
 ## Runtime And Validation
 
 Use the canonical runtime control surface for this repo. Do not replace it with ad-hoc server/UI loops unless a maintainer explicitly assigns that path.

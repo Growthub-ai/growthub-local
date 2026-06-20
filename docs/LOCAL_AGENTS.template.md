@@ -54,10 +54,9 @@ If something on **`main`** does not show in the browser, first ask which **mode*
 
 - **Isolated DB + port:** `growthub worktree:make …` — then follow maintainer steps inside that worktree; still **do not** run **`worktree-bootstrap.mjs`** unless a maintainer assigned it.
 
-- **Rebuild static UI** for bundled **`growthub run`** (only when you intentionally test the bundle):
+- **Rebuild static UI** for bundled **`growthub run`** (only when you intentionally test the bundle): the static UI is a **`growthub-core`** build step — this publish mirror cannot rebuild it; it arrives synced as `server/ui-dist`. After an upstream UI rebuild, prepare the bundled runtime here:
 
   ```bash
-  bash scripts/prepare-server-ui-dist.sh
   node cli/scripts/prepare-bundled-runtime.mjs
   ```
 

@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+/**
+ * check-monorepo-boundary.mjs
+ *
+ * Machine-readable form of docs/MONOREPO_PROVENANCE_MAP_V1.md.
+ *
+ * This repo is a PUBLISH MIRROR of upstream `growthub-core` (see
+ * scripts/sync-from-monorepo.sh). The boundary between what is OWNED here and
+ * what is SYNCED from upstream is the single most important fact an agent needs
+ * before editing anything. This check makes that boundary legible and enforced:
+ *
+ *   1. Classify every top-level path into a provenance zone; fail on anything
+ *      UNCLASSIFIED (a new path nobody mapped).
+ *   2. Verify that script invocations (`node scripts/X`, `bash scripts/X`) and
+ *      relative markdown links inside the OWNED zones (docs/, scripts/) resolve
+ *      to files that exist — fail on a true dangling reference.
+ *   3. REPORT (do not fail) upstream-synced anomalies (e.g. dead pnpm-workspace
+ *      globs) — this mirror is not where those are fixed.
+ *
+ * Errors exit non-zero. Warnings do not. `--json` emits the full classification.
+ *
+ * No dependencies; Node >= 20. Pure read-only.
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+
+const SELF = path.resolve(new URL(import.meta.url).pathname);
+const repoRoot = path.resolve(path.dirname(SELF), "..");
+const JSON_OUT = process.argv.includes("--json");
+
+/**
+ * Provenance zones keyed by top-level entry name.
+ * Mirrors docs/MONOREPO_PROVENANCE_MAP_V1.md §2. Keep in sync with that doc and
+ * with scripts/sync-from-monorepo.sh's copy list.
+ */
+const ZONES = {
+  // CORE — owned, published / authoritative here
+  "packages/api-contract": "core-owned",
+  docs: "core-owned",
+  scripts: "core-owned",
+  "README.md": "core-owned",
+  "ARCHITECTURE.md": "core-owned",
+  "AGENTS.md": "core-owned",
+  "CLAUDE.md": "core-owned",
+  "LOCAL_AGENTS.md": "core-owned",
+  ".cursorrules": "core-owned",
+  "CONTRIBUTING.md": "core-owned",
+  ".github": "scaffolding",
+  ".githooks": "scaffolding",
+  ".claude": "scaffolding",
+  ".gitignore": "scaffolding",
+  "tsconfig.json": "scaffolding",
+  "tsconfig.base.json": "scaffolding",
+  "vitest.config.ts": "scaffolding",
+  "package.json": "scaffolding",
+  "pnpm-lock.yaml": "scaffolding",
+  "pnpm-workspace.yaml": "scaffolding",
+
+  // CORE — synced (source-of-truth upstream; do not edit here)
+  cli: "core-synced",
+  "packages/create-growthub-local": "core-synced",
+
+  // VENDORED RUNTIME (Paperclip) — synced
+  server: "vendored-runtime",
+  ui: "vendored-runtime",
+  "packages/shared": "vendored-runtime",
+
+  // ORPHAN / DERIVED — looks stale, carries a contract
+  "packages/db": "orphan",
+  "pnpm-workspace.upstream.yaml": "orphan",
+};
+
+/** Paths the sync script copies down (left-hand side of copy_dir/copy_file). */
+const SYNCED_PATHS = new Set([
+  "cli",
+  "server",
+  "ui",
+  "packages/shared",
+  "packages/create-growthub-local",
+]);
+
+const errors = [];
+const warnings = [];
+
+// ---------------------------------------------------------------------------
+// 1. Classify top-level entries (and the two-level packages/* entries).
+// ---------------------------------------------------------------------------
+const classification = {};
+
+function classify(rel) {
+  const zone = ZONES[rel];
+  classification[rel] = zone ?? "UNCLASSIFIED";
+  if (!zone) {
+    errors.push(`UNCLASSIFIED path "${rel}" — add it to ZONES in check-monorepo-boundary.mjs and to docs/MONOREPO_PROVENANCE_MAP_V1.md §2.`);
+  }
+}
+
+const IGNORE_TOP = new Set([
+  "node_modules", ".git", ".worktrees", ".paperclip", "tmp", "coverage", ".npm-cache", ".DS_Store",
+]);
+
+for (const entry of fs.readdirSync(repoRoot, { withFileTypes: true })) {
+  const name = entry.name;
+  if (IGNORE_TOP.has(name)) continue;
+  if (name === "packages") {
+    for (const pkg of fs.readdirSync(path.join(repoRoot, "packages"), { withFileTypes: true })) {
+      if (pkg.isDirectory()) classify(`packages/${pkg.name}`);
+    }
+    continue;
+  }
+  classify(name);
+}
+
+// ---------------------------------------------------------------------------
+// 2. Dangling-reference check over OWNED zones (docs/, scripts/).
+//    - script invocations: `node scripts/X.mjs`, `bash scripts/X.sh`
+//    - relative markdown links: ](./path) or ](../path)
+//    Lines marked as tombstones ("removed", "deleted", "do not use") are skipped
+//    intentionally — they document that a file is gone, not a live reference.
+// ---------------------------------------------------------------------------
+const TOMBSTONE = /\b(removed|deleted|do not use|no longer|legacy|deprecated)\b/i;
+const SCRIPT_INVOKE = /\b(?:node|bash|sh)\s+((?:\.\/)?scripts\/[A-Za-z0-9._\/-]+\.(?:mjs|js|sh|ts))/g;
+const MD_LINK = /\]\((\.{1,2}\/[A-Za-z0-9._\/-]+)\)/g;
+
+function walk(dir, exts, cb) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) walk(full, exts, cb);
+    else if (exts.some((x) => e.name.endsWith(x))) cb(full);
+  }
+}
+
+function checkRefsInFile(file) {
+  if (path.resolve(file) === SELF) return; // never lint our own docstring examples
+  const text = fs.readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const fileDir = path.dirname(file);
+  lines.forEach((line, i) => {
+    if (TOMBSTONE.test(line)) return;
+    let m;
+    SCRIPT_INVOKE.lastIndex = 0;
+    while ((m = SCRIPT_INVOKE.exec(line))) {
+      const target = m[1].replace(/^\.\//, "");
+      if (!fs.existsSync(path.join(repoRoot, target))) {
+        errors.push(`Dangling script reference in ${path.relative(repoRoot, file)}:${i + 1} → "${target}" does not exist.`);
+      }
+    }
+    if (file.endsWith(".md")) {
+      MD_LINK.lastIndex = 0;
+      while ((m = MD_LINK.exec(line))) {
+        const linkTarget = m[1].split("#")[0];
+        if (!linkTarget) continue;
+        const resolved = path.resolve(fileDir, linkTarget);
+        if (!fs.existsSync(resolved)) {
+          errors.push(`Dangling doc link in ${path.relative(repoRoot, file)}:${i + 1} → "${m[1]}" does not resolve.`);
+        }
+      }
+    }
+  });
+}
+
+walk(path.join(repoRoot, "docs"), [".md"], checkRefsInFile);
+walk(path.join(repoRoot, "scripts"), [".md", ".mjs", ".sh"], checkRefsInFile);
+
+// ---------------------------------------------------------------------------
+// 3. Upstream-synced anomalies — REPORT ONLY (this mirror is not where they are fixed).
+// ---------------------------------------------------------------------------
+const wsFile = path.join(repoRoot, "pnpm-workspace.yaml");
+if (fs.existsSync(wsFile)) {
+  const ws = fs.readFileSync(wsFile, "utf8");
+  for (const glob of ws.matchAll(/^\s*-\s*([A-Za-z0-9._*\/-]+)\s*$/gm)) {
+    const base = glob[1].replace(/\/?\*.*$/, "");
+    if (base && !fs.existsSync(path.join(repoRoot, base))) {
+      warnings.push(`pnpm-workspace.yaml glob "${glob[1]}" resolves to nothing here (upstream-shaped; fix in growthub-core, not this mirror).`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Report
+// ---------------------------------------------------------------------------
+const summary = {
+  classification,
+  syncedPaths: [...SYNCED_PATHS],
+  errors,
+  warnings,
+  ok: errors.length === 0,
+};
+
+if (JSON_OUT) {
+  console.log(JSON.stringify(summary, null, 2));
+} else {
+  const counts = Object.values(classification).reduce((a, z) => ((a[z] = (a[z] || 0) + 1), a), {});
+  console.log("Mono-repo boundary check (docs/MONOREPO_PROVENANCE_MAP_V1.md)\n");
+  console.log("Provenance:", Object.entries(counts).map(([z, n]) => `${z}=${n}`).join("  "));
+  if (warnings.length) {
+    console.log(`\n⚠ ${warnings.length} upstream-synced warning(s) (report-only):`);
+    for (const w of warnings) console.log(`  - ${w}`);
+  }
+  if (errors.length) {
+    console.log(`\n✗ ${errors.length} error(s):`);
+    for (const e of errors) console.log(`  - ${e}`);
+  } else {
+    console.log("\n✓ No owned-zone dangling references; no unclassified paths.");
+  }
+}
+
+process.exit(errors.length === 0 ? 0 : 1);
