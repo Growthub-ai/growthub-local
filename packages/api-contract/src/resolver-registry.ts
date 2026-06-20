@@ -136,6 +136,14 @@ export interface ResolverRegistryEntry {
    * null when the resolver is not registered (nothing to expose).
    */
   endpoint: string | null;
+  /** Single agent-readable trust label (derived). */
+  trust: ResolverTrust;
+  /** Compact model-context hint (derived). */
+  agentHints: ResolverAgentHints;
+  /** Secret-safe "why trusted" evidence trail (derived, compact for model context). */
+  evidence: ResolverEvidence;
+  /** Secret-safe activation trace — the derivable slice of how it was constructed. */
+  activationTrace: ResolverActivationTrace;
 }
 
 /**
@@ -163,6 +171,26 @@ export interface ResolverAgentHints {
   /** Why it is not callable, when applicable. */
   blockedReason: string | null;
   /** Terse next move (human label). */
+  nextAction: string | null;
+}
+
+/**
+ * The static, derivable slice of the activation story — "how this capability was
+ * (or would be) constructed". Secret-safe (ids / paths / shape facts / booleans
+ * only). Runtime-only facts — `artifactWritten` (resolvers route), endpoint test
+ * result (endpoint route), and drift status (the guard) — are surfaced by those
+ * surfaces, not by the pure derivation; a full cross-surface trace is a documented
+ * follow-up.
+ */
+export interface ResolverActivationTrace {
+  recordRef: ResolverRecordRef;
+  testedAt: string;
+  resolverId: string;
+  filePath: string | null;
+  endpoint: string | null;
+  shape: { recordPath: string; idField: string; entityType: string; hasPagination: boolean } | null;
+  /** detected | config-driven | reserved | missing-config | wired | untested. */
+  constructorState: string;
   nextAction: string | null;
 }
 

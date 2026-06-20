@@ -213,12 +213,42 @@ function deriveEntry(input) {
     recommendation,
   });
 
+  const recordRef = {
+    objectId: clean(object?.id),
+    rowName: clean(row?.Name) || integrationId,
+    integrationId,
+  };
+  const shape = profile
+    ? {
+        arrayPath: clean(profile.arrayPath),
+        idField: clean(profile.candidates?.id),
+        entityType: clean(profile.suggestedEntityType) || "records",
+        hasPagination: Boolean(profile.hasPagination),
+      }
+    : null;
+  const filePath = hasFile ? `${RESOLVER_REGISTRY_DIR}/${slug}.js` : null;
+  const endpoint = registered ? `${RESOLVER_ENDPOINT_BASE}/${resolverId}` : null;
+  const nextAction = creation.nextAction
+    ? {
+        stepId: clean(creation.nextAction.stepId),
+        id: clean(creation.nextAction.id),
+        label: clean(creation.nextAction.label),
+      }
+    : null;
+
+  // How this resolver would be (or was) constructed — the static, derivable slice
+  // of the activation story. Runtime-only facts (artifactWritten, endpointTest,
+  // driftStatus) are surfaced by their own surfaces (the resolvers route, the
+  // endpoint route, the drift guard), not by this pure derivation.
+  const reservedKind = RESERVED_KINDS.has(connectorKind);
+  let constructorState;
+  if (connectorKind === "nango") constructorState = registered ? "config-driven" : "missing-config";
+  else if (reservedKind && !registered && !hasFile) constructorState = "reserved";
+  else if (shape) constructorState = "detected";
+  else constructorState = registered || hasFile ? "wired" : "untested";
+
   return {
-    recordRef: {
-      objectId: clean(object?.id),
-      rowName: clean(row?.Name) || integrationId,
-      integrationId,
-    },
+    recordRef,
     integrationId,
     resolverId,
     connectorKind,
@@ -226,26 +256,27 @@ function deriveEntry(input) {
     capabilities: parseList(row?.capabilities),
     executionLane: clean(row?.executionLane),
     provenance,
-    filePath: hasFile ? `${RESOLVER_REGISTRY_DIR}/${slug}.js` : null,
+    filePath,
     registered,
     tested: Boolean(creation.tested),
-    shape: profile
-      ? {
-          arrayPath: clean(profile.arrayPath),
-          idField: clean(profile.candidates?.id),
-          entityType: clean(profile.suggestedEntityType) || "records",
-          hasPagination: Boolean(profile.hasPagination),
-        }
-      : null,
+    shape,
     score: Number.isFinite(creation.score) ? creation.score : 0,
-    nextAction: creation.nextAction
-      ? {
-          stepId: clean(creation.nextAction.stepId),
-          id: clean(creation.nextAction.id),
-          label: clean(creation.nextAction.label),
-        }
-      : null,
-    endpoint: registered ? `${RESOLVER_ENDPOINT_BASE}/${resolverId}` : null,
+    nextAction,
+    endpoint,
+    // Secret-safe activation trace (derivable slice). ids / paths / shape facts /
+    // booleans only — never values or payloads.
+    activationTrace: {
+      recordRef,
+      testedAt: clean(row?.lastTested) || clean(row?.lastTestedAt) || "",
+      resolverId,
+      filePath,
+      endpoint,
+      shape: shape
+        ? { recordPath: shape.arrayPath, idField: shape.idField, entityType: shape.entityType, hasPagination: shape.hasPagination }
+        : null,
+      constructorState,
+      nextAction: nextAction ? nextAction.label : null,
+    },
   };
 }
 

@@ -473,15 +473,36 @@ test("constructor — reserved kinds (mcp/chrome/tool) advertised truthfully, no
   }
 });
 
-test("constructor — webhook is connectorKind 'http' → file-constructable (not reserved)", () => {
-  const row = {
+test("constructor — non-reserved kinds are file-constructable; connectorKind preserved verbatim", () => {
+  // Policy B: connectorKind is operator text, honored verbatim (never normalized).
+  // The webhook TEMPLATE ships connectorKind "http" → file-constructable.
+  const httpRow = {
     Name: "Hook", integrationId: "hook", connectorKind: "http", endpoint: "https://x/ingest", method: "POST",
     status: "connected", lastResponse: JSON.stringify({ items: [{ id: "a" }] }),
   };
-  const profile = responseProfile.profileApiResponse(row.lastResponse);
-  const result = constructor.constructResolverProposal({ row, profile, recommendation: responseProfile.recommendResolver(profile) });
-  assert.equal(result.mode, "file");
-  assert.equal(result.connectorKind, "http");
+  const httpResult = constructor.constructResolverProposal({
+    row: httpRow,
+    profile: responseProfile.profileApiResponse(httpRow.lastResponse),
+    recommendation: responseProfile.recommendResolver(responseProfile.profileApiResponse(httpRow.lastResponse)),
+  });
+  assert.equal(httpResult.mode, "file");
+  assert.equal(httpResult.connectorKind, "http");
+
+  // A LITERAL connectorKind: "webhook" an operator types is NOT reserved →
+  // file-constructable, and the kind is preserved verbatim (not rewritten to http).
+  const literalWebhook = { ...httpRow, connectorKind: "webhook" };
+  const whResult = constructor.constructResolverProposal({
+    row: literalWebhook,
+    profile: responseProfile.profileApiResponse(literalWebhook.lastResponse),
+    recommendation: responseProfile.recommendResolver(responseProfile.profileApiResponse(literalWebhook.lastResponse)),
+  });
+  assert.equal(whResult.mode, "file");
+  assert.equal(whResult.connectorKind, "webhook"); // verbatim, never silently normalized
+  // and the registry reflects the same verbatim value
+  const ws = { dataModel: { objects: [apiRegistryObject([{ ...literalWebhook, resolverTemplateId: "hook" }])] } };
+  const e = deriveResolverRegistry({ workspaceConfig: ws, files: ["hook.js"], registeredIds: ["hook"], fileMeta: { hook: { generated: true } } }).entries[0];
+  assert.equal(e.connectorKind, "webhook");
+  assert.equal(e.trust, "endpoint-live"); // non-reserved + registered + tested
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -634,6 +655,29 @@ test("agent-operability — trust + agentHints answer the model's questions per 
   for (const e of index.entries) {
     if (!e.agentHints.callable) assert.ok(e.agentHints.blockedReason || e.agentHints.nextAction, e.integrationId);
   }
+});
+
+test("activationTrace — derivable activation slice is present and secret/PII-safe", () => {
+  const ws = {
+    dataModel: { objects: [apiRegistryObject([
+      { Name: "Trace", integrationId: "trace-api", baseUrl: "https://x", endpoint: "/y", authRef: "TRACE", authPrefix: "Bearer",
+        status: "connected", resolverTemplateId: "trace-api",
+        lastResponse: JSON.stringify({ data: [{ id: "t1", name: "Jane Secret", email: "jane@x.test" }] }) },
+    ])] },
+  };
+  const e = deriveResolverRegistry({ workspaceConfig: ws, files: ["trace-api.js"], registeredIds: ["trace-api"], fileMeta: { "trace-api": { generated: true } } }).entries[0];
+  const t = e.activationTrace;
+  assert.ok(t, "activationTrace present");
+  assert.equal(t.resolverId, "trace-api");
+  assert.equal(t.endpoint, "/api/resolvers/trace-api");
+  assert.equal(t.filePath, "lib/adapters/integrations/resolvers/trace-api.js");
+  assert.equal(t.shape.recordPath, "data");
+  assert.equal(t.shape.idField, "id");
+  assert.equal(t.constructorState, "detected");
+  // secret/PII-safe: ids/paths/shape facts only — no values
+  const s = JSON.stringify(t);
+  assert.ok(!s.includes("Jane Secret") && !s.includes("jane@x.test"));
+  assert.ok(!/Bearer\s+\S/.test(s) && !s.includes("TRACE_API_KEY"));
 });
 
 test("structured governance values — taxonomy connectorKind + capabilities + lane surface", () => {

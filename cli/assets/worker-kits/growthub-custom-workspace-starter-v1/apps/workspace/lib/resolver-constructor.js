@@ -7,10 +7,19 @@
  * plus the row's own auth config (mirrored from how test-api-record sent it, so
  * the resolver behaves exactly like the test that just passed).
  *
- * Agnostic across connector kinds via a single builder dispatch
- * (`getResolverBuilder`) — the Nango precedent generalized: custom-http
- * materializes a server file; nango is config-driven (no file); other kinds are
- * advertised truthfully as not-yet-supported rather than left blank.
+ * Agnostic across the normalized governance taxonomy (http | custom | tool | mcp
+ * | chrome | nango), via a single builder dispatch (`getResolverBuilder`), the
+ * Nango precedent generalized:
+ *   - HTTP-shaped kinds (http / custom / and any non-reserved value, including a
+ *     literal "webhook" an operator may type) materialize a server file built
+ *     from the response shape;
+ *   - nango is config-driven (no file) with honest readiness;
+ *   - reserved kinds (mcp | chrome | tool) cannot be auto-constructed from an
+ *     HTTP response — advertised truthfully with a concrete next action, never
+ *     left blank or mislabeled.
+ *
+ * `connectorKind` is operator-editable text and is honored verbatim — it is
+ * never silently normalized.
  *
  * Pure: no fetch, no secrets, never throws. The returned `proposal` (file mode)
  * flows ONLY through the governed apply lane (helper/apply → writeResolverProposalFile)
