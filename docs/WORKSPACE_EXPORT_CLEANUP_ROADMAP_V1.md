@@ -15,7 +15,7 @@ happens here.**
 | --- | --- | --- |
 | **core-product** | `cli/` (`@growthub/cli` + `cli/assets/worker-kits/*`), `packages/api-contract/` (SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, the exportable kits. |
 | **vendored-runtime** | `server/` (`@paperclipai/server`), `ui/`, `packages/shared/` | The bundled Paperclip **local runtime** — required to run a workspace locally, but not the product. The primary stale-code mass. |
-| **orphan / scaffolding** | `packages/db/` (stub); `docs/`, `scripts/`, `.github/`, root contracts | Leftover + tooling/docs/CI. |
+| **scaffolding** | `docs/`, `scripts/`, `.github/`, root contracts | Tooling/docs/CI. (`packages/db` is a partial-view **core** package, not an orphan.) |
 
 The export value chain (`ARCHITECTURE.md §Core Intent`):
 
@@ -25,12 +25,14 @@ source → growthub starter / kit download → governed workspace artifact
   → customize → deploy
 ```
 
-> **Two facts that gate every cleanup.** (1) `cli/dist` ships **prebuilt and committed** (incl. the bundled
-> `cli/dist/runtime/server`); a `cli/src/**` edit is not live until `dist` is rebuilt + re-verified
-> (`scripts/agent-dist-verify.sh`, `scripts/check-cli-package.mjs`). (2) The exported-workspace contract
-> (`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`, `.growthub-fork/`, `PATCH /api/workspace`) is **frozen**. Cleanup must
-> keep `growthub kit download growthub-custom-workspace-starter-v1` producing a byte-identical artifact and keep
-> `growthub` booting — run `pnpm freeze:check` + the kernel checks around every change.
+> **Two facts that gate every cleanup** (authoritative: `AGENT_DIST_REBUILD_GUIDE.md`). (1) **Two lanes.** This
+> OSS tree cannot rebuild `cli/dist` (adapter/plugin packages absent by design). Agents do **Phase A: source-only
+> `cli/src/**` changes**, lockstep version bump, six gate scripts — and **never touch `cli/dist/**`**; the
+> super-admin rebuilds dist in **Phase B**. Flag *"dist rebuild required in Phase B"* on any `cli/src/**` PR.
+> (2) The exported-workspace contract (`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`, `.growthub-fork/`,
+> `PATCH /api/workspace`) is **frozen**. Cleanup must keep `growthub kit download
+> growthub-custom-workspace-starter-v1` producing a byte-identical artifact and keep `growthub` booting — run
+> `bash scripts/agent-dist-verify.sh pre-push` + `pnpm freeze:check` around every change.
 
 No timelines. Three phases, sequenced by dependency: make the boundary legible and enforced (Phase 1); trim the
 stale mass against it with dist + freeze gates (Phase 2); lock it so regressions can't re-accrete (Phase 3).
@@ -57,51 +59,53 @@ machine-checked, and decouples the conflicting legacy "edit-elsewhere" model. No
 
 ---
 
-## Phase 2 — Trim the stale mass (vendored-runtime + old kits), gated by dist + freeze
+## Phase 2 — Trim the stale mass (old kits + vendored-runtime), as Phase A source changes
 
-*Now that the boundary is enforced, remove what the export value never touches. Every removal is reachability-
-traced and paired with a `cli/dist` rebuild + freeze verification, so the published CLI and the workspace stay
-backwards-compatible.*
+*Now that the boundary is enforced, remove what the export value never touches — as source-only Phase A changes
+validated by the six gate scripts, flagged for the super-admin's Phase B dist rebuild. Agents never edit
+`cli/dist/**`.*
 
-### 2.1 — Reachability-trace the vendored runtime
+### 2.1 — Deprecate/remove old non-workspace worker kits (CLI catalog first)
+
+- [ ] Edit `cli/src/kits/catalog.ts` (and `cli/src/skills/catalog.ts`) to drop the deprecated kit **before**
+      removing its directory under `cli/assets/worker-kits/`, so `dist/index.js` never references a missing kit.
+- [ ] Bump `cli` + `create-growthub-local` versions in lockstep; run `bash scripts/agent-dist-verify.sh
+      pre-push` (six gates incl. `check-worker-kits.mjs`) + the kit tests in `cli/src/__tests__/`. Flag *"dist
+      rebuild required in Phase B."* Do **not** touch `cli/dist/**`.
+
+### 2.2 — Reachability-trace the vendored runtime
 
 - [ ] Map the server routes/services reachable from the bundled local-runtime entrypoint
       (`cli/src/commands/run.ts` → `cli/dist/runtime/server`) and the `apps/workspace` calls. Split the 30
       routes / 60+ services / 35 UI pages into **export-reachable** (keep) vs **paperclip-only** (remove
       candidates: `tickets`, `issues`, `board-claim`, `org-chart`, plugin-host internals with no workspace
-      caller). This keep-list is the contract for 2.2.
+      caller). This keep-list is the contract for 2.3.
 
-### 2.2 — Remove paperclip-only runtime surface
+### 2.3 — Remove paperclip-only runtime surface (separate `@paperclipai/server` publish path)
 
-- [ ] Delete the unreachable route/service/page families from `server/` + `ui/`, smallest-blast-radius first.
-- [ ] After each removal: rebuild `cli/dist`, confirm `growthub run` (local runtime) still boots and an exported
-      `apps/workspace` still serves, and run `pnpm freeze:check`. Revert any removal that perturbs the frozen
-      artifact or breaks boot.
+- [ ] Delete the unreachable route/service/page families from `server/src/**` + `ui/src/**`, smallest-blast-
+      radius first. Per `AGENT_DIST_REBUILD_GUIDE.md` §4 these are out of the cli-dist lane; a cli-dist rebuild
+      applies **only** if the `cli/dist/runtime/server/` payload changes.
+- [ ] After each removal confirm `growthub run` still boots and an exported `apps/workspace` still serves; run
+      `pnpm freeze:check`. Revert anything that perturbs the frozen artifact or breaks boot.
 
-### 2.3 — Deprecate/remove old non-workspace worker kits (CLI-first)
+### 2.4 — Do NOT touch (recorded so no one "cleans" them by mistake)
 
-- [ ] Edit `cli/src/kits/catalog.ts` (and `cli/src/skills/catalog.ts`) to drop the deprecated kit **before**
-      removing its directory under `cli/assets/worker-kits/`, so `dist/index.js` never references a missing kit.
-- [ ] Rebuild `cli/dist`; run `scripts/check-cli-package.mjs`, `scripts/check-worker-kits.mjs`, and the kit
-      tests under `cli/src/__tests__/` to hold backwards-compat.
-
-### 2.4 — Reconcile dead config and orphan stubs
-
-- [ ] Remove the dead `pnpm-workspace.yaml` globs (`packages/adapters/*`, `packages/plugins/*`,
-      `packages/plugins/examples/*`) and the matching `cli/esbuild.config.mjs` alias entries that resolve to
-      nothing in this repo. Verify the CLI build/package still passes.
-- [ ] Resolve `packages/db`: remove it together with its `scripts/agent-dist-verify.sh` + dist-rebuild-doc
-      references, or document why it stays. No bare delete.
+- The `pnpm-workspace.yaml` globs `packages/adapters/*`, `packages/plugins/*`, `packages/plugins/examples/*`
+  and the matching `cli/esbuild.config.mjs` aliases are **intentional full-workspace mirrors** — Phase B
+  installs against this same file (`AGENT_DIST_REBUILD_GUIDE.md` §2).
+- `packages/db` is a **partial-view core package** (its `package.json` lives in the full workspace), not an
+  orphan stub.
 
 ---
 
 ## Phase 3 — Lock the boundary so stale code can't re-accrete
 
 - [ ] Promote `check:monorepo-boundary` to a **required** check beside `check:cli-package` / `check:worker-kits`
-      / `freeze:check`: fail on unclassified paths, dangling references, and (escalated to error once 2.4 lands)
-      dead workspace globs.
+      / `freeze:check`: fail on unclassified paths and dangling references (the intentional full-workspace globs
+      stay report-only, never errors).
 - [ ] Add `score:monorepo-boundary` (mirroring `score:worker-kits`) reporting the
-      core-product / vendored-runtime / orphan ratio over time, so structure health is a tracked trend.
+      core-product / vendored-runtime ratio over time, so structure health is a tracked trend.
 - [ ] Reconcile owned-doc drift (e.g. `WORKSPACE_BUILDER_RUNTIME_V1.md` + `_V1_1.md`) into current + superseded
       markers per `ARCHITECTURE.md`'s Documentation Contract — without breaking `README.md` links.
 - [ ] Add a "Mono-repo role map" section to `ARCHITECTURE.md` pointing at the provenance map as the canonical

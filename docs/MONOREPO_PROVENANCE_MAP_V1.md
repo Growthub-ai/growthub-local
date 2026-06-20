@@ -11,26 +11,36 @@ cleanup roadmap (`WORKSPACE_EXPORT_CLEANUP_ROADMAP_V1.md`) operates on, made con
 
 ---
 
-## 1. What this repository is
+## 1. What this repository is — the two-lane model
 
-`growthub-local` is the **authoritative source of truth** for the Growthub Local product — the public,
-installable mono-repo. There is **no separate upstream you must edit instead**: changes are made *here*. (A
-legacy bidirectional sync with a private monorepo has been removed; it created conflicting, hallucinatory
-"edit-it-elsewhere" guidance and is no longer part of the model.)
+`growthub-local` (the OSS tree) is where **all source work happens**. It is a deliberate **partial view** of a
+larger workspace, and the release model has two lanes — this is documented authoritatively in
+[`docs/AGENT_DIST_REBUILD_GUIDE.md`](./AGENT_DIST_REBUILD_GUIDE.md) and
+[`docs/RELEASE_DIST_REBUILD_WORKFLOW.md`](./RELEASE_DIST_REBUILD_WORKFLOW.md); read those before touching
+anything build-sensitive.
 
-Two structural facts an agent should know before editing build-sensitive paths:
+| Lane | Contains | Can rebuild `cli/dist`? | Who works here |
+| --- | --- | --- | --- |
+| **OSS tree** (this repo) | `cli/`, `server/`, `ui/`, `packages/shared`, `packages/db/src/**`, `packages/api-contract`, `packages/create-growthub-local`, CI gates, docs | ❌ No (adapter/plugin packages absent **by design**) | every agent — **Phase A** |
+| **Full workspace** (super-admin private) | OSS tree **+** `packages/adapters/*`, `packages/plugins/*`, `packages/db/package.json` | ✅ Yes | super-admin only — **Phase B** |
 
-1. **`cli/dist` ships prebuilt and committed** (~1700 files, incl. the bundled local runtime at
-   `cli/dist/runtime/server/`). `cli/package.json#files = ["dist", "assets", "README.md"]` — the published
-   `@growthub/cli` runs from that committed `dist`. So a source edit under `cli/src/**` is not live until
-   `cli/dist` is rebuilt (`cli/scripts/prepare-bundled-runtime.mjs` + the CLI build) and re-verified
-   (`scripts/agent-dist-verify.sh`, `scripts/check-cli-package.mjs`).
-2. **`packages/api-contract/dist` is intentionally kept in git** (force-included in `.gitignore`) for release
-   tarball checks. Other `dist/` trees are build output.
+Consequences an agent must internalize:
 
-The rule that governs cleanup: **edit here, then keep the published surface (`@growthub/cli`,
-`@growthub/create-growthub-local`, the exported workspace artifact) backwards-compatible.** Build-sensitive
-changes (kit removal, runtime trimming) must be paired with a `cli/dist` rebuild + the freeze/verify gates.
+1. **`cli/dist` ships prebuilt and committed** (~1700 files, incl. the bundled runtime at
+   `cli/dist/runtime/server/`); the published `@growthub/cli` runs from it. The OSS tree **cannot** rebuild it
+   (`cli/esbuild.config.mjs` references the absent adapter/plugin packages). That is expected, not a defect.
+2. **Agents own Phase A: source-only changes** in `cli/src/**` (+ tests + lockstep version bump), and **never
+   edit or commit `cli/dist/**`.** A source PR that touches `cli/src/**` is flagged *"dist rebuild required in
+   Phase B"*; the super-admin rebuilds and commits dist separately. Validate with the six gate scripts (§
+   `AGENT_DIST_REBUILD_GUIDE.md` §6) — `bash scripts/agent-dist-verify.sh pre-push`.
+3. **`pnpm-workspace.yaml` globs and `cli/esbuild.config.mjs` aliases that resolve to nothing here are
+   intentional** full-workspace mirrors. *Never remove or "fill in" them* — Phase B installs against this same
+   `pnpm-workspace.yaml`.
+4. **`packages/api-contract/dist` is intentionally kept in git** for release tarball checks.
+
+The legacy bidirectional private-monorepo sync (`sync-from-monorepo.sh`, `sync-to-monorepo.yml`) has been
+removed — it was the conflicting "edit-it-elsewhere" coupling. The Phase B full workspace simply **tracks OSS
+`main`** (`git reset --hard origin/main`); the OSS tree is the source-of-truth lane.
 
 ---
 
@@ -43,7 +53,7 @@ radius of a change. Mirrors `scripts/check-monorepo-boundary.mjs`.
 | --- | --- | --- | --- |
 | **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/api-contract/` (`@growthub/api-contract` SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, and the exportable kits. | Keep backwards-compatible. Changes here are first-class but gated by dist rebuild + freeze. |
 | **vendored-runtime** | `server/` (`@paperclipai/server`), `ui/`, `packages/shared/` (`@paperclipai/shared`) | The bundled **local runtime** (`ARCHITECTURE.md §Main Surfaces`). Real and required to run a workspace locally, but it is the Paperclip backend, **not** the product the README sells. | Primary trim target: surface the workspace export value never reaches is removable, reachability-gated. |
-| **orphan** | `packages/db/` (a near-empty `tickets` schema stub, referenced only by `scripts/agent-dist-verify.sh` + dist-rebuild docs) | Derived/leftover. | Removal must be coordinated with the dist-verify flow; not a bare delete. |
+| **core-product (partial view)** | `packages/db/` (ships only `src/**` here; its `package.json` lives in the full workspace) | A real package shown partially in the OSS tree. | **Not** an orphan — do not delete. |
 | **scaffolding** | `docs/`, `scripts/`, root contracts (`README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.cursorrules`), `.github/`, `.githooks/`, `.claude/`, root config (`package.json`, `tsconfig*`, `vitest.config.ts`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`) | Tooling, contracts, docs, CI. | Freely editable here; keep docs aligned (`ARCHITECTURE.md` Documentation Contract). |
 
 ---
@@ -108,23 +118,29 @@ The cleanup goal — *remove stale code outside the core-value mental model, kee
 
 - [x] **Decouple the legacy private-monorepo sync** (`scripts/sync-from-monorepo.sh`, the `sync:monorepo`
       script, `pnpm-workspace.upstream.yaml`, `.github/workflows/sync-to-monorepo.yml`). This was the
-      conflicting "edit-elsewhere" coupling; growthub-local is the source of truth. **Done.**
-- [ ] **Trim the `vendored-runtime` surface the export value never reaches** — candidate families in
-      `server/src/routes/{tickets,issues,board-claim,...}` + their services, plugin-host internals with no
-      workspace caller, and the matching `ui/src/pages/*`. Gate each removal on a reachability trace from
-      `cli/src/commands/run.ts` → bundled `runtime/server`, so the local runtime an exported workspace uses
-      still boots. Pair with a `cli/dist` rebuild.
-- [ ] **Deprecate/remove old non-workspace worker kits via `cli/src/kits/catalog.ts` first**, then drop the kit
-      directory — catalog edit before asset removal, so `dist/index.js` never trips on a missing kit.
-- [ ] **Reconcile the dead workspace globs** (`packages/adapters/*`, `packages/plugins/*`,
-      `packages/plugins/examples/*` in `pnpm-workspace.yaml`, and the matching `cli/esbuild.config.mjs` alias
-      list) against what actually exists in this repo.
+      conflicting "edit-elsewhere" coupling; the OSS tree is the source-of-truth lane. **Done.**
+- [ ] **Trim old non-workspace worker kits — Phase A source change.** Edit `cli/src/kits/catalog.ts` (and
+      `cli/src/skills/catalog.ts`) to drop the kit **before** removing its `cli/assets/worker-kits/<kit>`
+      directory, so `dist/index.js` never references a missing kit. Bump versions in lockstep, run the six gate
+      scripts + `check-worker-kits.mjs`, flag *"dist rebuild required in Phase B."* Never touch `cli/dist/**`.
+- [ ] **Trim `vendored-runtime` surface the export value never reaches** (`@paperclipai/server` / `ui`). This is
+      a **separate publish path** (`AGENT_DIST_REBUILD_GUIDE.md` §4: server/ui are out of the cli-dist lane).
+      Candidate families: `server/src/routes/{tickets,issues,board-claim,...}` + services + matching
+      `ui/src/pages/*`, reachability-gated from `cli/src/commands/run.ts` → bundled `runtime/server` so the
+      local runtime still boots. Only if the `cli/dist/runtime/server/` payload changes does a cli-dist rebuild
+      apply (Phase B).
 - [ ] **Reconcile owned-doc drift** (e.g. `WORKSPACE_BUILDER_RUNTIME_V1.md` + `_V1_1.md`) into current +
       superseded markers, per `ARCHITECTURE.md`'s Documentation Contract — without breaking `README.md` links.
 
+> **Not cleanup targets.** The `pnpm-workspace.yaml` globs `packages/adapters/*`, `packages/plugins/*`,
+> `packages/plugins/examples/*` and the matching `cli/esbuild.config.mjs` aliases are **intentional**
+> full-workspace mirrors (`AGENT_DIST_REBUILD_GUIDE.md` §2). `packages/db` is a partial-view core package. Do
+> not delete or "reconcile" any of these.
+
 Invariant for every change: **`growthub kit download growthub-custom-workspace-starter-v1` keeps producing a
 byte-identical, frozen workspace artifact** (`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`), and `growthub` (local
-runtime) keeps booting. Run `pnpm freeze:check` + the kernel checks around every change.
+runtime) keeps booting. Run the six gate scripts (`bash scripts/agent-dist-verify.sh pre-push`) +
+`pnpm freeze:check` around every change.
 
 ---
 
@@ -137,7 +153,9 @@ this map. It:
    anything **unclassified** (a new path nobody mapped),
 2. verifies that script invocations (`node scripts/…`, `bash scripts/…`) and relative doc links in `docs/` and
    `scripts/` resolve to files that exist — failing on a true dangling reference,
-3. **reports** (does not fail on) dead `pnpm-workspace.yaml` globs that resolve to nothing.
+3. **reports** (does not fail on) any *unexpected* non-existent `pnpm-workspace.yaml` glob — the intentional
+   full-workspace globs (`packages/adapters/*`, `packages/plugins/*`, `packages/plugins/examples/*`) are
+   recognized and never flagged.
 
 `--json` emits the full classification for agent consumption. Errors (dangling refs, unclassified paths) exit
 non-zero. This is the gate the roadmap's Phase 3 promotes to required CI.

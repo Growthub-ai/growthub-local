@@ -46,8 +46,9 @@ const ZONES = {
   ui: "vendored-runtime",
   "packages/shared": "vendored-runtime",
 
-  // ORPHAN / DERIVED — leftover, carries a dist-verify contract
-  "packages/db": "orphan",
+  // CORE-PRODUCT (partial OSS view) — packages/db ships only src/** here; its
+  // package.json lives in the full (super-admin) workspace. Not an orphan.
+  "packages/db": "core-product",
 
   // SCAFFOLDING — tooling, contracts, docs, CI
   docs: "scaffolding",
@@ -156,15 +157,25 @@ walk(path.join(repoRoot, "docs"), [".md"], checkRefsInFile);
 walk(path.join(repoRoot, "scripts"), [".md", ".mjs", ".sh"], checkRefsInFile);
 
 // ---------------------------------------------------------------------------
-// 3. Upstream-synced anomalies — REPORT ONLY (this mirror is not where they are fixed).
+// 3. pnpm-workspace.yaml globs — REPORT ONLY.
+//    The OSS tree is a partial view (docs/AGENT_DIST_REBUILD_GUIDE.md §2): some
+//    globs resolve to empty dirs ON PURPOSE because the packages live only in
+//    the full super-admin workspace. Those are intentional — never flag them.
+//    Only an unexpected non-existent glob is worth a note.
 // ---------------------------------------------------------------------------
+const INTENTIONAL_FULLWS_GLOBS = new Set([
+  "packages/adapters/*",
+  "packages/plugins/*",
+  "packages/plugins/examples/*",
+]);
 const wsFile = path.join(repoRoot, "pnpm-workspace.yaml");
 if (fs.existsSync(wsFile)) {
   const ws = fs.readFileSync(wsFile, "utf8");
   for (const glob of ws.matchAll(/^\s*-\s*([A-Za-z0-9._*\/-]+)\s*$/gm)) {
+    if (INTENTIONAL_FULLWS_GLOBS.has(glob[1])) continue;
     const base = glob[1].replace(/\/?\*.*$/, "");
     if (base && !fs.existsSync(path.join(repoRoot, base))) {
-      warnings.push(`pnpm-workspace.yaml glob "${glob[1]}" resolves to nothing — dead workspace glob, reconcile against what exists in this repo.`);
+      warnings.push(`pnpm-workspace.yaml glob "${glob[1]}" resolves to nothing and is not a known full-workspace glob — reconcile.`);
     }
   }
 }
