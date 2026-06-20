@@ -133,12 +133,12 @@ assert(
   "CLI tarball is missing bundled runtime UI payload",
 );
 assert(
-  cliPack.includes("assets/worker-kits/creative-strategist-v1/kit.json"),
-  "CLI tarball is missing the bundled creative strategist worker kit manifest",
+  cliPack.includes("assets/worker-kits/growthub-custom-workspace-starter-v1/kit.json"),
+  "CLI tarball is missing the bundled custom workspace starter kit manifest",
 );
 assert(
-  cliPack.includes("assets/worker-kits/growthub-open-higgsfield-studio-v1/kit.json"),
-  "CLI tarball is missing the bundled Open Higgsfield studio worker kit manifest",
+  cliPack.includes("assets/worker-kits/growthub-agency-portal-starter-v1/kit.json"),
+  "CLI tarball is missing the bundled agency portal starter kit manifest",
 );
 assert(
   createPack.includes("bin/create-growthub-local.mjs"),

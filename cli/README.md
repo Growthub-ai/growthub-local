@@ -119,11 +119,11 @@ Compatibility examples used by package validation:
 
 ```bash
 growthub kit list
-growthub kit inspect creative-strategist-v1
-growthub kit inspect growthub-open-higgsfield-studio-v1
-growthub kit download creative-strategist-v1
-growthub kit download growthub-open-higgsfield-studio-v1
-growthub kit path creative-strategist-v1
+growthub kit inspect growthub-custom-workspace-starter-v1
+growthub kit inspect growthub-agency-portal-starter-v1
+growthub kit download growthub-custom-workspace-starter-v1
+growthub kit download growthub-agency-portal-starter-v1
+growthub kit path growthub-custom-workspace-starter-v1
 growthub kit validate /absolute/path/to/kit
 ```
 

@@ -4,7 +4,7 @@ The hand-authored worker-kit contract surfaces (`SKILL.md`, `CLAUDE.md`,
 `runtime-assumptions.md`, helper scripts, output standards) work because they
 give an agent a closed operating frame: a single read order, a fixed input
 contract, hard production rules, explicit stop conditions. The
-[video-use studio kit](../cli/assets/worker-kits/growthub-video-use-studio-v1/)
+[custom workspace starter kit](../cli/assets/worker-kits/growthub-custom-workspace-starter-v1/)
 is the canonical reference.
 
 CMS workflows have all the same primitives — capability manifests, agent
