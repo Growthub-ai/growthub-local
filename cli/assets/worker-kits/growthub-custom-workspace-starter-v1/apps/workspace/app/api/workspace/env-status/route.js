@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { readWorkspaceConfig, describePersistenceMode } from "@/lib/workspace-config";
 import { computeConfiguredEnvRefs, listPersistenceAdapterReadiness } from "@/lib/env-status";
 
 async function GET() {
@@ -21,10 +21,14 @@ async function GET() {
   }
   const configuredEnvRefs = computeConfiguredEnvRefs(workspaceConfig, process.env);
   const persistenceAdapters = listPersistenceAdapterReadiness(process.env);
+  // Persistence mode + canSave so the scheduler provisioning cockpit can honestly
+  // gate the "set it up for me" action (server-file writes need a writable runtime).
+  const persistence = describePersistenceMode();
   return NextResponse.json({
     kind: "growthub-env-status-v1",
     configuredEnvRefs,
     persistenceAdapters,
+    persistence: { mode: persistence.mode, canSave: persistence.canSave === true },
   });
 }
 
