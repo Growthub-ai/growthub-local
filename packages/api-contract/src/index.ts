@@ -32,6 +32,7 @@
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
+ *   - `@growthub/api-contract/resolver-registry` — Unified API Resolver Registry (1.5.1)
  */
 
 // Capabilities
@@ -390,6 +391,39 @@ export {
   isAppAssignmentPacket,
   WORKSPACE_APPS_CONTRACT_VERSION,
 } from "./workspace-apps.js";
+
+// Unified API Resolver Registry (CMS SDK v1.5.1 — the additive enhancement
+// that ties every resolver to the governed api-registry record it serves so
+// the no-code cockpit can construct resolvers under the hood and agents read
+// one externalized index. Runtime truth: workspace app
+// lib/unified-resolver-registry.js + lib/resolver-constructor.js +
+// app/api/resolvers/[integrationId]/route.js + the additive `registry` field on
+// GET /api/workspace/resolvers.)
+export type {
+  ResolverConnectorKind,
+  ResolverProvenance,
+  ResolverRecordRef,
+  ResolverShapeProfile,
+  ResolverNextAction,
+  ResolverRegistryEntry,
+  ResolverRegistrySummary,
+  ResolverRegistryIndex,
+  UnifiedResolverRegistryResponse,
+  ResolverEndpointManifest,
+} from "./resolver-registry.js";
+export {
+  RESOLVER_CONNECTOR_KINDS,
+  RESOLVER_PROVENANCE_VALUES,
+  RESOLVER_REGISTRY_INDEX_KIND,
+  RESOLVER_ENDPOINT_MANIFEST_KIND,
+  RESOLVER_REGISTRY_DIR,
+  RESOLVER_REGISTRY_INDEX_FILE,
+  RESOLVER_ENDPOINT_MANIFEST_FILE,
+  RESOLVER_ENDPOINT_BASE,
+  RESOLVER_GENERATED_BANNER,
+  isResolverRegistryIndex,
+  WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION,
+} from "./resolver-registry.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
