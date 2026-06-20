@@ -29,11 +29,17 @@
  * changed; the package is tree-shakeable (`sideEffects: false`).
  */
 /**
- * Connector kind a governed API Registry row resolves through. Provider-
- * agnostic by design — adding a provider is adding a row, never a new kind.
- * `"none"` means raw passthrough (no shaping resolver wired).
+ * Connector kind a governed API Registry row resolves through. This is the
+ * normalized governance taxonomy shared with the resolver template registry
+ * (`lib/adapters/integrations/templates`): `http` (custom-http / webhook /
+ * generic-crm|spreadsheet|project-management|commerce), `custom`, `tool`, `mcp`,
+ * `chrome`, and `nango`. `"none"` means raw passthrough (no shaping resolver).
+ *
+ * `connectorKind` is an operator-editable field on the api-registry row, so the
+ * registry passes unknown values through (`string & {}`) rather than discarding
+ * them — provider-agnostic by design: adding a provider is adding a row.
  */
-export type ResolverConnectorKind = "custom-http" | "nango" | "mcp" | "webhook" | "chrome" | "none";
+export type ResolverConnectorKind = "http" | "custom" | "tool" | "mcp" | "chrome" | "nango" | "none" | (string & {});
 /**
  * How a resolver came to exist for its record:
  *   - "config-driven"    in-memory, built from the row every request (Nango precedent)
@@ -86,6 +92,12 @@ export interface ResolverRegistryEntry {
      */
     resolverId: string;
     connectorKind: ResolverConnectorKind;
+    /** The resolver template the row was seeded from (`resolverTemplateId`), if any. */
+    templateId: string;
+    /** Declared capabilities from the row (`listEntities` | `fetchRecords` | `runAction`). */
+    capabilities: string[];
+    /** Declared execution lane (`data-source` | `sandbox-local` | `sandbox-serverless`), if set. */
+    executionLane: string;
     provenance: ResolverProvenance;
     /** Resolver file path when materialized (helper-generated / static-file); null otherwise. */
     filePath: string | null;
@@ -105,6 +117,34 @@ export interface ResolverRegistryEntry {
      * null when the resolver is not registered (nothing to expose).
      */
     endpoint: string | null;
+}
+/**
+ * The single trust label for a record's resolver — the agent-readable answer to
+ * "is this safe to call, and if not, why". Derived purely from registry facts.
+ */
+export type ResolverTrust = "untested" | "tested" | "needs-resolver" | "missing-config" | "registered" | "endpoint-live" | "reserved-future" | "collision-blocked";
+/** Compact, stable, secret-safe hint for model context. */
+export interface ResolverAgentHints {
+    /** Safe to call the governed endpoint right now. */
+    callable: boolean;
+    /** Usable (callable, or tested raw-passthrough). */
+    ready: boolean;
+    endpoint: string | null;
+    entityType: string | null;
+    /** Why it is not callable, when applicable. */
+    blockedReason: string | null;
+    /** Terse next move (human label). */
+    nextAction: string | null;
+}
+/** Secret-safe "why this is (not yet) trusted" trail. Booleans / ids / paths only. */
+export interface ResolverEvidence {
+    tested: boolean;
+    hasShape: boolean;
+    recordPath: string;
+    idField: string;
+    registered: boolean;
+    endpointLive: boolean;
+    provenance: ResolverProvenance;
 }
 /** Two records normalizing to the same `resolverId` — a hard governance error. */
 export interface ResolverIdentityCollision {
@@ -179,8 +219,16 @@ export interface ResolverEndpointManifest {
         recordRef: ResolverRecordRef;
     }>;
 }
-/** Frozen connector-kind vocabulary. */
-export declare const RESOLVER_CONNECTOR_KINDS: readonly ["custom-http", "nango", "mcp", "webhook", "chrome", "none"];
+/**
+ * Known connector-kind vocabulary (aligned with the resolver template registry).
+ * `connectorKind` is operator-editable text, so unknown values are still valid
+ * on a row and flow through the registry — this list is the recognized set, not
+ * a hard allowlist.
+ */
+export declare const RESOLVER_CONNECTOR_KINDS: readonly ["http", "custom", "tool", "mcp", "chrome", "nango", "none"];
+/** Kinds that cannot be auto-constructed from an HTTP response shape — they need
+ * their own resolver implementation (reserved for auto-construction). */
+export declare const RESOLVER_RESERVED_KINDS: readonly ["mcp", "chrome", "tool"];
 /** Frozen provenance vocabulary. */
 export declare const RESOLVER_PROVENANCE_VALUES: readonly ["config-driven", "static-file", "helper-generated", "passthrough", "missing"];
 /** Index artifact kind. */

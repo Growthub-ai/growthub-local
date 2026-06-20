@@ -31,6 +31,38 @@ function endpointFor(integrationId) {
 }
 
 /**
+ * A plain-language "what the system detected" summary + a confidence band, so the
+ * review panel can SHOW understanding ("I found 42 records under data.items…")
+ * instead of a developer form. Pure; derived from the tested response profile.
+ *   high   — top-level/clean records: direct apply is safe.
+ *   medium — records nested under a container: review the mapping, then apply.
+ *   low    — pagination or no record array: needs human review before trust.
+ */
+function detectShape(profile, recommendation) {
+  if (!profile || !profile.parsed) return null;
+  const level = clean(recommendation?.level);
+  let confidence = "high";
+  if (profile.hasPagination || !profile.usable) confidence = "low";
+  else if (level === "recommended") confidence = "medium";
+  else if (level === "required") confidence = "low";
+  const recordPath = clean(profile.arrayPath);
+  const entityType = clean(profile.suggestedEntityType) || "records";
+  const idField = clean(profile.candidates?.id) || "id";
+  return {
+    confidence,
+    recordCount: Number.isFinite(profile.recordCount) ? profile.recordCount : 0,
+    recordPath,
+    idField,
+    entityType,
+    hasPagination: Boolean(profile.hasPagination),
+    // One human sentence the panel can show verbatim.
+    sentence: profile.usable
+      ? `Found ${profile.recordCount} ${entityType}${recordPath ? ` under "${recordPath}"` : " (top-level)"}, keyed by "${idField}"${profile.hasPagination ? " — paginated, so a resolver is required to fetch every page" : ""}.`
+      : "No record array detected — review the response before activating.",
+  };
+}
+
+/**
  * The auth header/prefix the resolver must send — mirrored from how
  * test-api-record built its request (authHeaderName || authHeader || x-api-key;
  * authPrefix), so a constructed resolver matches the test that just succeeded.
@@ -65,13 +97,20 @@ function constructCustomHttpProposal({ row, profile, recommendation, recordRef }
     recordRef,
   });
 
+  const detected = detectShape(profile, recommendation);
+  // Respect the row's declared governance kind (http / custom / webhook / …);
+  // default to http when unset. Only the resolver IMPLEMENTATION is HTTP here.
+  const declaredKind = clean(row?.connectorKind).toLowerCase() || "http";
   return {
     ok: blanks.length === 0,
     mode: "file",
-    connectorKind: "custom-http",
+    connectorKind: declaredKind,
     endpoint: endpointFor(row?.integrationId),
     proposal,
     prefill: { rootPath, idField, entityType, headerName, prefix },
+    detected,
+    confidence: detected ? detected.confidence : "low",
+    authRef: clean(row?.authRef),
     blanks,
     reason: blanks.length
       ? `Fill ${blanks.join(", ")} on the row before constructing a resolver.`
@@ -101,11 +140,13 @@ function constructNangoReadiness({ row }) {
     endpoint: endpointFor(row?.integrationId),
     proposal: null,
     prefill: null,
+    detected: null,
     blanks,
     state: ready ? "config-driven-ready" : "config-driven-missing-config",
     reason: ready
       ? "Config-driven via Nango — the resolver registers from this row automatically once it loads; no file to write. Confirm it appears as registered in the registry."
       : `Config-driven via Nango, but the row is missing ${blanks.join(", ")}. Add these so the resolver can register and the endpoint becomes usable.`,
+    nextAction: ready ? null : { id: "edit", label: `Add ${blanks.join(", ")} to the row` },
   };
 }
 
@@ -121,16 +162,23 @@ function getResolverBuilder(connectorKind) {
   if (kind === "nango") {
     return (args) => constructNangoReadiness(args);
   }
-  if (["mcp", "webhook", "chrome"].includes(kind)) {
+  // Reserved for auto-construction — these need their own resolver implementation
+  // and cannot be derived from an HTTP response shape (taxonomy: mcp|chrome|tool).
+  if (["mcp", "chrome", "tool"].includes(kind)) {
     return (args) => ({
       ok: false,
       mode: "unsupported",
+      reserved: true,
       connectorKind: kind,
       endpoint: endpointFor(args?.row?.integrationId),
       proposal: null,
       prefill: null,
+      detected: null,
       blanks: [],
-      reason: `Auto-construction for "${kind}" connectors is reserved (future). For now, wire it with a custom-http resolver or the governed helper — your record stays governed either way.`,
+      // Reserved should build confidence, not feel like a dead end: say what is
+      // reserved, what works now, and the concrete next move.
+      reason: `Auto-construction for "${kind}" connectors is reserved for a future release. What works today: set this row's connector to custom-http and construct a resolver, or ask the governed helper to propose a plan. Your record stays governed either way.`,
+      nextAction: { id: "use-custom-http", label: "Switch to a custom-http resolver" },
     });
   }
   return (args) => constructCustomHttpProposal(args);

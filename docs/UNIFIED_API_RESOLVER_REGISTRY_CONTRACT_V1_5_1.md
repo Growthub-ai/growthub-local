@@ -34,13 +34,17 @@ files, an additive `registry` field on `GET /api/workspace/resolvers`, two
 generated do-not-edit artifacts in the resolvers dir, and one new dynamic
 endpoint route. All are projections of the governed record.
 
-## The contract surface (type-only)
+## The contract surface
 
-From `@growthub/api-contract/resolver-registry`:
+From `@growthub/api-contract/resolver-registry` (types + runtime-safe constants):
 
 ```ts
-type ResolverConnectorKind = "custom-http" | "nango" | "mcp" | "webhook" | "chrome" | "none";
+// Normalized governance taxonomy (shared with the resolver template registry).
+// connectorKind is operator-editable text, so unknown values flow through.
+type ResolverConnectorKind = "http" | "custom" | "tool" | "mcp" | "chrome" | "nango" | "none" | (string & {});
 type ResolverProvenance    = "config-driven" | "static-file" | "helper-generated" | "passthrough" | "missing";
+type ResolverTrust = "untested" | "tested" | "needs-resolver" | "missing-config"
+                   | "registered" | "endpoint-live" | "reserved-future" | "collision-blocked";
 
 interface ResolverRegistryEntry {
   recordRef:     { objectId: string; rowName: string; integrationId: string }; // the governed record
@@ -48,6 +52,9 @@ interface ResolverRegistryEntry {
   resolverId:    string;          // CANONICAL slug — file, registry key, endpoint all use this
   connectorKind: ResolverConnectorKind;
   provenance:    ResolverProvenance;
+  templateId:    string;          // resolverTemplateId on the row (governance value)
+  capabilities:  string[];        // listEntities | fetchRecords | runAction (governance value)
+  executionLane: string;          // data-source | sandbox-local | sandbox-serverless
   filePath:      string | null;   // materialized resolver file, when present
   registered:    boolean;         // present in the registry (checked vs raw id AND slug)
   tested:        boolean;         // row's last test succeeded
@@ -55,6 +62,9 @@ interface ResolverRegistryEntry {
   score:         number;          // milestone activation score 0–100
   nextAction:    { stepId; id; label } | null;
   endpoint:      string | null;   // /api/resolvers/<resolverId> when registered
+  trust:         ResolverTrust;   // single agent-readable trust label (derived)
+  agentHints:    { callable; ready; endpoint; entityType; blockedReason; nextAction }; // model-context
+  evidence:      { tested; hasShape; recordPath; idField; registered; endpointLive; provenance }; // why-trusted
 }
 
 interface ResolverRegistryIndex {
@@ -132,3 +142,49 @@ Every generated file carries `// ${RESOLVER_GENERATED_BANNER}` and the CI drift
 guard fails the build if a generated artifact diverges from a fresh
 re-derivation — enforcing the invariant mechanically, the same way
 `check-version-sync.mjs` enforces version policy.
+
+## Product contract: no-code API activation (engineering invariants)
+
+These are not marketing lines — they are invariants the tests and CI enforce:
+
+1. **The operator never fills `rootPath`/`idField`/`entityType` from scratch when
+   a tested response exists.** The constructor derives them (`detected` summary +
+   confidence); the review panel shows what was understood before any write.
+2. **The system explains what it detected before applying** — record count,
+   record path, id field, entity type, pagination, confidence band, and the
+   endpoint that will be exposed.
+3. **Generated artifacts are projections** of the governed record; the
+   `api-registry` row is the single source of truth.
+4. **The registry is the agent-readable truth surface.** Every entry carries a
+   single `trust` label, a terse `agentHints` block, and a secret-safe `evidence`
+   trail — an agent chooses its next move from state alone.
+5. **Every connector kind is governed**, not just Nango. The taxonomy
+   (`http | custom | tool | mcp | chrome | nango`) is honored; reserved kinds
+   (`mcp | chrome | tool`) advertise themselves truthfully with a next action and
+   are never rendered as broken `http` rows. A registered reserved-kind resolver
+   is `endpoint-live` like any other (reserved is about auto-construction only).
+6. **Failure states carry repair actions** — `blockedReason` + `nextAction` for
+   collisions, missing-config, needs-resolver, reserved-future, degraded.
+7. **Endpoint trust is evidence-backed** (`endpoint-live` requires registered +
+   endpoint + tested).
+8. **No secrets or raw payload values** appear in the registry, the review-panel
+   chrome, or generated artifacts (env-ref names only, by design).
+9. **CI fails on drift, identity collisions, and stale artifacts.**
+
+## Verification coverage matrix
+
+| Product/agent guarantee | Proven by |
+| --- | --- |
+| No-code journey (no blank form; detected summary; one action) | `unit-resolver-registry.test.mjs` → "GOLDEN PATH" |
+| Cockpit constructor = governed apply payload | "constructor-integration" |
+| Agent-operability (trust + hints per state) | "agent-operability" |
+| Full connector taxonomy honored (not Nango-only) | "structured governance values" (×2), "webhook is http" |
+| Identity canonicalization + collisions | "identity — …" (×2), drift "collisions" |
+| Drift guard enforces its claim | "drift — …" (8 cases) |
+| Safe provenance header (no truncation/corruption) | "parseResolverFileHeader — full recordRef …" |
+| Secret/PII safety | "registry is secret-safe AND PII-safe", GOLDEN PATH step 5 |
+| Honest Nango readiness | "constructor — nango readiness is honest" |
+| Reserved kinds truthful, recoverable | "constructor — reserved kinds …" |
+| Real exported-workspace server path + endpoint + drift | `scripts/e2e-resolver-registry-probe.mjs` (14/14) |
+| Edited cockpit UI compiles | E2E step 8b |
+| CI gate (drift + unit) | `.github/workflows/ci.yml` verify |

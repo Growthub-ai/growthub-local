@@ -2073,9 +2073,21 @@ function DataModelRecordDrawer({
               <section className="dm-api-action-card dm-cockpit" aria-label="Construct resolver review">
                 <div className="dm-cockpit-shape">
                   <div className="dm-cockpit-shape-head">
-                    <p className="dm-api-action-card-eyebrow">Construct resolver · {resolverConstruct.connectorKind}</p>
+                    <p className="dm-api-action-card-eyebrow">Make this API usable · {resolverConstruct.connectorKind}</p>
+                    {resolverConstruct.detected?.confidence ? (
+                      <span className={`dm-db-status ${resolverConstruct.detected.confidence === "high" ? "ok" : resolverConstruct.detected.confidence === "low" ? "bad" : "warn"}`}>
+                        <span />
+                        {resolverConstruct.detected.confidence} confidence
+                      </span>
+                    ) : null}
                   </div>
+                  {resolverConstruct.detected?.sentence ? (
+                    <p className="dm-cockpit-step-desc"><b>{resolverConstruct.detected.sentence}</b></p>
+                  ) : null}
                   <p className="dm-cockpit-step-desc">{resolverConstruct.reason}</p>
+                  {resolverConstruct.mode === "file" && resolverConstruct.authRef ? (
+                    <p className="dm-cockpit-step-hint">Safe: the secret stays server-side via <code>{resolverConstruct.authRef}</code> — it never reaches the browser or the generated file.</p>
+                  ) : null}
                   {resolverConstruct.mode === "file" && resolverConstruct.prefill ? (
                     <div className="dm-cockpit-fields">
                       <span className="dm-cockpit-field"><b>records at</b>{resolverConstruct.prefill.rootPath || "top-level"}</span>

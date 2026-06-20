@@ -28,15 +28,24 @@
  * and one runtime guard (`isResolverRegistryIndex`). No existing 1.5 export is
  * changed; the package is tree-shakeable (`sideEffects: false`).
  */
-/** Frozen connector-kind vocabulary. */
+/**
+ * Known connector-kind vocabulary (aligned with the resolver template registry).
+ * `connectorKind` is operator-editable text, so unknown values are still valid
+ * on a row and flow through the registry — this list is the recognized set, not
+ * a hard allowlist.
+ */
 export const RESOLVER_CONNECTOR_KINDS = [
-    "custom-http",
-    "nango",
+    "http",
+    "custom",
+    "tool",
     "mcp",
-    "webhook",
     "chrome",
+    "nango",
     "none",
 ];
+/** Kinds that cannot be auto-constructed from an HTTP response shape — they need
+ * their own resolver implementation (reserved for auto-construction). */
+export const RESOLVER_RESERVED_KINDS = ["mcp", "chrome", "tool"];
 /** Frozen provenance vocabulary. */
 export const RESOLVER_PROVENANCE_VALUES = [
     "config-driven",

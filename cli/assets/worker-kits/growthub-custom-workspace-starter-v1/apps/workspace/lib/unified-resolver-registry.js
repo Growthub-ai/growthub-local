@@ -44,6 +44,15 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
+/** Normalize a governance list field (array or comma-string) to string[]. */
+function parseList(value) {
+  if (Array.isArray(value)) return value.map((v) => clean(v)).filter(Boolean);
+  return clean(value)
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 /** Mirrors workspace-resolver-proposal slugify so file <-> row correlation is exact. */
 function slugifyIntegrationId(value, fallback = "resolver") {
   const slug = clean(value)
@@ -115,14 +124,21 @@ function findApiRegistryObjects(workspaceConfig) {
   return objects.filter((o) => isPlainObject(o) && o.objectType === "api-registry");
 }
 
-/** Derive the connector kind for a row from its declared kind, the registry, and any file. */
+// Kinds that need their own resolver implementation — they cannot be
+// auto-constructed from an HTTP response shape (aligned with the template
+// registry taxonomy: http | custom | tool | mcp | chrome | nango).
+const RESERVED_KINDS = new Set(["mcp", "chrome", "tool"]);
+
+/**
+ * The connector kind for a row, honoring the normalized governance taxonomy.
+ * `connectorKind` is operator-editable text, so any declared value is respected
+ * verbatim (lowercased); only when it is absent do we infer — a materialized /
+ * registered resolver is HTTP-shaped, otherwise there is none yet.
+ */
 function deriveConnectorKind(row, { registered, hasFile }) {
   const declared = clean(row?.connectorKind).toLowerCase();
-  if (["custom-http", "nango", "mcp", "webhook", "chrome"].includes(declared)) {
-    return declared;
-  }
-  if (declared === "nango") return "nango";
-  if (hasFile || registered) return "custom-http";
+  if (declared) return declared;
+  if (hasFile || registered) return "http";
   return "none";
 }
 
@@ -142,6 +158,9 @@ function deriveProvenance(row, { connectorKind, registered, hasFile, fileGenerat
     // registered at runtime (future connector kinds reuse this lane).
     return "config-driven";
   }
+  // Reserved kinds (mcp/chrome/tool) cannot raw-passthrough as HTTP — with no
+  // resolver wired they genuinely NEED one, regardless of test state.
+  if (RESERVED_KINDS.has(connectorKind)) return "missing";
   // No resolver present. Passthrough is honest only when shaping isn't required.
   if (recommendation && recommendation.level === "required") return "missing";
   return "passthrough";
@@ -203,6 +222,9 @@ function deriveEntry(input) {
     integrationId,
     resolverId,
     connectorKind,
+    templateId: clean(row?.resolverTemplateId),
+    capabilities: parseList(row?.capabilities),
+    executionLane: clean(row?.executionLane),
     provenance,
     filePath: hasFile ? `${RESOLVER_REGISTRY_DIR}/${slug}.js` : null,
     registered,
@@ -292,6 +314,14 @@ function deriveResolverRegistry(input = {}) {
   for (const [resolverId, set] of byResolverId) {
     if (set.size > 1) collisions.push({ resolverId, records: [...set] });
   }
+  const collidedIds = new Set(collisions.map((c) => c.resolverId));
+
+  // Trust + agent layer — one truth label, evidence, and a terse agent hint per
+  // entry, derived purely from facts already computed. A background agent picks
+  // its next move from `trust` + `agentHints` alone; a human reads the same state.
+  for (const e of entries) {
+    annotateEntryTrust(e, collidedIds.has(e.resolverId));
+  }
 
   const summary = {
     total: entries.length,
@@ -310,6 +340,66 @@ function deriveResolverRegistry(input = {}) {
     summary,
     collisions,
   };
+}
+
+/**
+ * Derive a single trust label + a terse, secret-safe agent hint + an evidence
+ * trail for one entry. Mutates the entry in place (called after collisions are
+ * known). Pure function of facts already on the entry.
+ *
+ * trust ∈ collision-blocked | reserved-future | missing-config | needs-resolver
+ *        | endpoint-live | registered | tested | untested
+ */
+function annotateEntryTrust(entry, isCollision) {
+  let trust;
+  let blockedReason = null;
+  if (isCollision) {
+    trust = "collision-blocked";
+    blockedReason = "Another record normalizes to the same resolverId — rename so ids resolve to distinct slugs.";
+  } else if (entry.registered && entry.endpoint && entry.tested) {
+    // An already-wired resolver of ANY kind (a registered mcp/chrome static file
+    // included) is live — reserved-future is about AUTO-CONSTRUCTION, not trust.
+    trust = "endpoint-live";
+  } else if (RESERVED_KINDS.has(entry.connectorKind) && entry.provenance === "missing") {
+    trust = "reserved-future";
+    blockedReason = `Auto-construction for "${entry.connectorKind}" is reserved — wire it with its own resolver (or a custom-http resolver) today.`;
+  } else if (entry.connectorKind === "nango" && entry.provenance === "missing") {
+    trust = "missing-config";
+    blockedReason = "Config-driven row is missing required Nango fields (connectionIds / endpoint).";
+  } else if (entry.provenance === "missing") {
+    trust = "needs-resolver";
+    blockedReason = "The tested response needs a shaping resolver before it produces governed rows.";
+  } else if (entry.registered && entry.endpoint) {
+    trust = "registered";
+  } else if (entry.tested) {
+    trust = "tested";
+  } else {
+    trust = "untested";
+  }
+
+  // Secret-safe evidence: "why this is (not yet) trusted". Booleans/ids/paths only.
+  entry.evidence = {
+    tested: entry.tested,
+    hasShape: Boolean(entry.shape),
+    recordPath: entry.shape ? entry.shape.arrayPath : "",
+    idField: entry.shape ? entry.shape.idField : "",
+    registered: entry.registered,
+    endpointLive: trust === "endpoint-live",
+    provenance: entry.provenance,
+  };
+
+  // Compact model-context hint: stable, terse, safe. Answers "can I call this,
+  // where, for what, and if not — why / what next".
+  entry.trust = trust;
+  entry.agentHints = {
+    callable: trust === "endpoint-live",
+    ready: trust === "endpoint-live" || trust === "tested",
+    endpoint: entry.endpoint,
+    entityType: entry.shape ? entry.shape.entityType : null,
+    blockedReason,
+    nextAction: entry.nextAction ? entry.nextAction.label : (blockedReason ? "resolve blocker" : null),
+  };
+  return entry;
 }
 
 /** Deterministic, key-sorted stringify with the volatile `generatedAt` stripped. */

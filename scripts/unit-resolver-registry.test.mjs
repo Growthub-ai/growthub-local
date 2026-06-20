@@ -424,7 +424,7 @@ test("constructor — custom-http prefills from tested shape (no blanks)", () =>
   });
   assert.equal(result.ok, true);
   assert.equal(result.mode, "file");
-  assert.equal(result.connectorKind, "custom-http");
+  assert.equal(result.connectorKind, "http"); // taxonomy: http (custom-http template) — default when unset
   assert.equal(result.prefill.rootPath, "data");
   assert.equal(result.prefill.idField, "id");
   assert.equal(result.blanks.length, 0);
@@ -461,13 +461,27 @@ test("constructor — nango readiness is honest (ready vs missing-config)", () =
   assert.equal(ready.endpoint, "/api/resolvers/asana");
 });
 
-test("constructor — mcp/webhook/chrome advertised truthfully, not blank", () => {
-  for (const kind of ["mcp", "webhook", "chrome"]) {
+test("constructor — reserved kinds (mcp/chrome/tool) advertised truthfully, not blank", () => {
+  for (const kind of ["mcp", "chrome", "tool"]) {
     const result = constructor.constructResolverProposal({ row: { integrationId: "x", connectorKind: kind } });
     assert.equal(result.mode, "unsupported");
+    assert.equal(result.reserved, true);
     assert.equal(result.ok, false);
     assert.ok(result.reason.includes(kind));
+    // not a dead end: a concrete next action is offered.
+    assert.ok(result.nextAction && result.nextAction.label);
   }
+});
+
+test("constructor — webhook is connectorKind 'http' → file-constructable (not reserved)", () => {
+  const row = {
+    Name: "Hook", integrationId: "hook", connectorKind: "http", endpoint: "https://x/ingest", method: "POST",
+    status: "connected", lastResponse: JSON.stringify({ items: [{ id: "a" }] }),
+  };
+  const profile = responseProfile.profileApiResponse(row.lastResponse);
+  const result = constructor.constructResolverProposal({ row, profile, recommendation: responseProfile.recommendResolver(profile) });
+  assert.equal(result.mode, "file");
+  assert.equal(result.connectorKind, "http");
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -544,6 +558,108 @@ test("drift — collisions fail the guard even with no artifacts", () => {
   const fresh = deriveResolverRegistry({ workspaceConfig });
   const { errors } = reg.diffResolverArtifacts({ fresh });
   assert.ok(errors.some((e) => e.includes("collision")), errors.join("|"));
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Product-taste: golden path, agent-operability, structured governance values
+// ───────────────────────────────────────────────────────────────────────────
+
+test("GOLDEN PATH — no-code journey semantics (regresses if it becomes a dev form)", () => {
+  // tested nested response, no resolver yet, human-readable integrationId.
+  const row = {
+    Name: "Contacts", integrationId: "Acme Contacts", baseUrl: "https://api.acme.test",
+    endpoint: "/v2/contacts", method: "GET", authRef: "ACME", authHeaderName: "x-api-key",
+    status: "connected",
+    lastResponse: JSON.stringify({ data: { items: [{ id: "c1", name: "A" }, { id: "c2", name: "B" }] } }),
+  };
+  const profile = responseProfile.profileApiResponse(row.lastResponse);
+  const recommendation = responseProfile.recommendResolver(profile);
+  const c = constructor.constructResolverProposal({
+    row, profile, recommendation, recordRef: { objectId: "workspace-api-registry", rowName: "Contacts" },
+  });
+  // 1. the system SHOWS understanding (detected summary, not a blank form)
+  assert.ok(c.detected, "must surface a detected shape summary");
+  assert.equal(c.detected.recordPath, "data.items");
+  assert.equal(c.detected.idField, "id");
+  assert.ok(c.detected.sentence.includes("Found 2"), c.detected.sentence);
+  assert.ok(["high", "medium", "low"].includes(c.detected.confidence));
+  // 2. ONE clear primary action, no blanks for the user to fill
+  assert.equal(c.ok, true);
+  assert.equal(c.blanks.length, 0);
+  // 3. review names endpoint, entity, row id, record path, and is safe
+  assert.equal(c.endpoint, "/api/resolvers/acme-contacts");
+  assert.equal(c.prefill.entityType, "items");
+  assert.equal(c.authRef, "ACME");
+  // 4. governed proposal with an exact file target the apply lane accepts
+  assert.equal(proposal.validateResolverProposal(c.proposal).ok, true);
+  assert.ok(c.proposal.target.path.endsWith("acme-contacts.js"));
+  // 5. the panel-facing summary never renders secret material (env-ref NAMES may
+  // appear inside the generated server file, but not in the review chrome).
+  const panelSurface = JSON.stringify({ detected: c.detected, prefill: c.prefill, reason: c.reason, endpoint: c.endpoint, blanks: c.blanks });
+  assert.ok(!panelSurface.includes("ACME_API_KEY"));
+  assert.ok(!/Bearer\s+\S/.test(panelSurface));
+
+  // 6. post-apply registry truth: registered → endpoint-live + agent-callable
+  const workspaceConfig = { dataModel: { objects: [apiRegistryObject([{ ...row, resolverTemplateId: "acme-contacts" }])] } };
+  const index = deriveResolverRegistry({
+    workspaceConfig, files: ["acme-contacts.js"], registeredIds: ["acme-contacts"],
+    fileMeta: { "acme-contacts": { generated: true } },
+  });
+  const e = index.entries[0];
+  assert.equal(e.trust, "endpoint-live");
+  assert.equal(e.agentHints.callable, true);
+  assert.equal(e.agentHints.endpoint, "/api/resolvers/acme-contacts");
+  assert.equal(e.agentHints.entityType, "items");
+});
+
+test("agent-operability — trust + agentHints answer the model's questions per state", () => {
+  const ws = {
+    dataModel: { objects: [apiRegistryObject([
+      { Name: "Live", integrationId: "live", baseUrl: "https://x", endpoint: "/y", status: "connected", lastResponse: TESTED_RESPONSE, resolverTemplateId: "live" },
+      { Name: "Needs", integrationId: "needs", baseUrl: "https://x", endpoint: "/y", status: "connected", lastResponse: JSON.stringify({ data: [{ id: 1 }], nextCursor: "z" }) },
+      { Name: "Nango", integrationId: "nango-x", connectorKind: "nango" },
+      { Name: "Mcp", integrationId: "mcp-x", connectorKind: "mcp" },
+    ])] },
+  };
+  const index = deriveResolverRegistry({ ws, workspaceConfig: ws, files: ["live.js"], registeredIds: ["live"], fileMeta: { live: { generated: true } } });
+  const by = Object.fromEntries(index.entries.map((e) => [e.integrationId, e]));
+  assert.equal(by["live"].trust, "endpoint-live");
+  assert.equal(by["live"].agentHints.callable, true);
+  assert.equal(by["needs"].trust, "needs-resolver");
+  assert.equal(by["needs"].agentHints.callable, false);
+  assert.ok(by["needs"].agentHints.blockedReason);
+  assert.equal(by["nango-x"].trust, "missing-config");
+  assert.equal(by["mcp-x"].trust, "reserved-future");
+  // every blocked entry carries an actionable reason — never a bare "green"
+  for (const e of index.entries) {
+    if (!e.agentHints.callable) assert.ok(e.agentHints.blockedReason || e.agentHints.nextAction, e.integrationId);
+  }
+});
+
+test("structured governance values — taxonomy connectorKind + capabilities + lane surface", () => {
+  const ws = {
+    dataModel: { objects: [apiRegistryObject([
+      { Name: "Tpl", integrationId: "tpl", connectorKind: "http", resolverTemplateId: "generic-crm", capabilities: "listEntities,fetchRecords", executionLane: "data-source", baseUrl: "https://x", endpoint: "/y" },
+    ])] },
+  };
+  const e = deriveResolverRegistry({ workspaceConfig: ws }).entries[0];
+  assert.equal(e.connectorKind, "http");          // taxonomy honored, not "custom-http"
+  assert.equal(e.templateId, "generic-crm");
+  assert.deepEqual(e.capabilities, ["listEntities", "fetchRecords"]);
+  assert.equal(e.executionLane, "data-source");
+});
+
+test("structured governance values — a registered mcp static file is endpoint-live, not reserved", () => {
+  const ws = {
+    dataModel: { objects: [apiRegistryObject([
+      { Name: "McpLive", integrationId: "mcp-live", connectorKind: "mcp", status: "connected", lastResponse: TESTED_RESPONSE },
+    ])] },
+  };
+  // a hand-written mcp resolver file exists + is registered (static-file provenance)
+  const e = deriveResolverRegistry({ ws, workspaceConfig: ws, files: ["mcp-live.js"], registeredIds: ["mcp-live"], fileMeta: { "mcp-live": { generated: false } } }).entries[0];
+  assert.equal(e.provenance, "static-file");
+  assert.equal(e.trust, "endpoint-live"); // reserved is about auto-construction, not trust
+  assert.equal(e.connectorKind, "mcp");
 });
 
 test("buildEndpointManifest — projects only exposed endpoints", () => {
