@@ -17,8 +17,49 @@ const kitLib = path.join(
   "..",
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib",
 );
-const { KNOWN_SCHEDULE_CADENCES, normalizeCadence, isValidCron, cadenceToCron, describeCadence } =
+const { KNOWN_SCHEDULE_CADENCES, normalizeCadence, isValidCron, cadenceToCron, describeCadence, isValidTimezone, cronApproxMinIntervalSeconds } =
   await import(pathToFileURL(path.join(kitLib, "scheduler-cadence.js")).href);
+
+test("cron RANGE checks reject impossible values (finding 8)", () => {
+  assert.equal(isValidCron("99 99 99 99 99"), false);
+  assert.equal(isValidCron("0 9 * * *"), true);
+  assert.equal(isValidCron("60 9 * * *"), false); // minute max 59
+  assert.equal(isValidCron("0 24 * * *"), false); // hour max 23
+  assert.equal(isValidCron("0 9 32 * *"), false); // dom max 31
+  assert.equal(isValidCron("0 9 * 13 *"), false); // month max 12
+  assert.equal(isValidCron("0 9 * * 8"), false);  // dow max 7
+  assert.equal(isValidCron("0 9 * * 7"), true);   // 7 = Sunday ok
+  assert.equal(isValidCron("0 0 0 0 0"), false);  // dom/month min 1
+});
+
+test("cron lists / ranges / steps validated against ranges", () => {
+  assert.equal(isValidCron("0,30 9 * * *"), true);
+  assert.equal(isValidCron("0-59/5 * * * *"), true);
+  assert.equal(isValidCron("0,99 9 * * *"), false);
+  assert.equal(isValidCron("10-5 9 * * *"), false); // inverted range
+});
+
+test("6/7-field (seconds/year) cron rejected on purpose", () => {
+  assert.equal(isValidCron("0 0 9 * * *"), false);
+  assert.equal(isValidCron("0 9 * * * 2026"), false);
+});
+
+test("minimum-interval guard rejects sub-5-minute schedules", () => {
+  assert.equal(cronApproxMinIntervalSeconds("* * * * *"), 60);
+  assert.equal(cronApproxMinIntervalSeconds("*/5 * * * *"), 300);
+  assert.match(cadenceToCron("recurring", { cron: "* * * * *" }).error, /minimum interval/i);
+  assert.match(cadenceToCron("recurring", { cron: "*/1 * * * *" }).error, /minimum interval/i);
+  assert.equal(cadenceToCron("recurring", { cron: "*/15 * * * *" }).error, null);
+});
+
+test("timezone validation (IANA via Intl)", () => {
+  assert.equal(isValidTimezone("UTC"), true);
+  assert.equal(isValidTimezone(""), true);
+  assert.equal(isValidTimezone("America/New_York"), true);
+  assert.equal(isValidTimezone("Mars/Phobos"), false);
+  assert.match(cadenceToCron("daily", { timezone: "Mars/Phobos" }).error, /invalid timezone/i);
+  assert.equal(cadenceToCron("daily", { timezone: "America/New_York" }).error, null);
+});
 
 test("named cadences map to canonical cron; manual has no cron", () => {
   assert.equal(cadenceToCron("manual").cron, null);

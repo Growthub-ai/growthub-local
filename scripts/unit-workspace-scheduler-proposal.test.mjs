@@ -32,9 +32,50 @@ const {
   buildSchedulerProposal,
   validateSchedulerProposal,
   resolveSchedulerFilePath,
+  parseArtifactBanner,
   SCHEDULER_AFFECTED_FIELD,
   SCHEDULER_CONNECTOR_KIND,
 } = mod;
+
+test("artifact carries a PARSEABLE provenance banner (finding 12)", () => {
+  const p = buildSchedulerProposal({ integrationId: "digest", provider: "qstash-schedule", cadence: "daily", objectId: "wf", rowName: "digest", generatedAt: "2026-06-20T00:00:00Z" });
+  const banner = parseArtifactBanner(p.code);
+  assert.ok(banner, "banner should parse");
+  assert.equal(banner.schedulerIntegrationId, "digest");
+  assert.equal(banner.provider, "qstash-schedule");
+  assert.equal(banner.objectId, "wf");
+  assert.equal(banner.rowName, "digest");
+  assert.equal(banner.generatedAt, "2026-06-20T00:00:00Z");
+  assert.match(p.code, /do not hand-edit/i);
+});
+
+test("qstash endpoint VERIFIES the real Upstash-Signature; no false security claim (finding 7)", () => {
+  const p = buildSchedulerProposal({ integrationId: "q", provider: "qstash-schedule", cadence: "daily" });
+  assert.equal(p.securityMode, "qstash-verified");
+  assert.match(p.code, /upstash-signature/i);
+  assert.match(p.code, /QSTASH_CURRENT_SIGNING_KEY/);
+  assert.match(p.code, /createHmac/);
+  // It must NOT rely on a shared-secret header check for security in this mode.
+  assert.ok(!/header\.includes\(secret\)/.test(p.code));
+  assert.ok(!/readSecret/.test(p.code));
+});
+
+test("supabase endpoint is shared-secret + explicitly labeled LOWER ASSURANCE (finding 7)", () => {
+  const p = buildSchedulerProposal({ integrationId: "s", provider: "supabase-edge", cadence: "daily", authRef: "SUPABASE_EDGE" });
+  assert.equal(p.securityMode, "shared-secret");
+  assert.match(p.code, /LOWER ASSURANCE/);
+  assert.match(p.code, /Deno\.serve/);
+  // Honest: says it does NOT create the Supabase schedule.
+  assert.match(p.code, /does\s*\n?\/\/ NOT create the Supabase schedule|NOT create the Supabase schedule/i);
+});
+
+test("proposal contract exposes provider scheduling truth", () => {
+  const q = buildSchedulerProposal({ integrationId: "q", provider: "qstash-schedule", cadence: "daily" });
+  const s = buildSchedulerProposal({ integrationId: "s", provider: "supabase-edge", cadence: "daily" });
+  assert.equal(q.contract.createsProviderSchedule, true);
+  assert.equal(s.contract.createsProviderSchedule, false);
+  assert.equal(s.scheduleSpec.schedulingMode, "external");
+});
 
 const SECRET = "qs-never-leak-4242";
 

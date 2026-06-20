@@ -74,8 +74,9 @@ const KNOWN_SANDBOX_LIFECYCLE_STATUSES = ["draft", "live"];
 const KNOWN_SCHEDULE_CADENCES = ["manual", "daily", "weekly", "monthly", "recurring"];
 /** First-party serverless scheduler providers (see lib/workspace-scheduler-proposal.js). */
 const KNOWN_SCHEDULER_PROVIDERS = ["supabase-edge", "qstash-schedule"];
-/** Server-stamped lifecycle of a provisioned schedule. */
-const KNOWN_SCHEDULE_STATUSES = ["", "unprovisioned", "provisioning", "scheduled", "paused", "needs-reconfirm", "failed"];
+/** Server-stamped lifecycle of a provisioned schedule. Distinct states so the
+ *  system never overclaims (endpoint-confirmed != provider schedule created). */
+const KNOWN_SCHEDULE_STATUSES = ["", "unprovisioned", "provisioning", "scaffolded", "endpoint-confirmed", "schedule-created", "scheduled", "paused", "needs-reconfirm", "failed", "canceled"];
 const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
@@ -1161,9 +1162,22 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   if (scheduleCadenceNorm === "recurring" && String(row.scheduleCron || "").trim() === "") {
     errors.push(`${path}.scheduleCron is required when scheduleCadence is "recurring"`);
   }
-  for (const scheduleStrField of ["scheduleCron", "scheduleTimezone", "scheduleProvider", "scheduleNextRunAt", "scheduleLastRunAt", "scheduleLastConfirmedAt", "scheduleLastResponse"]) {
+  for (const scheduleStrField of [
+    "scheduleCron", "scheduleTimezone", "scheduleProvider", "scheduleNextRunAt", "scheduleLastRunAt",
+    "scheduleLastConfirmedAt", "scheduleLastResponse",
+    // Provider evidence (server-stamped) — slugs/ids/urls only, never secrets.
+    "scheduleProviderScheduleId", "scheduleConfirmationMode", "scheduleConfirmationHttpStatus",
+    "scheduleEndpointUrl", "scheduleEndpointConfirmedAt", "scheduleLastConfirmedEndpointUrl",
+    "scheduleProviderScheduleCreatedAt",
+  ]) {
     if (row[scheduleStrField] !== undefined && row[scheduleStrField] !== null && row[scheduleStrField] !== "" && typeof row[scheduleStrField] !== "string") {
       errors.push(`${path}.${scheduleStrField} must be a string when present`);
+    }
+  }
+  if (row.scheduleTrustedLive !== undefined) {
+    const value = String(row.scheduleTrustedLive).trim().toLowerCase();
+    if (!["", "true", "false", "0", "1", "on", "off"].includes(value)) {
+      errors.push(`${path}.scheduleTrustedLive must coerce to a boolean (true/false/on/off)`);
     }
   }
   if (row.scheduleProvider !== undefined && row.scheduleProvider !== "" && row.scheduleProvider !== null && !KNOWN_SCHEDULER_PROVIDERS.includes(String(row.scheduleProvider).trim().toLowerCase())) {

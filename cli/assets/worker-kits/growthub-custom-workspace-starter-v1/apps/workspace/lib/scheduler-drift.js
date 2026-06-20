@@ -1,15 +1,21 @@
 /**
  * Scheduler Drift V1 — the security-critical "can this schedule still be
- * trusted?" derivation. A provisioned schedule must EARN its live status again
- * whenever the runtime it was provisioned into changes — the workspace can be
- * redeployed to a new Next.js app, flipped to read-only, or the local runtime
- * that holds the provider secret can disconnect. When any of those happen the
- * schedule is marked needs-reconfirm and is not trusted until a fresh 200.
+ * trusted?" derivation. A provisioned schedule must EARN its trusted-live status
+ * again whenever the runtime it was provisioned into changes: redeploy (endpoint
+ * URL changed), read-only flip, auth secret gone, the registry row hand-edited
+ * after confirmation, or a missing provider schedule id.
+ *
+ * URL comparison and auth resolution are single-sourced from
+ * lib/scheduler-providers.js (canonical origin+pathname, candidate-aware) — no
+ * substring matching, no duplicated candidate logic (findings 4 + 5).
  *
  * Pure + deterministic; never reads process.env, never throws. Secret-safe
- * (ref slugs / booleans only). The lifecycle route stamps scheduleStatus from
- * this verdict; the provisioning cockpit renders it.
+ * (ref slugs / booleans only).
  */
+
+import { resolveAuthReadiness, endpointUrlsEquivalent, providerCaps } from "./scheduler-providers.js";
+
+const SCHEDULE_BEARING = new Set(["scheduled", "endpoint-confirmed", "schedule-created", "paused", "needs-reconfirm"]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -24,16 +30,14 @@ function clean(value) {
  * @param {object} input.sandboxRow            the provisioned workflow row
  * @param {string} [input.persistenceMode]     "filesystem" | "read-only" | "database"
  * @param {string[]} [input.configuredEnvRefs] auth/env slugs that resolve (env-status)
- * @param {object} [input.schedulerRow]        the api-registry scheduler row
- * @param {string} [input.currentBaseUrl]      the app's current base URL, when known
+ * @param {object} [input.schedulerRow]        the api-registry scheduler row (current config)
+ * @param {string} [input.currentBaseUrl]      the app's current deployed base URL, when known
  */
 function deriveSchedulerDriftState(input = {}) {
   const row = isPlainObject(input.sandboxRow) ? input.sandboxRow : {};
   const scheduleStatus = clean(row.scheduleStatus).toLowerCase();
-  const wasProvisioned = scheduleStatus === "scheduled" || scheduleStatus === "needs-reconfirm";
+  const wasProvisioned = SCHEDULE_BEARING.has(scheduleStatus);
 
-  // Drift only applies to a schedule that was provisioned. Everything else is
-  // simply "not scheduled yet" — not drift.
   if (!wasProvisioned) {
     return {
       kind: "growthub-scheduler-drift-state-v1",
@@ -47,8 +51,9 @@ function deriveSchedulerDriftState(input = {}) {
   }
 
   const schedulerRow = isPlainObject(input.schedulerRow) ? input.schedulerRow : {};
-  const configuredRefs = new Set((Array.isArray(input.configuredEnvRefs) ? input.configuredEnvRefs : []).map((s) => clean(s).toUpperCase()));
   const persistenceMode = clean(input.persistenceMode).toLowerCase();
+  const provider = clean(row.scheduleProvider || schedulerRow.schedulerProvider);
+  const caps = providerCaps(provider);
 
   const reasons = [];
 
@@ -56,15 +61,35 @@ function deriveSchedulerDriftState(input = {}) {
     reasons.push("This runtime is read-only — the workspace cannot durably own the schedule here.");
   }
 
-  const authRef = clean(schedulerRow.authRef || row.scheduleProvider).toUpperCase();
-  if (authRef && !configuredRefs.has(authRef)) {
-    reasons.push(`Scheduler secret ${authRef} no longer resolves in this runtime.`);
+  // Auth — candidate-aware, single-sourced. Names only, never values.
+  const authRef = clean(schedulerRow.authRef || row.scheduleProvider);
+  const auth = resolveAuthReadiness(authRef, input.configuredEnvRefs);
+  if (authRef && !auth.configured) {
+    reasons.push(`Scheduler auth ${authRef.toUpperCase()} no longer resolves in this runtime.`);
   }
 
-  const registeredBaseUrl = clean(schedulerRow.baseUrl || schedulerRow.endpoint);
+  // Endpoint URL drift — canonical origin+pathname against the LAST CONFIRMED
+  // evidence (not merely the current, hand-editable registry row).
+  const lastConfirmed = clean(row.scheduleLastConfirmedEndpointUrl);
+  const registryUrl = clean(schedulerRow.endpoint) || clean(schedulerRow.baseUrl);
   const currentBaseUrl = clean(input.currentBaseUrl);
-  if (currentBaseUrl && registeredBaseUrl && !currentBaseUrl.includes(registeredBaseUrl) && !registeredBaseUrl.includes(currentBaseUrl)) {
-    reasons.push("The deployed endpoint URL changed since the schedule was registered (redeploy detected).");
+
+  if (lastConfirmed && registryUrl) {
+    const cmp = endpointUrlsEquivalent(lastConfirmed, registryUrl);
+    if (cmp.bInvalid) reasons.push("The registry endpoint URL is malformed since the last confirmation.");
+    else if (!cmp.equivalent) reasons.push("The registry endpoint URL was edited since the schedule was last confirmed.");
+  }
+  if (currentBaseUrl) {
+    const reference = lastConfirmed || registryUrl;
+    const cmp = endpointUrlsEquivalent(reference, currentBaseUrl);
+    if (cmp.bInvalid) reasons.push(`The current endpoint URL is malformed ("${currentBaseUrl}").`);
+    else if (reference && !cmp.equivalent) reasons.push("The deployed endpoint URL changed since the schedule was registered (redeploy detected).");
+  }
+
+  // Provider schedule evidence — if this provider creates a real schedule and we
+  // claim it's scheduled/created but have no provider schedule id, it's drifted.
+  if (caps.createsProviderSchedule && (scheduleStatus === "scheduled" || scheduleStatus === "schedule-created") && !clean(row.scheduleProviderScheduleId)) {
+    reasons.push("No provider schedule id on record — the provider schedule cannot be verified.");
   }
 
   const drifted = reasons.length > 0;
@@ -81,4 +106,4 @@ function deriveSchedulerDriftState(input = {}) {
   };
 }
 
-export { deriveSchedulerDriftState };
+export { SCHEDULE_BEARING, deriveSchedulerDriftState };

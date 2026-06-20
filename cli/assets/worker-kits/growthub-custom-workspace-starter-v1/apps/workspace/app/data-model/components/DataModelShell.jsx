@@ -804,27 +804,42 @@ function SandboxRecordFields({
             provider: draft.scheduleProvider,
             cadence: draft.scheduleCadence,
             cron: draft.scheduleCron,
+            timezone: draft.scheduleTimezone || "UTC",
             destinationUrl: draft.scheduleDestinationUrl || "",
+            externalScheduleConfirmed: draft.scheduleExternalConfirmed === true || draft.scheduleExternalConfirmed === "true",
           }),
         });
         const payload = await res.json().catch(() => ({}));
-        if (res.ok && payload.confirmed) {
+        if (res.status === 409) {
+          setProvisionMessage({ tone: "bad", text: payload.guidance || payload.error || "Read-only runtime — provisioning needs a writable runtime (WORKSPACE_CONFIG_ALLOW_FS_WRITE=true)." });
+        } else if (payload.degraded) {
+          // Provider may have created a schedule but the workspace write failed.
+          syncDraftLocal({ scheduleStatus: payload.scheduleStatus });
+          setProvisionMessage({ tone: "bad", text: `Provider acted but the workspace did not persist (${payload.persistError}).${payload.rollback ? ` Rollback ${payload.rollback.ok ? "succeeded" : "FAILED — provider schedule may be orphaned"}.` : ""} Retry provisioning.` });
+        } else {
+          // Honest copy keyed on the exact stamped status (finding 13).
           syncDraftLocal({
-            runLocality: "serverless",
+            runLocality: payload.trustedLive ? "serverless" : draft.runLocality,
             schedulerRegistryId: payload.schedulerRegistryId || draft.schedulerRegistryId,
             scheduleProvider: payload.provider || draft.scheduleProvider,
-            scheduleStatus: "scheduled",
+            scheduleStatus: payload.scheduleStatus || draft.scheduleStatus,
+            scheduleProviderScheduleId: payload.providerScheduleId || draft.scheduleProviderScheduleId || "",
+            scheduleConfirmationMode: payload.confirmationMode || "",
+            scheduleEndpointUrl: draft.scheduleDestinationUrl || draft.scheduleEndpointUrl || "",
+            scheduleTrustedLive: payload.trustedLive ? "true" : "false",
             schedulePaused: "false",
           });
-          setProvisionMessage({ tone: "ok", text: `Scheduled — provider confirmed a 200 (${payload.confirm?.mode || "ok"}).` });
-        } else if (res.status === 409) {
-          setProvisionMessage({ tone: "bad", text: payload.guidance || payload.error || "Read-only runtime — provisioning needs a writable runtime." });
-        } else if (payload.scheduleStatus === "provisioning") {
-          syncDraftLocal({ scheduleStatus: "provisioning", schedulerRegistryId: payload.schedulerRegistryId });
-          setProvisionMessage({ tone: "warn", text: "Scaffolded + registered. Deploy the endpoint, set its URL, then re-provision to confirm." });
-        } else {
-          syncDraftLocal({ scheduleStatus: "failed" });
-          setProvisionMessage({ tone: "bad", text: payload.error || `Provider did not confirm (status ${payload.confirm?.httpStatus ?? "?"}).` });
+          if (payload.scheduleStatus === "scheduled") {
+            setProvisionMessage({ tone: "ok", text: payload.createsProviderSchedule
+              ? `Schedule created and trusted live — provider schedule ${payload.providerScheduleId || "(no id)"} (HTTP ${payload.confirmationHttpStatus}).`
+              : `Endpoint verified and external Supabase schedule confirmed — trusted live.` });
+          } else if (payload.scheduleStatus === "endpoint-confirmed") {
+            setProvisionMessage({ tone: "warn", text: payload.detail || "Endpoint verified (200), but no provider schedule was created yet." });
+          } else if (payload.scheduleStatus === "scaffolded") {
+            setProvisionMessage({ tone: "warn", text: payload.detail || "Endpoint scaffolded + registered. Deploy it, set its URL, then re-provision." });
+          } else {
+            setProvisionMessage({ tone: "bad", text: payload.detail || payload.error || `Provider did not confirm (HTTP ${payload.confirmationHttpStatus ?? "?"}).` });
+          }
         }
       } catch (err) {
         setProvisionMessage({ tone: "bad", text: err?.message || "provisioning request failed" });
@@ -848,9 +863,21 @@ function SandboxRecordFields({
       if (res.ok) {
         syncDraftLocal({
           scheduleStatus: payload.scheduleStatus || draft.scheduleStatus,
+          scheduleTrustedLive: payload.trustedLive ? "true" : "false",
           schedulePaused: lifecycleAction === "pause" ? "true" : lifecycleAction === "resume" ? "false" : draft.schedulePaused,
+          scheduleProviderScheduleId: lifecycleAction === "cancel" ? "" : draft.scheduleProviderScheduleId,
         });
-        setProvisionMessage({ tone: payload.drift?.drifted ? "warn" : "ok", text: payload.drift?.drifted ? `Drift detected: ${payload.drift.reasons[0]}` : `Schedule ${lifecycleAction} applied.` });
+        if (payload.drift?.drifted) {
+          setProvisionMessage({ tone: "warn", text: `Drift detected — ${payload.drift.reasons[0]} Re-confirm before trusting it live.` });
+        } else if (lifecycleAction === "check") {
+          setProvisionMessage({ tone: "ok", text: "Verified — no drift; schedule is trusted against this runtime." });
+        } else {
+          // Honest about whether the provider was actually touched (finding 2/13).
+          const where = payload.providerConfirmed
+            ? "provider schedule updated"
+            : `local-only (${payload.providerAction?.op || "no provider change"})${payload.providerAction?.detail ? ` — ${payload.providerAction.detail}` : ""}`;
+          setProvisionMessage({ tone: payload.providerConfirmed ? "ok" : "warn", text: `${lifecycleAction}: ${where}.` });
+        }
       } else {
         setProvisionMessage({ tone: "bad", text: payload.guidance || payload.error || `${lifecycleAction} failed` });
       }
@@ -1005,15 +1032,52 @@ function SandboxRecordFields({
                 {provisionMessage.text}
               </p>
             )}
-            {provisioningState.provisioned && (
+            {/* Honest status line — exactly what the workspace knows right now. */}
+            {provisioningState.scheduleStatus && provisioningState.scheduleStatus !== "unprovisioned" && (
+              <p className="dm-cell-empty" style={{ fontSize: 11, marginTop: 6 }}>
+                State: <strong>{provisioningState.statusLabel}</strong>
+                {provisioningState.providerScheduleId ? ` · provider schedule ${provisioningState.providerScheduleId}` : ""}
+                {provisioningState.confirmationMode ? ` · ${provisioningState.confirmationMode}` : ""}
+                {provisioningState.trustedLive ? " · trusted live" : ""}
+              </p>
+            )}
+            {/* Supabase external-confirm: scheduling is external, so let the operator
+                attest the cron is wired before we mark it scheduled (finding 1/13). */}
+            {provisioningState.endpointConfirmed && provisioningState.createsProviderSchedule === false && !provisioningState.trustedLive && (
+              <label className="dm-record-field" style={{ marginTop: 6 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={draft.scheduleExternalConfirmed === true || draft.scheduleExternalConfirmed === "true"}
+                    disabled={!table.mutable || saving}
+                    onChange={(event) => setDraft((c) => ({ ...c, scheduleExternalConfirmed: event.target.checked }))}
+                  />
+                  I&apos;ve wired the recurring schedule in Supabase (pg_cron / dashboard)
+                </span>
+              </label>
+            )}
+            {/* Lifecycle controls stay available across schedule-bearing states
+                (paused / needs-reconfirm / endpoint-confirmed / failed) — finding 3. */}
+            {(provisioningState.hasSchedule || provisioningState.failed) && (
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                {String(draft.schedulePaused || "").trim().toLowerCase() === "true" ? (
+                {provisioningState.canResume && (
                   <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("resume")}>Resume</button>
-                ) : (
+                )}
+                {provisioningState.canPause && (
                   <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("pause")}>Pause</button>
                 )}
-                <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("check")}>Verify schedule</button>
-                <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("cancel")}>Cancel schedule</button>
+                {provisioningState.canReconfirm && (
+                  <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleProvisionAction({ id: "reconfirm-scheduler" })}>Re-confirm</button>
+                )}
+                {provisioningState.canVerify && (
+                  <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("check")}>Verify schedule</button>
+                )}
+                {provisioningState.canReprovision && (
+                  <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleProvisionAction({ id: "provision-scheduler" })}>{provisioningState.failed ? "Retry" : "Re-provision"}</button>
+                )}
+                {provisioningState.canCancel && (
+                  <button type="button" className="dm-btn-ghost" disabled={Boolean(provisionBusy)} onClick={() => handleScheduleLifecycle("cancel")}>Cancel schedule</button>
+                )}
                 {draft.scheduleNextRunAt && <span className="dm-cell-empty" style={{ fontSize: 11, alignSelf: "center" }}>Next run: {draft.scheduleNextRunAt}</span>}
               </div>
             )}
