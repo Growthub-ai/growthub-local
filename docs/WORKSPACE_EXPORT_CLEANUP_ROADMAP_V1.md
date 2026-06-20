@@ -1,202 +1,122 @@
 # Workspace Export Cleanup Roadmap V1 — Stale-Code Pruning & Mono-Repo Optimization Around the Export Value
 
-The boundary this roadmap acts on is **not invented here** — it is the one `README.md` and `ARCHITECTURE.md`
-already declare as canonical. Read those two first; this roadmap only operationalizes the delineation they make.
+Three-phase, timeline-free, compounding plan for the checkbox item:
 
-## The delineation (straight from the canonical docs)
+- [ ] Clean up stale old code & optimize mono-repo structure around the workspace export value
 
-`README.md` sells exactly three published artifacts and their inputs, and nothing else:
+The boundary it operates on is the one `README.md` + `ARCHITECTURE.md` already declare, made concrete in
+[`docs/MONOREPO_PROVENANCE_MAP_V1.md`](./MONOREPO_PROVENANCE_MAP_V1.md) and enforced by
+`scripts/check-monorepo-boundary.mjs`. **growthub-local is the authoritative source of truth — all cleanup
+happens here.**
 
-| Core value (published, actively developed) | Path | What `README.md` says |
+## The delineation (from the canonical docs)
+
+| Role | Paths | Relation to the export value |
 | --- | --- | --- |
-| `@growthub/cli` | `cli/` | "Primary command surface." The exporter + local runtime + kits + starter. |
-| `@growthub/create-growthub-local` | `packages/create-growthub-local/` | "Guided installer." |
-| `@growthub/api-contract` | `packages/api-contract/` | "Public contract surface … CMS SDK v1" (`1.5.0`). |
-| Exportable inputs | `cli/assets/worker-kits/*` | The custom workspace starter + worker kits the CLI downloads/exports. |
+| **core-product** | `cli/` (`@growthub/cli` + `cli/assets/worker-kits/*`), `packages/api-contract/` (SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, the exportable kits. |
+| **vendored-runtime** | `server/` (`@paperclipai/server`), `ui/`, `packages/shared/` | The bundled Paperclip **local runtime** — required to run a workspace locally, but not the product. The primary stale-code mass. |
+| **orphan / scaffolding** | `packages/db/` (stub); `docs/`, `scripts/`, `.github/`, root contracts | Leftover + tooling/docs/CI. |
 
-The canonical journey (`ARCHITECTURE.md` §Core Intent) is `source → local workspace → governed fork →
-customization → safe sync → optional hosted authority`. The **export value** is that loop: turning a
-repo/skill/starter/kit into a governed, deployable workspace artifact.
+The export value chain (`ARCHITECTURE.md §Core Intent`):
 
-`ARCHITECTURE.md` §Main Surfaces names the **local runtime (`server` + `ui`)** as a *cooperating layer the CLI
-bundles*, controlled by `scripts/runtime-control.sh`. It is real and required to run a workspace locally — but
-it is **vendored, not the product**:
+```
+source → growthub starter / kit download → governed workspace artifact
+  (cli/assets/worker-kits/growthub-custom-workspace-starter-v1) → .growthub-fork/ + apps/workspace
+  → customize → deploy
+```
 
-- `server/` is literally `@paperclipai/server` (homepage `github.com/paperclipai/paperclip`), ~58K LOC.
-- `ui/` is the Paperclip web app, ~60K LOC, 35 pages.
-- `packages/shared` is `@paperclipai/shared`; `packages/db` is a near-empty Paperclip schema stub.
-- **491** files reference `paperclip`. The tree is synced from upstream via `scripts/sync-from-monorepo.sh`
-  (`MONOREPO=growthub-core`), and git shows it is barely edited here (≈1 commit per 60 touches `server/` or
-  `ui/`, vs. 43 for `cli/` and 36 for `packages/`).
+> **Two facts that gate every cleanup.** (1) `cli/dist` ships **prebuilt and committed** (incl. the bundled
+> `cli/dist/runtime/server`); a `cli/src/**` edit is not live until `dist` is rebuilt + re-verified
+> (`scripts/agent-dist-verify.sh`, `scripts/check-cli-package.mjs`). (2) The exported-workspace contract
+> (`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`, `.growthub-fork/`, `PATCH /api/workspace`) is **frozen**. Cleanup must
+> keep `growthub kit download growthub-custom-workspace-starter-v1` producing a byte-identical artifact and keep
+> `growthub` booting — run `pnpm freeze:check` + the kernel checks around every change.
 
-**That is the line.** The core value is the CLI/installer/SDK/kits export plane. The cleanup-and-optimize target
-is the vendored Paperclip runtime that the README does not advertise and that drags an entire upstream product
-surface (tickets, issues, board-claim, org-chart, a 20+ file plugin-host, 60+ services, 35 pages) through this
-repo even though most of it never serves the workspace-export loop.
-
-`README.md` itself names the symptom this roadmap fixes: *"Open-source freedom often means more maintenance
-burden and operational drift."* The mono-repo is carrying that drift in the vendored layer.
-
-No arbitrary timelines. Three phases, sequenced by dependency: draw the boundary from the canonical docs and
-measure what the export value actually pulls from the runtime (Phase 1); prune the vendored surface down to that
-need and clear the owned-plane stubs (Phase 2); re-center the tree on the published artifacts and lock the
-boundary with guards so upstream sync can't re-import dead surface (Phase 3). Each phase compounds on the last.
-
-> **Invariant for the whole roadmap.** Per `ARCHITECTURE.md`: *"The local layer must remain useful without
-> hosted connection,"* and the exported workspace contract (`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`, the
-> `.growthub-fork/` canonical state, the `PATCH /api/workspace` boundary) is **frozen**. Cleanup may shrink and
-> re-bound the vendored runtime and delete owned-plane cruft; it must never change what lands in a user's
-> exported workspace or break `growthub` running a workspace locally. Run `pnpm freeze:check` + the kernel
-> checks before and after every pruning step.
+No timelines. Three phases, sequenced by dependency: make the boundary legible and enforced (Phase 1); trim the
+stale mass against it with dist + freeze gates (Phase 2); lock it so regressions can't re-accrete (Phase 3).
 
 ---
 
-## Phase 1 — Draw the boundary from the docs and measure what the export value actually uses
+## Phase 1 — Make the boundary legible, traversable, and enforced  ✅ shipped
 
-*The README/ARCHITECTURE delineation is the spec; this phase turns it into a measured map. No deletions — only
-classification and reachability tracing, so every cut in Phase 2 is evidence-backed.*
+*An agent (or human) cannot clean what it cannot classify. This phase makes the role boundary explicit and
+machine-checked, and decouples the conflicting legacy "edit-elsewhere" model. No risk to the product.*
 
-### 1.1 — Classify every top-level path against the canonical delineation
-
-- [ ] Produce `docs/MONOREPO_PROVENANCE_MAP_V1.md`: classify each top-level path as **`core`** (cli, packages/
-      api-contract, packages/create-growthub-local, cli/assets/worker-kits), **`vendored-runtime`** (server, ui,
-      packages/shared, packages/db), or **`scaffolding`** (scripts, docs, .github, config), citing the README /
-      ARCHITECTURE line that justifies the bucket.
-- [ ] Tag every `vendored-runtime` path with its `@paperclipai/*` origin and whether `sync-from-monorepo.sh`
-      owns it, so "do not hand-edit, fix upstream" is explicit.
-
-### 1.2 — Trace what the export value actually pulls from the vendored runtime
-
-- [ ] The CLI bundles the built server at `cli/dist/runtime/server` and launches it via
-      `cli/src/commands/run.ts`. Map the **reachable** server routes/services from that local-runtime entrypoint
-      — i.e. what an exported workspace's `apps/workspace` + `growthub` CLI actually call.
-- [ ] Split the server's 30 routes / 60+ services and the UI's 35 pages into **`export-reachable`** vs.
-      **`paperclip-only`** (tickets, issues, board-claim, org-chart, agency/org surfaces, plugin-host internals
-      that no workspace path touches). This reachable set is the keep-list; everything else is a Phase 2
-      candidate.
-
-### 1.3 — Make the sync seam and dead config explicit
-
-- [ ] Document the upstream sync contract: `sync-from-monorepo.sh`, `pnpm-workspace.upstream.yaml` (currently
-      **byte-identical** to `pnpm-workspace.yaml`), and the workspace globs `packages/adapters/*`,
-      `packages/plugins/*`, `packages/plugins/examples/*` that resolve to **nothing** in this repo (they point at
-      `@paperclipai/adapter-*` packages that live upstream, not here).
-- [ ] Add `scripts/check-monorepo-boundary.mjs`: assert (a) every workspace glob resolves to an existing dir,
-      (b) every script/doc/kit reference resolves to an existing target (first expected catch: the deleted
-      `smoke-export-swarm-workspace.mjs` still named in `scripts/export-seed-workspace.md`), and (c) no `core`
-      path imports a `paperclip-only` surface. Wire it next to `check:cli-package` / `freeze:check` as a report
-      (not yet blocking).
-
-**Phase 1 exit:** a provenance map with zero unclassified paths, a measured `export-reachable` keep-list for the
-vendored runtime, and a boundary check that reports (does not yet fail) every dead glob, dangling ref, and
-core→paperclip leak.
+- [x] **Provenance/traversal map** — `docs/MONOREPO_PROVENANCE_MAP_V1.md`: role zones, the export value chain,
+      the **apps/ directory model** (`apps/` lives inside an *exported* workspace, not the repo root), the frozen
+      workspace-topology pointer, and the cleanup order.
+- [x] **Enforced boundary check** — `scripts/check-monorepo-boundary.mjs` (`pnpm check:monorepo-boundary`):
+      classifies every top-level path, **fails** on unclassified paths and dangling `docs/`/`scripts/`
+      references, **reports** dead `pnpm-workspace.yaml` globs. `--json` for agents.
+- [x] **Agent contract** — `AGENTS.md` "Mono-Repo Provenance & Traversal" section: role table, the
+      kit-removal-is-a-CLI-change rule, the apps/ topology rule, the dist-rebuild rule.
+- [x] **Decoupled the legacy private-monorepo sync** — removed `scripts/sync-from-monorepo.sh`, the
+      `sync:monorepo` script, `pnpm-workspace.upstream.yaml`, and `.github/workflows/sync-to-monorepo.yml`. This
+      bidirectional coupling was the conflicting "source of truth is elsewhere" model; growthub-local is now
+      unambiguously authoritative.
 
 ---
 
-## Phase 2 — Prune to the measured boundary
+## Phase 2 — Trim the stale mass (vendored-runtime + old kits), gated by dist + freeze
 
-*Delete and dedupe strictly against Phase 1's keep-list and reports. Vendored-runtime cuts go upstream-first
-where sync owns the file; owned-plane cuts land here directly. Every removal cites a Phase 1 row.*
+*Now that the boundary is enforced, remove what the export value never touches. Every removal is reachability-
+traced and paired with a `cli/dist` rebuild + freeze verification, so the published CLI and the workspace stay
+backwards-compatible.*
 
-### 2.1 — Shrink the vendored runtime to the export-reachable set
+### 2.1 — Reachability-trace the vendored runtime
 
-- [ ] For each `paperclip-only` route/service/page from 1.2 that no export path reaches, quarantine or strip it
-      — **upstream in `growthub-core` first** (since `sync-from-monorepo.sh` will otherwise re-import it), then
-      re-sync. Target the obvious non-workspace surfaces first: tickets, issues, board-claim, org-chart, and
-      plugin-host internals with no workspace caller.
-- [ ] Confirm after each removal that `growthub run` (local runtime) still boots and an exported workspace's
-      `apps/workspace` still serves — the runtime stays useful without hosted connection (the ARCHITECTURE
-      invariant).
+- [ ] Map the server routes/services reachable from the bundled local-runtime entrypoint
+      (`cli/src/commands/run.ts` → `cli/dist/runtime/server`) and the `apps/workspace` calls. Split the 30
+      routes / 60+ services / 35 UI pages into **export-reachable** (keep) vs **paperclip-only** (remove
+      candidates: `tickets`, `issues`, `board-claim`, `org-chart`, plugin-host internals with no workspace
+      caller). This keep-list is the contract for 2.2.
 
-### 2.2 — Resolve the owned-plane stubs and dead config
+### 2.2 — Remove paperclip-only runtime surface
 
-- [ ] `packages/db` is a near-empty Paperclip schema stub (one `tickets` schema + migrations). Remove it from the
-      workspace, or document why it stays — it currently reads as dead weight in the `core` bucket.
-- [ ] Delete `pnpm-workspace.upstream.yaml` if 1.3 confirmed it never diverges (or add the divergence contract as
-      a header so the duplication is intentional).
-- [ ] Remove the non-existent workspace globs (`packages/adapters/*`, `packages/plugins/*`,
-      `packages/plugins/examples/*`) — they belong to the upstream monorepo, not this published repo.
-- [ ] Fix the `smoke-export-swarm-workspace.mjs` dangling reference in `export-seed-workspace.md`.
+- [ ] Delete the unreachable route/service/page families from `server/` + `ui/`, smallest-blast-radius first.
+- [ ] After each removal: rebuild `cli/dist`, confirm `growthub run` (local runtime) still boots and an exported
+      `apps/workspace` still serves, and run `pnpm freeze:check`. Revert any removal that perturbs the frozen
+      artifact or breaks boot.
 
-### 2.3 — Settle the bundled-dist policy
+### 2.3 — Deprecate/remove old non-workspace worker kits (CLI-first)
 
-- [ ] Decide and document the tracked-`dist` policy: root `dist` is git-ignored, `packages/api-contract/dist` is
-      intentionally force-kept for tarball checks, but `cli/dist` (incl. the whole bundled `cli/dist/runtime/
-      server`) and `server/dist` / `server/ui-dist` are tracked (~1779 files). Untrack the build-on-release ones
-      (`git rm -r --cached` + `.gitignore`), keep what release tarball checks genuinely need, and verify via
-      `release:check` / `agent-dist-verify.sh`.
+- [ ] Edit `cli/src/kits/catalog.ts` (and `cli/src/skills/catalog.ts`) to drop the deprecated kit **before**
+      removing its directory under `cli/assets/worker-kits/`, so `dist/index.js` never references a missing kit.
+- [ ] Rebuild `cli/dist`; run `scripts/check-cli-package.mjs`, `scripts/check-worker-kits.mjs`, and the kit
+      tests under `cli/src/__tests__/` to hold backwards-compat.
 
-### 2.4 — Tidy the owned plane's own legibility (small, compounding)
+### 2.4 — Reconcile dead config and orphan stubs
 
-- [ ] `cli/src/index.ts` is 2620 lines while commands already live in `cli/src/commands/*` (and `starter.ts`'s
-      header states "no business logic here"). Extract the remaining inline wiring so `index.ts` is a thin
-      registrar — assert identical `growthub --help` and a green CLI suite before/after.
-- [ ] Relocate the 32 flat `scripts/unit-*.test.mjs` / `*probe*.mjs` / `*e2e*.mjs` files under
-      `scripts/tests/{unit,probe,e2e}/`, updating `vitest.config.ts` globs; keep test names and entry points
-      identical.
-
-**Phase 2 exit:** vendored runtime reduced to the export-reachable keep-list (runtime still boots, workspace
-still serves), owned-plane stubs and dead globs gone, dist policy applied, `index.ts` a registrar, scripts
-relocated. `freeze:check` + kernel checks unchanged → the exported artifact is byte-stable.
-
-### 2.B — If pruning the vendored surface upstream is out of scope (decision gate)
-
-If the team cannot edit `growthub-core` upstream in this cycle, do **not** strip server/ui files in-repo (sync
-will clobber them). Instead:
-
-- [ ] Mark the `paperclip-only` surface as **excluded from the published build** (build/release config), so it
-      stays for the local runtime but never ships in the CLI tarball or docs — bounding the value without
-      fighting the sync. Record this fallback in the provenance map.
+- [ ] Remove the dead `pnpm-workspace.yaml` globs (`packages/adapters/*`, `packages/plugins/*`,
+      `packages/plugins/examples/*`) and the matching `cli/esbuild.config.mjs` alias entries that resolve to
+      nothing in this repo. Verify the CLI build/package still passes.
+- [ ] Resolve `packages/db`: remove it together with its `scripts/agent-dist-verify.sh` + dist-rebuild-doc
+      references, or document why it stays. No bare delete.
 
 ---
 
-## Phase 3 — Re-center the tree on the published artifacts and lock the boundary
-
-*A pruned tree re-drifts on the next upstream sync unless the boundary is enforced. Make the published artifacts
-the visible center and convert Phase 1's checks into standing gates.*
-
-### 3.1 — Make core-vs-vendored the visible structure
-
-- [ ] Add a "Mono-repo provenance" section to `ARCHITECTURE.md` (the canonical architecture doc) that states the
-      `core` / `vendored-runtime` / `scaffolding` buckets and points `server/`+`ui/` at their upstream origin and
-      the sync contract — so the delineation the README implies is written down once, authoritatively.
-- [ ] Ensure the kit + runtime paths resolve from single canonical constants (one `cli/assets/worker-kits` root,
-      one bundled-server path) — no drifting literals.
-
-### 3.2 — Reconcile doc drift around the export value
-
-- [ ] Collapse versioned doc pairs that fork the truth — e.g. `WORKSPACE_BUILDER_RUNTIME_V1.md` +
-      `_V1_1.md` — into a current doc plus an explicit superseded marker, per `ARCHITECTURE.md`'s Documentation
-      Contract ("if any doc conflicts … update or remove the conflicting section").
-
-### 3.3 — Turn the boundary into a standing CI ratchet
+## Phase 3 — Lock the boundary so stale code can't re-accrete
 
 - [ ] Promote `check:monorepo-boundary` to a **required** check beside `check:cli-package` / `check:worker-kits`
-      / `freeze:check`: fail the build on any dead workspace glob, dangling reference, `core → paperclip-only`
-      import, or re-appearance of a removed surface.
-- [ ] Add a `score:monorepo-boundary` (mirroring `score:worker-kits`) reporting the core / vendored / dead-ref
-      ratio over time, and run it after `sync-from-monorepo.sh` so an upstream re-import of pruned surface is
-      caught immediately rather than silently re-bloating the repo.
-
-**Phase 3 exit:** the published artifacts are the documented center, server/ui are a clearly-bounded vendored
-dependency with a written sync contract, doc drift is reconciled, and the boundary is a required CI gate that
-upstream sync cannot quietly undo.
+      / `freeze:check`: fail on unclassified paths, dangling references, and (escalated to error once 2.4 lands)
+      dead workspace globs.
+- [ ] Add `score:monorepo-boundary` (mirroring `score:worker-kits`) reporting the
+      core-product / vendored-runtime / orphan ratio over time, so structure health is a tracked trend.
+- [ ] Reconcile owned-doc drift (e.g. `WORKSPACE_BUILDER_RUNTIME_V1.md` + `_V1_1.md`) into current + superseded
+      markers per `ARCHITECTURE.md`'s Documentation Contract — without breaking `README.md` links.
+- [ ] Add a "Mono-repo role map" section to `ARCHITECTURE.md` pointing at the provenance map as the canonical
+      "where does this file belong" reference.
 
 ---
 
 ## Sequencing (by dependency, not dates)
 
-1. **Phase 1** — the README/ARCHITECTURE delineation becomes a measured provenance map + reachability keep-list.
-   Ships only docs and a reporting check (zero risk).
-2. **Phase 2** — prune the vendored runtime to the keep-list and clear owned-plane stubs/dead config, each cut
-   traced to a Phase 1 row; freeze/kernel checks prove the exported artifact never moved. Decision gate 2.B
-   covers the "can't touch upstream yet" case.
-3. **Phase 3** — write the boundary into `ARCHITECTURE.md` and promote the checks to required CI gates, so the
-   clean state survives the next upstream sync.
+1. **Phase 1** (shipped) — the boundary is legible, enforced, and decoupled from the conflicting legacy sync.
+2. **Phase 2** — trim the vendored runtime + old kits against the enforced boundary, each cut reachability-traced
+   and gated by `cli/dist` rebuild + `freeze:check`.
+3. **Phase 3** — promote the checks to required gates so the clean state holds.
 
-The through-line: **the README already tells us the core value is the CLI + installer + SDK + exportable kits;
-everything paperclip-vendored in `server/`/`ui/`/`shared`/`db` is a runtime dependency, not the product. This
-roadmap measures exactly what the export value pulls from that vendored layer, prunes the rest, and locks the
-boundary so the mono-repo stops carrying an entire upstream product surface it never ships.** Every cut is
-traceable, the frozen workspace contract is preserved, and the end state is a repo whose structure matches what
-the README says it is.
+The through-line: **growthub-local is the source of truth; the core value is the CLI + SDK + installer + the
+exportable workspace kits; the vendored Paperclip runtime is a dependency, not the product. Trim everything the
+export value never reaches, keep the published surface and the frozen workspace artifact intact, and lock the
+boundary so the mono-repo stays optimal.**

@@ -4,18 +4,19 @@
  *
  * Machine-readable form of docs/MONOREPO_PROVENANCE_MAP_V1.md.
  *
- * This repo is a PUBLISH MIRROR of upstream `growthub-core` (see
- * scripts/sync-from-monorepo.sh). The boundary between what is OWNED here and
- * what is SYNCED from upstream is the single most important fact an agent needs
- * before editing anything. This check makes that boundary legible and enforced:
+ * growthub-local is the authoritative source of truth for the product. Each
+ * path plays a product ROLE, and knowing that role is what an agent needs in
+ * order to traverse the repo and judge the blast radius of a change. This check
+ * makes the role boundary legible and enforced:
  *
- *   1. Classify every top-level path into a provenance zone; fail on anything
- *      UNCLASSIFIED (a new path nobody mapped).
+ *   1. Classify every top-level path into a role zone (core-product /
+ *      vendored-runtime / orphan / scaffolding); fail on anything UNCLASSIFIED
+ *      (a new path nobody mapped).
  *   2. Verify that script invocations (`node scripts/X`, `bash scripts/X`) and
- *      relative markdown links inside the OWNED zones (docs/, scripts/) resolve
- *      to files that exist — fail on a true dangling reference.
- *   3. REPORT (do not fail) upstream-synced anomalies (e.g. dead pnpm-workspace
- *      globs) — this mirror is not where those are fixed.
+ *      relative markdown links inside docs/ and scripts/ resolve to files that
+ *      exist — fail on a true dangling reference.
+ *   3. REPORT (do not fail) dead pnpm-workspace.yaml globs that resolve to
+ *      nothing.
  *
  * Errors exit non-zero. Warnings do not. `--json` emits the full classification.
  *
@@ -31,22 +32,33 @@ const repoRoot = path.resolve(path.dirname(SELF), "..");
 const JSON_OUT = process.argv.includes("--json");
 
 /**
- * Provenance zones keyed by top-level entry name.
- * Mirrors docs/MONOREPO_PROVENANCE_MAP_V1.md §2. Keep in sync with that doc and
- * with scripts/sync-from-monorepo.sh's copy list.
+ * Role zones keyed by top-level entry name.
+ * Mirrors docs/MONOREPO_PROVENANCE_MAP_V1.md §2. Keep the two in sync.
  */
 const ZONES = {
-  // CORE — owned, published / authoritative here
-  "packages/api-contract": "core-owned",
-  docs: "core-owned",
-  scripts: "core-owned",
-  "README.md": "core-owned",
-  "ARCHITECTURE.md": "core-owned",
-  "AGENTS.md": "core-owned",
-  "CLAUDE.md": "core-owned",
-  "LOCAL_AGENTS.md": "core-owned",
-  ".cursorrules": "core-owned",
-  "CONTRIBUTING.md": "core-owned",
+  // CORE-PRODUCT — the published value (exporter, SDK, installer, exportable kits)
+  cli: "core-product",
+  "packages/api-contract": "core-product",
+  "packages/create-growthub-local": "core-product",
+
+  // VENDORED-RUNTIME (Paperclip) — bundled local runtime, not the product
+  server: "vendored-runtime",
+  ui: "vendored-runtime",
+  "packages/shared": "vendored-runtime",
+
+  // ORPHAN / DERIVED — leftover, carries a dist-verify contract
+  "packages/db": "orphan",
+
+  // SCAFFOLDING — tooling, contracts, docs, CI
+  docs: "scaffolding",
+  scripts: "scaffolding",
+  "README.md": "scaffolding",
+  "ARCHITECTURE.md": "scaffolding",
+  "AGENTS.md": "scaffolding",
+  "CLAUDE.md": "scaffolding",
+  "LOCAL_AGENTS.md": "scaffolding",
+  ".cursorrules": "scaffolding",
+  "CONTRIBUTING.md": "scaffolding",
   ".github": "scaffolding",
   ".githooks": "scaffolding",
   ".claude": "scaffolding",
@@ -57,29 +69,7 @@ const ZONES = {
   "package.json": "scaffolding",
   "pnpm-lock.yaml": "scaffolding",
   "pnpm-workspace.yaml": "scaffolding",
-
-  // CORE — synced (source-of-truth upstream; do not edit here)
-  cli: "core-synced",
-  "packages/create-growthub-local": "core-synced",
-
-  // VENDORED RUNTIME (Paperclip) — synced
-  server: "vendored-runtime",
-  ui: "vendored-runtime",
-  "packages/shared": "vendored-runtime",
-
-  // ORPHAN / DERIVED — looks stale, carries a contract
-  "packages/db": "orphan",
-  "pnpm-workspace.upstream.yaml": "orphan",
 };
-
-/** Paths the sync script copies down (left-hand side of copy_dir/copy_file). */
-const SYNCED_PATHS = new Set([
-  "cli",
-  "server",
-  "ui",
-  "packages/shared",
-  "packages/create-growthub-local",
-]);
 
 const errors = [];
 const warnings = [];
@@ -174,7 +164,7 @@ if (fs.existsSync(wsFile)) {
   for (const glob of ws.matchAll(/^\s*-\s*([A-Za-z0-9._*\/-]+)\s*$/gm)) {
     const base = glob[1].replace(/\/?\*.*$/, "");
     if (base && !fs.existsSync(path.join(repoRoot, base))) {
-      warnings.push(`pnpm-workspace.yaml glob "${glob[1]}" resolves to nothing here (upstream-shaped; fix in growthub-core, not this mirror).`);
+      warnings.push(`pnpm-workspace.yaml glob "${glob[1]}" resolves to nothing — dead workspace glob, reconcile against what exists in this repo.`);
     }
   }
 }
@@ -184,7 +174,6 @@ if (fs.existsSync(wsFile)) {
 // ---------------------------------------------------------------------------
 const summary = {
   classification,
-  syncedPaths: [...SYNCED_PATHS],
   errors,
   warnings,
   ok: errors.length === 0,

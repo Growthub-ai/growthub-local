@@ -44,19 +44,20 @@ Do not preserve older prose "for history" in active docs.
 
 ## Mono-Repo Provenance & Traversal
 
-Before editing **any** file, know which provenance zone you are in. This repo is a **publish mirror** of upstream `growthub-core`, not the build root — `scripts/sync-from-monorepo.sh` overwrites the synced zones, and `cli/dist` ships prebuilt. The full map is [`docs/MONOREPO_PROVENANCE_MAP_V1.md`](./docs/MONOREPO_PROVENANCE_MAP_V1.md); the enforced form is `pnpm check:monorepo-boundary` (`scripts/check-monorepo-boundary.mjs`, `--json` for machine output).
+This repo is the **authoritative source of truth** for the product — edit here; there is no separate upstream. Before editing, know which **role zone** a path plays, so you can judge the blast radius of a change. The full map is [`docs/MONOREPO_PROVENANCE_MAP_V1.md`](./docs/MONOREPO_PROVENANCE_MAP_V1.md); the enforced form is `pnpm check:monorepo-boundary` (`scripts/check-monorepo-boundary.mjs`, `--json` for machine output).
 
-| Zone | Paths | Edit here? |
+| Zone | Paths | Role |
 | --- | --- | --- |
-| **Owned (authoritative)** | `packages/api-contract/`, `docs/`, `scripts/`, root contracts (`README.md`, `ARCHITECTURE.md`, `AGENTS.md`), `.github/`, `.claude/` | **Yes** |
-| **Synced (upstream source-of-truth)** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/create-growthub-local/` | **No — edit in `growthub-core`, then sync** |
-| **Vendored runtime (Paperclip)** | `server/`, `ui/`, `packages/shared/` | **No — upstream-owned local runtime, not the product** |
-| **Orphan/derived** | `packages/db/` (stub used by dist verify), `pnpm-workspace.upstream.yaml` (sync snapshot) | Only with explicit coordination |
+| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/api-contract/`, `packages/create-growthub-local/` | The published value. Keep backwards-compatible; build-sensitive edits need a `cli/dist` rebuild + freeze/verify. |
+| **vendored-runtime** | `server/`, `ui/`, `packages/shared/` | Bundled Paperclip local runtime — required to run a workspace, but **not** the product. Primary stale-code trim target. |
+| **orphan** | `packages/db/` (stub used by dist verify) | Leftover; coordinate removal with the dist-verify flow. |
+| **scaffolding** | `docs/`, `scripts/`, root contracts, `.github/`, `.githooks/`, `.claude/`, root config | Tooling, contracts, docs, CI. Freely editable. |
 
 Rules:
-1. Stale-code removal in a **synced/vendored** zone must happen **upstream** (it is clobbered on next sync and unverifiable here). Record it as an upstream worklist item in the provenance map.
-2. Removing/deprecating a worker kit is a **CLI change**: edit `cli/src/kits/catalog.ts` (upstream) **before** dropping the kit directory, so `dist/index.js` never references a missing kit. Keep `@growthub/cli` + `@growthub/create-growthub-local` backwards-compatible around the workspace.
+1. `cli/dist` ships **prebuilt and committed** — a `cli/src/**` edit is not live until `dist` is rebuilt and re-verified (`scripts/agent-dist-verify.sh`, `scripts/check-cli-package.mjs`).
+2. Removing/deprecating a worker kit is a **CLI change**: edit `cli/src/kits/catalog.ts` **before** dropping the kit directory, so `dist/index.js` never references a missing kit. Keep `@growthub/cli` + `@growthub/create-growthub-local` backwards-compatible around the workspace.
 3. There is **no top-level `apps/`** in this repo. `apps/` is a property of an **exported workspace** (`apps/workspace`); its frozen topology is `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`.
+4. Trimming `vendored-runtime` surface must be reachability-gated from `cli/src/commands/run.ts` → bundled `runtime/server` so the local runtime still boots; pair with a `cli/dist` rebuild.
 
 ## Runtime And Validation
 
