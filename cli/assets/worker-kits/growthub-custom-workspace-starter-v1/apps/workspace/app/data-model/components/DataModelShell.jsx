@@ -1768,8 +1768,29 @@ function DataModelRecordDrawer({
         case "open-data-source":
           openDataSourceRow(action.objectId);
           break;
-        case "create-sandbox-tool":
+        case "create-sandbox-tool": {
+          // Seed the workflow-canvas draft from the SAME detected shape the
+          // resolver journey found, so the transform node's rootPath + previews
+          // align with the API Registry test. The draft stays draft/untested —
+          // publish remains owned by workflow governance (no auto-publish).
+          const p = creationProfile;
+          setSandboxToolDraft((cur) => ({
+            ...cur,
+            name: cur?.name || String(draft?.Name || draft?.integrationId || "API").trim(),
+            authRef: cur?.authRef || String(draft?.authRef || "").trim(),
+            rootPath: cur?.rootPath || (p?.parsed ? String(p.arrayPath || "") : ""),
+            previewFields: cur?.previewFields || (Array.isArray(p?.fields) ? p.fields.slice(0, 10).map((f) => f.name) : []),
+          }));
           setSandboxToolFlow("draft");
+          break;
+        }
+        case "open-workflow":
+          // Continue the journey into the existing governed workflow canvas
+          // (the same surface the rest of the product uses). No duplicate row.
+          if (action.objectId) {
+            onClose();
+            router.push(`/workflows?object=${encodeURIComponent(action.objectId)}&row=${encodeURIComponent(action.rowName || "")}&field=orchestrationConfig`);
+          }
           break;
         case "refresh-source":
           await refreshLinkedSource({ objectId: action.objectId });

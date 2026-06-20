@@ -194,6 +194,11 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
   const baseUrl = String(registryRow?.baseUrl || "").trim();
   const authRef = String(options.authRef || registryRow?.authRef || integrationId).trim();
   const rootPath = String(options.rootPath || "data").trim();
+  // Detected field NAMES only (never values) — seed the transform include list +
+  // the result preview so the canvas reflects what the API Registry test found.
+  const previewFields = Array.isArray(options.previewFields)
+    ? options.previewFields.map((f) => String(f || "").trim()).filter(Boolean).slice(0, 12)
+    : [];
 
   return {
     version: 1,
@@ -245,7 +250,7 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
           rootPath,
           mode: "json",
           fieldMap: {},
-          includeFields: [],
+          includeFields: previewFields,
           excludeFields: [],
           computedFields: {},
           filters: [],
@@ -264,7 +269,7 @@ function buildDefaultOrchestrationGraphFromRegistry(registryRow, options = {}) {
           writeSourceRecord: true,
           sourceRecordId: "",
           outputMode: "normalized-json",
-          previewFields: [],
+          previewFields,
           statusField: "status",
           lastTestedField: "lastTested"
         }

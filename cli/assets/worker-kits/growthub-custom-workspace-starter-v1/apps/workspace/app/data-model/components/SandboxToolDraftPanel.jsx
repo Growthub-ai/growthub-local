@@ -72,7 +72,9 @@ export function SandboxToolDraftPanel({
       const base = buildDefaultOrchestrationGraphFromRegistry(registryRow, {
         label: registryName,
         authRef,
-        rootPath
+        rootPath,
+        // detected field names only (never values) — seed transform/result previews
+        previewFields: Array.isArray(draftOptions?.previewFields) ? draftOptions.previewFields : []
       });
       const parsed = parseOrchestrationGraph(current) || current;
       if (!parsed?.nodes?.length) return current;

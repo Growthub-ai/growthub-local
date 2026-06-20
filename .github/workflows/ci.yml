@@ -42,6 +42,7 @@ jobs:
         run: |
           node scripts/check-resolver-registry.mjs
           node --test scripts/unit-resolver-registry.test.mjs
+          node --test scripts/unit-api-registry-workflow-canvas.test.mjs
 
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs

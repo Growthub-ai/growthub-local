@@ -58,6 +58,7 @@ import { RunSetupPanel } from "./RunSetupPanel.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
 import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/workspace-activation";
+import { profileApiResponse } from "@/lib/api-response-profile";
 import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistryCreationCockpit.jsx";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
@@ -374,6 +375,35 @@ export default function WorkflowSurface() {
     };
   }, [workspaceConfig, registryRow]);
 
+  // Compact API Registry backing state for ANY api-registry-backed workflow
+  // (not just the project-management template) — so the canvas tells the user
+  // whether its backing is trusted and whether the transform mapping is stale.
+  const registryBacking = useMemo(() => {
+    if (!registryRow || !sandboxRow) return null;
+    const graph = parseOrchestrationGraph(sandboxRow.orchestrationConfig || sandboxRow.orchestrationGraph);
+    const transformNode = graph?.nodes?.find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
+    const status = String(registryRow.status || "").toLowerCase();
+    const apiState = ["connected", "ok", "success", "live", "tested"].includes(status)
+      ? "connected"
+      : status === "failed"
+        ? "failed"
+        : "untested";
+    const profile = profileApiResponse(registryRow.lastResponse);
+    const detectedRoot = profile?.parsed ? String(profile.arrayPath || "") : null;
+    const graphRoot = String(transformNode?.config?.rootPath || "");
+    const rootPathStale = detectedRoot !== null && Boolean(graphRoot) && detectedRoot !== graphRoot;
+    const apiObjectId = String(
+      (Array.isArray(workspaceConfig?.dataModel?.objects)
+        ? workspaceConfig.dataModel.objects.find((o) => o?.objectType === "api-registry")?.id
+        : "") || ""
+    );
+    const integrationId = String(registryRow.integrationId || "").trim();
+    const backHref = apiObjectId && integrationId
+      ? `/data-model?object=${encodeURIComponent(apiObjectId)}&row=${encodeURIComponent(integrationId)}`
+      : "/data-model";
+    return { apiState, rootPathStale, detectedRoot, graphRoot, backHref };
+  }, [registryRow, sandboxRow, workspaceConfig]);
+
   useEffect(() => {
     setSidecarMode(runId ? "trace" : "graph");
   }, [runId]);
@@ -636,7 +666,15 @@ export default function WorkflowSurface() {
 
   function startFromRegistry() {
     if (!registryRow) return;
-    setOrchestrationGraph(buildDefaultOrchestrationGraphFromRegistry(registryRow));
+    // Seed Input → API Registry → Transform → Result with the SAME detected
+    // shape the API Registry test/constructor found, so the transform rootPath
+    // and previews align with the governed record (field names only, no values).
+    const profile = profileApiResponse(registryRow.lastResponse);
+    setOrchestrationGraph(buildDefaultOrchestrationGraphFromRegistry(registryRow, {
+      rootPath: profile?.parsed ? String(profile.arrayPath || "data") : "data",
+      previewFields: Array.isArray(profile?.fields) ? profile.fields.slice(0, 10).map((f) => f.name) : [],
+      authRef: registryRow.authRef,
+    }));
     setSelectedNodeId("input");
     setDirty(true);
   }
@@ -951,6 +989,27 @@ export default function WorkflowSurface() {
             </span>
             <Link href={templateBanner.backHref} className="workspace-template-context-link">
               <span>{templateBanner.ready ? "Manage connection" : "Open Nango panel"}</span>
+            </Link>
+          </div>
+        ) : null}
+
+        {/* API Registry backing trust — only when there is something to act on
+            (untested/failed API, or a transform mapping that drifted from the
+            detected shape). Reuses the existing banner style. */}
+        {registryBacking && (registryBacking.apiState !== "connected" || registryBacking.rootPathStale) ? (
+          <div className="workspace-template-context-banner is-warn" role="note">
+            <span>
+              {registryBacking.apiState === "failed"
+                ? "This workflow's API Registry record failed its last test."
+                : registryBacking.apiState === "untested"
+                  ? "This workflow's API Registry record is untested."
+                  : "Transform mapping may be stale."}
+              {registryBacking.rootPathStale
+                ? ` Detected record path "${registryBacking.detectedRoot}" differs from the transform's "${registryBacking.graphRoot}".`
+                : ""}
+            </span>
+            <Link href={registryBacking.backHref} className="workspace-template-context-link">
+              <span>Open API Registry record</span>
             </Link>
           </div>
         ) : null}
