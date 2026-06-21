@@ -48,9 +48,54 @@ additive and non-destabilizing to the existing API Registry contract:
 - **Tests.** `scripts/unit-resolver-registry.test.mjs` (14) + a full exported-workspace
   E2E probe (positive/negative + the end-to-end customer journey). ✅ shipped
 
+**Release packaging.** This resolver-registry release ships as
+`@growthub/api-contract@1.5.1` with `@growthub/cli@0.14.5` and
+`@growthub/create-growthub-local@0.14.5`. It intentionally excludes the later
+no-code workflow scheduler/serverless persistence work; the existing main
+serverless reference path remains unchanged.
+
 Every deriver stays pure; the only governed writes flow through `PATCH /api/workspace`
 and the server-file resolver write lane; generated code is a projection of the
 governed record, never hand-edited.
+
+## Release snapshot — what users and agents get
+
+This release closes the API Registry loop instead of adding another object model.
+An operator can register and test an API from the Data Model API Registry, let
+the cockpit derive the response shape, construct the resolver from that tested
+shape, and then open a workflow canvas where the API Registry node is already
+drafted as a callable step. The user mental model is: **API record → tested
+response → governed resolver → callable workflow node**.
+
+For users, the important behavior is no-code activation:
+
+- tested HTTP APIs surface a clean resolver action from the record sidecard;
+- the resolver review is prefilled from observed response shape, not a blank
+  developer form;
+- generated resolver files, endpoint manifests, and registry indexes are
+  projections of the governed record;
+- the workflow entrypoint opens the real workflow canvas with human input,
+  API Registry call, transform, and result nodes instead of a fake sandbox draft
+  panel;
+- stale Phase 2 scheduler/serverless persistence UI is not part of this release.
+
+For agents, the important behavior is a single truth surface:
+
+- `GET /api/workspace/resolvers` returns the additive `registry` index with one
+  entry per governed `api-registry` row;
+- each entry carries `recordRef`, `resolverId`, provenance, shape, trust,
+  endpoint, evidence, and next action;
+- `_registry.generated.json` and `_endpoints.generated.json` are do-not-edit
+  artifacts for fast agent readback;
+- `/api/resolvers/<integrationId>` exposes registered, tested resolvers through
+  the governed endpoint lane;
+- `scripts/check-resolver-registry.mjs` fails on drift, stale endpoint manifests,
+  orphan generated files, and identity collisions.
+
+The release does **not** claim the later no-code workflow scheduler/serverless
+persistence work. Main's existing serverless reference path remains intact, but
+new QStash/Supabase scheduler provisioning experiments were removed from this
+branch so the resolver registry release is clean and mergeable.
 
 ---
 

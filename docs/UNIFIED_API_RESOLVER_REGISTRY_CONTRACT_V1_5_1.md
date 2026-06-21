@@ -28,6 +28,7 @@ workspace.
 | Server-file resolver write lane (`affectedField: "server-file"`) | **Unchanged.** Still gated, confined, secret-safe. |
 | Nango config-driven loader (`registerNangoResolversFromConfig`) | **Unchanged** — generalized *behind* a builder dispatch, not replaced. |
 | Governed Application Control Plane V1 (app-scope, outcome receipts) | **Reused**, not modified — the new endpoint enforces the same gate. |
+| Workflow scheduler/serverless persistence provisioning | **Out of scope.** 1.5.1 keeps main's existing serverless reference path intact and does not ship QStash/Supabase scheduler provisioning UI or routes. |
 
 The only additions are: a machine-readable banner line on **generated** resolver
 files, an additive `registry` field on `GET /api/workspace/resolvers`, two
@@ -170,6 +171,31 @@ These are not marketing lines — they are invariants the tests and CI enforce:
 8. **No secrets or raw payload values** appear in the registry, the review-panel
    chrome, or generated artifacts (env-ref names only, by design).
 9. **CI fails on drift, identity collisions, and stale artifacts.**
+
+## End-to-end release story
+
+The feature is complete when the same governed API record is visible across the
+human cockpit, the resolver registry, the generated artifacts, the dynamic
+endpoint, and the workflow canvas:
+
+1. **Record.** A row in the `api-registry` object owns `integrationId`, endpoint
+   config, auth reference, last test response, response profile, and resolver
+   linkage.
+2. **Construct.** The cockpit uses the tested response profile to construct the
+   resolver proposal. Users review detected fields; they do not author resolver
+   code or fill blank root/id/entity fields from scratch.
+3. **Register.** The governed apply lane writes the resolver projection and
+   updates only the governed record links allowed by the workspace mutation
+   policy.
+4. **Expose.** The registry index and endpoint manifest correlate the row,
+   resolver file, in-memory registration, and `/api/resolvers/<integrationId>`
+   route.
+5. **Use.** The workflow canvas can draft an API Registry call node from that
+   record, preserving the user's mental model from API setup to workflow use.
+
+This is the 1.5.1 scope. Scheduler provisioning, provider authentication flows,
+and durable serverless scheduling are separate post-1.5.1 work and must not be
+represented as shipped by this contract.
 
 ## Verification coverage matrix
 
