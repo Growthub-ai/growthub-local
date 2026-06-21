@@ -27,6 +27,20 @@ export interface LocalIntelligenceTraceRecordV1 {
     acceptedToolIntents: unknown[];
     rejectedToolIntents: unknown[];
   };
+  /**
+   * Provenance — optional, additive (back-compat with existing corpora).
+   * Stamped by `growthub intelligence export` so every governed trace is
+   * source-hashed (dedupe + incremental), capability-tagged, label-typed,
+   * and redaction-classified. Enterprise-safe by construction.
+   */
+  provenance?: {
+    sourceHash: string;
+    sourceRef: string;
+    surface: string;
+    capabilityTag: string;
+    labelType: string;
+    redactionStatus: "clean" | "redacted" | "blocked";
+  };
   createdAt: string;
 }
 
