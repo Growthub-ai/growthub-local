@@ -9,6 +9,9 @@ correlates* what already exists so the no-code cockpit can construct resolvers
 under the hood and agents can read one index instead of re-deriving the
 workspace.
 
+Completed-work snapshot:
+[`docs/UNIFIED_API_RESOLVER_REGISTRY_RELEASE_SNAPSHOT_V1.md`](./UNIFIED_API_RESOLVER_REGISTRY_RELEASE_SNAPSHOT_V1.md).
+
 - **Package:** `@growthub/api-contract` — version `1.5.0` → `1.5.1` (additive).
 - **New sub-export:** `@growthub/api-contract/resolver-registry` — an **additive
   contract**: type definitions plus runtime-safe vocabulary constants and one
