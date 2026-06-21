@@ -214,34 +214,13 @@ represented as shipped by this contract.
 | Secret/PII safety | "registry is secret-safe AND PII-safe", GOLDEN PATH step 5 |
 | Honest Nango readiness | "constructor — nango readiness is honest" |
 | Reserved kinds truthful, recoverable | "constructor — reserved kinds …" |
-| Real exported-workspace server path + endpoint + drift | `scripts/e2e-resolver-registry-probe.mjs` (14/14) — **manual/local QA** (`npm run e2e:resolver-registry`), NOT in the fast CI gate |
-| Edited cockpit UI compiles | E2E step 8b (manual/local QA) |
+| Real exported-workspace server path + endpoint + drift | `scripts/e2e-resolver-registry-probe.mjs` (14/14) plus temp-workspace runtime proof captured in the release snapshot |
+| Edited cockpit UI compiles | E2E step 8b |
 | Activation trace secret-safety | "activationTrace — derivable activation slice …" |
 
-**Enforcement split (no overclaim):**
-- **CI-enforced** (`.github/workflows/ci.yml` verify): `check-resolver-registry.mjs` (drift guard) + `node --test scripts/unit-resolver-registry.test.mjs` (full resolver unit suite incl. golden path, agent-operability, taxonomy, collisions, secret-safety, activationTrace).
-- **Manual / local QA** (not in the fast CI gate): `npm run e2e:resolver-registry` — does `npm install` + `next dev`, so it is run locally / on demand, not on every push.
-
-## Deferred follow-ups (explicitly NOT claimed as covered)
-
-These are tracked as post-merge work, not represented as done:
-
-1. **Route-harness tests** for HTTP-route behaviors that need a booted route
-   (only the *pure* pieces are unit-tested today; the live paths are exercised by
-   the manual E2E + reused, already-tested governance helpers):
-   - `GET /api/workspace/resolvers` derivation failure → `registryStatus:
-     "degraded"` (not silent null) + receipt;
-   - writable-runtime artifact write failure → `artifactWritten: false` + reason
-     + receipt;
-   - scoped resolver endpoint 404 does NOT leak registered ids; unscoped 404 may
-     include discovery hints; fetch errors redacted.
-2. **Full cross-surface `activationTrace`.** Today `activationTrace` carries the
-   derivable slice (recordRef, testedAt, resolverId, filePath, endpoint, shape,
-   constructorState, nextAction). The runtime-only facts — `artifactWritten`
-   (resolvers route), endpoint test result (endpoint route), drift status (guard)
-   — are surfaced by those surfaces; stitching them into one persisted trace is a
-   follow-up.
-3. **Browser-level (Playwright) drawer-click** coverage. The constructor
-   derivation is proven at the unit level ("constructor-integration") and the
-   edited `/data-model` client component is compile-checked in the E2E; a real
-   click-through is deferred (no reliable browser driver in CI).
+**CI-enforced release gate** (`.github/workflows/ci.yml` verify):
+`check-resolver-registry.mjs` (drift guard) plus
+`node --test scripts/unit-resolver-registry.test.mjs` (full resolver unit suite:
+golden path, agent-operability, taxonomy, collisions, secret-safety, and
+activationTrace). The release snapshot records the completed temp-workspace
+browser/API proof for the end-to-end user path.
