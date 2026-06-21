@@ -32,6 +32,7 @@
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
+ *   - `@growthub/api-contract/resolver-registry` — Unified API Resolver Registry (1.5.1)
  */
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";
@@ -46,6 +47,7 @@ export { WORKSPACE_HELPER_INTENT_VALUES, WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOS
 export { WORKSPACE_PATCH_ALLOWED_FIELDS, WORKSPACE_LIVE_WORKFLOW_FIELDS, WORKSPACE_DRAFT_WORKFLOW_FIELDS, isWorkspacePatchPolicyRejection, isWorkflowPublishSuccess, WORKSPACE_PATCH_CONTRACT_VERSION, } from "./workspace-patch.js";
 export { AGENT_OUTCOME_RECEIPT_KINDS, AGENT_OUTCOME_STATUSES, AGENT_OUTCOMES_SOURCE_ID, WORKSPACE_AGENT_LOOP_V1, isAgentOutcomeReceipt, WORKSPACE_OUTCOME_CONTRACT_VERSION, } from "./workspace-outcome.js";
 export { APP_REGISTRY_OBJECT_ID, APP_SURFACE_OBJECT_TYPE, isAppAssignmentPacket, WORKSPACE_APPS_CONTRACT_VERSION, } from "./workspace-apps.js";
+export { RESOLVER_CONNECTOR_KINDS, RESOLVER_PROVENANCE_VALUES, RESOLVER_REGISTRY_INDEX_KIND, RESOLVER_ENDPOINT_MANIFEST_KIND, RESOLVER_REGISTRY_DIR, RESOLVER_REGISTRY_INDEX_FILE, RESOLVER_ENDPOINT_MANIFEST_FILE, RESOLVER_ENDPOINT_BASE, RESOLVER_GENERATED_BANNER, isResolverRegistryIndex, WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION, } from "./resolver-registry.js";
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
 export const API_CONTRACT_VERSION = 1;

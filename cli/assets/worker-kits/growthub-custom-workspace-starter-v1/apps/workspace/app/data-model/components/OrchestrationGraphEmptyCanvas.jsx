@@ -16,7 +16,7 @@ export function OrchestrationGraphEmptyCanvas({
     <div className="dm-orchestration-canvas dm-orchestration-canvas--empty-state" aria-label="Empty orchestration graph">
       <div className="dm-orchestration-canvas__empty-card">
         <h3>Start orchestration graph</h3>
-        <p>Create a governed run plan for this sandbox tool. Nothing executes until Run sandbox.</p>
+        <p>Create a governed workflow plan. Nothing executes until you run the workflow.</p>
         <div className="dm-orchestration-canvas__empty-actions">
           <button type="button" className="dm-btn-primary-sm" disabled={disabled} onClick={onStartFromRegistry}>
             Start from API Registry

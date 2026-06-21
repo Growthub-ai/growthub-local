@@ -1,5 +1,20 @@
 # @growthub/api-contract
 
+## 1.5.1
+
+Additive patch. Introduces the Unified API Resolver Registry contract as a
+typed, agent-readable projection of governed API Registry records.
+
+### Added
+
+- `./resolver-registry` subpath with resolver registry entry/index types,
+  trust/provenance taxonomy constants, endpoint manifest constants, generated
+  resolver artifact constants, and `isResolverRegistryIndex`.
+- Contract docs for the browser and agent mental model:
+  no-code resolver construction from tested response shape, generated resolver
+  artifacts as projections of governed records, drift-guard enforcement, and
+  the dynamic `/api/resolvers/<integrationId>` endpoint surface.
+
 ## 1.5.0
 
 Additive minor. Promotes the **governed workspace mutation boundary** into

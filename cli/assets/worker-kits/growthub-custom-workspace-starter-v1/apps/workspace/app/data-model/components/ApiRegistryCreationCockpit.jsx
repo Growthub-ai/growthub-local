@@ -56,14 +56,17 @@ export function ApiRegistryCreationCockpit({
   onCollapsedChange,
 }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const hasVisibleAction = Array.isArray(state?.steps) && state.steps.some((step) => step?.action);
+  const shouldHide = Boolean(hideWhenComplete && state?.complete && !hasVisibleAction);
   useEffect(() => {
-    setCollapsed(defaultCollapsed || Boolean(hideWhenComplete && state?.complete));
-  }, [defaultCollapsed, hideWhenComplete, state?.complete, state?.integrationId]);
+    setCollapsed(defaultCollapsed || Boolean(hideWhenComplete && state?.complete && !hasVisibleAction));
+  }, [defaultCollapsed, hideWhenComplete, state?.complete, state?.integrationId, hasVisibleAction]);
   if (!state || !Array.isArray(state.steps)) return null;
-  if (hideWhenComplete && state.complete) return null;
+  if (shouldHide) return null;
   const candidates = profile?.candidates || {};
   const candidateEntries = Object.entries(candidates).filter(([, v]) => v);
   const previewRow = dataSourcePreview?.row || null;
+  const workflowAction = state?.workflowAction || null;
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
@@ -76,6 +79,28 @@ export function ApiRegistryCreationCockpit({
     }
     onAction?.(action);
   };
+
+  if (hideWhenComplete && state.complete && workflowAction) {
+    return (
+      <section className="dm-api-action-card dm-api-action-card-workflow" aria-label="Workflow canvas">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">Workflow canvas</p>
+          <h3>Use this API in a workflow</h3>
+          <p>{workflowAction.description}</p>
+        </div>
+        <div className="dm-api-action-card-actions">
+          <button
+            type="button"
+            className="dm-btn-outline dm-api-action-card-cta"
+            disabled={disabled || Boolean(busyAction)}
+            onClick={() => runAction(workflowAction)}
+          >
+            {busyAction === `workflow:${workflowAction.id}` ? "Opening…" : workflowAction.label}
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className={`dm-api-action-card dm-cockpit${collapsed ? " is-collapsed" : ""}`} aria-label="API creation journey">
@@ -180,11 +205,11 @@ export function ApiRegistryCreationCockpit({
         </div>
       ) : null}
 
-      {!collapsed && Array.isArray(receipts) && receipts.length ? (
+      {!collapsed && Array.isArray(receipts) && receipts.some((r) => r.ok) ? (
         <div className="dm-cockpit-receipts">
           <p className="dm-api-action-card-eyebrow">Receipts</p>
           <ul>
-            {receipts.slice(0, 6).map((r, i) => (
+            {receipts.filter((r) => r.ok).slice(0, 6).map((r, i) => (
               <li key={`${r.at}-${i}`} className="dm-cockpit-receipt">
                 <StatusChip mod={r.ok ? "ok" : "bad"} className="dm-cockpit-receipt-chip">{r.kind}</StatusChip>
                 <span className="dm-cockpit-receipt-text">{r.detail}</span>

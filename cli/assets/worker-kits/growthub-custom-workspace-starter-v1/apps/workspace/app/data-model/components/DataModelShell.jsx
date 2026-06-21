@@ -78,21 +78,22 @@ import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
-import { SandboxToolDraftPanel } from "./SandboxToolDraftPanel.jsx";
-import { SandboxToolConfirmModal } from "./SandboxToolConfirmModal.jsx";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { profileApiResponse, recommendResolver } from "@/lib/api-response-profile";
+import { constructResolverProposal } from "@/lib/resolver-constructor";
 import { classifyCreationError } from "@/lib/creation-error-recovery";
 import {
-  buildSandboxRowFromApiRegistry,
+  buildDefaultOrchestrationGraphFromRegistry,
   findSandboxRowsForRegistry,
   buildDataSourceRowFromApiRegistry,
   findDataSourceRowsForRegistry,
   getOrchestrationGraphUiState,
-  redactSecretsFromText
+  redactSecretsFromText,
+  serializeOrchestrationGraph,
+  slugifyName
 } from "@/lib/orchestration-graph";
 import {
   FIELD_TYPE_ICON_NAMES,
@@ -1228,17 +1229,17 @@ function DataModelRecordDrawer({
   const [sandboxHistoryMessage, setSandboxHistoryMessage] = useState("");
   const [loadingSandboxHistory, setLoadingSandboxHistory] = useState(false);
   const [expandedJson, setExpandedJson] = useState(null);
-  const [sandboxToolFlow, setSandboxToolFlow] = useState(null);
-  const [sandboxToolDraft, setSandboxToolDraft] = useState({});
-  const [sandboxToolCreating, setSandboxToolCreating] = useState(false);
-  const [createdSandboxMeta, setCreatedSandboxMeta] = useState(null);
-  const [createdSandboxTesting, setCreatedSandboxTesting] = useState(false);
-  const [createdSandboxTestMessage, setCreatedSandboxTestMessage] = useState("");
+  const [creatingWorkflowCanvas, setCreatingWorkflowCanvas] = useState(false);
   const [creatingDataSource, setCreatingDataSource] = useState(false);
   const [createdDataSourceMeta, setCreatedDataSourceMeta] = useState(null);
   const [dataSourceMessage, setDataSourceMessage] = useState("");
   const [cockpitBusy, setCockpitBusy] = useState("");
   const [cockpitCollapsed, setCockpitCollapsed] = useState(false);
+  // CMS SDK v1.5.1 — a staged, constructed resolver awaiting one-screen review.
+  // null until the operator clicks "Construct resolver"; cleared on apply/cancel.
+  const [resolverConstruct, setResolverConstruct] = useState(null);
+  const [resolverConstructBusy, setResolverConstructBusy] = useState(false);
+  const [resolverConstructMessage, setResolverConstructMessage] = useState("");
   // Real runtime truth for the creation cockpit: which auth refs resolve in the
   // server runtime, and the live source-records sidecar. Fetched (never guessed)
   // so auth/refresh readiness reflect actual state, and refreshed after actions.
@@ -1265,10 +1266,7 @@ function DataModelRecordDrawer({
       setSandboxHistory([]);
       setSandboxHistoryMessage("");
       setExpandedJson(null);
-      setSandboxToolFlow(null);
-      setSandboxToolDraft({});
-      setCreatedSandboxMeta(null);
-      setCreatedSandboxTestMessage("");
+      setCreatingWorkflowCanvas(false);
       setCreatingDataSource(false);
       setCreatedDataSourceMeta(null);
       setDataSourceMessage("");
@@ -1423,7 +1421,17 @@ function DataModelRecordDrawer({
   function ensureSandboxColumns(config, sandboxTable) {
     let next = config;
     let current = sandboxTable;
-    for (const field of ["orchestrationConfig", "description"]) {
+    for (const field of [
+      "orchestrationDraftConfig",
+      "orchestrationDraftStatus",
+      "orchestrationDraftUpdatedAt",
+      "orchestrationDraftBaseVersion",
+      "orchestrationDraftTestPassed",
+      "orchestrationDraftTestedConfig",
+      "description",
+      "connectorKind",
+      "executionLane"
+    ]) {
       if (!current.columns.includes(field)) {
         next = addTableField(next, current, field);
         const tables = listWorkspaceDataModelTables(next);
@@ -1433,59 +1441,216 @@ function DataModelRecordDrawer({
     return { config: next, sandboxTable: current };
   }
 
-  function createSandboxToolFromRegistry() {
-    if (!sandboxToolDraft?.name?.trim()) return;
+  function drawerId(prefix) {
+    return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+  }
+
+  function addWorkflowFolderShortcut(dataModel, workflow) {
+    const objects = Array.isArray(dataModel?.objects) ? dataModel.objects : [];
+    const seededObjects = objects.some((object) => object?.id === "nav-folders")
+      ? objects
+      : [
+          ...objects,
+          {
+            id: "nav-folders",
+            label: "Custom Folders",
+            source: "Custom Folders",
+            objectType: "custom",
+            icon: "Folder",
+            columns: ["name", "order", "collapsed", "items"],
+            rows: [],
+            binding: { mode: "manual", source: "Custom Folders" }
+          }
+        ];
+    const navIndex = seededObjects.findIndex((object) => object?.id === "nav-folders");
+    const navObject = seededObjects[navIndex];
+    const rows = Array.isArray(navObject?.rows) ? navObject.rows : [];
+    const folderName = "Builder";
+    const item = {
+      id: drawerId("item"),
+      type: "workflow",
+      objectId: workflow.objectId,
+      rowId: workflow.rowId,
+      fieldName: "orchestrationConfig",
+      label: workflow.label,
+      builderManaged: true,
+      icon: "GitBranch",
+      color: "#111827",
+      iconBg: "#f3f4f6"
+    };
+    const existingFolder = rows.find((row) => String(row?.name || "").trim().toLowerCase() === folderName.toLowerCase());
+    const nextRows = existingFolder
+      ? rows.map((row) => {
+          if (row !== existingFolder) return row;
+          const items = Array.isArray(row.items) ? row.items : [];
+          const exists = items.some((entry) => entry?.type === "workflow" && entry?.objectId === item.objectId && entry?.rowId === item.rowId);
+          return exists ? row : { ...row, collapsed: false, items: [...items, item] };
+        })
+      : [
+          ...rows,
+          {
+            id: drawerId("folder"),
+            name: folderName,
+            order: rows.length,
+            collapsed: false,
+            icon: "Folder",
+            color: "#f97316",
+            iconBg: "#fff7ed",
+            items: [item]
+          }
+        ];
+    return {
+      ...dataModel,
+      objects: seededObjects.map((object, index) => index === navIndex ? { ...navObject, rows: nextRows } : object)
+    };
+  }
+
+  function workflowGraphFromApiRegistry(registryRow) {
+    const graph = buildDefaultOrchestrationGraphFromRegistry(registryRow, {
+      rootPath: creationProfile?.arrayPath || "",
+    });
+    const humanInputNode = {
+      id: "human-input",
+      type: "human-input",
+      label: "Human Input",
+      subtitle: "Manual trigger",
+      config: {
+        action: "form",
+        title: "Run API workflow",
+        instructions: `Trigger ${String(registryRow?.integrationId || "this API").trim()} with optional inputs.`,
+        required: false,
+        requiresInput: false,
+        fields: []
+      }
+    };
+    return {
+      ...graph,
+      nodes: [humanInputNode, ...(Array.isArray(graph.nodes) ? graph.nodes : [])],
+      edges: [
+        { from: "human-input", to: "input", passes: "manual-input" },
+        ...(Array.isArray(graph.edges) ? graph.edges : [])
+      ]
+    };
+  }
+
+  async function openWorkflowCanvasFromRegistry() {
     const integrationId = String(draft?.integrationId || "").trim();
-    if (integrationId && findSandboxRowsForRegistry(workspaceConfig, integrationId).length > 0) {
-      setCreatedSandboxTestMessage("A sandbox tool already exists for this API Registry entry. Open it instead of creating a duplicate.");
+    if (!integrationId) {
+      setDataSourceMessage("This API Registry row needs an integrationId before a workflow can use it.");
       return;
     }
-    setSandboxToolCreating(true);
+    setCreatingWorkflowCanvas(true);
+    setDataSourceMessage("");
     try {
-      onSave((config) => {
-        let next = config;
-        if (integrationId && findSandboxRowsForRegistry(next, integrationId).length > 0) {
-          return next;
+      const currentRes = await fetch("/api/workspace", { cache: "no-store" });
+      const currentPayload = await currentRes.json();
+      if (!currentRes.ok || !currentPayload.workspaceConfig) {
+        throw new Error(currentPayload.error || "Failed to load workspace");
+      }
+      let next = currentPayload.workspaceConfig;
+      const existingWorkflow = (() => {
+        const objects = Array.isArray(next?.dataModel?.objects) ? next.dataModel.objects : [];
+        for (const object of objects) {
+          if (object?.objectType !== "sandbox-environment") continue;
+          for (const row of Array.isArray(object.rows) ? object.rows : []) {
+            const matches = findSandboxRowsForRegistry({ dataModel: { objects: [object] } }, integrationId).some((candidate) => candidate === row);
+            if (matches) return { objectId: object.id, rowName: row.Name };
+          }
         }
-        let sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
-        if (!sandboxTable) {
-          next = createTypedBusinessObject(next, {
-            name: "Sandbox Environments",
-            objectType: "sandbox-environment"
-          });
-          sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
-        }
-        if (!sandboxTable) return next;
-        const ensured = ensureSandboxColumns(next, sandboxTable);
-        next = ensured.config;
-        sandboxTable = ensured.sandboxTable;
-        const newRow = buildSandboxRowFromApiRegistry(next, draft, {
-          name: sandboxToolDraft.name,
-          description: sandboxToolDraft.description,
-          runLocality: sandboxToolDraft.runLocality,
-          adapter: sandboxToolDraft.adapter,
-          authRef: sandboxToolDraft.authRef,
-          envRefs: sandboxToolDraft.envRefs,
-          networkAllow: sandboxToolDraft.networkAllow,
-          timeoutMs: sandboxToolDraft.timeoutMs,
-          rootPath: sandboxToolDraft.rootPath,
-          instructions: sandboxToolDraft.instructions,
-          agentHost: sandboxToolDraft.agentHost,
-          schedulerRegistryId: sandboxToolDraft.schedulerRegistryId,
-          orchestrationGraph: sandboxToolDraft.orchestrationGraph
+        return null;
+      })();
+      if (existingWorkflow?.objectId && existingWorkflow?.rowName) {
+        router.push(`/workflows?object=${encodeURIComponent(existingWorkflow.objectId)}&row=${encodeURIComponent(existingWorkflow.rowName)}&field=orchestrationConfig`);
+        return;
+      }
+
+      let sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+      if (!sandboxTable) {
+        next = createTypedBusinessObject(next, {
+          name: "Sandbox Environments",
+          objectType: "sandbox-environment"
         });
-        next = appendRowsToTable(next, sandboxTable, [newRow]);
-        setCreatedSandboxMeta({
-          objectId: sandboxTable.objectId,
-          name: newRow.Name,
-          authRef: newRow.authRef || sandboxToolDraft.authRef
-        });
-        setSandboxToolFlow("created");
-        onFocusSandboxRow?.({ rowName: newRow.Name, deferOpen: true });
-        return next;
+        sandboxTable = listWorkspaceDataModelTables(next).find((t) => t.objectType === "sandbox-environment");
+      }
+      if (!sandboxTable) throw new Error("No sandbox workflow object exists.");
+      const ensured = ensureSandboxColumns(next, sandboxTable);
+      next = ensured.config;
+      sandboxTable = ensured.sandboxTable;
+
+      const rows = Array.isArray(sandboxTable.rows) ? sandboxTable.rows : [];
+      const baseRowId = slugifyName(`${integrationId}-workflow`) || "api-workflow";
+      const existingNames = new Set(rows.map((row) => String(row?.Name || row?.name || row?.id || "").trim()));
+      let rowId = baseRowId;
+      let suffix = 2;
+      while (existingNames.has(rowId)) {
+        rowId = `${baseRowId}-${suffix}`;
+        suffix += 1;
+      }
+      const nowIso = new Date().toISOString();
+      const draftGraph = workflowGraphFromApiRegistry(draft);
+      const workflowRow = {
+        Name: rowId,
+        runLocality: "local",
+        schedulerRegistryId: "",
+        runtime: "node",
+        adapter: "local-agent-host",
+        agentHost: "claude_local",
+        intelligenceType: "agent-host",
+        localModel: "",
+        localEndpoint: "",
+        intelligenceAdapterMode: "ollama",
+        envRefs: "",
+        networkAllow: "false",
+        allowList: "",
+        instructions: `Draft workflow for ${integrationId}. The canvas starts with a human input trigger and an API Registry call node.`,
+        command: "",
+        orchestrationDraftConfig: serializeOrchestrationGraph(draftGraph),
+        orchestrationDraftStatus: "draft",
+        orchestrationDraftUpdatedAt: nowIso,
+        orchestrationDraftBaseVersion: "0",
+        orchestrationDraftTestPassed: false,
+        orchestrationDraftTestedConfig: "",
+        timeoutMs: "180000",
+        resolverTemplateId: String(draft?.resolverTemplateId || "").trim(),
+        connectorKind: "local-agent-host",
+        executionLane: "workflow",
+        status: "draft",
+        lastTested: "",
+        lastRunId: "",
+        lastSourceId: "",
+        lastResponse: "",
+        description: String(draft?.description || "").trim()
+      };
+      next = appendRowsToTable(next, sandboxTable, [workflowRow]);
+      const finalDataModel = addWorkflowFolderShortcut(next.dataModel, {
+        objectId: sandboxTable.objectId,
+        rowId,
+        label: rowId
       });
+      const patchBody = { dataModel: finalDataModel };
+      const preflightResponse = await fetch("/api/workspace/patch/preflight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patchBody)
+      });
+      const preflightPayload = await preflightResponse.json();
+      if (!preflightResponse.ok || !preflightPayload.ok) {
+        throw new Error("Workflow creation is blocked by workspace policy.");
+      }
+      const response = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patchBody)
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.workspaceConfig) {
+        throw new Error("Workflow creation failed. Try again.");
+      }
+      router.push(`/workflows?object=${encodeURIComponent(sandboxTable.objectId)}&row=${encodeURIComponent(rowId)}&field=orchestrationConfig`);
+    } catch (err) {
+      setDataSourceMessage(redactSecretsFromText(err.message || "Failed to open workflow canvas"));
     } finally {
-      setSandboxToolCreating(false);
+      setCreatingWorkflowCanvas(false);
     }
   }
 
@@ -1633,11 +1798,103 @@ function DataModelRecordDrawer({
     }
   }
 
+  // CMS SDK v1.5.1 — construct the governed resolver from the tested response
+  // shape and stage it for one-screen review. No blank form: rootPath / idField
+  // / entityType / auth header are all derived (or surfaced as `blanks` when the
+  // row is missing a target). Nothing is written until the operator confirms.
+  function stageResolverConstruct() {
+    const integrationId = String(draft?.integrationId || "").trim();
+    if (!integrationId) {
+      setResolverConstructMessage("This API Registry row needs an integrationId before a resolver can be constructed.");
+      return;
+    }
+    const profile = profileApiResponse(draft?.lastResponse);
+    const recommendation = profile ? recommendResolver(profile) : null;
+    const result = constructResolverProposal({
+      row: draft,
+      profile,
+      recommendation,
+      recordRef: { objectId: table?.objectId, rowName: draft?.Name || integrationId },
+    });
+    setResolverConstructMessage("");
+    setResolverConstruct(result);
+  }
+
+  // Apply the staged resolver through the GOVERNED lane only (helper/apply →
+  // writeResolverProposalFile), mark the row wired (resolverTemplateId), then
+  // re-test through the resolver so the user sees green without leaving the
+  // drawer. config-driven (Nango) and unsupported kinds never reach here.
+  async function applyResolverConstruct() {
+    const staged = resolverConstruct;
+    if (!staged || staged.mode !== "file" || !staged.proposal || !staged.ok) return;
+    const integrationId = String(draft?.integrationId || "").trim();
+    setResolverConstructBusy(true);
+    setResolverConstructMessage("");
+    try {
+      const res = await fetch("/api/workspace/helper/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposals: [staged.proposal], reviewedBy: "cockpit" }),
+      });
+      const payload = await res.json();
+      const appliedOne = Array.isArray(payload.applied)
+        ? payload.applied.find((a) => a.type === "resolver.create")
+        : null;
+      if (!res.ok || !appliedOne) {
+        const skip = Array.isArray(payload.skipped) ? payload.skipped[0]?.reason : null;
+        const msg = redactSecretsFromText(skip || payload.error || payload.guidance || "Resolver apply failed");
+        setResolverConstructMessage(msg);
+        pushReceipt({ kind: "resolver-construct", ok: false, detail: msg });
+        return;
+      }
+      // Mark the row wired so the creation journey closes (resolverTemplateId
+      // becomes a real registered resolver id, not the "custom-http" passthrough).
+      onSave((config) => {
+        const t = listWorkspaceDataModelTables(config).find((x) => x.objectId === table?.objectId);
+        if (!t) return config;
+        const idx = (t.rows || []).findIndex((r) => String(r?.integrationId || "").trim() === integrationId);
+        if (idx < 0) return config;
+        return updateTableCell(config, t, idx, "resolverTemplateId", integrationId);
+      });
+      pushReceipt({
+        kind: "resolver-construct",
+        ok: true,
+        detail: `Resolver "${appliedOne.resolverFilename || integrationId}" constructed and wired.`,
+      });
+      // Re-test through the new resolver — the secret stays server-side.
+      try {
+        const testRes = await fetch("/api/workspace/test-source", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ integrationId, binding: {} }),
+        });
+        const testPayload = await testRes.json();
+        if (testPayload?.ok) {
+          pushReceipt({ kind: "resolver-test", ok: true, detail: `Resolver returned ${testPayload.recordCount ?? 0} record(s).` });
+        } else {
+          pushReceipt({
+            kind: "resolver-test",
+            ok: false,
+            detail: redactSecretsFromText(testPayload?.error || testPayload?.reason || "test-source did not return ok"),
+          });
+        }
+      } catch {
+        /* non-fatal — the resolver is written; refresh re-tests it later */
+      }
+      setResolverConstruct(null);
+      await reloadCreationSignals();
+    } catch (err) {
+      setResolverConstructMessage(redactSecretsFromText(err.message || "Resolver apply failed"));
+    } finally {
+      setResolverConstructBusy(false);
+    }
+  }
+
   // The creation cockpit emits a single action descriptor per step; map it to
   // the drawer's existing governed handlers. No new mutation paths.
   async function handleCockpitAction(action) {
     if (!action || !action.id) return;
-    const tag = `${action.stepId}:${action.id}`;
+    const tag = `${action.stepId || "workflow"}:${action.id}`;
     setCockpitBusy(tag);
     try {
       switch (action.id) {
@@ -1648,6 +1905,11 @@ function DataModelRecordDrawer({
         case "open-settings":
           onClose();
           router.push(action.href || "/settings");
+          break;
+        case "construct-resolver":
+          // CMS SDK v1.5.1 — construct the governed resolver from the tested
+          // response shape (no blank form) and stage it for one-screen review.
+          stageResolverConstruct();
           break;
         case "open-resolver":
           // Hand off to the governed helper widget — the resolver proposal lane.
@@ -1665,8 +1927,9 @@ function DataModelRecordDrawer({
         case "open-data-source":
           openDataSourceRow(action.objectId);
           break;
-        case "create-sandbox-tool":
-          setSandboxToolFlow("draft");
+        case "create-workflow-canvas":
+        case "open-workflow-canvas":
+          await openWorkflowCanvasFromRegistry();
           break;
         case "refresh-source":
           await refreshLinkedSource({ objectId: action.objectId });
@@ -1703,78 +1966,6 @@ function DataModelRecordDrawer({
         fields: creationProfile?.fields || [],
       }
     : null;
-
-  async function runSandboxToolByName({ objectId, name }) {
-    const rowName = String(name || "").trim();
-    const objectIdValue = String(objectId || "").trim();
-    if (!rowName || !objectIdValue) return;
-    setCreatedSandboxTesting(true);
-    setCreatedSandboxTestMessage("");
-    try {
-      const res = await fetch("/api/workspace/sandbox-run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId: objectIdValue, name: rowName }),
-      });
-      const payload = await res.json();
-      const responseText = redactSecretsFromText(JSON.stringify(payload.response ?? payload, null, 2));
-      const status = payload.ok && String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
-      const testedAt = payload.response?.ranAt || new Date().toISOString();
-      const lastRunId = payload.runId || payload.response?.runId || "";
-      const lastSourceId = payload.sourceId || payload.response?.sourceId || "";
-      onSave((config) => {
-        const sandboxTable = listWorkspaceDataModelTables(config).find((t) => t.objectType === "sandbox-environment");
-        if (!sandboxTable) return config;
-        const idx = (sandboxTable.rows || []).findIndex((r) => String(r?.Name || "").trim() === rowName);
-        if (idx < 0) return config;
-        let next = updateTableCell(config, sandboxTable, idx, "status", status);
-        next = updateTableCell(next, sandboxTable, idx, "lastTested", testedAt);
-        next = updateTableCell(next, sandboxTable, idx, "lastRunId", lastRunId);
-        next = updateTableCell(next, sandboxTable, idx, "lastSourceId", lastSourceId);
-        next = updateTableCell(next, sandboxTable, idx, "lastResponse", responseText);
-        return next;
-      });
-      const safeError = redactSecretsFromText(
-        payload.response?.error || payload.error || "Sandbox run failed"
-      );
-      setCreatedSandboxTestMessage(
-        status === "connected"
-          ? "Sandbox run succeeded — lastResponse and source record saved."
-          : safeError
-      );
-    } catch (err) {
-      setCreatedSandboxTestMessage(redactSecretsFromText(err.message || "Sandbox run failed"));
-    } finally {
-      setCreatedSandboxTesting(false);
-    }
-  }
-
-  function resolveSandboxTableMeta() {
-    const sandboxTable = tables.find((t) => t.objectType === "sandbox-environment")
-      || (workspaceConfig ? listWorkspaceDataModelTables(workspaceConfig).find((t) => t.objectType === "sandbox-environment") : null);
-    return sandboxTable?.objectId ? { objectId: sandboxTable.objectId, table: sandboxTable } : null;
-  }
-
-  async function runCreatedSandboxTest() {
-    if (!createdSandboxMeta?.objectId || !createdSandboxMeta?.name) return;
-    await runSandboxToolByName(createdSandboxMeta);
-  }
-
-  async function runExistingSandboxTool({ name }) {
-    const meta = resolveSandboxTableMeta();
-    if (!meta) {
-      setCreatedSandboxTestMessage("No sandbox-environment table in this workspace.");
-      return;
-    }
-    await runSandboxToolByName({ objectId: meta.objectId, name });
-  }
-
-  function openSandboxToolRow({ name }) {
-    const rowName = String(name || "").trim();
-    if (!rowName) return;
-    onFocusSandboxRow?.({ rowName });
-    onClose();
-  }
 
   async function runSandbox() {
     if (!table.objectId) {
@@ -1874,7 +2065,7 @@ function DataModelRecordDrawer({
     onClearInitialSidecar?.();
   }
 
-  const drawerWide = sandboxToolFlow === "draft" || sidecarMode === "trace";
+  const drawerWide = sidecarMode === "trace";
   const hideRecordFields = isSandbox && sidecarMode === "trace";
 
   return (
@@ -1903,7 +2094,7 @@ function DataModelRecordDrawer({
                 {sandboxRunning ? "Running…" : "Execute"}
               </button>
             )}
-            {!isSandbox && sandboxToolFlow !== "draft" && (
+            {!isSandbox && (
               <button type="button" className="dm-sidebar-close" onClick={() => setEditMode((current) => !current)} aria-label="Toggle edit mode">
                 <Pencil size={16} />
               </button>
@@ -1913,7 +2104,7 @@ function DataModelRecordDrawer({
             </button>
           </div>
         </header>
-        {table.objectType === "data-source" && sandboxToolFlow !== "draft" && (
+        {table.objectType === "data-source" && (
           <SourceTestPanel
             status={draft.status}
             testing={testing}
@@ -1923,41 +2114,13 @@ function DataModelRecordDrawer({
           />
         )}
         <div className="dm-record-scroll" ref={drawerScrollRef}>
-        {isApiRegistry && sandboxToolFlow === "created" && createdSandboxMeta && (
-          <section className="dm-api-action-card dm-api-action-card-success" aria-label="Sandbox tool created">
-            <div className="dm-api-action-card-body">
-              <p className="dm-api-action-card-eyebrow">Sandbox tool created</p>
-              <h3>{createdSandboxMeta.name}</h3>
-              <p>Governed sandbox row saved with orchestrationGraph. Run test to persist lastResponse — nothing auto-runs.</p>
-              {createdSandboxTestMessage && <p className="dm-sandbox-tool-test-msg">{createdSandboxTestMessage}</p>}
-            </div>
-            <div className="dm-api-action-card-actions">
-              <button
-                type="button"
-                className="dm-btn-outline dm-api-action-card-cta"
-                disabled={saving}
-                onClick={() => openSandboxToolRow({ name: createdSandboxMeta.name })}
-              >
-                Open sandbox tool
-              </button>
-              <button
-                type="button"
-                className="dm-btn-primary-sm dm-api-action-card-cta"
-                disabled={createdSandboxTesting || saving}
-                onClick={runCreatedSandboxTest}
-              >
-                {createdSandboxTesting ? "Running…" : "Run sandbox"}
-              </button>
-            </div>
-          </section>
-        )}
-        {isApiRegistry && sandboxToolFlow !== "draft" && sandboxToolFlow !== "confirm" && creationState && (
+        {isApiRegistry && creationState && (
           <>
             <ApiRegistryCreationCockpit
               state={creationState}
               onAction={handleCockpitAction}
               busyAction={cockpitBusy}
-              disabled={saving || creatingDataSource || testing}
+              disabled={saving || creatingDataSource || testing || creatingWorkflowCanvas}
               profile={creationProfile}
               resolverRec={creationResolverRec}
               receipts={creationReceipts}
@@ -1966,28 +2129,77 @@ function DataModelRecordDrawer({
               hideWhenComplete
               onCollapsedChange={setCockpitCollapsed}
             />
+            {resolverConstruct ? (
+              <section className="dm-api-action-card dm-cockpit" aria-label="Construct resolver review">
+                <div className="dm-cockpit-shape">
+                  <div className="dm-cockpit-shape-head">
+                    <p className="dm-api-action-card-eyebrow">Make this API usable · {resolverConstruct.connectorKind}</p>
+                    {resolverConstruct.detected?.confidence ? (
+                      <span className={`dm-db-status ${resolverConstruct.detected.confidence === "high" ? "ok" : resolverConstruct.detected.confidence === "low" ? "bad" : "warn"}`}>
+                        <span />
+                        {resolverConstruct.detected.confidence} confidence
+                      </span>
+                    ) : null}
+                  </div>
+                  {resolverConstruct.detected?.sentence ? (
+                    <p className="dm-cockpit-step-desc"><b>{resolverConstruct.detected.sentence}</b></p>
+                  ) : null}
+                  <p className="dm-cockpit-step-desc">{resolverConstruct.reason}</p>
+                  {resolverConstruct.mode === "file" && resolverConstruct.authRef ? (
+                    <p className="dm-cockpit-step-hint">Safe: the secret stays server-side via <code>{resolverConstruct.authRef}</code> — it never reaches the browser or the generated file.</p>
+                  ) : null}
+                  {resolverConstruct.mode === "file" && resolverConstruct.prefill ? (
+                    <div className="dm-cockpit-fields">
+                      <span className="dm-cockpit-field"><b>records at</b>{resolverConstruct.prefill.rootPath || "top-level"}</span>
+                      <span className="dm-cockpit-field"><b>row id</b>{resolverConstruct.prefill.idField}</span>
+                      <span className="dm-cockpit-field"><b>entity</b>{resolverConstruct.prefill.entityType}</span>
+                      {resolverConstruct.proposal?.target?.path ? (
+                        <span className="dm-cockpit-field"><b>file</b>{resolverConstruct.proposal.target.path}</span>
+                      ) : null}
+                      {resolverConstruct.endpoint ? (
+                        <span className="dm-cockpit-field"><b>endpoint</b>{resolverConstruct.endpoint}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {resolverConstruct.mode === "config-driven" && resolverConstruct.endpoint ? (
+                    <div className="dm-cockpit-fields">
+                      <span className="dm-cockpit-field"><b>type</b>config-driven (no file)</span>
+                      <span className="dm-cockpit-field"><b>endpoint</b>{resolverConstruct.endpoint}</span>
+                    </div>
+                  ) : null}
+                  {resolverConstruct.blanks?.length ? (
+                    <p className="dm-cockpit-step-hint">Missing on the row: {resolverConstruct.blanks.join(", ")}</p>
+                  ) : null}
+                  {resolverConstruct.mode === "file" && resolverConstruct.ok ? (
+                    <p className="dm-cockpit-step-hint">After apply: the resolver file is written via the governed lane, the row is marked wired, and it's re-tested automatically. If the re-test fails, the resolver is still written — the receipt distinguishes &ldquo;written&rdquo; from &ldquo;runtime failed&rdquo;.</p>
+                  ) : null}
+                  {resolverConstructMessage ? <p className="dm-cockpit-step-hint">{resolverConstructMessage}</p> : null}
+                  <div className="dm-cockpit-shape-head">
+                    {resolverConstruct.mode === "file" && resolverConstruct.ok ? (
+                      <button
+                        type="button"
+                        className="dm-btn-primary-sm"
+                        disabled={resolverConstructBusy}
+                        onClick={applyResolverConstruct}
+                      >
+                        {resolverConstructBusy ? "Applying…" : "Apply resolver"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="dm-btn-outline"
+                      disabled={resolverConstructBusy}
+                      onClick={() => { setResolverConstruct(null); setResolverConstructMessage(""); }}
+                    >
+                      {resolverConstruct.mode === "file" && resolverConstruct.ok ? "Cancel" : "Dismiss"}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : null}
             {dataSourceMessage ? <p className="dm-sandbox-tool-test-msg">{dataSourceMessage}</p> : null}
           </>
         )}
-        {isApiRegistry && sandboxToolFlow === "draft" && (
-          <SandboxToolDraftPanel
-            registryRow={draft}
-            draftOptions={sandboxToolDraft}
-            disabled={saving || sandboxToolCreating}
-            onDraftChange={setSandboxToolDraft}
-            onRequestConfirm={() => setSandboxToolFlow("confirm")}
-            onCancel={() => setSandboxToolFlow(null)}
-          />
-        )}
-        <SandboxToolConfirmModal
-          open={isApiRegistry && sandboxToolFlow === "confirm"}
-          toolName={sandboxToolDraft?.name || ""}
-          authRef={sandboxToolDraft?.authRef || draft.authRef}
-          orchestrationGraph={sandboxToolDraft?.orchestrationGraph}
-          creating={sandboxToolCreating}
-          onConfirm={createSandboxToolFromRegistry}
-          onCancel={() => setSandboxToolFlow("draft")}
-        />
         {isSandbox && sidecarMode !== "graph" && sidecarMode !== "trace" && sandboxMessage && (
           <SandboxRunPanel
             status={draft.status}
@@ -2024,7 +2236,7 @@ function DataModelRecordDrawer({
           />
         )}
         <div className="dm-record-fields">
-          {isApiRegistry && sandboxToolFlow === "draft" ? null : hideRecordFields ? null : isSandbox ? (
+          {hideRecordFields ? null : isSandbox ? (
             <SandboxRecordFields
               draft={draft}
               setDraft={setDraft}

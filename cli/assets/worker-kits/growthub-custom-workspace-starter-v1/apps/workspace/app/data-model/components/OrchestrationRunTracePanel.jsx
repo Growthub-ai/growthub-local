@@ -531,7 +531,7 @@ export function OrchestrationRunTracePanel({
             Runs <span aria-hidden="true">/</span> <code>{activeConsoleRecord?.runId || "preview"}</code>
           </span>
           <h2>Run console</h2>
-          <p>{summaryText} · {row?.Name || "Sandbox tool"}</p>
+          <p>{summaryText} · {row?.Name || "Workflow"}</p>
         </div>
         <div className="dm-run-console__head-actions">
           {canReplay && (

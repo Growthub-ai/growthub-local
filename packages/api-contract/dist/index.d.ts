@@ -32,6 +32,7 @@
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
+ *   - `@growthub/api-contract/resolver-registry` — Unified API Resolver Registry (1.5.1)
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -65,5 +66,7 @@ export type { AgentOutcomeReceiptKind, AgentOutcomeStatus, AgentOutcomeLane, Age
 export { AGENT_OUTCOME_RECEIPT_KINDS, AGENT_OUTCOME_STATUSES, AGENT_OUTCOMES_SOURCE_ID, WORKSPACE_AGENT_LOOP_V1, isAgentOutcomeReceipt, WORKSPACE_OUTCOME_CONTRACT_VERSION, } from "./workspace-outcome.js";
 export type { AppSurfaceRow, AppHealthStatus, AppLinkRollup, AppNextAction, AppAssignmentPacket, WorkspaceAppEntry, DetectedAppSurface, WorkspaceFleetSummary, WorkspaceAppsResponse, } from "./workspace-apps.js";
 export { APP_REGISTRY_OBJECT_ID, APP_SURFACE_OBJECT_TYPE, isAppAssignmentPacket, WORKSPACE_APPS_CONTRACT_VERSION, } from "./workspace-apps.js";
+export type { ResolverConnectorKind, ResolverProvenance, ResolverRecordRef, ResolverShapeProfile, ResolverNextAction, ResolverRegistryEntry, ResolverRegistrySummary, ResolverRegistryIndex, UnifiedResolverRegistryResponse, ResolverEndpointManifest, } from "./resolver-registry.js";
+export { RESOLVER_CONNECTOR_KINDS, RESOLVER_PROVENANCE_VALUES, RESOLVER_REGISTRY_INDEX_KIND, RESOLVER_ENDPOINT_MANIFEST_KIND, RESOLVER_REGISTRY_DIR, RESOLVER_REGISTRY_INDEX_FILE, RESOLVER_ENDPOINT_MANIFEST_FILE, RESOLVER_ENDPOINT_BASE, RESOLVER_GENERATED_BANNER, isResolverRegistryIndex, WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION, } from "./resolver-registry.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

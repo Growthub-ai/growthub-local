@@ -4,7 +4,7 @@ import { CheckCircle2, X } from "lucide-react";
 
 /**
  * Read-only summary of a successfully tested API Registry row.
- * Shown at the top of the sandbox-tool draft flow (not a blocking modal).
+ * Shown at the top of the workflow draft flow (not a blocking modal).
  */
 export function ApiRegistryReviewModal({ registryRow, onClose = null }) {
   if (!registryRow) return null;
@@ -22,7 +22,7 @@ export function ApiRegistryReviewModal({ registryRow, onClose = null }) {
         <p className="dm-api-review-banner-eyebrow">Connected API</p>
         <h3>{registryRow.Name || integrationId}</h3>
         <p>
-          This endpoint returned a valid response. You can now turn it into a sandbox tool.
+          This endpoint returned a valid response. You can now use it in a workflow canvas.
         </p>
         <code className="dm-api-review-banner-route">
           {method} {baseUrl && endpoint ? `${baseUrl.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}` : endpoint || baseUrl}

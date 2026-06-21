@@ -5046,6 +5046,9 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 }
 .dm-api-action-card-success { grid-template-columns: 1fr auto; }
 .dm-api-action-card-muted { grid-template-columns: 1fr; background: #fafafa; }
+.dm-api-action-card-workflow { grid-template-columns: 1fr; }
+.dm-api-action-card-workflow .dm-api-action-card-actions { align-items: flex-start; }
+.dm-api-action-card-workflow .dm-api-action-card-cta { align-self: flex-start; }
 .dm-api-action-card-note { font-size: 11px; color: #6b7280; margin-top: 4px; }
 .dm-api-action-checklist { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .dm-api-action-checklist li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #374151; }
