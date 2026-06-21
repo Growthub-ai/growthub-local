@@ -93,32 +93,6 @@ function sandboxRowsForIntegration(workspaceConfig, integrationId) {
   return rows;
 }
 
-/**
- * The first sandbox/workflow row that calls this API (by an api-registry-call
- * node's registryId, the scheduler ref, or shared authRef), with its object id
- * and row name — so the journey can OPEN the existing workflow canvas, not just
- * report that one exists.
- */
-function sandboxLinkForIntegration(workspaceConfig, integrationId) {
-  const id = clean(integrationId);
-  if (!id) return null;
-  for (const object of findObjectsByType(workspaceConfig, "sandbox-environment")) {
-    for (const row of Array.isArray(object.rows) ? object.rows : []) {
-      const envRefs = clean(row?.envRefs);
-      const schedulerId = clean(row?.schedulerRegistryId);
-      const cfg = parseMaybeJson(row?.orchestrationConfig);
-      const callsApi = Array.isArray(cfg?.nodes) && cfg.nodes.some(
-        (n) => n?.type === "api-registry-call"
-          && clean(n?.config?.registryId || n?.config?.integrationId) === id,
-      );
-      if (callsApi || schedulerId === id || envRefs.split(",").map(clean).includes(clean(row?.authRef))) {
-        return { objectId: clean(object.id), rowName: clean(row?.Name) };
-      }
-    }
-  }
-  return null;
-}
-
 function dataSourceRowsForIntegration(workspaceConfig, integrationId) {
   const id = clean(integrationId);
   if (!id) return [];
@@ -171,7 +145,6 @@ function deriveApiRegistryCreationState(input = {}) {
 
   const sandboxRows = sandboxRowsForIntegration(workspaceConfig, integrationId);
   const sandboxExists = sandboxRows.length > 0;
-  const sandboxLink = sandboxExists ? sandboxLinkForIntegration(workspaceConfig, integrationId) : null;
   const sourceLinks = dataSourceRowsForIntegration(workspaceConfig, integrationId);
   const sourceExists = sourceLinks.length > 0;
   const linkedSourceId = sourceExists ? clean(sourceLinks[0].row?.sourceId) : "";
@@ -275,21 +248,15 @@ function deriveApiRegistryCreationState(input = {}) {
       : null,
   });
 
-  // Operational lane — the same governed workflow canvas the rest of the product
-  // uses: Input → API Registry → Transform → Result. Not a separate studio; this
-  // is the API Registry record becoming a reusable workflow step.
+  // Optional automation lane — a sandbox/workflow that calls this API.
   step({
     id: "sandbox-tool",
-    label: "Use this API in a workflow",
+    label: "Automate (sandbox tool)",
     status: sandboxExists ? "complete" : (tested ? "optional" : "blocked"),
     description: sandboxExists
-      ? "A workflow canvas (Input → API Registry → Transform → Result) calls this API."
-      : "Optional: turn this API into a governed workflow step — Input → API Registry → Transform → Result — that you can run, schedule, or publish.",
-    action: sandboxExists
-      ? (sandboxLink && sandboxLink.objectId
-          ? { id: "open-workflow", label: "Open workflow", objectId: sandboxLink.objectId, rowName: sandboxLink.rowName }
-          : null)
-      : (tested ? { id: "create-sandbox-tool", label: "Create workflow canvas" } : null),
+      ? "A sandbox tool calls this API."
+      : "Optional: wrap this API in a sandbox/workflow you can run or schedule.",
+    action: tested && !sandboxExists ? { id: "create-sandbox-tool", label: "Create sandbox tool" } : null,
   });
 
   for (const s of steps) { if (!s.hint) delete s.hint; }

@@ -176,7 +176,6 @@ These are not marketing lines — they are invariants the tests and CI enforce:
 | Product/agent guarantee | Proven by |
 | --- | --- |
 | No-code journey (no blank form; detected summary; one action) | `unit-resolver-registry.test.mjs` → "GOLDEN PATH" |
-| API Registry record → workflow canvas (canonical graph, draft, dup-safe) | `unit-api-registry-workflow-canvas.test.mjs` (CI-enforced) |
 | Cockpit constructor = governed apply payload | "constructor-integration" |
 | Agent-operability (trust + hints per state) | "agent-operability" |
 | Full connector taxonomy honored (not Nango-only) | "structured governance values" (×2), "webhook is http" |
@@ -217,34 +216,3 @@ These are tracked as post-merge work, not represented as done:
    derivation is proven at the unit level ("constructor-integration") and the
    edited `/data-model` client component is compile-checked in the E2E; a real
    click-through is deferred (no reliable browser driver in CI).
-
-## API Registry official record activation journey
-
-The API Registry record is the **source of truth**; it is the entry point into
-the same governed workflow system, not a separate "resolver studio". One record
-projects into three governed expressions:
-
-- **Resolver endpoint** — the data-plane projection (`/api/resolvers/<resolverId>`).
-- **Data Source** — the persistence / row-consumption projection.
-- **Workflow canvas** — the operational projection: the canonical orchestration
-  graph **Input → API Registry → Transform → Result** (`api-registry-call`
-  carries `registryId`/method/endpoint/authRef; `transform-filter` carries the
-  detected `rootPath` + field previews; `tool-result` writes status/lastResponse
-  /source-record history).
-
-The user-visible arc is one journey: **API Registry record → Test API →
-Understand response → Activate governed rows → Use in a workflow → Persist/route
-the result.** The drawer and the workflow canvas share the same node language
-(API Registry / Transform / Result, Configuration / Test / Advanced) and the same
-`dm-*` / `dm-cockpit-*` / `dm-orchestration-config*` CSS — no new visual language.
-
-Governance is preserved end to end: creating a workflow from a record produces a
-**draft, untested** sandbox row (never auto-live); publish stays server-authoritative;
-the row stores `authRef` names only; duplicate workflows are blocked
-(`findSandboxRowsForRegistry`) with an **Open workflow** action; and the canvas
-surfaces a compact backing note (API untested/failed, or transform `rootPath`
-drifted from the detected shape) that links back to the record.
-
-Coverage: `scripts/unit-api-registry-workflow-canvas.test.mjs` (CI-enforced) —
-detected shape → canonical graph, draft/untested row, duplicate prevention,
-journey open-vs-create, no secret/PII serialization.
