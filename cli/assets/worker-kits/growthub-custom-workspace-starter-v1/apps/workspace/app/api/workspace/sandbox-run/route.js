@@ -252,6 +252,14 @@ async function runServerlessScheduler({
       agentHost: agentHost || null,
       lifecycleStatus: String(row.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft",
       version: row.version ?? "",
+      // Schedule travels with the run so the remote handler / QStash forwarder
+      // knows the cadence this invocation belongs to (no-code workflow persistence).
+      schedule: {
+        cadence: String(row.scheduleCadence || "manual").trim().toLowerCase() || "manual",
+        cron: String(row.scheduleCron || "").trim() || null,
+        provider: String(row.scheduleProvider || "").trim() || null,
+        timezone: String(row.scheduleTimezone || "").trim() || "UTC",
+      },
       instructions,
       command,
       timeoutMs,

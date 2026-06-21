@@ -41,12 +41,12 @@ test("serverless without scheduler → scheduler step active, next action link",
   assert.equal(s.complete, false);
 });
 
-test("serverless + healthy scheduler + auth + durable store → complete, 100", () => {
+test("serverless + healthy scheduler + auth + cadence + durable store → complete, 100", () => {
   const cfg = { dataModel: { objects: [
     { objectType: "api-registry", rows: [{ integrationId: "qstash-sched", authRef: "QSTASH", status: "connected" }] },
   ] } };
   const s = deriveSandboxServerlessState({
-    sandboxRow: { runLocality: "serverless", adapter: "serverless", schedulerRegistryId: "qstash-sched" },
+    sandboxRow: { runLocality: "serverless", adapter: "serverless", schedulerRegistryId: "qstash-sched", scheduleCadence: "daily" },
     workspaceConfig: cfg,
     configuredEnvRefs: ["QSTASH"],
     persistenceAdapters: [{ id: "qstash-kv", label: "Qstash KV", mode: "kv", requiredEnv: ["QSTASH_KV_REST_URL"], configured: true, missingEnv: [] }],
@@ -54,9 +54,32 @@ test("serverless + healthy scheduler + auth + durable store → complete, 100", 
   const status = byId(s);
   assert.equal(status.scheduler, "complete");
   assert.equal(status["scheduler-auth"], "complete");
+  assert.equal(status.cadence, "complete");
   assert.equal(status.persistence, "complete");
   assert.equal(s.complete, true);
   assert.equal(s.score, 100);
+  assert.equal(s.cadence, "daily");
+  assert.equal(s.cron, "0 9 * * *");
+});
+
+test("cadence step — manual is active (nudge to schedule); recurring w/o cron is blocked", () => {
+  const base = { runLocality: "serverless", adapter: "serverless", schedulerRegistryId: "s" };
+  const manual = deriveSandboxServerlessState({ sandboxRow: { ...base } });
+  assert.equal(byId(manual).cadence, "active");
+  assert.equal(manual.cadenceScheduled, false);
+
+  const recurringNoCron = deriveSandboxServerlessState({ sandboxRow: { ...base, scheduleCadence: "recurring" } });
+  assert.equal(byId(recurringNoCron).cadence, "blocked");
+  assert.ok(recurringNoCron.cronError);
+
+  const recurringValid = deriveSandboxServerlessState({ sandboxRow: { ...base, scheduleCadence: "recurring", scheduleCron: "*/10 * * * *" } });
+  assert.equal(byId(recurringValid).cadence, "complete");
+  assert.equal(recurringValid.cron, "*/10 * * * *");
+});
+
+test("local workflow → no cadence step (cadence is a serverless concern)", () => {
+  const s = deriveSandboxServerlessState({ sandboxRow: { runLocality: "local", adapter: "local-process", scheduleCadence: "daily" } });
+  assert.ok(!s.steps.map((x) => x.id).includes("cadence"));
 });
 
 test("serverless + scheduler missing auth → scheduler-auth pending with settings action", () => {
