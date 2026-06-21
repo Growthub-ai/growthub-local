@@ -38,7 +38,7 @@ function writeFiles(dir: string, files: Record<string, string>): void {
   }
 }
 
-function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void {
+function copyKitAssets(destRoot: string, kitId = "growthub-custom-workspace-starter-v1"): void {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const sourceRoot = path.resolve(moduleDir, `../../assets/worker-kits/${kitId}`);
   fs.cpSync(sourceRoot, destRoot, { recursive: true });
@@ -60,7 +60,7 @@ afterEach(() => {
 function makeReport(overrides: Partial<KitForkDriftReport> = {}): KitForkDriftReport {
   return {
     forkId: "test-fork",
-    kitId: "creative-strategist-v1",
+    kitId: "growthub-custom-workspace-starter-v1",
     forkVersion: "1.0.0",
     upstreamVersion: "1.1.0",
     hasUpstreamUpdate: true,
@@ -76,7 +76,7 @@ function makeReport(overrides: Partial<KitForkDriftReport> = {}): KitForkDriftRe
 function makeReg(forkPath: string): KitForkRegistration {
   return {
     forkId: "test-fork",
-    kitId: "creative-strategist-v1",
+    kitId: "growthub-custom-workspace-starter-v1",
     baseVersion: "1.0.0",
     forkPath,
     registeredAt: new Date().toISOString(),
@@ -101,13 +101,13 @@ describe("detectKitForkDrift", () => {
 
   it("returns a clean report when fork matches the bundled kit", () => {
     const forkDir = makeTempDir("fork-clean-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     const reg = makeReg(forkDir);
     const report = detectKitForkDrift(reg);
 
     expect(report.forkId).toBe("test-fork");
-    expect(report.kitId).toBe("creative-strategist-v1");
+    expect(report.kitId).toBe("growthub-custom-workspace-starter-v1");
     expect(report.upstreamVersion).toBeTruthy();
     // A freshly copied fork should have no file drift (upstream files all present)
     const addedDrifts = report.fileDrifts.filter((d) => d.changeType === "added");
@@ -116,7 +116,7 @@ describe("detectKitForkDrift", () => {
 
   it("detects added drift when a fork is missing an upstream file", () => {
     const forkDir = makeTempDir("fork-missing-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Find a file that actually exists in the upstream kit to remove
     // kit.json is always present in every kit
@@ -136,7 +136,7 @@ describe("detectKitForkDrift", () => {
 
   it("detects modified drift on kit.json with critical severity", () => {
     const forkDir = makeTempDir("fork-modified-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Mutate kit.json in the fork
     const kitJsonPath = path.resolve(forkDir, "kit.json");
@@ -156,7 +156,7 @@ describe("detectKitForkDrift", () => {
 
   it("detects custom skills in fork-only paths matching CUSTOM_SKILL_PATTERNS", () => {
     const forkDir = makeTempDir("fork-skills-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Add a custom skill
     writeFiles(forkDir, { "custom-skills/my-prompt.md": "# My custom prompt" });
@@ -169,7 +169,7 @@ describe("detectKitForkDrift", () => {
 
   it("reflects hasUpstreamUpdate based on semver comparison", () => {
     const forkDir = makeTempDir("fork-semver-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Set fork version to a very high number so it appears newer than upstream
     const regNewer = { ...makeReg(forkDir), baseVersion: "99.0.0" };
@@ -314,7 +314,7 @@ describe("applyKitForkHealPlan — dry run", () => {
 
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.1.0",
       actions: [{
@@ -344,7 +344,7 @@ describe("applyKitForkHealPlan — skip list", () => {
 
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.1.0",
       actions: [{
@@ -372,7 +372,7 @@ describe("applyKitForkHealPlan — skip_user_modified", () => {
 
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.1.0",
       actions: [{
@@ -411,12 +411,12 @@ describe("applyKitForkHealPlan — update_package_json_deps", () => {
     });
 
     // NOTE: The actual upstream resolution uses the bundled asset root.
-    // If creative-strategist-v1 has no package.json, the action will be skipped (safe).
+    // If growthub-custom-workspace-starter-v1 has no package.json, the action will be skipped (safe).
     // We test the merge logic directly here by confirming no errors occur.
     const reg = makeReg(forkDir);
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.1.0",
       actions: [{
@@ -452,7 +452,7 @@ describe("applyKitForkHealPlan — updatedRegistration", () => {
 
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.5.0",
       actions: [],
@@ -473,7 +473,7 @@ describe("applyKitForkHealPlan — updatedRegistration", () => {
 
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.5.0",
       actions: [{
@@ -501,7 +501,7 @@ describe("applyKitForkHealPlan — updatedRegistration", () => {
 describe("applyKitForkHealPlan — patch_manifest", () => {
   it("patches specified kit.json fields from upstream when they differ", () => {
     const forkDir = makeTempDir("fork-manifest-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Downgrade schemaVersion in fork to trigger a patch
     const kitJsonPath = path.resolve(forkDir, "kit.json");
@@ -513,7 +513,7 @@ describe("applyKitForkHealPlan — patch_manifest", () => {
     const reg = makeReg(forkDir);
     const plan = {
       forkId: "test-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       fromVersion: "1.0.0",
       toVersion: "1.1.0",
       actions: [{

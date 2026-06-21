@@ -35,14 +35,13 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
-const REFERENCE_KIT_ROOT = path.resolve(
-  REPO_ROOT,
-  "cli/assets/worker-kits/growthub-creative-video-pipeline-v1",
-);
-const SIMPLE_KIT_ROOT = path.resolve(
-  REPO_ROOT,
-  "cli/assets/worker-kits/growthub-marketing-skills-v1",
-);
+// The pipeline + simple reference kits were removed from the shipped catalog
+// (only the two governed workspace starters ship). These committed test
+// fixtures preserve coverage of the still-shipping pipeline-kits /
+// workspace-dependencies / kit-health runtime readers without depending on a
+// bundled kit. Fixtures live under __tests__ and are not part of the CLI tarball.
+const REFERENCE_KIT_ROOT = path.resolve(HERE, "fixtures/pipeline-reference-kit");
+const SIMPLE_KIT_ROOT = path.resolve(HERE, "fixtures/simple-kit");
 
 describe("pipeline-kits runtime reader", () => {
   it("parses the reference kit's pipeline.manifest.json onto the SDK shape", () => {

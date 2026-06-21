@@ -23,16 +23,8 @@ import {
 
 const ORIGINAL_ENV = { ...process.env };
 const CUSTOM_WORKSPACE_KIT_IDS = [
-  "growthub-open-higgsfield-studio-v1",
-  "growthub-geo-seo-v1",
-  "growthub-postiz-social-v1",
-  "growthub-open-montage-studio-v1",
-  "growthub-ai-website-cloner-v1",
+  "growthub-custom-workspace-starter-v1",
   "growthub-agency-portal-starter-v1",
-  "growthub-twenty-crm-v1",
-  "growthub-zernio-social-v1",
-  "growthub-hyperframes-studio-v1",
-  "growthub-video-use-studio-v1",
 ] as const;
 
 function makeTempDir(prefix: string): string {
@@ -89,7 +81,7 @@ function readZipEntryNames(zipPath: string): string[] {
   return names.sort();
 }
 
-function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void {
+function copyKitAssets(destRoot: string, kitId = "growthub-custom-workspace-starter-v1"): void {
   const sourceRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     `../../assets/worker-kits/${kitId}`,
@@ -109,32 +101,19 @@ describe("worker kit service", () => {
   it("lists bundled worker kits with type metadata", () => {
     const kits = listBundledKits();
     expect(kits.map((kit) => kit.id)).toEqual([
-      "creative-strategist-v1",
-      "growthub-email-marketing-v1",
-      "growthub-open-higgsfield-studio-v1",
-      "growthub-geo-seo-v1",
-      "growthub-postiz-social-v1",
-      "growthub-open-montage-studio-v1",
-      "growthub-ai-website-cloner-v1",
-      "growthub-agency-portal-starter-v1",
-      "growthub-creative-video-pipeline-v1",
-      "growthub-twenty-crm-v1",
       "growthub-custom-workspace-starter-v1",
-      "growthub-zernio-social-v1",
-      "growthub-marketing-skills-v1",
-      "growthub-hyperframes-studio-v1",
-      "growthub-video-use-studio-v1",
+      "growthub-agency-portal-starter-v1",
     ]);
-    expect(kits.find((kit) => kit.id === "creative-strategist-v1")).toMatchObject({
-      bundleId: "creative-strategist-v1",
-      briefType: "video-creative-brief",
+    expect(kits.find((kit) => kit.id === "growthub-custom-workspace-starter-v1")).toMatchObject({
+      bundleId: "growthub-custom-workspace-starter-v1",
+      briefType: "custom-workspace-starter",
       type: "worker",
       executionMode: "export",
       activationModes: ["export"],
     });
-    expect(kits.find((kit) => kit.id === "growthub-open-higgsfield-studio-v1")).toMatchObject({
-      bundleId: "growthub-open-higgsfield-studio-v1",
-      briefType: "open-higgsfield-visual-production",
+    expect(kits.find((kit) => kit.id === "growthub-agency-portal-starter-v1")).toMatchObject({
+      bundleId: "growthub-agency-portal-starter-v1",
+      briefType: "agency-portal-workspace",
       type: "worker",
       executionMode: "export",
       activationModes: ["export"],
@@ -182,49 +161,49 @@ describe("worker kit service", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;
 
-    const info = inspectBundledKit("creative-strategist-v1");
+    const info = inspectBundledKit("growthub-agency-portal-starter-v1");
 
     expect(info.type).toBe("worker");
     expect(info.executionMode).toBe("export");
     expect(info.activationModes).toEqual(["export"]);
     expect(info.schemaVersion).toBe(2);
-    expect(info.publicExampleBrandPaths).toEqual(["brands/solawave/brand-kit.md"]);
+    expect(info.publicExampleBrandPaths).toEqual(["brands/growthub/brand-kit.md"]);
     expect(info.exportFolderPath).toBe(
-      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-creative-strategist-v1"),
+      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-agency-portal-starter-v1"),
     );
-    expect(info.requiredPaths).toContain("brands/solawave/brand-kit.md");
+    expect(info.requiredPaths).toContain("docs");
   });
 
   it("downloads both the expanded folder and zip and keeps zip contents aligned", () => {
     const outDir = makeTempDir("worker-kit-out-");
-    const result = downloadBundledKit("creative-strategist-v1", outDir);
+    const result = downloadBundledKit("growthub-agency-portal-starter-v1", outDir);
 
     expect(fs.existsSync(result.folderPath)).toBe(true);
     expect(fs.existsSync(result.zipPath)).toBe(true);
-    expect(listRelativeFiles(result.folderPath)).toContain("brands/solawave/brand-kit.md");
+    expect(listRelativeFiles(result.folderPath)).toContain("brands/growthub/brand-kit.md");
     expect(listRelativeFiles(result.folderPath)).not.toContain("brands/clarifion/brand-kit.md");
 
     const folderFiles = listRelativeFiles(result.folderPath);
     const zipEntries = readZipEntryNames(result.zipPath);
     const expectedZipEntries = folderFiles.map((relativePath) =>
-      path.posix.join("growthub-agent-worker-kit-creative-strategist-v1", relativePath),
+      path.posix.join("growthub-agent-worker-kit-agency-portal-starter-v1", relativePath),
     );
 
     expect(zipEntries).toEqual(expectedZipEntries);
   });
 
-  it("inspects the Open Higgsfield kit and exposes the new export path", () => {
+  it("inspects the custom workspace starter and exposes its export path", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;
 
-    const info = inspectBundledKit("growthub-open-higgsfield-studio-v1");
+    const info = inspectBundledKit("growthub-custom-workspace-starter-v1");
 
     expect(info.type).toBe("worker");
     expect(info.executionMode).toBe("export");
     expect(info.activationModes).toEqual(["export"]);
     expect(info.publicExampleBrandPaths).toEqual(["brands/growthub/brand-kit.md"]);
     expect(info.exportFolderPath).toBe(
-      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-open-higgsfield-studio-v1"),
+      path.resolve(paperclipHome, "kits", "exports", "growthub-custom-workspace-starter-v1"),
     );
     expect(info.requiredPaths).toContain("docs");
   });
@@ -233,9 +212,9 @@ describe("worker kit service", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;
 
-    const resolvedPath = resolveKitPath("creative-strategist-v1");
+    const resolvedPath = resolveKitPath("growthub-agency-portal-starter-v1");
     expect(resolvedPath).toBe(
-      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-creative-strategist-v1"),
+      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-agency-portal-starter-v1"),
     );
     expect(fs.existsSync(resolvedPath)).toBe(false);
   });
@@ -252,7 +231,7 @@ describe("worker kit service", () => {
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
     expect(() =>
-      validateBundledKitAssetRoot(tempRoot, { kitId: "creative-strategist-v1" }),
+      validateBundledKitAssetRoot(tempRoot, { kitId: "growthub-custom-workspace-starter-v1" }),
     ).toThrow(/missing required path: templates\/missing-file\.md/);
   });
 });
@@ -347,7 +326,7 @@ describe("kit validate command", () => {
 
     const result = validateKitDirectory(tempRoot);
     expect(result.valid).toBe(true);
-    expect(result.kitId).toBe("creative-strategist-v1");
+    expect(result.kitId).toBe("growthub-custom-workspace-starter-v1");
     expect(result.schemaVersion).toBe(2);
     expect(result.errors).toHaveLength(0);
   });
@@ -454,7 +433,7 @@ describe("kit validate command", () => {
     const tempRoot = makeTempDir("worker-kit-bundle-mismatch-");
     copyKitAssets(tempRoot);
 
-    const bundlePath = path.resolve(tempRoot, "bundles/creative-strategist-v1.json");
+    const bundlePath = path.resolve(tempRoot, "bundles/growthub-custom-workspace-starter-v1.json");
     const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8")) as {
       bundle: { kitId: string };
     };
