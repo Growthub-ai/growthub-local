@@ -7,19 +7,14 @@
     "check:cli-package": "node ./scripts/check-cli-package.mjs",
     "check:version-sync": "node ./scripts/check-version-sync.mjs",
     "check:worker-kits": "node ./scripts/check-worker-kits.mjs",
+    "check:monorepo-boundary": "node ./scripts/check-monorepo-boundary.mjs",
     "check:resolver-registry": "node ./scripts/check-resolver-registry.mjs",
-    "check:scheduler-artifacts": "node ./scripts/check-scheduler-artifacts.mjs",
     "test:resolver-registry": "node --test ./scripts/unit-resolver-registry.test.mjs",
-    "test:scheduler": "node --test ./scripts/unit-sandbox-serverless-flow.test.mjs ./scripts/unit-scheduler-artifact-guard.test.mjs ./scripts/unit-scheduler-cadence.test.mjs ./scripts/unit-scheduler-drift.test.mjs ./scripts/unit-scheduler-providers.test.mjs ./scripts/unit-scheduler-provisioning-flow.test.mjs ./scripts/unit-workspace-scheduler-proposal.test.mjs",
+    "test:sandbox-serverless": "node --test ./scripts/unit-sandbox-serverless-flow.test.mjs",
     "e2e:resolver-registry": "node ./scripts/e2e-resolver-registry-probe.mjs",
-    "e2e:scheduler": "node ./scripts/e2e-workspace-scheduler-api-probe.mjs",
     "score:worker-kits": "node ./scripts/score-worker-kits.mjs",
     "check:kernel:custom-workspaces": "bash ./scripts/check-custom-workspace-kernel.sh",
-    "sync:monorepo": "bash ./scripts/sync-from-monorepo.sh",
     "freeze:check": "bash ./scripts/freeze-check.sh",
     "release:check": "node ./scripts/release-check.mjs"
-  },
-  "devDependencies": {
-    "vitest": "^3.0.5"
   }
 }

@@ -42,6 +42,22 @@ When behavior conflicts, use this order:
 
 Do not preserve older prose "for history" in active docs.
 
+## Mono-Repo Provenance & Traversal
+
+This repo is the **authoritative source of truth** for the product — edit here; there is no separate upstream. Before editing, know which **role zone** a path plays, so you can judge the blast radius of a change. The full map is [`docs/MONOREPO_PROVENANCE_MAP_V1.md`](./docs/MONOREPO_PROVENANCE_MAP_V1.md); the enforced form is `pnpm check:monorepo-boundary` (`scripts/check-monorepo-boundary.mjs`, `--json` for machine output).
+
+| Zone | Paths | Role |
+| --- | --- | --- |
+| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/api-contract/`, `packages/create-growthub-local/`, `packages/db/` (partial OSS view) | The published value. |
+| **vendored-runtime** | `server/`, `ui/`, `packages/shared/` | Bundled Paperclip local runtime — required to run a workspace, but **not** the product. Separate `@paperclipai/server` publish path. |
+| **scaffolding** | `docs/`, `scripts/`, root contracts, `.github/`, `.githooks/`, `.claude/`, root config | Tooling, contracts, docs, CI. Freely editable. |
+
+Rules (authoritative detail: [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./docs/AGENT_DIST_REBUILD_GUIDE.md)):
+1. **Two lanes.** This OSS tree is a partial view; it **cannot rebuild `cli/dist`** (adapter/plugin packages are absent by design). Agents own **Phase A: source-only `cli/src/**` changes** with lockstep version bump and the six gate scripts (`bash scripts/agent-dist-verify.sh pre-push`). **Never edit or commit `cli/dist/**`** — flag *"dist rebuild required in Phase B"* for the super-admin.
+2. Removing/deprecating a worker kit is a **CLI change**: edit `cli/src/kits/catalog.ts` **before** dropping the kit directory, so `dist/index.js` never references a missing kit. Keep `@growthub/cli` + `@growthub/create-growthub-local` backwards-compatible around the workspace.
+3. There is **no top-level `apps/`** in this repo. `apps/` is a property of an **exported workspace** (`apps/workspace`); its frozen topology is `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`.
+4. **Never remove or "fill in"** the `pnpm-workspace.yaml` globs / `cli/esbuild.config.mjs` aliases that resolve to nothing here (`packages/adapters/*`, `packages/plugins/*`) — they are intentional full-workspace mirrors. `packages/db` is a partial-view core package, not an orphan.
+
 ## Runtime And Validation
 
 Use the canonical runtime control surface for this repo. Do not replace it with ad-hoc server/UI loops unless a maintainer explicitly assigns that path.

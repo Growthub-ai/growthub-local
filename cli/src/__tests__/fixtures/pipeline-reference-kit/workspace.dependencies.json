@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "kitId": "growthub-creative-video-pipeline-v1",
+  "dependencies": [
+    {
+      "id": "video-use",
+      "kind": "git-fork",
+      "env": "VIDEO_USE_HOME",
+      "setup": "setup/clone-fork.sh",
+      "install": "setup/install-skill.sh",
+      "health": "setup/verify-env.mjs",
+      "usedByStages": ["video-edit"],
+      "interfaceArtifact": "output/<client>/<project>/generative/manifest.json",
+      "handoffArtifact": "output/<client>/<project>/final/final.mp4",
+      "description": "External video editing fork. Stage 3 delegates entirely to this repo via edit-plan.md. The kit MUST NOT inline video-use logic."
+    }
+  ],
+  "convention": {
+    "spec": "docs/WORKER_KIT_CONTRACT_V1.md",
+    "sdkType": "@growthub/api-contract/workspaces#WorkspaceDependencyManifest",
+    "sdkVersion": 1,
+    "version": 1,
+    "interpretedBy": ["growthub kit dependencies inspect", "agents", "operators"],
+    "runtimeEnforcement": "none"
+  }
+}

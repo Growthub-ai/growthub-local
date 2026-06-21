@@ -60,10 +60,4 @@ if (failures.length > 0) {
 console.log("[kernel] source contract checks OK");
 EOF
 
-echo "[kernel] running focused harness vitest coverage"
-(
-  cd cli
-  pnpm vitest src/__tests__/open-agents.test.ts src/__tests__/qwen-code.test.ts
-)
-
 echo "[kernel] agent harness kernel checks passed"

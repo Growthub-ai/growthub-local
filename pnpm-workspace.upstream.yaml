@@ -1,8 +1,0 @@
-packages:
-  - packages/*
-  - packages/adapters/*
-  - packages/plugins/*
-  - packages/plugins/examples/*
-  - server
-  - ui
-  - cli

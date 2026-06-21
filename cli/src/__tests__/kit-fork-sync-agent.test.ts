@@ -34,7 +34,7 @@ function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function copyKitAssets(destRoot: string, kitId = "creative-strategist-v1"): void {
+function copyKitAssets(destRoot: string, kitId = "growthub-custom-workspace-starter-v1"): void {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const sourceRoot = path.resolve(moduleDir, `../../assets/worker-kits/${kitId}`);
   fs.cpSync(sourceRoot, destRoot, { recursive: true });
@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe("runKitForkSyncJob", () => {
   it("returns failed status when fork registration is not found", async () => {
-    const job = await runKitForkSyncJob("nonexistent-fork", "creative-strategist-v1");
+    const job = await runKitForkSyncJob("nonexistent-fork", "growthub-custom-workspace-starter-v1");
     expect(job.status).toBe("failed");
     expect(job.error).toMatch(/not found/i);
     expect(job.completedAt).toBeTruthy();
@@ -74,12 +74,12 @@ describe("runKitForkSyncJob", () => {
 
   it("completes successfully when fork is already at same version as upstream", async () => {
     const forkDir = makeTempDir("fork-insync-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Register the fork at a very high version to guarantee "already in sync" path
     const reg = registerKitFork({
       forkPath: forkDir,
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       baseVersion: "99.99.99",
     });
 
@@ -98,7 +98,7 @@ describe("runKitForkSyncJob", () => {
   });
 
   it("persists job to disk and is readable via getKitForkSyncJob", async () => {
-    const job = await runKitForkSyncJob("ghost-fork", "creative-strategist-v1");
+    const job = await runKitForkSyncJob("ghost-fork", "growthub-custom-workspace-starter-v1");
 
     const fromDisk = getKitForkSyncJob(job.jobId);
     expect(fromDisk).not.toBeNull();
@@ -108,7 +108,7 @@ describe("runKitForkSyncJob", () => {
 
   it("executes a dry-run without writing files to the fork", async () => {
     const forkDir = makeTempDir("fork-dryrun-");
-    copyKitAssets(forkDir, "creative-strategist-v1");
+    copyKitAssets(forkDir, "growthub-custom-workspace-starter-v1");
 
     // Remove skills.md (a real upstream file) to create drift
     const skillsPath = path.resolve(forkDir, "skills.md");
@@ -116,7 +116,7 @@ describe("runKitForkSyncJob", () => {
 
     const reg = registerKitFork({
       forkPath: forkDir,
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       baseVersion: "0.0.1",
     });
 
@@ -150,8 +150,8 @@ describe("listKitForkSyncJobs", () => {
   });
 
   it("returns all persisted jobs", async () => {
-    const j1 = await runKitForkSyncJob("fork-a", "creative-strategist-v1");
-    const j2 = await runKitForkSyncJob("fork-b", "creative-strategist-v1");
+    const j1 = await runKitForkSyncJob("fork-a", "growthub-custom-workspace-starter-v1");
+    const j2 = await runKitForkSyncJob("fork-b", "growthub-custom-workspace-starter-v1");
 
     const all = listKitForkSyncJobs();
     expect(all.some((j) => j.jobId === j1.jobId)).toBe(true);
@@ -159,15 +159,15 @@ describe("listKitForkSyncJobs", () => {
   });
 
   it("filters by forkId", async () => {
-    await runKitForkSyncJob("fork-alpha", "creative-strategist-v1");
-    await runKitForkSyncJob("fork-beta", "creative-strategist-v1");
+    await runKitForkSyncJob("fork-alpha", "growthub-custom-workspace-starter-v1");
+    await runKitForkSyncJob("fork-beta", "growthub-custom-workspace-starter-v1");
 
     const alpha = listKitForkSyncJobs({ forkId: "fork-alpha" });
     expect(alpha.every((j) => j.forkId === "fork-alpha")).toBe(true);
   });
 
   it("filters by status", async () => {
-    await runKitForkSyncJob("some-fork", "creative-strategist-v1");
+    await runKitForkSyncJob("some-fork", "growthub-custom-workspace-starter-v1");
 
     const failed = listKitForkSyncJobs({ status: "failed" });
     expect(failed.every((j) => j.status === "failed")).toBe(true);
@@ -178,11 +178,11 @@ describe("listKitForkSyncJobs", () => {
     const jobId1 = "sort-test-job-a";
     const jobId2 = "sort-test-job-b";
     writeRawJob(jobId1, {
-      jobId: jobId1, forkId: "fork-x", kitId: "creative-strategist-v1",
+      jobId: jobId1, forkId: "fork-x", kitId: "growthub-custom-workspace-starter-v1",
       status: "completed", createdAt: "2024-01-01T00:00:00.000Z",
     });
     writeRawJob(jobId2, {
-      jobId: jobId2, forkId: "fork-y", kitId: "creative-strategist-v1",
+      jobId: jobId2, forkId: "fork-y", kitId: "growthub-custom-workspace-starter-v1",
       status: "completed", createdAt: "2024-02-01T00:00:00.000Z",
     });
 
@@ -203,7 +203,7 @@ describe("cancelKitForkSyncJob", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "pending",
       createdAt: new Date().toISOString(),
     });
@@ -222,7 +222,7 @@ describe("cancelKitForkSyncJob", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "completed",
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
@@ -236,7 +236,7 @@ describe("cancelKitForkSyncJob", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "failed",
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
@@ -261,7 +261,7 @@ describe("pruneKitForkSyncJobs", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "completed",
       createdAt: tenDaysAgo,
       completedAt: tenDaysAgo,
@@ -278,7 +278,7 @@ describe("pruneKitForkSyncJobs", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "completed",
       createdAt: oneHourAgo,
       completedAt: oneHourAgo,
@@ -294,7 +294,7 @@ describe("pruneKitForkSyncJobs", () => {
     writeRawJob(jobId, {
       jobId,
       forkId: "some-fork",
-      kitId: "creative-strategist-v1",
+      kitId: "growthub-custom-workspace-starter-v1",
       status: "pending",
       createdAt: oldDate,
     });
@@ -310,13 +310,13 @@ describe("pruneKitForkSyncJobs", () => {
 
 describe("dispatchKitForkSyncJobBackground", () => {
   it("returns a job ID string immediately", () => {
-    const jobId = dispatchKitForkSyncJobBackground("some-fork", "creative-strategist-v1");
+    const jobId = dispatchKitForkSyncJobBackground("some-fork", "growthub-custom-workspace-starter-v1");
     expect(typeof jobId).toBe("string");
     expect(jobId).toMatch(/^kfj-/);
   });
 
   it("creates a pending job on disk immediately", () => {
-    const jobId = dispatchKitForkSyncJobBackground("some-fork", "creative-strategist-v1");
+    const jobId = dispatchKitForkSyncJobBackground("some-fork", "growthub-custom-workspace-starter-v1");
     const job = getKitForkSyncJob(jobId);
     expect(job).not.toBeNull();
     expect(["pending", "running", "completed", "failed"]).toContain(job!.status);
