@@ -43,6 +43,17 @@ jobs:
           node scripts/check-resolver-registry.mjs
           node --test scripts/unit-resolver-registry.test.mjs
 
+      - name: Validate scheduler registry (artifact guard + unit tests)
+        run: |
+          node scripts/check-scheduler-artifacts.mjs
+          node --test scripts/unit-sandbox-serverless-flow.test.mjs \
+            scripts/unit-scheduler-artifact-guard.test.mjs \
+            scripts/unit-scheduler-cadence.test.mjs \
+            scripts/unit-scheduler-drift.test.mjs \
+            scripts/unit-scheduler-providers.test.mjs \
+            scripts/unit-scheduler-provisioning-flow.test.mjs \
+            scripts/unit-workspace-scheduler-proposal.test.mjs
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 
