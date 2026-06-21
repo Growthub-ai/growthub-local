@@ -1,3 +1,4 @@
+import "../styles/tokens.css";
 import "./globals.css";
 const metadata = {
   title: "Growthub Workspace",

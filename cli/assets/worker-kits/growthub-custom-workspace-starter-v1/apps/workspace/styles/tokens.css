@@ -1,0 +1,129 @@
+/*
+ * Growthub Workspace — Design Tokens (single source of truth)
+ * ===========================================================
+ *
+ * This file is the ONE place global presentation tokens live. Everything the
+ * shell renders — the Data Model page, panels, command palette, pills — reads
+ * from these custom properties via `var(--token)`. Editing a value here is the
+ * supported way to re-theme the workspace; do not redeclare these tokens in
+ * `globals.css` or inside components.
+ *
+ * Authority boundary
+ * ------------------
+ * Tokens are presentation-only. They never participate in `PATCH /api/workspace`
+ * (allowlisted to `dashboards`, `widgetTypes`, `canvas`, `dataModel`) and they
+ * carry no workspace config, credentials, or governed state. Restyling the shell
+ * cannot mutate a governed object — see docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md.
+ *
+ * Design intent
+ * -------------
+ * A calm, systems-driven dark surface: a deep base, a small set of layered
+ * surfaces, restrained cyan accent, one border weight with subtle variants, and
+ * an elevation ramp that reads as "raised paper" rather than heavy drop shadow.
+ * The legacy 11 theme variables are preserved verbatim for backward
+ * compatibility; the remaining groups are additive vocabulary.
+ *
+ * Groups: color · surface · border · text · accent · status · radius ·
+ *         spacing · typography · elevation · motion
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Core palette (legacy contract — values unchanged) ──────────────────── */
+  --bg: #080b12;
+  --sidebar: #0d1118;
+  --panel: #111827;
+  --panel-soft: #0d1420;
+  --ink: #f7fafc;
+  --muted: #93a3b8;
+  --line: #223047;
+  --accent: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.12);
+  --good: #22c55e;
+  --warn: #f59e0b;
+
+  /* ── Surface ramp ───────────────────────────────────────────────────────
+   * Layered from deepest (page) to highest (overlays). Aliased onto the
+   * legacy palette so existing rules keep their look. */
+  --surface-base: var(--bg);              /* page background          */
+  --surface-sunken: var(--panel-soft);    /* wells, inset rows        */
+  --surface-raised: rgba(17, 24, 39, 0.9);/* cards, panels            */
+  --surface-rail: rgba(13, 17, 24, 0.96); /* sidebar / rails          */
+  --surface-overlay: #0f1726;             /* popovers, menus          */
+  /* 1px top highlight that sells the "raised paper" feel on dark surfaces. */
+  --surface-edge: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* ── Border scale ───────────────────────────────────────────────────────
+   * One weight, three intensities. */
+  --line-faint: rgba(34, 48, 71, 0.55);
+  --line-strong: #2c3e5c;
+  --line-accent: rgba(56, 189, 248, 0.28);
+
+  /* ── Text scale ─────────────────────────────────────────────────────────
+   * --ink (primary) and --muted (secondary) are legacy; --ink-soft sits
+   * between them, --ink-faint is for the quietest metadata. */
+  --ink-soft: #c6d1e1;
+  --ink-faint: #6b7c94;
+  --ink-on-accent: #06111d;
+
+  /* ── Accent ramp ────────────────────────────────────────────────────────
+   * --accent and --accent-soft are legacy. */
+  --accent-strong: #0ea5e9;
+  --accent-ring: rgba(56, 189, 248, 0.45);
+  --accent-ink: #d7e8ff;
+
+  /* ── Status ─────────────────────────────────────────────────────────────
+   * --good and --warn are legacy; --bad and --info are additive. */
+  --bad: #ef4444;
+  --info: #6366f1;
+
+  /* ── Radius scale ───────────────────────────────────────────────────────*/
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  /* ── Spacing scale (4px base) ───────────────────────────────────────────*/
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* ── Typography ─────────────────────────────────────────────────────────
+   * --font-mono was referenced via var() across the stylesheet but never
+   * declared; defining it here resolves those usages. */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 24px;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-black: 800;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+
+  /* ── Elevation ──────────────────────────────────────────────────────────
+   * Subtle on dark — depth comes from a soft cast plus the surface edge. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, 0.4);
+  --shadow-overlay: 0 24px 48px rgba(8, 11, 18, 0.5);
+
+  /* ── Motion ─────────────────────────────────────────────────────────────*/
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+}
