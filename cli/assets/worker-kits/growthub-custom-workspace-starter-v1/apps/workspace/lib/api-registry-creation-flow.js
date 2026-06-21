@@ -6,13 +6,13 @@
  * row being edited, the source-records sidecar, and the safe runtime signal, it
  * resolves the full operator journey for THIS API as an ordered list of steps:
  *
- *   register → configure auth → test → (resolver) → sandbox tool → data source
- *   → refresh records
+ *   register → configure auth → test → (resolver) → data source → refresh
+ *   records, then a separate workflow canvas CTA after activation.
  *
  * Each step carries a status (complete | active | pending | blocked | optional),
  * a human description, and — when the operator can act — an `action` descriptor
  * the drawer maps to an existing handler (test / create-data-source /
- * create-sandbox-tool / open-data-source / refresh-source). The cockpit renders
+ * open-data-source / refresh-source / create-workflow-canvas). The cockpit renders
  * this verbatim, so the journey is one derivation, not UI guesswork.
  *
  * Invariants:
@@ -78,14 +78,18 @@ function sandboxRowsForIntegration(workspaceConfig, integrationId) {
   const rows = [];
   for (const object of findObjectsByType(workspaceConfig, "sandbox-environment")) {
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
-      const envRefs = clean(row?.envRefs);
       const schedulerId = clean(row?.schedulerRegistryId);
-      const cfg = parseMaybeJson(row?.orchestrationConfig);
+      const cfg = parseMaybeJson(
+        row?.orchestrationConfig
+          || row?.orchestrationGraph
+          || row?.orchestrationDraftConfig
+          || row?.orchestrationDraftGraph
+      );
       const callsApi = Array.isArray(cfg?.nodes) && cfg.nodes.some(
         (n) => n?.type === "api-registry-call"
           && clean(n?.config?.registryId || n?.config?.integrationId) === id,
       );
-      if (callsApi || schedulerId === id || envRefs.split(",").map(clean).includes(clean(row?.authRef))) {
+      if (callsApi || schedulerId === id) {
         rows.push(row);
       }
     }
@@ -248,17 +252,6 @@ function deriveApiRegistryCreationState(input = {}) {
       : null,
   });
 
-  // Optional automation lane — a sandbox/workflow that calls this API.
-  step({
-    id: "sandbox-tool",
-    label: "Automate (sandbox tool)",
-    status: sandboxExists ? "complete" : (tested ? "optional" : "blocked"),
-    description: sandboxExists
-      ? "A sandbox tool calls this API."
-      : "Optional: wrap this API in a sandbox/workflow you can run or schedule.",
-    action: tested && !sandboxExists ? { id: "create-sandbox-tool", label: "Create sandbox tool" } : null,
-  });
-
   for (const s of steps) { if (!s.hint) delete s.hint; }
 
   const required = steps.filter((s) => s.status !== "optional");
@@ -300,6 +293,15 @@ function deriveApiRegistryCreationState(input = {}) {
     score,
     nextStepId: nextStep ? nextStep.id : null,
     nextAction: nextStep && nextStep.action ? { stepId: nextStep.id, ...nextStep.action } : null,
+    workflowAction: tested
+      ? {
+          id: sandboxExists ? "open-workflow-canvas" : "create-workflow-canvas",
+          label: sandboxExists ? "Open workflow canvas" : "Create workflow",
+          description: sandboxExists
+            ? "Open the workflow canvas that uses this API Registry node."
+            : "Open a workflow canvas with this API Registry call already drafted.",
+        }
+      : null,
     headline: !registered
       ? "Register this API to begin."
       : complete

@@ -131,7 +131,7 @@ export function SandboxOrchestrationEditorPanel({
         </button>
         <div className="dm-orchestration-header__titles">
           <h2>Orchestration graph</h2>
-          <p>{sandboxRow?.Name || "Sandbox tool"}</p>
+          <p>{sandboxRow?.Name || "Workflow"}</p>
         </div>
       </header>
 

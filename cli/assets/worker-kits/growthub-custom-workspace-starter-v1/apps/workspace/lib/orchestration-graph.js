@@ -28,7 +28,7 @@ const KNOWN_NODE_TYPES = new Set([
 
 const API_REGISTRY_SETUP_FIELDS = ["integrationId", "baseUrl", "endpoint", "method", "authRef"];
 
-const CANONICAL_NODE_ORDER = ["input", "api-request", "transform", "result"];
+const CANONICAL_NODE_ORDER = ["human-input", "input", "api-request", "transform", "result"];
 
 function slugifyName(value) {
   return String(value || "")
@@ -89,34 +89,6 @@ function getApiRegistrySetupChecklist(registryRow) {
 
 function isApiRegistrySetupComplete(registryRow) {
   return getApiRegistrySetupChecklist(registryRow).every((item) => item.ok);
-}
-
-/**
- * Sidecar action state for API Registry → sandbox tool bridge (UI only).
- */
-function getApiRegistrySandboxToolState(registryRow, workspaceConfig) {
-  if (!isApiRegistrySetupComplete(registryRow)) {
-    return { kind: "incomplete", checklist: getApiRegistrySetupChecklist(registryRow) };
-  }
-  if (!isApiRegistryTestSuccessful(registryRow)) {
-    const status = String(registryRow?.status || "").trim().toLowerCase();
-    if (status === "failed") {
-      return {
-        kind: "failed",
-        message: "Connection test failed. Fix the endpoint or auth reference, then test again."
-      };
-    }
-    return {
-      kind: "untested",
-      message: "Test connection first. Sandbox tool creation unlocks after a successful test."
-    };
-  }
-  const integrationId = String(registryRow?.integrationId || "").trim();
-  const existing = findSandboxRowsForRegistry(workspaceConfig, integrationId);
-  if (existing.length > 0) {
-    return { kind: "existing", row: existing[0] };
-  }
-  return { kind: "create" };
 }
 
 function validateOrchestrationGraph(graph) {
@@ -306,63 +278,18 @@ function findSandboxRowsForRegistry(workspaceConfig, integrationId) {
   if (!sandboxObject) return [];
   const rows = Array.isArray(sandboxObject.rows) ? sandboxObject.rows : [];
   return rows.filter((row) => {
-    const graph = parseOrchestrationGraph(row?.orchestrationConfig || row?.orchestrationGraph);
+    const graph = parseOrchestrationGraph(
+      row?.orchestrationConfig
+        || row?.orchestrationGraph
+        || row?.orchestrationDraftConfig
+        || row?.orchestrationDraftGraph
+    );
     if (!graph?.nodes) return String(row?.schedulerRegistryId || "").trim() === id;
     return graph.nodes.some(
       (node) => node?.type === "api-registry-call"
         && String(node?.config?.registryId || node?.config?.integrationId || "").trim() === id
     );
   });
-}
-
-function buildSandboxRowFromApiRegistry(workspaceConfig, registryRow, options = {}) {
-  const integrationId = String(registryRow?.integrationId || "").trim();
-  const baseName = String(options.name || registryRow?.Name || integrationId || "Sandbox Tool").trim();
-  const name = baseName.endsWith(" Tool") ? baseName : `${baseName} Tool`;
-  const runLocality = String(options.runLocality || "local").trim() === "serverless" ? "serverless" : "local";
-  const adapter = String(options.adapter || (runLocality === "serverless" ? "serverless" : "local-process")).trim();
-  const graph = options.orchestrationGraph
-    ? (typeof options.orchestrationGraph === "string"
-      ? parseOrchestrationGraph(options.orchestrationGraph)
-      : options.orchestrationGraph)
-    : buildDefaultOrchestrationGraphFromRegistry(registryRow, options);
-
-  const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
-  const authRef = String(options.authRef || apiNode?.config?.authRef || registryRow?.authRef || integrationId).trim();
-  const transformNode = graph?.nodes?.find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
-  const rootPath = transformNode?.config?.rootPath || "data";
-  const method = String(registryRow?.method || apiNode?.config?.method || "GET").trim().toUpperCase();
-  const endpoint = String(registryRow?.endpoint || apiNode?.config?.endpoint || "").trim();
-  const baseUrl = String(registryRow?.baseUrl || apiNode?.config?.baseUrl || "").trim();
-
-  return {
-    Name: name,
-    slug: options.slug || slugifyName(name) || slugifyName(integrationId),
-    objectType: "sandbox-environment",
-    lifecycleStatus: "draft",
-    version: "1",
-    runLocality,
-    schedulerRegistryId: runLocality === "serverless" ? integrationId : "",
-    runtime: String(options.runtime || "node").trim(),
-    adapter,
-    agentHost: String(options.agentHost || "").trim(),
-    envRefs: Array.isArray(options.envRefs) ? options.envRefs.join(",") : String(options.envRefs || "").trim(),
-    networkAllow: options.networkAllow === true ? "true" : "",
-    allowList: String(options.allowList || "").trim(),
-    instructions: String(
-      options.instructions
-        || `Governed sandbox tool for ${integrationId}. Calls ${method} ${endpoint || baseUrl} and normalizes at "${rootPath}". authRef ${authRef} only — secrets resolve server-side.`
-    ).trim(),
-    command: String(options.command || "").trim(),
-    timeoutMs: String(options.timeoutMs || "30000").trim(),
-    status: "untested",
-    lastTested: "",
-    lastRunId: "",
-    lastSourceId: "",
-    lastResponse: "",
-    orchestrationConfig: serializeOrchestrationGraph(graph),
-    description: String(options.description || registryRow?.description || "").trim()
-  };
 }
 
 /**
@@ -986,7 +913,6 @@ export {
   getOrchestrationGraphUiState,
   getNextCanonicalNodeId,
   addCanonicalNodeToGraph,
-  buildSandboxRowFromApiRegistry,
   buildDataSourceRowFromApiRegistry,
   findDataSourceRowsForRegistry,
   extractApiRegistryCallNode,
@@ -996,7 +922,6 @@ export {
   findSandboxObject,
   findSandboxRowsForRegistry,
   getApiRegistrySetupChecklist,
-  getApiRegistrySandboxToolState,
   isApiRegistrySetupComplete,
   isApiRegistryTestSuccessful,
   normalizeJsonAtPath,
