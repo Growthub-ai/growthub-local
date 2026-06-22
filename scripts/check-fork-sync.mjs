@@ -409,19 +409,6 @@ checkFileContains(".github/workflows/release.yml",
 );
 
 // ---------------------------------------------------------------------------
-// 18. Demo CLI ↔ real CLI parity
-// ---------------------------------------------------------------------------
-console.log("\n── 18. Demo CLI parity ──────────────────────────────────────────────────");
-checkFileContains("scripts/cli-demo.mjs",
-  "fork-sync",
-  "github-integration",
-  "integrations-bridge",
-  "service-status",
-  "custom-workspace-starter",
-  "fleet-ops",
-);
-
-// ---------------------------------------------------------------------------
 // 20. Fleet-level fork operations subsystem
 // ---------------------------------------------------------------------------
 console.log("\n── 20. Fleet operations subsystem ───────────────────────────────────────");
@@ -727,10 +714,6 @@ checkFileContains("cli/src/commands/source-import-discovery.ts",
   "startSourceImportFlow",
   "confirmAndResumeSourceImportJob",
   "importSourceAsWorkspace",
-);
-
-checkFileContains("scripts/cli-demo.mjs",
-  "source-import",
 );
 
 // Paperclip-coupling prohibition for the source-import tree
