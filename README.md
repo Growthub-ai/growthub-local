@@ -19,7 +19,7 @@
 Power-user one-liner:
 
 ```bash
-npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
+npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace --yes
 cd my-workspace/apps/workspace
 npm install
 npm run dev
