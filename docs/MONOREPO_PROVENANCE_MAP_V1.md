@@ -66,7 +66,7 @@ Straight from `README.md` — three published artifacts and their inputs:
 | --- | --- |
 | `@growthub/cli` | `cli/` |
 | `@growthub/create-growthub-local` | `packages/create-growthub-local/` |
-| `@growthub/api-contract` (SDK v1, `1.5.0`) | `packages/api-contract/` |
+| `@growthub/api-contract` (SDK v1, current version in `packages/api-contract/package.json`) | `packages/api-contract/` |
 | Exportable inputs | `cli/assets/worker-kits/growthub-custom-workspace-starter-v1` (ships via the CLI's `files: ["assets"]`) |
 
 The export value chain (the canonical journey, `ARCHITECTURE.md §Core Intent`):

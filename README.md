@@ -1,7 +1,5 @@
 # Agent Workspace as Code (AWaC) — Growthub Local
 
-![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
-
 **Growthub Local turns repos, skills, starters, kits, and templates into governed AI workspaces you can customize, operate with agents, deploy as apps, and keep current.**
 
 **Agent Workspace as Code (AWaC)** means the workspace is the owned artifact: a forkable app, portable config, local builder, agent-readable contracts, lifecycle trace, and optional hosted authority only when the workspace needs it.
@@ -135,7 +133,7 @@ Use profile selection to choose the governed workspace export path before deeper
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `@growthub/create-growthub-local@0.14.4`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.0`.
+Growthub Local currently ships `@growthub/cli@0.14.6` and the guided installer `@growthub/create-growthub-local@0.14.6`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 

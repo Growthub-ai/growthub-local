@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "CLI control plane for Growthub Local and Agent Workspace as Code: export, fork, inspect, operate, sync, and optionally activate governed AI workspaces.",
   "type": "module",
   "bin": {
@@ -42,7 +42,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.888.0",
     "@clack/prompts": "^0.10.0",
-    "@growthub/api-contract": "1.5.1",
+    "@growthub/api-contract": "1.5.2",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "better-auth": "1.4.18",

@@ -9,6 +9,19 @@ function readJson(relativePath) {
   return JSON.parse(readFileSync(path.join(root, relativePath), "utf8"));
 }
 
+function readJsonAtRef(ref, relativePath) {
+  const result = spawnSync("git", ["show", `${ref}:${relativePath}`], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+    throw new Error(output || `git show ${ref}:${relativePath} failed`);
+  }
+  return JSON.parse(result.stdout);
+}
+
 function parseArgs(argv) {
   const options = {
     requireBumpIfSourceChanged: false,
@@ -59,6 +72,7 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const cliPkg = readJson("cli/package.json");
   const createPkg = readJson("packages/create-growthub-local/package.json");
+  const apiContractPkg = readJson("packages/api-contract/package.json");
 
   if (cliPkg.name !== "@growthub/cli") {
     throw new Error(`cli/package.json must publish @growthub/cli, got ${cliPkg.name}`);
@@ -73,17 +87,38 @@ function main() {
       `Version pin mismatch: @growthub/create-growthub-local pins @growthub/cli@${createPkg.dependencies?.["@growthub/cli"]} but cli.version is ${cliPkg.version}`,
     );
   }
+  if (cliPkg.dependencies?.["@growthub/api-contract"] !== apiContractPkg.version) {
+    throw new Error(
+      `Version pin mismatch: @growthub/cli pins @growthub/api-contract@${cliPkg.dependencies?.["@growthub/api-contract"]} but api-contract.version is ${apiContractPkg.version}`,
+    );
+  }
 
   if (options.requireBumpIfSourceChanged && options.base) {
-    const sourceChanges = gitDiffNameOnly(options.base, options.head, ["server/src", "cli/src"]);
-    if (sourceChanges.length > 0) {
-      const versionChanges = gitDiffNameOnly(options.base, options.head, [
-        "cli/package.json",
+    const cliPayloadChanges = gitDiffNameOnly(options.base, options.head, [
+      "server/src",
+      "cli/src",
+      "cli/assets",
+    ]);
+    if (cliPayloadChanges.length > 0) {
+      const baseCliPkg = readJsonAtRef(options.base, "cli/package.json");
+      const baseCreatePkg = readJsonAtRef(
+        options.base,
         "packages/create-growthub-local/package.json",
-      ]);
-      if (versionChanges.length === 0) {
+      );
+      if (baseCliPkg.version === cliPkg.version || baseCreatePkg.version === createPkg.version) {
         throw new Error(
-          "Source files changed under server/src or cli/src but package versions were not bumped.",
+          "Published CLI payload changed under server/src, cli/src, or cli/assets but @growthub/cli and @growthub/create-growthub-local versions were not both bumped.",
+        );
+      }
+    }
+    const apiContractSourceChanges = gitDiffNameOnly(options.base, options.head, [
+      "packages/api-contract/src",
+    ]);
+    if (apiContractSourceChanges.length > 0) {
+      const baseApiContractPkg = readJsonAtRef(options.base, "packages/api-contract/package.json");
+      if (baseApiContractPkg.version === apiContractPkg.version) {
+        throw new Error(
+          "Published API contract source changed under packages/api-contract/src but package version was not bumped.",
         );
       }
     }
@@ -94,6 +129,7 @@ function main() {
       "version-sync passed",
       `@growthub/cli@${cliPkg.version}`,
       `@growthub/create-growthub-local@${createPkg.version}`,
+      `@growthub/api-contract@${apiContractPkg.version}`,
     ].join("\n"),
   );
 }
