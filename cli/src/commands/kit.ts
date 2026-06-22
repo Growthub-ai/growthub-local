@@ -17,13 +17,6 @@ import {
 import { printPaperclipCliBanner } from "../utils/banner.js";
 import { registerKitForkSubcommands } from "./kit-fork.js";
 import { runStarterInit } from "./starter.js";
-import {
-  registerKitContractSubcommands,
-  runPipelineInspect,
-  runDependenciesInspect,
-  runKitHealth,
-} from "./kit-contract.js";
-import { registerKitPublishCommands } from "./kit-publish.js";
 
 // ---------------------------------------------------------------------------
 // Type display config — user-facing grouping independent from internal families
@@ -49,20 +42,6 @@ const PROJECT_MANAGEMENT_TEMPLATE: KitListItem = {
   bundleVersion: "1.0.0",
   briefType: "workspace-template",
 };
-
-const RETIRED_CUSTOM_WORKSPACE_KIT_IDS = new Set([
-  "growthub-open-higgsfield-studio-v1",
-  "growthub-geo-seo-v1",
-  "growthub-postiz-social-v1",
-  "growthub-open-montage-studio-v1",
-  "growthub-ai-website-cloner-v1",
-  "growthub-agency-portal-starter-v1",
-  "growthub-creative-video-pipeline-v1",
-  "growthub-twenty-crm-v1",
-  "growthub-zernio-social-v1",
-  "growthub-hyperframes-studio-v1",
-  "growthub-video-use-studio-v1",
-]);
 
 function displayTypeForFamily(family: string): keyof typeof TYPE_CONFIG | string {
   if (family === "workflow" || family === "operator") return "specialized_agents";
@@ -96,12 +75,8 @@ function isWorkspaceTemplateId(id: string): boolean {
   return normalized === PROJECT_MANAGEMENT_TEMPLATE_ID || normalized === "project-management" || normalized === "project-management-workspace";
 }
 
-function isRetiredCustomWorkspaceKit(id: string): boolean {
-  return RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(id);
-}
-
 function listKitAndWorkspaceTemplates(): KitListItem[] {
-  const activeBundled = listBundledKits().filter((kit) => !RETIRED_CUSTOM_WORKSPACE_KIT_IDS.has(kit.id));
+  const activeBundled = listBundledKits();
   const starter = activeBundled.find((kit) => kit.id === "growthub-custom-workspace-starter-v1");
   return [
     ...(starter ? [starter] : []),
@@ -365,9 +340,6 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
           options: [
             { value: "download", label: "⬇️  Download kit", hint: "growthub kit download <id>" },
             { value: "inspect", label: "🔍 Inspect manifest", hint: "growthub kit inspect <id>" },
-            { value: "pipeline", label: "🔗 Inspect pipeline contract", hint: "growthub kit pipeline inspect <id>" },
-            { value: "dependencies", label: "📦 Inspect external dependencies", hint: "growthub kit dependencies inspect <id>" },
-            { value: "health", label: "🩺 Run health report", hint: "growthub kit health <id>" },
             { value: "copy-id", label: "📋 Print ID to stdout", hint: "echo <kit-id>" },
             { value: "back_to_kits", label: "← Back to kit list" },
           ],
@@ -375,23 +347,6 @@ export async function runInteractivePicker(opts: { out?: string; allowBackToHub?
 
         if (p.isCancel(action)) { p.cancel("Cancelled."); process.exit(0); }
         if (action === "back_to_kits") break;
-
-        // Read-only inspections — no destructive confirmation needed.
-        if (action === "pipeline") {
-          runPipelineInspect(selected.id, { out: opts.out });
-          p.outro(pc.dim("Done."));
-          return "done";
-        }
-        if (action === "dependencies") {
-          runDependenciesInspect(selected.id, { out: opts.out });
-          p.outro(pc.dim("Done."));
-          return "done";
-        }
-        if (action === "health") {
-          runKitHealth(selected.id, { out: opts.out });
-          p.outro(pc.dim("Done."));
-          return "done";
-        }
 
         const confirmed = await confirmKitActions({
           kits: [selected],
@@ -453,10 +408,6 @@ async function runDownload(kitId: string, opts: { out?: string; yes?: boolean })
   const resolvedId = fuzzyResolveKitId(kitId);
   if (!resolvedId) {
     console.error(pc.red("Unknown kit '" + kitId + "'.") + pc.dim(" Run `growthub kit list` to browse."));
-    process.exit(1);
-  }
-  if (isRetiredCustomWorkspaceKit(resolvedId)) {
-    console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
     process.exit(1);
   }
   if (resolvedId !== kitId) {
@@ -556,12 +507,6 @@ Examples:
   $ growthub kit inspect growthub-custom-workspace-starter-v1
   $ growthub kit families                 # show family taxonomy
 
-Pipeline Kit Contract v1 (PIPELINE_KIT_CONTRACT_V1):
-  $ growthub kit pipeline inspect <id>          # stages, adapters, output topology
-  $ growthub kit dependencies inspect <id>      # external repos / forks
-  $ growthub kit health <id>                    # full health report
-  $ growthub kit pipeline inspect <id> --json   # agent-first JSON output
-
 Fork Sync Agent:
   $ growthub kit fork                     # interactive fork-sync hub
   $ growthub kit fork register ./my-fork  # register a forked kit
@@ -639,11 +584,6 @@ Examples:
         process.exitCode = 1;
         return;
       }
-      if (isRetiredCustomWorkspaceKit(resolvedId)) {
-        console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
-        process.exitCode = 1;
-        return;
-      }
       if (opts.json) {
         console.log(JSON.stringify(inspectBundledKit(resolvedId, opts.out), null, 2));
         return;
@@ -681,12 +621,6 @@ Examples:
         process.exitCode = 1;
         return;
       }
-      if (isRetiredCustomWorkspaceKit(resolvedId)) {
-        console.error(pc.yellow("That custom workspace kit is deprecated.") + pc.dim(" Use `growthub kit list --family studio` for the official workspace templates."));
-        process.exitCode = 1;
-        return;
-      }
-
       if (opts.yes) {
         const result = downloadBundledKit(resolvedId, opts.out, {
           onProgress: renderProgressBar,
@@ -768,9 +702,9 @@ Examples:
     .action(() => {
       const defs = [
         { family: "studio",   tagline: "Governed Workspace templates and app starters",                    surfaces: "workspace-app, data-model, workflows",    example: "growthub-custom-workspace-starter-v1, project-management-workspace-template-v1" },
-        { family: "workflow", tagline: "Multi-step pipeline operator across tools or APIs",                surfaces: "browser-hosted (primary)",                example: "creative-strategist-v1" },
-        { family: "operator", tagline: "Domain vertical specialist — one provider, structured deliverables", surfaces: "browser-hosted",                       example: "growthub-email-marketing-v1" },
-        { family: "ops",      tagline: "Infrastructure / toolchain operator (provider optional)",          surfaces: "local-fork (primary)",                   example: "(coming soon)" },
+        { family: "workflow", tagline: "Deprecated bundled-kit lane; use a governed workspace row/workflow", surfaces: "workspace-app",                         example: "project-management-workspace-template-v1" },
+        { family: "operator", tagline: "Deprecated bundled-kit lane; use workspace templates or source import", surfaces: "workspace-app",                     example: "growthub-custom-workspace-starter-v1" },
+        { family: "ops",      tagline: "Infrastructure / toolchain operator (provider optional)",          surfaces: "workspace-app",                          example: "(coming soon)" },
       ];
 
       console.log("");
@@ -790,12 +724,6 @@ Examples:
       console.log("");
     });
 
-  // ── pipeline / dependencies / health (Pipeline Kit Contract v1) ──────────
-  registerKitContractSubcommands(kit);
-
   // ── fork (Fork Sync Agent sub-tree) ──────────────────────────────────────
   registerKitForkSubcommands(kit);
-
-  // ── publish (Community Kit Publishing) ───────────────────────────────────
-  registerKitPublishCommands(kit);
 }

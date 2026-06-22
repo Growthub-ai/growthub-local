@@ -476,7 +476,7 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   const listenPort = await detectPort(config.port);
-  const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
+  const uiMode = "none" as const;
   const storageService = createStorageServiceFromConfig(config);
   const requestedSurfaceProfile = (
     process.env.PAPERCLIP_SURFACE_PROFILE ??

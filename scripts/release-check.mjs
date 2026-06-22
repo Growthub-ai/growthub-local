@@ -77,18 +77,6 @@ for (const pkg of [apiContractPkg]) {
   );
 }
 
-assertFileIncludes("ui/src/components/GrowthubConnectionCard.tsx", [
-  "Growthub Connection",
-  "Open Configuration",
-  "Pulse",
-  "Disconnect",
-]);
-
-assertFileIncludes("ui/src/lib/growthub-connection.ts", [
-  'url.pathname = "/integrations"',
-  'url.searchParams.set("return_url", input.callbackUrl)',
-]);
-
 assertFileIncludes("server/src/app.ts", [
   'app.get("/auth/callback"',
   "growthubPortalBaseUrl",
@@ -96,21 +84,8 @@ assertFileIncludes("server/src/app.ts", [
   "growthubWorkspaceLabel",
 ]);
 
-assertFileIncludes("ui/src/pages/CompanySettings.tsx", [
-  "Growthub pulse succeeded",
-  "onPulseConnection",
-  "onDisconnect",
-]);
-
-assertFileIncludes("ui/src/gtm/App.tsx", [
-  "Growthub pulse succeeded",
-  "onPulseConnection",
-  "onDisconnect",
-]);
-
 assert(existsSync(path.join(root, "cli/dist")), "cli/dist must exist before release:check");
 assert(existsSync(path.join(root, "server/dist")), "server/dist must exist before release:check");
-assert(existsSync(path.join(root, "server/ui-dist")), "server/ui-dist must exist before release:check");
 assert(
   existsSync(path.join(root, "cli/dist/runtime/server/dist/app.js")),
   "cli bundled runtime must exist before release:check",
@@ -129,16 +104,8 @@ assert(
   "CLI tarball is missing dist/index.js",
 );
 assert(
-  cliPack.includes("dist/runtime/server/ui-dist"),
-  "CLI tarball is missing bundled runtime UI payload",
-);
-assert(
-  cliPack.includes("assets/worker-kits/creative-strategist-v1/kit.json"),
-  "CLI tarball is missing the bundled creative strategist worker kit manifest",
-);
-assert(
-  cliPack.includes("assets/worker-kits/growthub-open-higgsfield-studio-v1/kit.json"),
-  "CLI tarball is missing the bundled Open Higgsfield studio worker kit manifest",
+  cliPack.includes("assets/worker-kits/growthub-custom-workspace-starter-v1/kit.json"),
+  "CLI tarball is missing the bundled custom workspace starter kit manifest",
 );
 assert(
   createPack.includes("bin/create-growthub-local.mjs"),

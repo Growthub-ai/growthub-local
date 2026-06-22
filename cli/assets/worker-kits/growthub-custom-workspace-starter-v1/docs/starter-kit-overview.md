@@ -1,9 +1,9 @@
 # Starter Kit — Overview
 
-The Growthub Custom Workspace Starter Kit is the canonical v1 primitive for forking a single worker kit without the rest of the repository. It combines:
+The Growthub Custom Workspace Starter Kit is the canonical v1 primitive for exporting a governed workspace without the rest of the repository. It combines:
 
 1. **Bundled asset tree** — the full custom-workspace kernel-packet surface (kit.json, frozen assets, brand scaffolds, setup, templates, examples, docs, growthub-meta).
-2. **Vite-bundled UI shell** — a minimal React + Vite 5 studio at `studio/` that users extend with their own views.
+2. **Workspace Builder app** — the config-backed Next.js app at `apps/workspace` that users run, customize, and deploy.
 3. **First-class Self-Healing Fork Sync Agent wiring** — `growthub starter init` materializes this tree at a user-chosen path and auto-registers it as a kit-fork with a dedicated `forkId`.
 
 ## Why a dedicated primitive

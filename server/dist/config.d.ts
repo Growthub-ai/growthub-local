@@ -18,8 +18,6 @@ export interface Config {
     databaseBackupIntervalMinutes: number;
     databaseBackupRetentionDays: number;
     databaseBackupDir: string;
-    serveUi: boolean;
-    uiDevMiddleware: boolean;
     secretsProvider: SecretProvider;
     secretsStrictMode: boolean;
     secretsMasterKeyFilePath: string;

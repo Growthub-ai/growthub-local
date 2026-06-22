@@ -42,11 +42,8 @@
  * Optional, orthogonal companions (declared per-kit when needed):
  *
  *   - `SkillManifest`              (./skills)        — every kit's SKILL.md
- *   - `PipelineKitManifest`        (./pipeline-kits) — multi-stage kits
  *   - `WorkspaceDependencyManifest`(./workspaces)    — kits with external repos
  *   - `AdapterContractRef`         (./adapters)      — kits with provider boundaries
- *   - `KitHealthReport`            (./health)        — universal readiness shape
- *   - `PipelineTraceEvent`         (./pipeline-trace)— additive trace events
  *
  * Rules:
  *   - Additive only. v2 is a superset of v1; new fields are optional.

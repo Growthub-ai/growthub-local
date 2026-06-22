@@ -8,13 +8,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${GH_LOCAL_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 CONFIG="${GH_CONFIG:-${PAPERCLIP_HOME:-$HOME/.paperclip}/instances/default/config.json}"
 SERVER_PORT="${GH_SERVER_PORT:-3100}"
-UI_PORT="${GH_UI_PORT:-5173}"
 LOG_DIR="${GH_LOG_DIR:-/tmp/growthub-local}"
 SERVER_LOG="${LOG_DIR}/server.log"
-UI_LOG="${LOG_DIR}/ui.log"
 
-SERVER_PATTERN='tsx watch --ignore ../ui/node_modules --ignore ../ui/.vite --ignore ../ui/dist src/index.ts'
-UI_PATTERN='vite -- --port 5173'
+SERVER_PATTERN='tsx watch src/index.ts'
 CLI_PATTERN='cli/dist/index.js run'
 
 mkdir -p "${LOG_DIR}"
@@ -35,8 +32,6 @@ ensure_repo() {
 stop_runtime() {
   pkill -f "${CLI_PATTERN}" >/dev/null 2>&1 || true
   pkill -f "${SERVER_PATTERN}" >/dev/null 2>&1 || true
-  pkill -f 'vite -- --port 5173' >/dev/null 2>&1 || true
-  pkill -f "vite -- --port ${UI_PORT}" >/dev/null 2>&1 || true
 }
 
 start_runtime() {
@@ -58,16 +53,13 @@ start_runtime() {
   nohup env PAPERCLIP_CONFIG="${CONFIG}" PAPERCLIP_SURFACE_PROFILE=gtm \
     pnpm --dir server run dev:watch >"${SERVER_LOG}" 2>&1 &
 
-  nohup env VITE_API_ORIGIN="http://127.0.0.1:${SERVER_PORT}" \
-    pnpm --dir ui run dev -- --port "${UI_PORT}" >"${UI_LOG}" 2>&1 &
-
   sleep 2
   echo "Started runtime:"
   echo "  repo: ${ROOT}"
   echo "  config: ${CONFIG}"
   echo "  branch: $(git branch --show-current)"
-  echo "  ui: http://localhost:${UI_PORT}/gtm/GHA/workspace"
-  echo "  logs: ${SERVER_LOG} | ${UI_LOG}"
+  echo "  api: http://127.0.0.1:${SERVER_PORT}/api"
+  echo "  logs: ${SERVER_LOG}"
 }
 
 show_status() {
@@ -84,7 +76,6 @@ show_status() {
   echo ""
   echo "Listeners:"
   lsof -nP -iTCP:${SERVER_PORT} -sTCP:LISTEN || true
-  lsof -nP -iTCP:${UI_PORT} -sTCP:LISTEN || true
 }
 
 usage() {
@@ -98,12 +89,12 @@ Usage:
   scripts/runtime-control.sh url
 
 Commands:
-  up-main            Stop stale processes, checkout/pull main, start server+ui
-  up-branch <name>   Stop stale processes, checkout/pull branch, start server+ui
-  up-pr <number>     Checkout PR branch with gh, then start server+ui
+  up-main            Stop stale processes, checkout/pull main, start API server
+  up-branch <name>   Stop stale processes, checkout/pull branch, start API server
+  up-pr <number>     Checkout PR branch with gh, then start API server
   stop               Stop runtime processes managed by this repo
   status             Show health, company payload, and listeners
-  url                Print canonical GTM URL
+  url                Print canonical local API URL
 EOF
 }
 
@@ -134,7 +125,7 @@ main() {
       show_status
       ;;
     url)
-      echo "http://localhost:${UI_PORT}/gtm/GHA/workspace"
+      echo "http://127.0.0.1:${SERVER_PORT}/api"
       ;;
     *)
       usage

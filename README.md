@@ -1,7 +1,5 @@
 # Agent Workspace as Code (AWaC) — Growthub Local
 
-![Growthub Local Logo](./ui/public/growthub%20logo%20copy.png)
-
 **Growthub Local turns repos, skills, starters, kits, and templates into governed AI workspaces you can customize, operate with agents, deploy as apps, and keep current.**
 
 **Agent Workspace as Code (AWaC)** means the workspace is the owned artifact: a forkable app, portable config, local builder, agent-readable contracts, lifecycle trace, and optional hosted authority only when the workspace needs it.
@@ -19,7 +17,7 @@
 Power-user one-liner:
 
 ```bash
-npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace
+npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace --yes
 cd my-workspace/apps/workspace
 npm install
 npm run dev
@@ -36,7 +34,7 @@ Choose **Custom AI Governed Workspace**, then pick the fastest source:
 1. [**Import a GitHub repo**](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
 2. [**Import a skills.sh skill**](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
 3. [**Start from the workspace starter**](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
-4. [**Start from a worker kit**](./docs/FIRST_RUN_PATHS.md#4-download-a-worker-kit)
+4. [**Start from a workspace template**](./docs/FIRST_RUN_PATHS.md#4-browse-workspace-templates)
 
 Agent commands:
 
@@ -98,7 +96,7 @@ Growthub Local answers that with Agent Workspace as Code: the app, builder, data
 That matters at every skill level:
 
 - **Non-technical teams** get a real workspace they can open, customize, hand off, and trust without learning how to wire repos, prompts, credentials, and scripts together.
-- **Builders and no-code innovators** can turn a repo, skill, starter, template, or worker kit into a working product surface without losing upgrade paths or governance.
+- **Builders and no-code innovators** can turn a repo, skill, starter, or template into a working product surface without losing upgrade paths or governance.
 - **Agents and operators** get clear commands, JSON status, policy, trace, and reusable workspace primitives instead of guessing what folder, prompt, or script matters.
 - **Enterprise developers** get local-first flexibility with fork safety, deploy checks, credential boundaries, audit trails, and optional hosted authority only when higher-trust flows need it.
 
@@ -114,21 +112,20 @@ The practical result: Growthub Local keeps open-source speed and customization, 
 npm create @growthub/growthub-local@latest
 ```
 
-The guided installer is **profile-first**:
+The guided installer is **workspace-first**:
 
 1. without flags, it opens **Custom AI Governed Workspace** first
-2. choose workspace starter, GitHub repo import, skills.sh import, worker kit, or the full discovery menu
-3. use explicit profiles (`gtm`, `dx`, or `workspace`) only when you want a direct install lane
+2. choose workspace starter, GitHub repo import, skills.sh import, workspace template, or the full discovery menu
+3. use `--profile workspace` or `--profile self-improving` only when you want a direct non-interactive install lane
 
 ### Direct profile install
 
 ```bash
-npm create @growthub/growthub-local@latest -- --profile gtm
-npm create @growthub/growthub-local@latest -- --profile dx
 npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
 ```
 
-Use profile selection to choose the initial environment shape before deeper workflow and harness configuration.
+Use profile selection to choose the governed workspace export path before deeper workflow and harness configuration.
 
 ### CLI-only install
 
@@ -136,7 +133,7 @@ Use profile selection to choose the initial environment shape before deeper work
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `@growthub/create-growthub-local@0.14.4`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.0`.
+Growthub Local currently ships `@growthub/cli@0.14.6` and the guided installer `@growthub/create-growthub-local@0.14.6`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -148,7 +145,7 @@ Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `
   <tr>
     <td align="center"><strong>🧱 Workspace Builder</strong><br>No-code dashboard, tab, canvas, widget, template, import/export, and settings surface backed by validated config.</td>
     <td align="center"><strong>📊 Governed Data Model</strong><br>Business objects, rows, fields, relations, field settings, table helpers, and widget bindings live as first-class workspace state.</td>
-    <td align="center"><strong>📥 Source Import</strong><br>GitHub repos, skills.sh skills, starters, worker kits, and templates become governed workspaces through one lifecycle.</td>
+    <td align="center"><strong>📥 Source Import</strong><br>GitHub repos, skills.sh skills, starters, and templates become governed workspaces through one lifecycle.</td>
   </tr>
   <tr>
     <td align="center"><strong>🔌 Integration Catalog</strong><br>Data-source and workspace-integration lanes cover analytics, commerce, ads, spreadsheets, project tools, docs, and CRM-style systems.</td>
@@ -157,7 +154,7 @@ Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `
   </tr>
   <tr>
     <td align="center"><strong>🔁 Self-Healing Forks</strong><br>Fork registration, drift detection, dry-run heal plans, protected paths, background jobs, optional GitHub PR flow, and trace history.</td>
-    <td align="center"><strong>🧰 Worker Kits</strong><br>Self-contained operator environments ship SKILL.md, helpers, sub-skills, templates, assumptions, examples, and output standards.</td>
+    <td align="center"><strong>🧰 Workspace Templates</strong><br>Template seeds ship governed config, SKILL.md, helpers, sub-skills, assumptions, examples, and output standards.</td>
     <td align="center"><strong>🤖 Agent Operations</strong><br>Local intelligence, helper proposals, workspace browser QA, source records, health checks, and governed traces.</td>
   </tr>
   <tr>
@@ -177,7 +174,7 @@ Growthub Local currently ships `@growthub/cli@0.14.4` and the guided installer `
 | Without AWaC | With Growthub Local |
 | --- | --- |
 | Agent work starts from scattered repos, prompts, scripts, and one-off folders. | Every source becomes a governed Workspace with config, policy, trace, and lifecycle from the first run. |
-| Useful repos and skills are hard to turn into repeatable production environments. | Repos, skills.sh skills, worker kits, templates, and starters all enter the same governed workspace path. |
+| Useful repos and skills are hard to turn into repeatable production environments. | Repos, skills.sh skills, templates, and starters all enter the same governed workspace path. |
 | Customization creates upgrade debt and makes upstream sync risky. | Forks are first-class and self-healing, with drift detection, previews, protected paths, and additive heals. |
 | Data bindings can drift into fake, stale, or untested widget inputs. | API Registry and Data Source objects enforce test-before-bind data quality before widgets consume external data. |
 | Secrets leak into config, browsers, local notes, or agent prompts. | Workspaces store `authRef` references only; provider secrets resolve server-side or through hosted authority. |
@@ -226,9 +223,8 @@ Official workspace templates and shipped dashboard templates:
 
 ### More references
 
-- [Worker Kits Overview](./docs/WORKER_KITS.md)
 - [**Governed Workspace Primitives (user-facing)**](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md) — how the six architectural primitives (SKILL.md, AGENTS.md pointer, session memory, self-evaluation, sub-skills, helpers) coordinate agents inside every exported workspace
-- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — source choices for starting from a repo, skill, workspace starter, or worker kit
+- [**First-Run Paths**](./docs/FIRST_RUN_PATHS.md) — source choices for starting from a repo, skill, workspace starter, or workspace template
 
 ### Contributor references
 

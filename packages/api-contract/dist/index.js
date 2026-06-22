@@ -22,11 +22,8 @@
  *   - `@growthub/api-contract/schemas`
  *   - `@growthub/api-contract/skills`
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
- *   - `@growthub/api-contract/pipeline-kits`   — multi-stage specialization
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
- *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
- *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
@@ -38,11 +35,8 @@ export { CAPABILITY_FAMILIES } from "./capabilities.js";
 export { isExecutionEvent } from "./events.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
 export { WORKER_KIT_FAMILIES, WORKER_KIT_SUPPORTED_SCHEMA_VERSIONS, WORKER_KIT_LATEST_SCHEMA_VERSION, isWorkerKitManifestV1, isWorkerKitManifestV2, isWorkerKitBundleManifestV1, isWorkerKitBundleManifestV2, isAppKit, } from "./worker-kits.js";
-export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
 export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
-export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
-export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 export { WORKSPACE_HELPER_INTENT_VALUES, WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOSAL_TYPE_TO_PATCH_FIELD, isWorkspaceHelperResponse, isWorkspaceProposal, WORKSPACE_HELPER_CONTRACT_VERSION, } from "./helper.js";
 export { WORKSPACE_PATCH_ALLOWED_FIELDS, WORKSPACE_LIVE_WORKFLOW_FIELDS, WORKSPACE_DRAFT_WORKFLOW_FIELDS, isWorkspacePatchPolicyRejection, isWorkflowPublishSuccess, WORKSPACE_PATCH_CONTRACT_VERSION, } from "./workspace-patch.js";
 export { AGENT_OUTCOME_RECEIPT_KINDS, AGENT_OUTCOME_STATUSES, AGENT_OUTCOMES_SOURCE_ID, WORKSPACE_AGENT_LOOP_V1, isAgentOutcomeReceipt, WORKSPACE_OUTCOME_CONTRACT_VERSION, } from "./workspace-outcome.js";

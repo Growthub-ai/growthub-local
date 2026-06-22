@@ -81,7 +81,7 @@ captures them.
 | **Govern** via budget ceiling / cost decomposition | Proposal carries `timeoutMs`/per-task token telemetry; no cost rollup | **Partially Exists** | per-receipt `runId` telemetry exists (`workspace-outcome.ts`); no `deriveSwarmCostSignals` |
 | **Supervise** / detect authority bypass | `blockedAttempts` counted; enforcement closes route-shopping | **Missing (detection)** | no correlation of a blocked `untrusted-direct` receipt → later `execution-proof` by same `actor` (the pattern doc's §3 worked example) |
 | **Hierarchy** (reportsTo / chain-of-command) among swarm agents | Swarm agents are flat `role + taskPrompt` | **Missing** | `normalizeSwarmAgent` has no `reportsTo`/`manager` (`workspace-swarm-proposal.js:306+`); runtime is orchestrator→workers→synth, no named reporting tree |
-| **Review → improve** loop (CEO reviews output, files follow-up work) | run records carry per-agent transcripts; no review packet, no task object | **Missing** | no `deriveSwarmRunReview`; managed `task` object is itself a proposed roadmap item (`ROADMAP_IMPACT_ITEMS_V1.md` Item 6) |
+| **Review → improve** loop (CEO reviews output, files follow-up work) | run records carry per-agent transcripts; no review packet, no task object | **Missing** | no `deriveSwarmRunReview`; managed follow-up work should stay inside the governed helper proposal lane |
 
 Everything classified **Partially Exists / Missing** is recoverable as a *projection*
 — none requires a new runtime or a new mutation path.
@@ -109,8 +109,7 @@ Everything classified **Partially Exists / Missing** is recoverable as a *projec
 
 The "best correlation to the future we want": the CEO's value is *orchestrating
 swarms* and *shipping outcomes*; the workspace's stated north star is identical —
-"orchestrating agent swarms and building and shipping full custom applications"
-(`ROADMAP_IMPACT_ITEMS_V1.md:289-293`). These roadmap items are the bridge.
+orchestrating agent swarms and building and shipping full custom applications.
 
 ---
 
@@ -175,8 +174,7 @@ The CEO's `orgForCompany`/run-observation rollup, at workspace altitude. A pure
 deriver rolls up every `swarm-workflows` `sandbox-environment` row + its
 `execution-proof` receipts into per-workflow health (`ready | blocked | never-run | failing`),
 last-run outcome, agent count, and truthful token/tool totals (`null` when unreported).
-This is roadmap Item 3 (observability, `ROADMAP_IMPACT_ITEMS_V1.md:171-186`) realized
-as a cockpit. *Highest value, lowest effort — all data already exists.*
+This realizes observability as a cockpit. *Highest value, lowest effort — all data already exists.*
 
 **R2 — Pre-Launch Readiness Cockpit** *(CEO: `testEnvironment` gate)*
 Composes the existing `deriveSwarmWorkflowExecutionEligibility` across the fleet into
@@ -211,9 +209,8 @@ behavior exactly (fully backwards-compatible). R1's Fleet cockpit renders the tr
 
 **C1 — Outcome-Review → follow-up tasks** *(CEO: `enforcePerformanceReview`)*
 `deriveSwarmRunReview(record)` turns a completed run's per-agent transcript/tokens/status
-into a review packet, then seeds follow-up **task** proposals through `helper/apply`
-(reusing the governed `task` object from `ROADMAP_IMPACT_ITEMS_V1.md` Item 6 once it
-lands). This closes the CEO's review→improve loop: *"the swarm proposed 6 follow-up
+into a review packet, then seeds follow-up **task** proposals through `helper/apply`.
+This closes the CEO's review→improve loop: *"the swarm proposed 6 follow-up
 tasks → approve / assign / close."* Mutating, but only via the existing propose→apply
 lane with human review.
 

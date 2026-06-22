@@ -3,15 +3,15 @@ import { goals } from "@paperclipai/db";
 type GoalReader = Pick<Db, "select">;
 export declare function getDefaultCompanyGoal(db: GoalReader, companyId: string): Promise<{
     id: string;
-    description: string | null;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
     companyId: string;
     title: string;
+    description: string | null;
     level: string;
+    status: string;
     parentId: string | null;
     ownerAgentId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
 }>;
 export declare function goalService(db: Db): {
     list: (companyId: string) => Omit<import("drizzle-orm/pg-core").PgSelectBase<"goals", {
@@ -187,15 +187,15 @@ export declare function goalService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"goals", "not-null">, false, "where", {
         id: string;
-        description: string | null;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         title: string;
+        description: string | null;
         level: string;
+        status: string;
         parentId: string | null;
         ownerAgentId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -370,27 +370,27 @@ export declare function goalService(db: Db): {
     }>, "where">;
     getById: (id: string) => Promise<{
         id: string;
-        description: string | null;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         title: string;
+        description: string | null;
         level: string;
+        status: string;
         parentId: string | null;
         ownerAgentId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     getDefaultCompanyGoal: (companyId: string) => Promise<{
         id: string;
-        description: string | null;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         title: string;
+        description: string | null;
         level: string;
+        status: string;
         parentId: string | null;
         ownerAgentId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     create: (companyId: string, data: Omit<typeof goals.$inferInsert, "companyId">) => Promise<{
         id: string;

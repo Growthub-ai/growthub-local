@@ -35,7 +35,7 @@ Pick the path that matches where you are.
 | GitHub repo | `growthub starter import-repo <owner/repo> --out ./my-workspace` |
 | skills.sh skill | `growthub starter import-skill <owner/repo/skill> --out ./my-workspace` |
 | Greenfield starter | `growthub starter init --kit growthub-custom-workspace-starter-v1 --out ./my-workspace` |
-| Worker kit | `growthub kit download <kit-id> --out ./my-workspace` |
+| Workspace template | `growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace` |
 | Self-improving profile | `npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace` |
 
 All five land at the same artifact shape — see [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md).

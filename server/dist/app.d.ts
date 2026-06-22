@@ -3,8 +3,7 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode, SurfaceRuntimeContract } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
-type UiMode = "none" | "static" | "vite-dev";
-export declare function resolveViteHmrPort(serverPort: number): number;
+type UiMode = "none";
 export declare function createApp(db: Db, opts: {
     uiMode: UiMode;
     serverPort: number;

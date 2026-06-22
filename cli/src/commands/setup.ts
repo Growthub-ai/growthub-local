@@ -23,13 +23,9 @@ import { track } from "../analytics/posthog.js";
 
 // Standard kit IDs
 const CUSTOM_WORKSPACE_KIT_ID = "growthub-custom-workspace-starter-v1";
-const AGENCY_PORTAL_KIT_ID = "growthub-agency-portal-starter-v1";
-const CREATIVE_VIDEO_KIT_ID = "growthub-creative-video-pipeline-v1";
 
 type WizardWorkspaceType =
   | "custom-workspace"
-  | "agency-portal"
-  | "creative-pipeline"
   | "import-repo"
   | "import-skill";
 
@@ -69,16 +65,6 @@ async function runSetupWizard(opts: { profile?: string; out?: string }): Promise
           hint: "blank governed workspace — works with any workflow",
         },
         {
-          value: "agency-portal",
-          label: "Agency Portal",
-          hint: "multi-client governed environment",
-        },
-        {
-          value: "creative-pipeline",
-          label: "Creative Video Pipeline",
-          hint: "AI video production workflow",
-        },
-        {
           value: "import-repo",
           label: "Import a GitHub Repo",
           hint: "turn any GitHub repo into a governed workspace",
@@ -96,18 +82,14 @@ async function runSetupWizard(opts: { profile?: string; out?: string }): Promise
 
     kitId = {
       "custom-workspace": CUSTOM_WORKSPACE_KIT_ID,
-      "agency-portal": AGENCY_PORTAL_KIT_ID,
-      "creative-pipeline": CREATIVE_VIDEO_KIT_ID,
       "import-repo": CUSTOM_WORKSPACE_KIT_ID,
       "import-skill": CUSTOM_WORKSPACE_KIT_ID,
     }[workspaceType];
   } else {
-    // --profile workspace / agency-portal / etc passed explicitly
+    // --profile workspace / self-improving / import-* passed explicitly.
     workspaceType = (opts.profile as WizardWorkspaceType) ?? "custom-workspace";
     kitId = {
       "custom-workspace": CUSTOM_WORKSPACE_KIT_ID,
-      "agency-portal": AGENCY_PORTAL_KIT_ID,
-      "creative-pipeline": CREATIVE_VIDEO_KIT_ID,
     }[workspaceType as string] ?? CUSTOM_WORKSPACE_KIT_ID;
   }
 
@@ -205,7 +187,7 @@ export function registerSetupCommands(program: Command): void {
   setup
     .command("wizard")
     .description("Interactive < 5-minute setup wizard — scaffold, optionally connect Bridge, run health check")
-    .option("--profile <type>", "Skip profile selection: custom-workspace | agency-portal | creative-pipeline | self-improving | import-repo | import-skill")
+    .option("--profile <type>", "Skip profile selection: custom-workspace | self-improving | import-repo | import-skill")
     .option("--out <path>", "Output path for the scaffolded workspace")
     .addHelpText("after", `
 Examples:

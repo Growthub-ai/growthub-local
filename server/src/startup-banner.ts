@@ -4,7 +4,7 @@ import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
 
-type UiMode = "none" | "static" | "vite-dev";
+type UiMode = "none";
 
 type ExternalPostgresInfo = {
   mode: "external-postgres";
@@ -100,7 +100,6 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
   const baseHost = opts.host === "0.0.0.0" ? "localhost" : opts.host;
   const baseUrl = `http://${baseHost}:${opts.listenPort}`;
   const apiUrl = `${baseUrl}/api`;
-  const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
   const configPath = resolvePaperclipConfigPath();
   const envFilePath = resolvePaperclipEnvPath();
   const agentJwtSecret = resolveAgentJwtSecretStatus(envFilePath);
@@ -109,12 +108,7 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     opts.db.mode === "embedded-postgres"
       ? color("embedded-postgres", "green")
       : color("external-postgres", "yellow");
-  const uiMode =
-    opts.uiMode === "vite-dev"
-      ? color("vite-dev-middleware", "cyan")
-      : opts.uiMode === "static"
-        ? color("static-ui", "magenta")
-        : color("headless-api", "yellow");
+  const uiMode = color("headless-api", "yellow");
 
   const portValue =
     opts.requestedPort === opts.listenPort
@@ -151,7 +145,6 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     row("Auth", opts.authReady ? color("ready", "green") : color("not-ready", "yellow")),
     row("Server", portValue),
     row("API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
-    row("UI", uiUrl),
     row("Database", dbDetails),
     row("Migrations", opts.migrationSummary),
     row(

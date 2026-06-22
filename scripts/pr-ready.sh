@@ -77,14 +77,14 @@ fi
 MAIN_SHA="$(git merge-base HEAD origin/main 2>/dev/null || echo '')"
 if [[ -n "$MAIN_SHA" ]]; then
   if node scripts/check-version-sync.mjs --require-bump-if-source-changed --base "$MAIN_SHA" --head HEAD >/dev/null 2>&1; then
-    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'ui/src/' 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
+    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
     if [[ -n "$SRC_CHANGED" ]]; then
       ok "Source changed and version bumps detected"
     else
       ok "No source changes (ci/docs/config only) — no version bump needed"
     fi
   else
-    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'ui/src/' 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
+    SRC_CHANGED="$(git diff --name-only "$MAIN_SHA"..HEAD -- 'server/src/' 'cli/src/' 2>/dev/null | head -1)"
     if [[ -n "$SRC_CHANGED" ]]; then
       fail "Source files changed but package versions were not bumped"
     else
@@ -97,9 +97,7 @@ fi
 DIST_CHECKS=(
   "cli/dist"
   "server/dist"
-  "server/ui-dist"
   "cli/dist/runtime/server/dist/app.js"
-  "cli/dist/runtime/server/ui-dist"
 )
 
 DIST_OK=true

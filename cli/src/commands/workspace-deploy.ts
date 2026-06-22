@@ -237,8 +237,8 @@ function runDeployStatus(opts: { fork?: string; json?: boolean }): void {
   if (status.ready) {
     console.log(pc.green(pc.bold("  ✓ Workspace is deploy-ready.")));
     console.log("");
-    console.log(pc.dim("  Vercel deploy (agency portal):"));
-    console.log(pc.dim("    cd apps/agency-portal && vercel"));
+    console.log(pc.dim("  Vercel deploy (workspace app):"));
+    console.log(pc.dim("    cd apps/workspace && vercel"));
     console.log(pc.dim("  Fork sync + PR:"));
     console.log(pc.dim(`    growthub kit fork heal ${status.fork.forkId ?? "<fork-id>"} --json`));
   } else {
@@ -322,7 +322,7 @@ async function runDeployChecklist(opts: { fork?: string }): Promise<void> {
       pc.green("Workspace is deploy-ready.") + "\n\n" +
       "  Final steps (outside CLI scope):\n" +
       `  ${pc.dim("1.")} ${pc.cyan("node setup/verify-env.mjs")}         — check env vars\n` +
-      `  ${pc.dim("2.")} ${pc.cyan("cd apps/agency-portal && vercel")}    — deploy to Vercel\n` +
+      `  ${pc.dim("2.")} ${pc.cyan("cd apps/workspace && vercel")}        — deploy to Vercel\n` +
       `  ${pc.dim("3.")} ${pc.cyan("growthub integrations status --json")} — verify integrations are live\n\n` +
       `  ${pc.dim("Docs: docs/WORKSPACE_DEPLOY_FLOW.md")}`,
     );
@@ -358,7 +358,7 @@ export interface WorkspaceDeployCheckResult {
 }
 
 function detectAppRoot(forkPath: string): string | null {
-  for (const rel of ["apps/workspace", "apps/agency-portal", "apps/portal", "studio"]) {
+  for (const rel of ["apps/workspace"]) {
     if (fs.existsSync(path.join(forkPath, rel, "package.json"))) return rel;
   }
   return null;

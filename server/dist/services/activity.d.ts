@@ -9,16 +9,16 @@ export interface ActivityFilters {
 export declare function activityService(db: Db): {
     list: (filters: ActivityFilters) => Promise<{
         id: string;
-        createdAt: Date;
         companyId: string;
-        agentId: string | null;
-        runId: string | null;
         actorType: string;
         actorId: string;
         action: string;
         entityType: string;
         entityId: string;
+        agentId: string | null;
+        runId: string | null;
         details: Record<string, unknown> | null;
+        createdAt: Date;
     }[]>;
     forIssue: (issueId: string) => Omit<import("drizzle-orm/pg-core").PgSelectBase<"activity_log", {
         id: import("drizzle-orm/pg-core").PgColumn<{
@@ -212,16 +212,16 @@ export declare function activityService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"activity_log", "not-null">, false, "where" | "orderBy", {
         id: string;
-        createdAt: Date;
         companyId: string;
-        agentId: string | null;
-        runId: string | null;
         actorType: string;
         actorId: string;
         action: string;
         entityType: string;
         entityId: string;
+        agentId: string | null;
+        runId: string | null;
         details: Record<string, unknown> | null;
+        createdAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";

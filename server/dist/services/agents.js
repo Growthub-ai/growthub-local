@@ -3,6 +3,7 @@ import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { agents, agentConfigRevisions, agentApiKeys, agentRuntimeState, agentWakeupRequests, costEvents, heartbeatRuns, projects, goals, issues, issueComments, approvals, approvalComments, activityLog, financeEvents, } from "@paperclipai/db";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { normalizePerAgentWorkspacesCwdToShared } from "../home-paths.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 function hashToken(token) {
@@ -25,6 +26,9 @@ const CONFIG_REVISION_FIELDS = [
 ];
 function isPlainRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function readNonEmptyString(value) {
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 function jsonEqual(left, right) {
     return JSON.stringify(left) === JSON.stringify(right);
@@ -136,9 +140,38 @@ export function agentService(db) {
             urlKey: normalizeAgentUrlKey(row.name) ?? row.id,
         };
     }
+    function normalizeAgentAdapterConfigField(adapterConfig) {
+        if (!isPlainRecord(adapterConfig))
+            return adapterConfig;
+        const normalized = {
+            ...adapterConfig,
+        };
+        const cwd = readNonEmptyString(adapterConfig.cwd);
+        if (cwd) {
+            normalized.cwd = normalizePerAgentWorkspacesCwdToShared(cwd);
+        }
+        const browserSlot = readNonEmptyString(adapterConfig.browserSlot);
+        if (browserSlot) {
+            normalized.browserSlot = browserSlot;
+        }
+        const tabGroupKey = readNonEmptyString(adapterConfig.tabGroupKey);
+        if (tabGroupKey) {
+            normalized.tabGroupKey = tabGroupKey;
+        }
+        const tabGroupLabel = readNonEmptyString(adapterConfig.tabGroupLabel);
+        if (tabGroupLabel) {
+            normalized.tabGroupLabel = tabGroupLabel;
+        }
+        const crossAgentTabPolicy = readNonEmptyString(adapterConfig.crossAgentTabPolicy);
+        if (crossAgentTabPolicy) {
+            normalized.crossAgentTabPolicy = crossAgentTabPolicy;
+        }
+        return normalized;
+    }
     function normalizeAgentRow(row) {
         return withUrlKey({
             ...row,
+            adapterConfig: normalizeAgentAdapterConfigField(row.adapterConfig),
             permissions: normalizeAgentPermissions(row.permissions, row.role),
         });
     }
@@ -248,6 +281,9 @@ export function agentService(db) {
             const role = (data.role ?? existing.role);
             normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
         }
+        if (normalizedPatch.adapterConfig !== undefined) {
+            normalizedPatch.adapterConfig = normalizeAgentAdapterConfigField(normalizedPatch.adapterConfig);
+        }
         const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
         const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
         const updated = await db
@@ -298,9 +334,10 @@ export function agentService(db) {
             const uniqueName = deduplicateAgentName(data.name, existingAgents);
             const role = data.role ?? "general";
             const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
+            const adapterConfig = normalizeAgentAdapterConfigField(data.adapterConfig);
             const created = await db
                 .insert(agents)
-                .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions })
+                .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions, adapterConfig })
                 .returning()
                 .then((rows) => rows[0]);
             return normalizeAgentRow(created);
@@ -365,6 +402,27 @@ export function agentService(db) {
                 .set({ revokedAt: new Date() })
                 .where(eq(agentApiKeys.agentId, id));
             return getById(id);
+        },
+        /** Returns agent to idle. API keys stay revoked — create new keys after restore. */
+        restoreTerminated: async (id) => {
+            const existing = await getById(id);
+            if (!existing)
+                return null;
+            if (existing.status !== "terminated") {
+                throw conflict("Only terminated agents can be restored");
+            }
+            const updated = await db
+                .update(agents)
+                .set({
+                status: "idle",
+                pauseReason: null,
+                pausedAt: null,
+                updatedAt: new Date(),
+            })
+                .where(eq(agents.id, id))
+                .returning()
+                .then((rows) => rows[0] ?? null);
+            return updated ? normalizeAgentRow(updated) : null;
         },
         remove: async (id) => {
             const existing = await getById(id);

@@ -16,18 +16,18 @@ export declare function assetService(db: Db): {
         createdByUserId: string | null;
     }>;
     getById: (id: string) => Promise<{
-        sha256: string;
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         provider: string;
         objectKey: string;
         contentType: string;
         byteSize: number;
+        sha256: string;
         originalFilename: string | null;
         createdByAgentId: string | null;
         createdByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
 };
 //# sourceMappingURL=assets.d.ts.map

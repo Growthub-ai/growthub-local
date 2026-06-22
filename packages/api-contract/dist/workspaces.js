@@ -8,14 +8,9 @@
  * dependencies explicit so agents and the CLI can verify them without
  * scanning shell scripts or running clones.
  *
- * The reference implementation is
- * `growthub-creative-video-pipeline-v1`, whose Stage 3 delegates to the
- * external `video-use` fork via `VIDEO_USE_HOME` and an `edit-plan.md`
- * handoff artifact.
- *
- * The convention is documented in
- * `docs/PIPELINE_KIT_CONTRACT_V1.md` and referenced from
- * `cli/assets/worker-kits/<kit>/workspace.dependencies.json`.
+ * The workspace starter is the canonical implementation. Dependency manifests
+ * stay additive and are only used when an exported workspace declares external
+ * repos, forks, services, or app surfaces.
  *
  * Rules:
  *   - Additive only. Kits without `workspace.dependencies.json` stay valid.

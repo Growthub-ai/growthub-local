@@ -106,7 +106,7 @@ export function registerWorkflowContextCommand(parent: Command): void {
       "after",
       `
 Examples:
-  $ growthub workflow context wf_123 --agent creative-strategist-v1 --json
+  $ growthub workflow context wf_123 --agent workspace-operator --json
   $ growthub workflow context wf_123 --fork-id my-fork --strict
   $ growthub workflow context wf_123 --workspace ./forks/video-studio --trace-tail 50
 

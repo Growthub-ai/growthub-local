@@ -1,19 +1,18 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { Router } from "express";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import path from "node:path";
 import { promisify } from "node:util";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclipai/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
-import { createAgentKeySchema, createAgentHireSchema, createAgentSchema, deriveAgentUrlKey, isUuidLike, resetAgentSessionSchema, testAdapterEnvironmentSchema, updateAgentPermissionsSchema, updateAgentInstructionsPathSchema, wakeAgentSchema, updateAgentSchema, } from "@paperclipai/shared";
+import { createAgentKeySchema, createAgentHireSchema, createAgentSchema, deriveAgentUrlKey, isUuidLike, resetAgentSessionSchema, testAdapterEnvironmentSchema, updateAgentPermissionsSchema, updateAgentInstructionsPathSchema, wakeAgentSchema, updateAgentSchema, shouldIncludeAgentInDxAgentList, } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { agentService, accessService, approvalService, budgetService, heartbeatService, issueApprovalService, issueService, logActivity, secretService, workspaceOperationService, } from "../services/index.js";
-import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
-import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX, DEFAULT_CODEX_LOCAL_MODEL, } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
@@ -444,7 +443,7 @@ export function agentRoutes(db) {
     router.get("/companies/:companyId/agents", async (req, res) => {
         const companyId = req.params.companyId;
         assertCompanyAccess(req, companyId);
-        const result = await svc.list(companyId);
+        const result = (await svc.list(companyId)).filter(shouldIncludeAgentInDxAgentList);
         const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
         if (canReadConfigs || req.actor.type === "board") {
             res.json(result);
@@ -529,7 +528,7 @@ export function agentRoutes(db) {
     router.get("/companies/:companyId/agent-configurations", async (req, res) => {
         const companyId = req.params.companyId;
         await assertCanReadConfigurations(req, companyId);
-        const rows = await svc.list(companyId);
+        const rows = (await svc.list(companyId)).filter(shouldIncludeAgentInDxAgentList);
         res.json(rows.map((row) => redactAgentConfiguration(row)));
     });
     router.get("/agents/me", async (req, res) => {
@@ -1077,6 +1076,58 @@ export function agentRoutes(db) {
         });
         res.json(agent);
     });
+    router.post("/agents/:id/restore-terminated", async (req, res) => {
+        assertBoard(req);
+        const id = req.params.id;
+        try {
+            const agent = await svc.restoreTerminated(id);
+            if (!agent) {
+                res.status(404).json({ error: "Agent not found" });
+                return;
+            }
+            await logActivity(db, {
+                companyId: agent.companyId,
+                actorType: "user",
+                actorId: req.actor.userId ?? "board",
+                action: "agent.restored_from_termination",
+                entityType: "agent",
+                entityId: agent.id,
+            });
+            res.json(agent);
+        }
+        catch (err) {
+            if (err instanceof HttpError && err.status === 409) {
+                res.status(409).json({ error: err.message });
+                return;
+            }
+            throw err;
+        }
+    });
+    router.post("/chrome-lease/force-release", async (req, res) => {
+        assertBoard(req);
+        const { forceReleaseChromeLeases } = await import("../services/chrome-lease.js");
+        const reason = typeof req.body?.reason === "string" && req.body.reason.trim().length > 0
+            ? req.body.reason.trim()
+            : "board_force_release";
+        const slotId = typeof req.body?.slotId === "string" && req.body.slotId.trim().length > 0
+            ? req.body.slotId.trim()
+            : null;
+        const released = forceReleaseChromeLeases(reason, slotId);
+        const previous = released[0] ?? null;
+        res.json({
+            ok: true,
+            hadLease: released.length > 0,
+            releasedCount: released.length,
+            previous: previous
+                ? {
+                    slotId: previous.slotId,
+                    agentId: previous.agentId,
+                    runId: previous.runId,
+                    expiresAt: previous.expiresAt,
+                }
+                : null,
+        });
+    });
     router.delete("/agents/:id", async (req, res) => {
         assertBoard(req);
         const id = req.params.id;
@@ -1231,51 +1282,71 @@ export function agentRoutes(db) {
         const cwd = typeof runtimeConfig.cwd === "string" && runtimeConfig.cwd.trim().length > 0
             ? runtimeConfig.cwd.trim()
             : process.cwd();
-        if (process.platform === "darwin") {
-            const terminalCommand = `cd "${escapeAppleScriptString(cwd)}" && ${escapeAppleScriptString(command)} login`;
+        const result = await new Promise((resolve, reject) => {
+            let stdout = "";
+            let stderr = "";
+            const proc = spawn(command, ["auth", "login"], {
+                cwd,
+                stdio: ["ignore", "pipe", "pipe"],
+                env: { ...process.env },
+            });
+            proc.stdout.on("data", (d) => { stdout += d.toString(); });
+            proc.stderr.on("data", (d) => { stderr += d.toString(); });
+            const timer = setTimeout(() => { proc.kill(); reject(new Error("Auth login timed out")); }, 300_000);
+            proc.on("exit", (code) => {
+                clearTimeout(timer);
+                const urlMatch = (stdout + stderr).match(/https?:\/\/[^\s]+auth[^\s]*/);
+                resolve({ stdout, stderr, loginUrl: urlMatch ? urlMatch[0] : null, exitCode: code });
+            });
+            proc.on("error", (err) => { clearTimeout(timer); reject(err); });
+        });
+        res.json({ ...result, signal: null, timedOut: false });
+    });
+    router.post("/agents/:id/claude-logout", async (req, res) => {
+        assertBoard(req);
+        const id = req.params.id;
+        const agent = await svc.getById(id);
+        if (!agent) {
+            res.status(404).json({ error: "Agent not found" });
+            return;
+        }
+        assertCompanyAccess(req, agent.companyId);
+        const config = asRecord(agent.adapterConfig) ?? {};
+        const { config: runtimeConfig } = await secretsSvc.resolveAdapterConfigForRuntime(agent.companyId, config);
+        const command = typeof runtimeConfig.command === "string" && runtimeConfig.command.trim().length > 0
+            ? runtimeConfig.command.trim() : "claude";
+        const cwd = typeof runtimeConfig.cwd === "string" && runtimeConfig.cwd.trim().length > 0
+            ? runtimeConfig.cwd.trim() : process.cwd();
+        try {
+            const { stdout, stderr } = await execFileAsync(command, ["auth", "logout"], { cwd, timeout: 10_000 });
+            res.json({ ok: true, stdout, stderr });
+        }
+        catch (err) {
+            res.status(500).json({ error: err instanceof Error ? err.message : "Failed to logout" });
+        }
+    });
+    router.post("/agents/:id/chrome-reconnect", async (req, res) => {
+        assertBoard(req);
+        const id = req.params.id;
+        const agent = await svc.getById(id);
+        if (!agent) {
+            res.status(404).json({ error: "Agent not found" });
+            return;
+        }
+        assertCompanyAccess(req, agent.companyId);
+        try {
+            await execFileAsync("open", ["-a", "Google Chrome"]);
+            res.json({ ok: true, message: "Chrome opened. Click the Claude extension icon in the toolbar to reconnect." });
+        }
+        catch {
             try {
-                await execFileAsync("osascript", [
-                    "-e",
-                    'tell application "Terminal" to activate',
-                    "-e",
-                    `tell application "Terminal" to do script "${terminalCommand}"`,
-                ]);
-                res.json({
-                    exitCode: 0,
-                    signal: null,
-                    timedOut: false,
-                    loginUrl: null,
-                    stdout: "Opened Terminal for Claude login.",
-                    stderr: "",
-                });
-                return;
+                await execFileAsync("open", ["-a", "Chromium"]);
+                res.json({ ok: true, message: "Browser opened. Click the Claude extension icon in the toolbar to reconnect." });
             }
-            catch (error) {
-                const message = error instanceof Error ? error.message : "Failed to open Terminal for Claude login";
-                res.status(500).json({
-                    error: message,
-                    exitCode: 1,
-                    signal: null,
-                    timedOut: false,
-                    loginUrl: null,
-                    stdout: "",
-                    stderr: message,
-                });
-                return;
+            catch (err) {
+                res.status(500).json({ error: err instanceof Error ? err.message : "Failed to open Chrome" });
             }
         }
-        const result = await runClaudeLogin({
-            runId: `claude-login-${randomUUID()}`,
-            agent: {
-                id: agent.id,
-                companyId: agent.companyId,
-                name: agent.name,
-                adapterType: agent.adapterType,
-                adapterConfig: agent.adapterConfig,
-            },
-            config: runtimeConfig,
-        });
-        res.json(result);
     });
     router.get("/companies/:companyId/heartbeat-runs", async (req, res) => {
         const companyId = req.params.companyId;

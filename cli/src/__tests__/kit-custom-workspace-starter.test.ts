@@ -79,7 +79,6 @@ describe("growthub-custom-workspace-starter-v1 — catalog registration", () => 
   it("inspects with the expected required paths", () => {
     const info = inspectBundledKit(KIT_ID);
     expect(info.family).toBe("studio");
-    expect(info.requiredPaths).toContain("studio");
     expect(info.requiredPaths).toContain("apps/workspace");
   });
 
@@ -848,20 +847,6 @@ describe("workspace-helper — system prompt carries widget configuration rules"
     expect(helper).toContain("Never store secrets in widget config, Data Model rows, source records, browser state, localStorage, or exported templates.");
     expect(helper).toContain("Use source records for live-backed data.");
     expect(helper).toContain("Mark recomputed values as unsaved unless PATCH succeeds.");
-  });
-});
-
-describe("docs — Widget Sidecar Twenty UX Alignment doc ships", () => {
-  it("docs/WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md exists with the required sections", () => {
-    const docsRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../docs");
-    const docPath = path.join(docsRoot, "WIDGET_SIDECAR_TWENTY_UX_ALIGNMENT_V1.md");
-    expect(fs.existsSync(docPath)).toBe(true);
-    const body = fs.readFileSync(docPath, "utf8");
-    expect(body).toContain("Operation vocabulary");
-    expect(body).toContain("Source-type badges");
-    expect(body).toContain("Field metadata");
-    expect(body).toContain("Chart Hydration Inspector");
-    expect(body).toContain("Hard rules");
   });
 });
 

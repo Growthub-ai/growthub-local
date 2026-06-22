@@ -50,7 +50,6 @@ export const serverConfigSchema = z.object({
   host: z.string().default("127.0.0.1"),
   port: z.number().int().min(1).max(65535).default(3100),
   allowedHostnames: z.array(z.string().min(1)).default([]),
-  serveUi: z.boolean().default(true),
 });
 
 export const authConfigSchema = z.object({

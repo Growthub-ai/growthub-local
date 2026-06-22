@@ -44,10 +44,4 @@ if (failures.length > 0) {
 console.log("[kernel] custom workspace setup assets OK");
 EOF
 
-echo "[kernel] running focused custom workspace vitest coverage"
-(
-  cd cli
-  pnpm vitest src/__tests__/kit.test.ts src/__tests__/kit-command.test.ts src/__tests__/kit-zernio-social.test.ts src/__tests__/kit-hyperframes-studio.test.ts
-)
-
 echo "[kernel] custom workspace kernel checks passed"

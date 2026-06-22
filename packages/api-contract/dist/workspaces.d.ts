@@ -8,14 +8,9 @@
  * dependencies explicit so agents and the CLI can verify them without
  * scanning shell scripts or running clones.
  *
- * The reference implementation is
- * `growthub-creative-video-pipeline-v1`, whose Stage 3 delegates to the
- * external `video-use` fork via `VIDEO_USE_HOME` and an `edit-plan.md`
- * handoff artifact.
- *
- * The convention is documented in
- * `docs/PIPELINE_KIT_CONTRACT_V1.md` and referenced from
- * `cli/assets/worker-kits/<kit>/workspace.dependencies.json`.
+ * The workspace starter is the canonical implementation. Dependency manifests
+ * stay additive and are only used when an exported workspace declares external
+ * repos, forks, services, or app surfaces.
  *
  * Rules:
  *   - Additive only. Kits without `workspace.dependencies.json` stay valid.
@@ -29,15 +24,14 @@
  */
 export type WorkspaceDependencyKind = "git-fork" | "git-repo" | "npm-package" | "system-binary" | "external-service" | (string & {});
 /**
- * A surface inside the kit (e.g. a Vercel-deployable Next.js app, a Vite
- * studio shell). Surfaces are NOT external dependencies — they live
- * inside the exported workspace — but they are declared here so a single
- * inspection path can answer "what does this workspace contain?".
+ * A surface inside the exported workspace. Surfaces are NOT external
+ * dependencies, but they are declared here so a single inspection path can
+ * answer "what does this workspace contain?".
  */
 export interface WorkspaceSurfaceRef {
     /** Stable surface identifier (e.g. `studio`, `vercel-app`). */
     id: string;
-    /** Path under the kit root (e.g. `studio/`, `apps/creative-video-pipeline/`). */
+    /** Path under the workspace root (for example, `apps/workspace/`). */
     path: string;
     /** Free-form kind descriptor (e.g. `vite`, `nextjs`, `cli`). */
     kind?: string;
@@ -46,8 +40,7 @@ export interface WorkspaceSurfaceRef {
 }
 /**
  * The output root + bucket layout the workspace writes to. Mirrors
- * `PipelineOutputTopology` for kits that don't ship a pipeline manifest
- * but still want to declare their output disk shape.
+ * the output disk shape for workspace-owned generated artifacts.
  */
 export interface WorkspaceOutputTopology {
     /** Root, typically `output/<client>/<project>`. */

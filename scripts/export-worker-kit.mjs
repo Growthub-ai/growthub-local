@@ -18,7 +18,7 @@ function usage() {
       "  3. $HOME/growthub-worker-kit-exports",
       "",
       "Example:",
-      "  node scripts/export-worker-kit.mjs growthub-open-higgsfield-studio-v1 --qa",
+      "  node scripts/export-worker-kit.mjs growthub-custom-workspace-starter-v1 --qa",
     ].join("\n"),
   );
 }
@@ -345,9 +345,6 @@ try {
   console.log(`1. Open a separate agent session and set Working Directory to: ${folderPath}`);
   console.log(`2. Read SKILL.md, then skills.md, then templates/project.md — the v1.2 primitives are already in place.`);
   console.log(`3. Run 'growthub skills validate --root ${folderPath}' to confirm the discovery shape.`);
-  if (kitId === "growthub-open-higgsfield-studio-v1") {
-    console.log("4. In the Open Higgsfield browser/desktop app, enter your Muapi key from https://muapi.ai when prompted.");
-  }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

@@ -24,8 +24,9 @@ jobs:
           node -e "
             const fs = require('fs');
             const checks = [
-              ['ui/src/lib/growthub-connection.ts', 'GrowthubConnectionSurface'],
-              ['ui/src/components/GrowthubConnectionCard.tsx', 'GrowthubConnectionCard'],
+              ['cli/assets/worker-kits/growthub-custom-workspace-starter-v1/kit.json', 'growthub-custom-workspace-starter-v1'],
+              ['cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/growthub.config.json', 'Growthub Workspace'],
+              ['cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/route.js', 'GET'],
               ['packages/shared/src/config-schema.ts', 'surfaceConfigSchema'],
               ['server/src/app.ts', 'express'],
               ['cli/src/commands/worktree-lib.ts', 'DEFAULT_WORKTREE_HOME'],

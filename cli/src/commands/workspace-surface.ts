@@ -22,7 +22,7 @@ interface AppSurface {
   name: string;
   relPath: string;
   absPath: string;
-  framework: "nextjs" | "vite" | "unknown";
+  framework: "nextjs" | "unknown";
   hasEnvExample: boolean;
   hasVercelJson: boolean;
   hasGrowthubConfig: boolean;
@@ -33,8 +33,6 @@ interface AppSurface {
 function detectFramework(appPath: string): AppSurface["framework"] {
   const nextConfig = ["next.config.js", "next.config.mjs", "next.config.ts"];
   if (nextConfig.some((f) => fs.existsSync(path.resolve(appPath, f)))) return "nextjs";
-  const viteConfig = ["vite.config.js", "vite.config.mjs", "vite.config.ts"];
-  if (viteConfig.some((f) => fs.existsSync(path.resolve(appPath, f)))) return "vite";
   return "unknown";
 }
 
@@ -67,11 +65,6 @@ function detectPackageName(appPath: string): string | undefined {
 
 const KNOWN_APP_DIRS = [
   "apps/workspace",
-  "apps/agency-portal",
-  "apps/portal",
-  "studio",
-  "app",
-  "src",
 ];
 
 function discoverAppSurfaces(forkPath: string): AppSurface[] {
@@ -122,7 +115,7 @@ function runSurfaceList(forkPath: string, json: boolean): void {
   console.log(pc.dim("─".repeat(60)));
   if (surfaces.length === 0) {
     console.log(pc.dim("  No app surfaces detected."));
-    console.log(pc.dim("  Expected: apps/workspace, apps/agency-portal, or studio/"));
+    console.log(pc.dim("  Expected: apps/workspace"));
     console.log("");
     return;
   }
@@ -204,7 +197,7 @@ export function registerWorkspaceSurfaceCommands(workspaceCmd: Command): void {
 
   surface
     .command("list")
-    .description("List all detected app surfaces (Next.js apps, Vite studio, etc.)")
+    .description("List detected workspace app surfaces")
     .option("--fork <path>", "Fork root path (default: cwd)")
     .option("--json", "Emit machine-readable JSON")
     .addHelpText("after", `

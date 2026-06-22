@@ -245,18 +245,18 @@ export declare function pluginRegistryService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"plugins", "not-null">, false, "orderBy", {
         id: string;
-        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
-        updatedAt: Date;
-        lastError: string | null;
+        pluginKey: string;
+        packageName: string;
         version: string;
         apiVersion: number;
         categories: ("automation" | "connector" | "workspace" | "ui")[];
-        packageName: string;
-        packagePath: string | null;
-        pluginKey: string;
         manifestJson: PaperclipPluginManifestV1;
+        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
         installOrder: number | null;
+        packagePath: string | null;
+        lastError: string | null;
         installedAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -720,18 +720,18 @@ export declare function pluginRegistryService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"plugins", "not-null">, false, "where" | "orderBy", {
         id: string;
-        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
-        updatedAt: Date;
-        lastError: string | null;
+        pluginKey: string;
+        packageName: string;
         version: string;
         apiVersion: number;
         categories: ("automation" | "connector" | "workspace" | "ui")[];
-        packageName: string;
-        packagePath: string | null;
-        pluginKey: string;
         manifestJson: PaperclipPluginManifestV1;
+        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
         installOrder: number | null;
+        packagePath: string | null;
+        lastError: string | null;
         installedAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -1192,18 +1192,18 @@ export declare function pluginRegistryService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"plugins", "not-null">, false, "where" | "orderBy", {
         id: string;
-        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
-        updatedAt: Date;
-        lastError: string | null;
+        pluginKey: string;
+        packageName: string;
         version: string;
         apiVersion: number;
         categories: ("automation" | "connector" | "workspace" | "ui")[];
-        packageName: string;
-        packagePath: string | null;
-        pluginKey: string;
         manifestJson: PaperclipPluginManifestV1;
+        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
         installOrder: number | null;
+        packagePath: string | null;
+        lastError: string | null;
         installedAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -1436,34 +1436,34 @@ export declare function pluginRegistryService(db: Db): {
     /** Get a single plugin by primary key. */
     getById: (id: string) => Promise<{
         id: string;
-        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
-        updatedAt: Date;
-        lastError: string | null;
+        pluginKey: string;
+        packageName: string;
         version: string;
         apiVersion: number;
         categories: ("automation" | "connector" | "workspace" | "ui")[];
-        packageName: string;
-        packagePath: string | null;
-        pluginKey: string;
         manifestJson: PaperclipPluginManifestV1;
+        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
         installOrder: number | null;
+        packagePath: string | null;
+        lastError: string | null;
         installedAt: Date;
+        updatedAt: Date;
     }>;
     /** Get a single plugin by its unique `pluginKey`. */
     getByKey: (pluginKey: string) => Promise<{
         id: string;
-        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
-        updatedAt: Date;
-        lastError: string | null;
+        pluginKey: string;
+        packageName: string;
         version: string;
         apiVersion: number;
         categories: ("automation" | "connector" | "workspace" | "ui")[];
-        packageName: string;
-        packagePath: string | null;
-        pluginKey: string;
         manifestJson: PaperclipPluginManifestV1;
+        status: "error" | "installed" | "ready" | "disabled" | "upgrade_pending" | "uninstalled";
         installOrder: number | null;
+        packagePath: string | null;
+        lastError: string | null;
         installedAt: Date;
+        updatedAt: Date;
     }>;
     /**
      * Register (install) a new plugin.
@@ -1551,11 +1551,11 @@ export declare function pluginRegistryService(db: Db): {
     /** Retrieve a plugin's instance configuration. */
     getConfig: (pluginId: string) => Promise<{
         id: string;
+        pluginId: string;
+        configJson: Record<string, unknown>;
+        lastError: string | null;
         createdAt: Date;
         updatedAt: Date;
-        lastError: string | null;
-        configJson: Record<string, unknown>;
-        pluginId: string;
     }>;
     /**
      * Create or fully replace a plugin's instance configuration.
@@ -1804,16 +1804,16 @@ export declare function pluginRegistryService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"plugin_entities", "not-null">, false, "where" | "orderBy" | "limit" | "offset", {
         id: string;
-        data: Record<string, unknown>;
-        status: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        title: string | null;
-        scopeId: string | null;
-        externalId: string | null;
+        pluginId: string;
         entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
-        pluginId: string;
+        scopeId: string | null;
+        externalId: string | null;
+        title: string | null;
+        status: string | null;
+        data: Record<string, unknown>;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -2017,16 +2017,16 @@ export declare function pluginRegistryService(db: Db): {
      */
     getEntityByExternalId: (pluginId: string, entityType: string, externalId: string) => Promise<{
         id: string;
-        data: Record<string, unknown>;
-        status: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-        title: string | null;
-        scopeId: string | null;
-        externalId: string | null;
+        pluginId: string;
         entityType: string;
         scopeKind: "company" | "agent" | "project" | "issue" | "goal" | "run" | "instance" | "project_workspace";
-        pluginId: string;
+        scopeId: string | null;
+        externalId: string | null;
+        title: string | null;
+        status: string | null;
+        data: Record<string, unknown>;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     /**
      * Create or update a persistent mapping between a Paperclip object and an
@@ -2232,14 +2232,14 @@ export declare function pluginRegistryService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"plugin_jobs", "not-null">, false, "where" | "orderBy", {
         id: string;
-        status: "active" | "paused" | "failed";
-        createdAt: Date;
-        updatedAt: Date;
-        schedule: string;
-        jobKey: string;
         pluginId: string;
+        jobKey: string;
+        schedule: string;
+        status: "active" | "paused" | "failed";
         lastRunAt: Date | null;
         nextRunAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -2406,14 +2406,14 @@ export declare function pluginRegistryService(db: Db): {
      */
     getJobByKey: (pluginId: string, jobKey: string) => Promise<{
         id: string;
-        status: "active" | "paused" | "failed";
-        createdAt: Date;
-        updatedAt: Date;
-        schedule: string;
-        jobKey: string;
         pluginId: string;
+        jobKey: string;
+        schedule: string;
+        status: "active" | "paused" | "failed";
         lastRunAt: Date | null;
         nextRunAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     /**
      * Register or update a scheduled job for a plugin.

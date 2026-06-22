@@ -3,7 +3,6 @@ import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { instanceUserRoles, invites } from "@paperclipai/db";
 import { serverVersion } from "../version.js";
 export function healthRoutes(db, opts = {
-    surfaceProfile: "dx",
     deploymentMode: "local_trusted",
     deploymentExposure: "private",
     authReady: true,
@@ -37,9 +36,9 @@ export function healthRoutes(db, opts = {
         res.json({
             status: "ok",
             version: serverVersion,
-            surfaceProfile: opts.surfaceProfile,
             deploymentMode: opts.deploymentMode,
             deploymentExposure: opts.deploymentExposure,
+            surfaceProfile: opts.surfaceProfile ?? "dx",
             authReady: opts.authReady,
             bootstrapStatus,
             bootstrapInviteActive,

@@ -58,8 +58,6 @@ export interface Config {
   databaseBackupIntervalMinutes: number;
   databaseBackupRetentionDays: number;
   databaseBackupDir: string;
-  serveUi: boolean;
-  uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
   secretsStrictMode: boolean;
   secretsMasterKeyFilePath: string;
@@ -234,11 +232,6 @@ export function loadConfig(): Config {
     databaseBackupIntervalMinutes,
     databaseBackupRetentionDays,
     databaseBackupDir,
-    serveUi:
-      process.env.SERVE_UI !== undefined
-        ? process.env.SERVE_UI === "true"
-        : fileConfig?.server.serveUi ?? true,
-    uiDevMiddleware: process.env.PAPERCLIP_UI_DEV_MIDDLEWARE === "true",
     secretsProvider,
     secretsStrictMode,
     secretsMasterKeyFilePath:

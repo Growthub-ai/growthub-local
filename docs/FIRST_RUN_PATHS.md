@@ -79,16 +79,16 @@ Use this when you want the cleanest path to a custom workspace without importing
 
 ---
 
-## 4) Download a worker kit
+## 4) Browse workspace templates
 
 ```bash
 growthub kit
 growthub kit list
-growthub kit inspect <kit-id>
-growthub kit download <kit-id>
+growthub kit inspect growthub-custom-workspace-starter-v1
+growthub kit download growthub-custom-workspace-starter-v1
 ```
 
-Use this when you want a prepackaged environment with runtime assumptions, templates, setup files, and agent contract already in place.
+Use this when you want an official governed workspace template with runtime assumptions, templates, setup files, and agent contracts already in place.
 
 ---
 

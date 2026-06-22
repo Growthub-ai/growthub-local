@@ -1229,9 +1229,8 @@ function deriveAppBuildLensState(input = {}) {
 }
 
 /**
- * Fleet lens (roadmap Item 4 — now un-staged). The precondition named in
- * docs/ROADMAP_IMPACT_ITEMS_V1.md is satisfied: the runtime surface-metadata
- * source is the governed `workspace-app-registry` Data Model object
+ * Fleet lens. The runtime surface-metadata source is the governed
+ * `workspace-app-registry` Data Model object
  * (lib/workspace-app-registry.js). Each registered application derives one
  * step: status from its health rollup (linked workflows/APIs/data sources +
  * persistence/deploy flags), description from its computed next action, href

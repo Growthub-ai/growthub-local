@@ -24,14 +24,13 @@ Reference contracts:
 - [Governed Workspace Topology V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [Workspace Builder Runtime V1](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 
-## Profile-first install
+## Workspace-first install
 
-The installer offers profile selection before command/harness depth:
+The installer offers a direct governed workspace lane before command/harness depth:
 
 ```bash
-npm create @growthub/growthub-local@latest -- --profile gtm
-npm create @growthub/growthub-local@latest -- --profile dx
 npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
 ```
 
 ## How this fits the governed workspace architecture
@@ -42,7 +41,7 @@ The installer is the safest entrypoint into the same lifecycle the CLI operates:
 2. export the governed Workspace app
 3. register the fork metadata and local policy
 4. open the Workspace Builder for dashboards, tabs, widgets, templates, data model objects, and settings
-5. continue with `@growthub/cli` for status checks, fork sync, deploy preparation, worker kits, workflows, pipelines, and optional Growthub authority
+5. continue with `@growthub/cli` for status checks, fork sync, deploy preparation, workspace templates, workflows, pipelines, and optional Growthub authority
 
 The generated Workspace is not a loose app copy. It carries `growthub.config.json` plus `.growthub-fork/` lifecycle state so export, fork safety, ongoing customization, and agent operation stay tied to one portable artifact.
 
@@ -53,7 +52,7 @@ After install, users land on **Custom AI Governed Workspace** first. The fastest
 1. import a GitHub repo into a governed workspace
 2. import a skills.sh skill into a governed workspace
 3. start from the workspace starter
-4. start from a worker kit
+4. start from a workspace template
 5. connect Growthub account after local value is proven
 6. optionally activate upgrade path for hosted depth
 
@@ -61,18 +60,18 @@ After install, users land on **Custom AI Governed Workspace** first. The fastest
 
 | Flag | Applies to | Description |
 |---|---|---|
-| `--profile gtm\|dx\|workspace` | all | Pick an install profile |
-| `--run` | `dx`, `gtm`, discovery | Start Growthub immediately after config |
-| `--data-dir <path>` | `dx`, `gtm`, discovery | Override install directory (default: `./growthub-local`) |
-| `--config <path>` | `dx`, `gtm`, discovery | Use a custom config path |
-| `--out <path>` | `workspace` | Destination for workspace scaffold |
-| `--kit <kit-id>` | `workspace` | Source kit id (default: `growthub-custom-workspace-starter-v1`) |
-| `--name <label>` | `workspace` | Human label for fork registration |
-| `--upstream <owner/repo>` | `workspace` | Optionally create remote GitHub fork |
-| `--destination-org <org>` | `workspace` | Create fork under org |
-| `--fork-name <name>` | `workspace` | Override GitHub fork name |
-| `--remote-sync-mode <mode>` | `workspace` | Initial policy mode: `off`, `branch`, `pr` |
-| `--json` | `workspace` | Emit machine-readable output |
+| `--profile workspace\|self-improving` | all | Pick a governed workspace install profile |
+| `--run` | discovery | Start Growthub immediately after config |
+| `--data-dir <path>` | discovery | Override install directory (default: `./growthub-local`) |
+| `--config <path>` | discovery | Use a custom config path |
+| `--out <path>` | workspace profiles | Destination for workspace scaffold |
+| `--kit <kit-id>` | workspace profiles | Source kit id (default: `growthub-custom-workspace-starter-v1`) |
+| `--name <label>` | workspace profiles | Human label for fork registration |
+| `--upstream <owner/repo>` | workspace profiles | Optionally create remote GitHub fork |
+| `--destination-org <org>` | workspace profiles | Create fork under org |
+| `--fork-name <name>` | workspace profiles | Override GitHub fork name |
+| `--remote-sync-mode <mode>` | workspace profiles | Initial policy mode: `off`, `branch`, `pr` |
+| `--json` | workspace profiles | Emit machine-readable output |
 
 ## Post-install examples
 

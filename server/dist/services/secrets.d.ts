@@ -192,16 +192,16 @@ export declare function secretService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"company_secrets", "not-null">, false, "where" | "orderBy", {
         id: string;
-        name: string;
-        description: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
+        name: string;
         provider: string;
-        createdByAgentId: string | null;
-        createdByUserId: string | null;
         externalRef: string | null;
         latestVersion: number;
+        description: string | null;
+        createdByAgentId: string | null;
+        createdByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -393,29 +393,29 @@ export declare function secretService(db: Db): {
     }>, "where" | "orderBy">;
     getById: (id: string) => Promise<{
         id: string;
-        name: string;
-        description: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
+        name: string;
         provider: string;
-        createdByAgentId: string | null;
-        createdByUserId: string | null;
         externalRef: string | null;
         latestVersion: number;
+        description: string | null;
+        createdByAgentId: string | null;
+        createdByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     getByName: (companyId: string, name: string) => Promise<{
         id: string;
-        name: string;
-        description: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
+        name: string;
         provider: string;
-        createdByAgentId: string | null;
-        createdByUserId: string | null;
         externalRef: string | null;
         latestVersion: number;
+        description: string | null;
+        createdByAgentId: string | null;
+        createdByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     create: (companyId: string, input: {
         name: string;
@@ -477,16 +477,16 @@ export declare function secretService(db: Db): {
     }>;
     remove: (secretId: string) => Promise<{
         id: string;
-        name: string;
-        description: string | null;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
+        name: string;
         provider: string;
-        createdByAgentId: string | null;
-        createdByUserId: string | null;
         externalRef: string | null;
         latestVersion: number;
+        description: string | null;
+        createdByAgentId: string | null;
+        createdByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     } | null>;
     normalizeAdapterConfigForPersistence: (companyId: string, adapterConfig: Record<string, unknown>, opts?: {
         strictMode?: boolean;

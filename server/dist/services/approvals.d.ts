@@ -210,17 +210,17 @@ export declare function approvalService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"approvals", "not-null">, false, "where", {
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         type: string;
         requestedByAgentId: string | null;
         requestedByUserId: string | null;
+        status: string;
         payload: Record<string, unknown>;
         decisionNote: string | null;
         decidedByUserId: string | null;
         decidedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -431,17 +431,17 @@ export declare function approvalService(db: Db): {
     }>, "where">;
     getById: (id: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         type: string;
         requestedByAgentId: string | null;
         requestedByUserId: string | null;
+        status: string;
         payload: Record<string, unknown>;
         decisionNote: string | null;
         decidedByUserId: string | null;
         decidedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     create: (companyId: string, data: Omit<typeof approvals.$inferInsert, "companyId">) => Promise<{
         id: string;
@@ -521,13 +521,13 @@ export declare function approvalService(db: Db): {
     }>;
     listComments: (approvalId: string) => Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         approvalId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
         body: string;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     addComment: (approvalId: string, body: string, actor: {
         agentId?: string;

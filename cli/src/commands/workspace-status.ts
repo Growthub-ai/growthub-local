@@ -221,7 +221,7 @@ function checkConfig(forkPath: string): ConfigStatus {
 }
 
 function detectAppPaths(forkPath: string): AppPathsStatus {
-  const candidates = ["apps/workspace", "apps/agency-portal", "apps/portal", "studio"];
+  const candidates = ["apps/workspace"];
   const detected = candidates.filter((rel) => fs.existsSync(path.resolve(forkPath, rel)));
   return { detected };
 }

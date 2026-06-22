@@ -4,8 +4,7 @@ This file catalogues the skills the Custom Workspace Operator offers out of the 
 
 ## Built-in skills (upstream-owned, heal will update)
 
-- **scaffold-view** — generate a new Vite view under `studio/src/views/<Name>.jsx`
-- **scaffold-api** — stub an API adapter under `studio/src/api/<slug>.js`
+- **workspace-mutation** — use the governed `PATCH /api/workspace` lane for dashboards, widgets, canvas, and Data Model edits.
 - **emit-brand-scaffold** — clone `brands/_template/brand-kit.md` to `brands/<slug>/brand-kit.md`
 - **trace-inspect** — summarise the last N events in `.growthub-fork/trace.jsonl`
 

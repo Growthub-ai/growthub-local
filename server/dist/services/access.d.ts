@@ -23,23 +23,23 @@ export declare function accessService(db: Db): {
     }>;
     listMembers: (companyId: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         principalType: string;
         principalId: string;
+        status: string;
         membershipRole: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     setMemberPermissions: (companyId: string, memberId: string, grants: GrantInput[], grantedByUserId: string | null) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         principalType: string;
         principalId: string;
+        status: string;
         membershipRole: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     } | null>;
     promoteInstanceAdmin: (userId: string) => Promise<{
         id: string;
@@ -57,35 +57,35 @@ export declare function accessService(db: Db): {
     }>;
     listUserCompanyAccess: (userId: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         principalType: string;
         principalId: string;
+        status: string;
         membershipRole: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     setUserCompanyAccess: (userId: string, companyIds: string[]) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         principalType: string;
         principalId: string;
+        status: string;
         membershipRole: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     setPrincipalGrants: (companyId: string, principalType: PrincipalType, principalId: string, grants: GrantInput[], grantedByUserId: string | null) => Promise<void>;
     listPrincipalGrants: (companyId: string, principalType: PrincipalType, principalId: string) => Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
-        scope: Record<string, unknown> | null;
         principalType: string;
         principalId: string;
         permissionKey: string;
+        scope: Record<string, unknown> | null;
         grantedByUserId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     setPrincipalPermission: (companyId: string, principalType: PrincipalType, principalId: string, permissionKey: PermissionKey, enabled: boolean, grantedByUserId: string | null, scope?: Record<string, unknown> | null) => Promise<void>;
 };

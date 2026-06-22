@@ -6,7 +6,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 for path in \
   "cli" \
   "server" \
-  "ui" \
   "packages/shared" \
   "packages/create-growthub-local" \
   "docs/LOCAL_HOSTED_CONTRACT.md" \

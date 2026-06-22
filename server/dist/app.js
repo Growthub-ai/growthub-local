@@ -1,11 +1,8 @@
 import express, { Router } from "express";
-import path from "node:path";
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
-import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
+import { privateHostnameGuard } from "./middleware/private-hostname-guard.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { agentRoutes } from "./routes/agents.js";
@@ -20,15 +17,18 @@ import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
+import { knowledgeBaseRoutes } from "./routes/knowledge-base.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { gtmRoutes } from "./routes/gtm.js";
-import { knowledgeBaseRoutes } from "./routes/knowledge-base.js";
+import { skillRoutes } from "./routes/skills.js";
+import { knowledgeImportRoutes } from "./routes/knowledge-import.js";
+import { skillsShRoutes } from "./routes/skills-sh.js";
+import { kbSkillDocRoutes } from "./routes/kb-skill-docs.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
-import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
@@ -40,17 +40,10 @@ import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js
 import { buildHostServices, flushPluginLogBuffer } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
 import { setPluginEventBus } from "./services/activity-log.js";
-import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
-import { pluginRegistryService } from "./services/plugin-registry.js";
+import { applyGrowthubCallbackAuth } from "./services/growthub-connection.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import { readConfigFile, writeConfigFile } from "./config-file.js";
-export function resolveViteHmrPort(serverPort) {
-    if (serverPort <= 55_535) {
-        return serverPort + 10_000;
-    }
-    return Math.max(1_024, serverPort - 10_000);
-}
 export async function createApp(db, opts) {
     const app = express();
     app.use(express.json({
@@ -60,10 +53,6 @@ export async function createApp(db, opts) {
     }));
     app.use(httpLogger);
     const privateHostnameGateEnabled = opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
-    const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
-        allowedHostnames: opts.allowedHostnames,
-        bindHost: opts.bindHost,
-    });
     app.use(privateHostnameGuard({
         enabled: privateHostnameGateEnabled,
         allowedHostnames: opts.allowedHostnames,
@@ -114,22 +103,14 @@ export async function createApp(db, opts) {
             res.status(500).send("Growthub config not found");
             return;
         }
-        writeConfigFile({
-            ...config,
-            $meta: {
-                ...config.$meta,
-                updatedAt: new Date().toISOString(),
-                source: "configure",
-            },
-            auth: {
-                ...config.auth,
-                token,
-                growthubBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubBaseUrl,
-                growthubPortalBaseUrl: normalizedPortalBaseUrl ?? config.auth.growthubPortalBaseUrl,
-                growthubMachineLabel: machineLabel || config.auth.growthubMachineLabel,
-                growthubWorkspaceLabel: workspaceLabel || config.auth.growthubWorkspaceLabel,
-            },
-        });
+        // Preserve the configured base URL while still persisting callback metadata
+        // such as growthubPortalBaseUrl, growthubMachineLabel, and growthubWorkspaceLabel.
+        writeConfigFile(applyGrowthubCallbackAuth(config, {
+            token,
+            portalBaseUrl: normalizedPortalBaseUrl,
+            machineLabel,
+            workspaceLabel,
+        }));
         const host = req.get("host");
         const forwardedProto = req.get("x-forwarded-proto");
         const protocol = forwardedProto?.split(",")[0]?.trim() || req.protocol;
@@ -191,7 +172,6 @@ export async function createApp(db, opts) {
     }));
     const hostServicesDisposers = new Map();
     const workerManager = createPluginWorkerManager();
-    const pluginRegistry = pluginRegistryService(db);
     const eventBus = createPluginEventBus();
     setPluginEventBus(eventBus);
     const jobStore = pluginJobStore(db);
@@ -241,6 +221,39 @@ export async function createApp(db, opts) {
     });
     if (opts.surfaceRuntime.capabilities.dxEnabled) {
         api.use("/companies", companyRoutes(db));
+        api.use((req, _res, next) => {
+            if (req.method === "POST" && /^\/companies\/[^/]+\/agents(-hires)?$/.test(req.path)) {
+                const body = (req.body ?? {});
+                const existingMeta = body.metadata && typeof body.metadata === "object" && body.metadata !== null && !Array.isArray(body.metadata)
+                    ? body.metadata
+                    : {};
+                const adapterType = String(body.adapterType ?? "codex_local");
+                const dxKind = typeof existingMeta.dxKind === "string" && existingMeta.dxKind.trim()
+                    ? existingMeta.dxKind.trim()
+                    : `dx_adapter:${adapterType}`;
+                const dxMetadata = {
+                    entity: "agent",
+                    product: "dx",
+                    surfaceProfile: "dx",
+                    dxKind,
+                    ...existingMeta,
+                };
+                if (!Object.prototype.hasOwnProperty.call(dxMetadata, "skills")) {
+                    dxMetadata.skills = [];
+                }
+                else if (!Array.isArray(dxMetadata.skills)) {
+                    dxMetadata.skills = [];
+                }
+                else {
+                    dxMetadata.skills = dxMetadata.skills.filter((s) => typeof s === "string" && s.length > 0);
+                }
+                req.body = {
+                    ...body,
+                    metadata: dxMetadata,
+                };
+            }
+            next();
+        });
         api.use(agentRoutes(db));
         api.use(assetRoutes(db, opts.storageService));
         api.use(projectRoutes(db));
@@ -258,9 +271,38 @@ export async function createApp(db, opts) {
         api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
         api.use("/gtm", gtmRoutes(db));
         api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
+        api.use(knowledgeImportRoutes());
+        api.use("/skills-sh", skillsShRoutes(db));
+        api.use(kbSkillDocRoutes(db));
+        api.use(accessRoutes(db, {
+            deploymentMode: opts.deploymentMode,
+            deploymentExposure: opts.deploymentExposure,
+            bindHost: opts.bindHost,
+            allowedHostnames: opts.allowedHostnames,
+        }));
+        api.use(skillRoutes(db));
     }
     if (opts.surfaceRuntime.capabilities.gtmEnabled) {
         api.use("/companies", companyRoutes(db));
+        api.use((req, _res, next) => {
+            if (req.method === "POST" && /^\/companies\/[^/]+\/agents(-hires)?$/.test(req.path)) {
+                const prior = req.body?.metadata;
+                const meta = prior && typeof prior === "object" && prior !== null && !Array.isArray(prior)
+                    ? { ...prior }
+                    : {};
+                if (!Object.prototype.hasOwnProperty.call(meta, "skills")) {
+                    meta.skills = [];
+                }
+                else if (!Array.isArray(meta.skills)) {
+                    meta.skills = [];
+                }
+                else {
+                    meta.skills = meta.skills.filter((s) => typeof s === "string" && s.length > 0);
+                }
+                req.body = { ...req.body, metadata: { product: "gtm", surfaceProfile: "gtm", ...meta } };
+            }
+            next();
+        });
         api.use(agentRoutes(db));
         api.use(assetRoutes(db, opts.storageService));
         api.use(projectRoutes(db));
@@ -278,13 +320,17 @@ export async function createApp(db, opts) {
         api.use(pluginRoutes(db, loader, { scheduler, jobStore }, { workerManager }, { toolDispatcher }, { workerManager }));
         api.use("/gtm", gtmRoutes(db));
         api.use("/gtm/knowledge-base", knowledgeBaseRoutes(db));
+        api.use(knowledgeImportRoutes());
+        api.use("/skills-sh", skillsShRoutes(db));
+        api.use(kbSkillDocRoutes(db));
+        api.use(accessRoutes(db, {
+            deploymentMode: opts.deploymentMode,
+            deploymentExposure: opts.deploymentExposure,
+            bindHost: opts.bindHost,
+            allowedHostnames: opts.allowedHostnames,
+        }));
+        api.use(skillRoutes(db));
     }
-    api.use(accessRoutes(db, {
-        deploymentMode: opts.deploymentMode,
-        deploymentExposure: opts.deploymentExposure,
-        bindHost: opts.bindHost,
-        allowedHostnames: opts.allowedHostnames,
-    }));
     app.use("/api", api);
     app.use("/api", (_req, res) => {
         res.status(404).json({ error: "API route not found" });
@@ -292,77 +338,20 @@ export async function createApp(db, opts) {
     app.use(pluginUiStaticRoutes(db, {
         localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
     }));
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    if (opts.uiMode === "static") {
-        // Try published location first (server/ui-dist/), then monorepo dev location (../../ui/dist)
-        const candidates = [
-            path.resolve(__dirname, "../ui-dist"),
-            path.resolve(__dirname, "../../ui/dist"),
-        ];
-        const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
-        if (uiDist) {
-            const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"), process.env, opts.surfaceRuntime.profile);
-            app.use(express.static(uiDist, { index: false }));
-            app.get(/.*/, (_req, res) => {
-                res.status(200).set("Content-Type", "text/html").end(indexHtml);
-            });
-        }
-        else {
-            console.warn("[paperclip] UI dist not found; running in API-only mode");
-        }
-    }
-    if (opts.uiMode === "vite-dev") {
-        const uiRoot = path.resolve(__dirname, "../../ui");
-        const hmrPort = resolveViteHmrPort(opts.serverPort);
-        const { createServer: createViteServer } = await import("vite");
-        const vite = await createViteServer({
-            root: uiRoot,
-            appType: "custom",
-            server: {
-                middlewareMode: true,
-                hmr: {
-                    host: opts.bindHost,
-                    port: hmrPort,
-                    clientPort: hmrPort,
-                },
-                allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : undefined,
-            },
-        });
-        app.use(vite.middlewares);
-        app.get(/.*/, async (req, res, next) => {
-            try {
-                const templatePath = path.resolve(uiRoot, "index.html");
-                const template = fs.readFileSync(templatePath, "utf-8");
-                const html = applyUiBranding(await vite.transformIndexHtml(req.originalUrl, template), process.env, opts.surfaceRuntime.profile);
-                res.status(200).set({ "Content-Type": "text/html" }).end(html);
-            }
-            catch (err) {
-                next(err);
-            }
-        });
-    }
     app.use(errorHandler);
     jobCoordinator.start();
     scheduler.start();
     void toolDispatcher.initialize().catch((err) => {
         logger.error({ err }, "Failed to initialize plugin tool dispatcher");
     });
-    const devWatcher = opts.uiMode === "vite-dev"
-        ? createPluginDevWatcher(lifecycle, async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null)
-        : null;
     void loader.loadAll().then((result) => {
         if (!result)
             return;
-        for (const loaded of result.results) {
-            if (devWatcher && loaded.success && loaded.plugin.packagePath) {
-                devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
-            }
-        }
+        void result;
     }).catch((err) => {
         logger.error({ err }, "Failed to load ready plugins on startup");
     });
     process.once("exit", () => {
-        devWatcher?.close();
         hostServiceCleanup.disposeAll();
         hostServiceCleanup.teardown();
     });

@@ -19,7 +19,7 @@ This doc names the path. It does not introduce new commands.
 | GitHub repo | `growthub starter import-repo <owner/repo> --out <path>` | Governed Workspace wrapped around the imported tree | Teams with existing code |
 | skills.sh skill | `growthub starter import-skill <owner/repo/skill> --out <path>` | Governed Workspace seeded by the skill | Automation builders |
 | Workspace starter | `growthub starter init --kit growthub-custom-workspace-starter-v1 --out <path>` | Empty governed Workspace, ready for the builder | New projects |
-| Worker kit | `growthub kit download <kit-id> --out <path>` | Specialized governed Workspace (creative-strategist, agency-portal, etc.) | Production workflows |
+| Workspace template | `growthub kit download growthub-custom-workspace-starter-v1 --out <path>` | Official governed Workspace starter | New governed workspaces |
 | Hosted template (post-Bridge) | `growthub bridge agents bind <slug> --workspace-path <path>` | Governed Workspace with a hosted agent bound | Hosted activation |
 
 All five paths land at the same artifact shape (`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`):
@@ -45,7 +45,7 @@ All five paths land at the same artifact shape (`docs/GOVERNED_WORKSPACE_TOPOLOG
      • GitHub repo        → growthub starter import-repo
      • skills.sh skill    → growthub starter import-skill
      • workspace starter → growthub starter init
-     • worker kit         → growthub kit download
+     • workspace template → growthub kit download
      • hosted template    → growthub bridge agents bind
 
 3. Open the Workspace Builder
@@ -91,4 +91,3 @@ All five paths land at the same artifact shape (`docs/GOVERNED_WORKSPACE_TOPOLOG
 - [`docs/WORKSPACE_CONFIG_CONTRACT_V1.md`](./WORKSPACE_CONFIG_CONTRACT_V1.md) — the canonical config shape
 - [`docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md) — what's inside a Workspace
 - [`docs/WORKSPACE_DEPLOY_FLOW.md`](./WORKSPACE_DEPLOY_FLOW.md) — how to ship a Workspace
-- [`docs/AGENT_HARNESS_AUTH_PRIMITIVE.md`](./AGENT_HARNESS_AUTH_PRIMITIVE.md) — Bridge auth primitive

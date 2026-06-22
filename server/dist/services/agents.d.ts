@@ -23,6 +23,7 @@ export declare function agentService(db: Db): {
     list: (companyId: string, options?: {
         includeTerminated?: boolean;
     }) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -40,7 +41,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -48,6 +48,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     })[]>;
     getById: (id: string) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -65,7 +66,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -73,6 +73,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     create: (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">) => Promise<{
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -90,7 +91,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -98,6 +98,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }>;
     update: (id: string, data: Partial<typeof agents.$inferInsert>, options?: UpdateAgentOptions) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -115,7 +116,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -123,6 +123,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     pause: (id: string, reason?: "manual" | "budget" | "system") => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -140,7 +141,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -148,6 +148,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     resume: (id: string) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -165,7 +166,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -173,6 +173,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     terminate: (id: string) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -190,7 +191,32 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
+        runtimeConfig: Record<string, unknown>;
+        lastHeartbeatAt: Date | null;
+        metadata: Record<string, unknown> | null;
+    } & {
+        urlKey: string;
+    }) | null>;
+    /** Returns agent to idle. API keys stay revoked — create new keys after restore. */
+    restoreTerminated: (id: string) => Promise<({
         adapterConfig: Record<string, unknown>;
+        permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
+        id: string;
+        name: string;
+        status: string;
+        pauseReason: string | null;
+        pausedAt: Date | null;
+        budgetMonthlyCents: number;
+        spentMonthlyCents: number;
+        createdAt: Date;
+        updatedAt: Date;
+        companyId: string;
+        role: string;
+        title: string | null;
+        icon: string | null;
+        reportsTo: string | null;
+        capabilities: string | null;
+        adapterType: string;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -198,6 +224,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     remove: (id: string) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -215,7 +242,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -223,6 +249,7 @@ export declare function agentService(db: Db): {
         urlKey: string;
     }) | null>;
     activatePendingApproval: (id: string) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -240,7 +267,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -250,6 +276,7 @@ export declare function agentService(db: Db): {
     updatePermissions: (id: string, permissions: {
         canCreateAgents: boolean;
     }) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -267,7 +294,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -276,34 +302,35 @@ export declare function agentService(db: Db): {
     }) | null>;
     listConfigRevisions: (id: string) => Promise<{
         id: string;
-        createdAt: Date;
         companyId: string;
+        agentId: string;
         createdByAgentId: string | null;
         createdByUserId: string | null;
-        agentId: string;
         source: string;
         rolledBackFromRevisionId: string | null;
         changedKeys: string[];
         beforeConfig: Record<string, unknown>;
         afterConfig: Record<string, unknown>;
+        createdAt: Date;
     }[]>;
     getConfigRevision: (id: string, revisionId: string) => Promise<{
         id: string;
-        createdAt: Date;
         companyId: string;
+        agentId: string;
         createdByAgentId: string | null;
         createdByUserId: string | null;
-        agentId: string;
         source: string;
         rolledBackFromRevisionId: string | null;
         changedKeys: string[];
         beforeConfig: Record<string, unknown>;
         afterConfig: Record<string, unknown>;
+        createdAt: Date;
     }>;
     rollbackConfigRevision: (id: string, revisionId: string, actor: {
         agentId?: string | null;
         userId?: string | null;
     }) => Promise<({
+        adapterConfig: Record<string, unknown>;
         permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
         id: string;
         name: string;
@@ -321,7 +348,6 @@ export declare function agentService(db: Db): {
         reportsTo: string | null;
         capabilities: string | null;
         adapterType: string;
-        adapterConfig: Record<string, unknown>;
         runtimeConfig: Record<string, unknown>;
         lastHeartbeatAt: Date | null;
         metadata: Record<string, unknown> | null;
@@ -1048,16 +1074,14 @@ export declare function agentService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"heartbeat_runs", "not-null">, false, "where", {
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         agentId: string;
+        invocationSource: string;
         triggerDetail: string | null;
+        status: string;
+        startedAt: Date | null;
         finishedAt: Date | null;
         error: string | null;
-        invocationSource: string;
-        startedAt: Date | null;
         wakeupRequestId: string | null;
         exitCode: number | null;
         signal: string | null;
@@ -1079,6 +1103,8 @@ export declare function agentService(db: Db): {
         retryOfRunId: string | null;
         processLossRetryCount: number;
         contextSnapshot: Record<string, unknown> | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -1636,6 +1662,7 @@ export declare function agentService(db: Db): {
         readonly ambiguous: false;
     } | {
         readonly agent: {
+            adapterConfig: Record<string, unknown>;
             permissions: import("./agent-permissions.js").NormalizedAgentPermissions;
             id: string;
             name: string;
@@ -1653,7 +1680,6 @@ export declare function agentService(db: Db): {
             reportsTo: string | null;
             capabilities: string | null;
             adapterType: string;
-            adapterConfig: Record<string, unknown>;
             runtimeConfig: Record<string, unknown>;
             lastHeartbeatAt: Date | null;
             metadata: Record<string, unknown> | null;

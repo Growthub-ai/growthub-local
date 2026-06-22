@@ -409,19 +409,6 @@ checkFileContains(".github/workflows/release.yml",
 );
 
 // ---------------------------------------------------------------------------
-// 18. Demo CLI ↔ real CLI parity
-// ---------------------------------------------------------------------------
-console.log("\n── 18. Demo CLI parity ──────────────────────────────────────────────────");
-checkFileContains("scripts/cli-demo.mjs",
-  "fork-sync",
-  "github-integration",
-  "integrations-bridge",
-  "service-status",
-  "custom-workspace-starter",
-  "fleet-ops",
-);
-
-// ---------------------------------------------------------------------------
 // 20. Fleet-level fork operations subsystem
 // ---------------------------------------------------------------------------
 console.log("\n── 20. Fleet operations subsystem ───────────────────────────────────────");
@@ -509,14 +496,11 @@ const starterAssets = [
   "examples/workspace-sample.md",
   "docs/starter-kit-overview.md",
   "docs/fork-sync-integration.md",
-  "docs/vite-ui-shell-guide.md",
-  "studio/index.html",
-  "studio/package.json",
-  "studio/vite.config.js",
-  "studio/serve.mjs",
-  "studio/src/main.jsx",
-  "studio/src/App.jsx",
-  "studio/src/app.css",
+  "apps/workspace/package.json",
+  "apps/workspace/next.config.js",
+  "apps/workspace/app/page.jsx",
+  "apps/workspace/app/api/workspace/route.js",
+  "apps/workspace/lib/workspace-schema.js",
   "growthub-meta/README.md",
   "growthub-meta/kit-standard.md",
 ];
@@ -730,10 +714,6 @@ checkFileContains("cli/src/commands/source-import-discovery.ts",
   "startSourceImportFlow",
   "confirmAndResumeSourceImportJob",
   "importSourceAsWorkspace",
-);
-
-checkFileContains("scripts/cli-demo.mjs",
-  "source-import",
 );
 
 // Paperclip-coupling prohibition for the source-import tree
