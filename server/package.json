@@ -28,16 +28,12 @@
   },
   "files": [
     "dist",
-    "ui-dist",
     "skills"
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx watch --ignore ../ui/node_modules --ignore ../ui/.vite --ignore ../ui/dist src/index.ts",
-    "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
+    "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true tsx watch src/index.ts",
     "build": "tsc",
-    "prepack": "pnpm run prepare:ui-dist",
-    "postpack": "rm -rf ui-dist",
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
     "typecheck": "pnpm --filter @paperclipai/plugin-sdk build && tsc --noEmit"
@@ -84,7 +80,6 @@
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vite": "^6.1.0",
     "vitest": "^3.0.5"
   }
 }

@@ -50,13 +50,16 @@ describe("kit interactive download flow", () => {
 
     listBundledKitsMock.mockReturnValue([
       {
-        id: "growthub-open-higgsfield-studio-v1",
+        id: "growthub-custom-workspace-starter-v1",
         family: "studio",
-        name: "Growthub Agent Worker Kit - Open Higgsfield Studio",
+        name: "Growthub Custom Workspace Starter Kit",
         version: "1.0.0",
-        description: "Self-contained local execution environment for Open Higgsfield.",
-        briefType: "open-higgsfield-visual-production",
+        description: "Canonical governed workspace starter.",
+        briefType: "custom-workspace-starter",
         executionMode: "export",
+        activationModes: ["export"],
+        bundleId: "growthub-custom-workspace-starter-v1",
+        bundleVersion: "1.0.0",
       },
     ]);
 
@@ -64,8 +67,8 @@ describe("kit interactive download flow", () => {
       options.onProgress?.({ phase: "copying", percent: 50, detail: `${kitId}:${out ?? "default"}` });
       options.onProgress?.({ phase: "done", percent: 100, detail: "complete" });
       return {
-        folderPath: "/tmp/kits/growthub-agent-worker-kit-open-higgsfield-studio-v1",
-        zipPath: "/tmp/kits/growthub-agent-worker-kit-open-higgsfield-studio-v1.zip",
+        folderPath: "/tmp/kits/growthub-custom-workspace-starter-v1",
+        zipPath: "/tmp/kits/growthub-custom-workspace-starter-v1.zip",
       };
     });
   });
@@ -77,7 +80,7 @@ describe("kit interactive download flow", () => {
   it("downloads a selected kit from the interactive flow and prints success output", async () => {
     selectMock
       .mockResolvedValueOnce("studio")
-      .mockResolvedValueOnce("growthub-open-higgsfield-studio-v1")
+      .mockResolvedValueOnce("growthub-custom-workspace-starter-v1")
       .mockResolvedValueOnce("actions")
       .mockResolvedValueOnce("download");
     confirmMock
@@ -90,7 +93,7 @@ describe("kit interactive download flow", () => {
     expect(result).toBe("done");
     expect(multiselectMock).not.toHaveBeenCalled();
     expect(downloadBundledKitMock).toHaveBeenCalledWith(
-      "growthub-open-higgsfield-studio-v1",
+      "growthub-custom-workspace-starter-v1",
       undefined,
       expect.objectContaining({
         onProgress: expect.any(Function),
@@ -100,29 +103,23 @@ describe("kit interactive download flow", () => {
 
     const printedOutput = consoleLogSpy.mock.calls.flat().join("\n");
     expect(printedOutput).toContain("Open folder:");
-    expect(printedOutput).toContain("/tmp/kits/growthub-agent-worker-kit-open-higgsfield-studio-v1");
+    expect(printedOutput).toContain("/tmp/kits/growthub-custom-workspace-starter-v1");
     expect(printedOutput).toContain("Kit exported successfully.");
   });
 
-  it("downloads a non-default custom workspace kit from the same filtered list", async () => {
+  it("lists the project management workspace template from the same filtered list", async () => {
     listBundledKitsMock.mockReturnValue([
       {
-        id: "growthub-open-higgsfield-studio-v1",
+        id: "growthub-custom-workspace-starter-v1",
         family: "studio",
-        name: "Growthub Agent Worker Kit - Open Higgsfield Studio",
+        name: "Growthub Custom Workspace Starter Kit",
         version: "1.0.0",
-        description: "Self-contained local execution environment for Open Higgsfield.",
-        briefType: "open-higgsfield-visual-production",
+        description: "Canonical governed workspace starter.",
+        briefType: "custom-workspace-starter",
         executionMode: "export",
-      },
-      {
-        id: "growthub-twenty-crm-v1",
-        family: "studio",
-        name: "Growthub Agent Worker Kit - Twenty CRM",
-        version: "1.0.0",
-        description: "Self-contained local execution environment for Twenty CRM.",
-        briefType: "twenty-crm-growth-stack",
-        executionMode: "export",
+        activationModes: ["export"],
+        bundleId: "growthub-custom-workspace-starter-v1",
+        bundleVersion: "1.0.0",
       },
     ]);
 
@@ -137,9 +134,9 @@ describe("kit interactive download flow", () => {
 
     selectMock
       .mockResolvedValueOnce("studio")
-      .mockResolvedValueOnce("growthub-twenty-crm-v1")
+      .mockResolvedValueOnce("project-management-workspace-template-v1")
       .mockResolvedValueOnce("actions")
-      .mockResolvedValueOnce("download");
+      .mockResolvedValueOnce("inspect");
     confirmMock
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(true);
@@ -148,12 +145,8 @@ describe("kit interactive download flow", () => {
     const result = await runInteractivePicker({});
 
     expect(result).toBe("done");
-    expect(downloadBundledKitMock).toHaveBeenCalledWith(
-      "growthub-twenty-crm-v1",
-      undefined,
-      expect.objectContaining({
-        onProgress: expect.any(Function),
-      }),
-    );
+    expect(downloadBundledKitMock).not.toHaveBeenCalled();
+    const printedOutput = consoleLogSpy.mock.calls.flat().join("\n");
+    expect(printedOutput).toContain("Project Management Workspace Template");
   });
 });

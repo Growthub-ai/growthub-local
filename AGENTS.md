@@ -48,8 +48,8 @@ This repo is the **authoritative source of truth** for the product — edit here
 
 | Zone | Paths | Role |
 | --- | --- | --- |
-| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/api-contract/`, `packages/create-growthub-local/`, `packages/db/` (partial OSS view) | The published value. |
-| **vendored-runtime** | `server/`, `ui/`, `packages/shared/` | Bundled Paperclip local runtime — required to run a workspace, but **not** the product. Separate `@paperclipai/server` publish path. |
+| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/`, `cli/dist/`), `packages/api-contract/`, `packages/create-growthub-local/`, `packages/db` (partial OSS view) | The published value. |
+| **vendored-runtime** | `server/`, `packages/shared/` | Bundled Paperclip API/runtime support — not the product. Separate `@paperclipai/server` publish path. |
 | **scaffolding** | `docs/`, `scripts/`, root contracts, `.github/`, `.githooks/`, `.claude/`, root config | Tooling, contracts, docs, CI. Freely editable. |
 
 Rules (authoritative detail: [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./docs/AGENT_DIST_REBUILD_GUIDE.md)):
@@ -60,7 +60,7 @@ Rules (authoritative detail: [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./docs/AGENT_D
 
 ## Runtime And Validation
 
-Use the canonical runtime control surface for this repo. Do not replace it with ad-hoc server/UI loops unless a maintainer explicitly assigns that path.
+Use the canonical runtime control surface for this repo. Do not replace it with ad-hoc server loops unless a maintainer explicitly assigns that path.
 
 ```bash
 scripts/runtime-control.sh up-main
@@ -120,7 +120,6 @@ Pointers:
 - `.claude/skills/README.md` — skill catalog and authoring rules.
 - `docs/SKILLS_MCP_DISCOVERY.md` — skill/MCP primitive reference.
 - `cli/README.md` — CLI-specific usage.
-- `scripts/demo-cli.sh cli discover` — local CLI preview when the task is explicitly CLI discovery.
 
 ## Governed-workspace primitives (v1.2)
 

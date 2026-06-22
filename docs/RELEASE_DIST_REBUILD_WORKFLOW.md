@@ -16,7 +16,7 @@ The OSS tree is a **partial view** of the real workspace. Feature PRs live in th
 
 | Surface | Where | Contains | Cannot do |
 |---|---|---|---|
-| **OSS tree** (`growthub-ai/growthub-local`) | this repo | `cli/`, `server/`, `ui/`, `packages/shared`, `packages/db/src/**`, `packages/create-growthub-local`, CI gates, docs | rebuild `cli/dist/index.js` (esbuild needs adapter/plugin packages absent here) |
+| **OSS tree** (`growthub-ai/growthub-local`) | this repo | `cli/`, `server/`, `packages/shared`, `packages/db/src/**`, `packages/create-growthub-local`, CI gates, docs | rebuild `cli/dist/index.js` (esbuild needs adapter/plugin packages absent here) |
 | **Full workspace** (super-admin private) | super-admin environment | everything above + `packages/adapters/*` + `packages/plugins/*` + `packages/plugins/examples/*` + `packages/db/package.json` + `@paperclipai/server` source | n/a — is the complete source of truth |
 
 `pnpm-workspace.yaml` at repo root lists all workspace globs; many resolve to empty dirs on the OSS tree. That is intentional. `cli/esbuild.config.mjs` hard-codes `workspacePaths` that include `packages/adapters/*` — running `pnpm --filter @growthub/cli run build` on the OSS tree alone will fail (ENOENT on `packages/db/package.json`, missing adapter directories).
@@ -97,7 +97,6 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
 
    # runtime payload intact
    test -f cli/dist/runtime/server/dist/app.js
-   test -d cli/dist/runtime/server/ui-dist
    ```
 4. **Verify tarball shape**:
    ```bash
@@ -107,7 +106,6 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
    `cli` tarball MUST contain:
    - `dist/index.js` (single-file bundle with shebang)
    - `dist/runtime/server/dist/app.js`
-   - `dist/runtime/server/ui-dist/**`
    - `assets/worker-kits/*/kit.json` (all 10 bundled kits)
 
    `cli` tarball MUST NOT contain:
@@ -169,7 +167,7 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
 
 ## 6. When NOT to follow this workflow
 
-- **Not for server-only changes** (`server/src/**`, `ui/src/**`). Those have their own publish paths (`@paperclipai/server`) and do not require cli dist rebuild unless the bundled runtime under `cli/dist/runtime/server/` also changed.
+- **Not for server-only changes** (`server/src/**`). Those have their own publish path (`@paperclipai/server`) and do not require cli dist rebuild unless the bundled runtime under `cli/dist/runtime/server/` also changed.
 - **Not for docs / kernel-packet changes.** No version bump, no rebuild.
 - **Not for worker-kit manifest changes** (`assets/worker-kits/**`). Those ship in the CLI tarball as-is — rebuild not needed for kit manifest edits, but `check-worker-kits.mjs` must pass.
 

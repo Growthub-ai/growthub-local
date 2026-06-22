@@ -34,9 +34,9 @@ describe("readSkillCatalog — repo catalog", () => {
     );
   });
 
-  it("finds a SKILL.md for every worker kit", () => {
+  it("finds a SKILL.md for the bundled workspace starter", () => {
     const kitEntries = result.entries.filter((e) => e.source === "worker-kit");
-    expect(kitEntries.length).toBe(2);
+    expect(kitEntries.length).toBe(1);
     // Sanity: every kit includes the v1.2 primitive frontmatter fields.
     for (const entry of kitEntries) {
       expect(entry.manifest.sessionMemory?.path).toBe(".growthub-fork/project.md");

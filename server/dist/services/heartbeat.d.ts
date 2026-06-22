@@ -82,16 +82,14 @@ export declare function heartbeatService(db: Db): {
     }[]>;
     getRun: (runId: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         agentId: string;
+        invocationSource: string;
         triggerDetail: string | null;
+        status: string;
+        startedAt: Date | null;
         finishedAt: Date | null;
         error: string | null;
-        invocationSource: string;
-        startedAt: Date | null;
         wakeupRequestId: string | null;
         exitCode: number | null;
         signal: string | null;
@@ -113,15 +111,15 @@ export declare function heartbeatService(db: Db): {
         retryOfRunId: string | null;
         processLossRetryCount: number;
         contextSnapshot: Record<string, unknown> | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     getRuntimeState: (agentId: string) => Promise<{
         sessionDisplayId: string | null;
         sessionParamsJson: Record<string, unknown> | null;
-        createdAt: Date;
-        updatedAt: Date;
+        agentId: string;
         companyId: string;
         adapterType: string;
-        agentId: string;
         sessionId: string | null;
         stateJson: Record<string, unknown>;
         lastRunId: string | null;
@@ -131,19 +129,21 @@ export declare function heartbeatService(db: Db): {
         totalCachedInputTokens: number;
         totalCostCents: number;
         lastError: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     } | null>;
     listTaskSessions: (agentId: string) => Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
-        adapterType: string;
         agentId: string;
-        lastRunId: string | null;
-        lastError: string | null;
+        adapterType: string;
         taskKey: string;
         sessionParamsJson: Record<string, unknown> | null;
         sessionDisplayId: string | null;
+        lastRunId: string | null;
+        lastError: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     resetRuntimeSession: (agentId: string, opts?: {
         taskKey?: string | null;
@@ -375,17 +375,17 @@ export declare function heartbeatService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"heartbeat_run_events", "not-null">, false, "where" | "orderBy" | "limit", {
         id: number;
-        createdAt: Date;
         companyId: string;
-        payload: Record<string, unknown> | null;
-        agentId: string;
         runId: string;
-        level: string | null;
-        color: string | null;
+        agentId: string;
         seq: number;
         eventType: string;
         stream: string | null;
+        level: string | null;
+        color: string | null;
         message: string | null;
+        payload: Record<string, unknown> | null;
+        createdAt: Date;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -723,16 +723,14 @@ export declare function heartbeatService(db: Db): {
     }>;
     cancelRun: (runId: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         agentId: string;
+        invocationSource: string;
         triggerDetail: string | null;
+        status: string;
+        startedAt: Date | null;
         finishedAt: Date | null;
         error: string | null;
-        invocationSource: string;
-        startedAt: Date | null;
         wakeupRequestId: string | null;
         exitCode: number | null;
         signal: string | null;
@@ -754,21 +752,28 @@ export declare function heartbeatService(db: Db): {
         retryOfRunId: string | null;
         processLossRetryCount: number;
         contextSnapshot: Record<string, unknown> | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
-    cancelActiveForAgent: (agentId: string) => Promise<number>;
+    cancelActiveForAgent: (agentId: string, reason?: string) => Promise<number>;
+    /** Cancel every queued/running heartbeat + pending wakeup for the company; release Chrome lease. */
+    sweepCompanyAgentWork: (companyId: string) => Promise<{
+        cancelledRuns: number;
+        cancelledPendingWakeups: number;
+        examined: number;
+        processesSignalled: number;
+    }>;
     cancelBudgetScopeWork: (scope: BudgetEnforcementScope) => Promise<void>;
     getActiveRunForAgent: (agentId: string) => Promise<{
         id: string;
-        status: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         agentId: string;
+        invocationSource: string;
         triggerDetail: string | null;
+        status: string;
+        startedAt: Date | null;
         finishedAt: Date | null;
         error: string | null;
-        invocationSource: string;
-        startedAt: Date | null;
         wakeupRequestId: string | null;
         exitCode: number | null;
         signal: string | null;
@@ -790,6 +795,8 @@ export declare function heartbeatService(db: Db): {
         retryOfRunId: string | null;
         processLossRetryCount: number;
         contextSnapshot: Record<string, unknown> | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
 };
 export {};

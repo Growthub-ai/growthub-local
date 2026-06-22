@@ -222,11 +222,11 @@ export declare function issueService(db: Db): {
         }, {}, {}>;
     }, "single", Record<"labels", "not-null">, false, "where" | "orderBy", {
         id: string;
+        companyId: string;
         name: string;
+        color: string;
         createdAt: Date;
         updatedAt: Date;
-        companyId: string;
-        color: string;
     }[], {
         id: import("drizzle-orm/pg-core").PgColumn<{
             name: "id";
@@ -333,11 +333,11 @@ export declare function issueService(db: Db): {
     }>, "where" | "orderBy">;
     getLabelById: (id: string) => Promise<{
         id: string;
+        companyId: string;
         name: string;
+        color: string;
         createdAt: Date;
         updatedAt: Date;
-        companyId: string;
-        color: string;
     }>;
     createLabel: (companyId: string, data: Pick<typeof labels.$inferInsert, "name" | "color">) => Promise<{
         id: string;
@@ -361,13 +361,13 @@ export declare function issueService(db: Db): {
         limit?: number | null;
     }) => Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         issueId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
         body: string;
+        createdAt: Date;
+        updatedAt: Date;
     }[]>;
     getCommentCursor: (issueId: string) => Promise<{
         totalComments: number;
@@ -376,13 +376,13 @@ export declare function issueService(db: Db): {
     }>;
     getComment: (commentId: string) => Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         companyId: string;
         issueId: string;
         authorAgentId: string | null;
         authorUserId: string | null;
         body: string;
+        createdAt: Date;
+        updatedAt: Date;
     } | null>;
     addComment: (issueId: string, body: string, actor: {
         agentId?: string;

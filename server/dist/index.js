@@ -35,10 +35,10 @@ export async function startServer() {
             : migrations.join(", ");
     }
     async function promptApplyMigrations(migrations) {
-        if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never")
-            return false;
         if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true")
             return true;
+        if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never")
+            return false;
         if (!stdin.isTTY || !stdout.isTTY)
             return true;
         const prompt = createInterface({ input: stdin, output: stdout });
@@ -354,12 +354,23 @@ export async function startServer() {
         authReady = true;
     }
     const listenPort = await detectPort(config.port);
-    const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
+    const uiMode = "none";
     const storageService = createStorageServiceFromConfig(config);
+    const requestedSurfaceProfile = (process.env.PAPERCLIP_SURFACE_PROFILE ??
+        config.surfaceRuntime.profile)
+        .trim()
+        .toLowerCase();
+    const surfaceProfile = requestedSurfaceProfile === "gtm" ? "gtm" : "dx";
     const app = await createApp(db, {
         uiMode,
         serverPort: listenPort,
-        surfaceRuntime: config.surfaceRuntime,
+        surfaceRuntime: {
+            profile: surfaceProfile,
+            capabilities: {
+                dxEnabled: surfaceProfile !== "gtm",
+                gtmEnabled: surfaceProfile === "gtm",
+            },
+        },
         storageService,
         deploymentMode: config.deploymentMode,
         deploymentExposure: config.deploymentExposure,

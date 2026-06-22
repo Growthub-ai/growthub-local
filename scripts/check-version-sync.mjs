@@ -75,7 +75,7 @@ function main() {
   }
 
   if (options.requireBumpIfSourceChanged && options.base) {
-    const sourceChanges = gitDiffNameOnly(options.base, options.head, ["ui/src", "server/src", "cli/src"]);
+    const sourceChanges = gitDiffNameOnly(options.base, options.head, ["server/src", "cli/src"]);
     if (sourceChanges.length > 0) {
       const versionChanges = gitDiffNameOnly(options.base, options.head, [
         "cli/package.json",
@@ -83,7 +83,7 @@ function main() {
       ]);
       if (versionChanges.length === 0) {
         throw new Error(
-          "Source files changed under ui/src, server/src, or cli/src but package versions were not bumped.",
+          "Source files changed under server/src or cli/src but package versions were not bumped.",
         );
       }
     }

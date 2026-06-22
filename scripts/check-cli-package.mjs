@@ -29,11 +29,8 @@ assert(createPkg.dependencies?.["@growthub/cli"] === cliPkg.version, "Installer 
 for (const requiredPath of [
   "cli/dist/index.js",
   "cli/dist/runtime/server/dist/app.js",
-  "cli/dist/runtime/server/ui-dist",
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/kit.json",
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/bundles/growthub-custom-workspace-starter-v1.json",
-  "cli/assets/worker-kits/growthub-agency-portal-starter-v1/kit.json",
-  "cli/assets/worker-kits/growthub-agency-portal-starter-v1/bundles/growthub-agency-portal-starter-v1.json",
 ]) {
   assert(existsSync(path.join(root, requiredPath)), `Missing shipped CLI artifact: ${requiredPath}`);
 }
@@ -44,8 +41,6 @@ for (const requiredToken of [
   'type: "worker"',
   'executionMode: "export"',
   'activationModes: ["export"]',
-  'id: "growthub-agency-portal-starter-v1"',
-  'defaultBundleId: "growthub-agency-portal-starter-v1"',
 ]) {
   assert(catalogModule.includes(requiredToken), `Bundled kit catalog missing token: ${requiredToken}`);
 }
@@ -63,12 +58,10 @@ for (const requiredToken of [
 for (const requiredSnippet of [
   "growthub kit list",
   "growthub kit inspect growthub-custom-workspace-starter-v1",
-  "growthub kit inspect growthub-agency-portal-starter-v1",
   "growthub kit download growthub-custom-workspace-starter-v1",
-  "growthub kit download growthub-agency-portal-starter-v1",
   "growthub kit path growthub-custom-workspace-starter-v1",
   "growthub kit validate /absolute/path/to/kit",
-  "How local adapters use worker kits",
+  "How local adapters use workspace exports",
 ]) {
   assert(cliReadme.includes(requiredSnippet), `CLI README missing required kit documentation: ${requiredSnippet}`);
 }

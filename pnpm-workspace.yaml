@@ -4,5 +4,4 @@ packages:
   - packages/plugins/*
   - packages/plugins/examples/*
   - server
-  - ui
   - cli

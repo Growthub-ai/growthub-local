@@ -22,11 +22,8 @@
  *   - `@growthub/api-contract/schemas`
  *   - `@growthub/api-contract/skills`
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
- *   - `@growthub/api-contract/pipeline-kits`   — multi-stage specialization
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
- *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
- *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
@@ -48,16 +45,10 @@ export type { SkillHelperRef, SkillSubSkillRef, SkillSelfEval, SkillSessionMemor
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
 export type { WorkerKitCapabilityType, WorkerKitExecutionMode, WorkerKitActivationMode, WorkerKitFamily, WorkerKitVisibility, WorkerKitCompatibility, WorkerKitInstallMetadata, WorkerKitUIMetadata, WorkerKitProvenance, WorkerKitIdentityV1, WorkerKitIdentityV2, WorkerKitEntrypoint, WorkerKitBundleRef, WorkerKitOutputType, WorkerKitOutputStandard, WorkerKitManifestV1, WorkerKitManifestV2, WorkerKitManifest, WorkerKitBundleIdentity, WorkerKitBundleExportSpec, WorkerKitBundleManifestV1, WorkerKitBundleManifestV2, WorkerKitBundleManifest, } from "./worker-kits.js";
 export { WORKER_KIT_FAMILIES, WORKER_KIT_SUPPORTED_SCHEMA_VERSIONS, WORKER_KIT_LATEST_SCHEMA_VERSION, isWorkerKitManifestV1, isWorkerKitManifestV2, isWorkerKitBundleManifestV1, isWorkerKitBundleManifestV2, isAppKit, } from "./worker-kits.js";
-export type { PipelineArtifactRef, PipelineAdapterModeRef, PipelineTraceExpectation, PipelineStageRef, PipelineOutputTopology, PipelineTracePolicy, PipelineSessionMemoryPolicy, PipelineConventionEnvelope, PipelineKitManifest, } from "./pipeline-kits.js";
-export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
 export type { WorkspaceDependencyKind, WorkspaceSurfaceRef, WorkspaceOutputTopology, WorkspaceDependencyRef, WorkspaceConventionEnvelope, WorkspaceDependencyManifest, } from "./workspaces.js";
 export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
 export type { AdapterKind, AdapterMode, AdapterInputRef, AdapterOutputRef, LocalModelRuntimeRef, LocalModelAdapterOutputRef, NormalizedConnectionRef, AdapterContractRef, } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
-export type { PipelineTraceEventType, PipelineTraceEnvelope, PipelineStageStartedEvent, PipelineStageCompletedEvent, PipelineStageFailedEvent, PipelineArtifactWrittenEvent, PipelineHandoffCreatedEvent, PipelineTraceEvent, } from "./pipeline-trace.js";
-export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
-export type { KitHealthSeverity, KitHealthCheck, KitHealthReport, KitMaturityDimension, KitMaturityScore, } from "./health.js";
-export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 export type { WorkspaceHelperIntent, WorkspaceHelperProposal, WorkspaceProposalType, WorkspaceHelperReceipt, WorkspaceHelperSnapshot, WorkspaceHelperQuery, WorkspaceHelperResponse, WorkspaceHelperApplyRequest, WorkspaceHelperApplyReceipt, WorkspaceHelperApplyResponse, WorkspaceHelperNodeInput, WorkspaceHelperNodeOutput, WorkspaceHelperCapabilityManifest, } from "./helper.js";
 export { WORKSPACE_HELPER_INTENT_VALUES, WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOSAL_TYPE_TO_PATCH_FIELD, isWorkspaceHelperResponse, isWorkspaceProposal, WORKSPACE_HELPER_CONTRACT_VERSION, } from "./helper.js";
 export type { WorkspacePatchAllowedField, WorkspaceLiveWorkflowField, WorkspaceDraftWorkflowField, WorkspacePatchViolationCode, WorkspacePatchViolation, WorkspacePatchLimits, WorkspacePatchPolicyRejection, WorkspacePatchPreflightRequest, WorkspacePatchPreflightResponse, WorkflowPublishRequest, WorkflowPublishFailureCode, WorkflowPublishSuccess, WorkflowPublishFailure, WorkflowPublishResponse, } from "./workspace-patch.js";

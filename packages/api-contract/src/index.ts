@@ -22,11 +22,8 @@
  *   - `@growthub/api-contract/schemas`
  *   - `@growthub/api-contract/skills`
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
- *   - `@growthub/api-contract/pipeline-kits`   — multi-stage specialization
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
- *   - `@growthub/api-contract/pipeline-trace`  — additive trace events
- *   - `@growthub/api-contract/health`          — universal kit health
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
@@ -179,11 +176,8 @@ export type {
 } from "./skills.js";
 export { SKILL_MANIFEST_VERSION } from "./skills.js";
 
-// Worker Kits (UNIVERSAL — kit.json schema v1 + v2; the foundation
-// every kit conforms to regardless of family or specialization. v2
-// extends v1 with the `"ui"` capability type that supports full app
-// kits inside the governed workspace. The pipeline-kits / workspaces
-// / adapters modules are orthogonal opt-in companions.)
+// Worker Kits (kit.json schema v1 + v2). v2 extends v1 with the `"ui"`
+// capability type that supports full app kits inside the governed workspace.
 export type {
   WorkerKitCapabilityType,
   WorkerKitExecutionMode,
@@ -220,25 +214,8 @@ export {
   isAppKit,
 } from "./worker-kits.js";
 
-// Pipeline Kits (OPTIONAL specialization — multi-stage worker kits;
-// declared via `pipeline.manifest.json` alongside `kit.json`.
-// docs/PIPELINE_KIT_CONTRACT_V1.md)
-export type {
-  PipelineArtifactRef,
-  PipelineAdapterModeRef,
-  PipelineTraceExpectation,
-  PipelineStageRef,
-  PipelineOutputTopology,
-  PipelineTracePolicy,
-  PipelineSessionMemoryPolicy,
-  PipelineConventionEnvelope,
-  PipelineKitManifest,
-} from "./pipeline-kits.js";
-export { PIPELINE_KIT_MANIFEST_VERSION } from "./pipeline-kits.js";
-
 // Workspaces (OPTIONAL specialization — declares external repos / forks
-// the kit delegates to; orthogonal to pipeline-kits, applies to any
-// family. docs/WORKER_KIT_CONTRACT_V1.md § workspace dependencies)
+// the workspace delegates to.
 export type {
   WorkspaceDependencyKind,
   WorkspaceSurfaceRef,
@@ -262,32 +239,6 @@ export type {
   AdapterContractRef,
 } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
-
-// Pipeline trace (additive stage-boundary event shapes —
-// docs/PIPELINE_TRACE_CONVENTION_V1.md). Distinct from `./events.ts`,
-// which types hosted CLI/SDK ExecutionEvent NDJSON streams.
-export type {
-  PipelineTraceEventType,
-  PipelineTraceEnvelope,
-  PipelineStageStartedEvent,
-  PipelineStageCompletedEvent,
-  PipelineStageFailedEvent,
-  PipelineArtifactWrittenEvent,
-  PipelineHandoffCreatedEvent,
-  PipelineTraceEvent,
-} from "./pipeline-trace.js";
-export { isPipelineTraceEvent, PIPELINE_TRACE_VERSION } from "./pipeline-trace.js";
-
-// Kit health (UNIVERSAL — health reports + maturity scores; applies to
-// every kit, not just pipeline kits. docs/WORKER_KIT_CONTRACT_V1.md § health)
-export type {
-  KitHealthSeverity,
-  KitHealthCheck,
-  KitHealthReport,
-  KitMaturityDimension,
-  KitMaturityScore,
-} from "./health.js";
-export { KIT_HEALTH_REPORT_VERSION } from "./health.js";
 
 // Workspace Helper (governed, workspace-grammar-aware planning engine —
 // propose + apply loop for dashboards, widgets, API registry rows, and

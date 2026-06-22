@@ -9,8 +9,6 @@
  * Optional: if cli/dist/index.js exists (demo / release layout), prints its --version.
  *
  * Usage (from repo root) — **canonical** (no monorepo `pnpm build`; no fake smoke):
- *   bash scripts/demo-cli.sh e2e-workspace-sandbox
- *   # or:
  *   node scripts/e2e-workspace-sandbox-api-probe.mjs
  *   PORT=3999 node scripts/e2e-workspace-sandbox-api-probe.mjs
  *
@@ -18,8 +16,7 @@
  * sandbox PATCH route). **POST /api/workspace/sandbox-run** executes the persisted row; the Data Model
  * drawer / grid read the same `growthub.config.json` the probes mutate.
  *
- * Temp app + npm install live under `${CLI_DEMO_HOME:-$TMPDIR/growthub-cli-demo}/e2e-workspace-sandbox/`
- * when invoked via `demo-cli.sh` (free preview profile).
+ * Temp app + npm install live under `${TMPDIR:-/tmp}/growthub-cli-demo/e2e-workspace-sandbox/`.
  */
 
 import { spawn, spawnSync } from "node:child_process";

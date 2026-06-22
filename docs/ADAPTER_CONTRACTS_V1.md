@@ -1,10 +1,8 @@
 # Adapter Contracts — v1 (specialization)
 
-This document explains the **generic adapter rule**. It is an *optional
-specialization* of the Worker Kit contract
-([`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md)) — any kit
-in any family may declare adapter contracts when it has provider
-variability.
+This document explains the **generic adapter rule** for provider-variable
+workspace surfaces. Any exported workspace surface may declare adapter
+contracts when it has provider variability.
 
 The SDK source of truth is
 [`@growthub/api-contract/adapters`](../packages/api-contract/src/adapters.ts):
@@ -160,12 +158,10 @@ Selects the **local reasoning** backend used for planning-style JSON, binding hi
 
 | Kit | Family | Adapter families adopted |
 |---|---|---|
-| `growthub-agency-portal-starter-v1` | studio | persistence, auth, payment, reporting, integration |
-| `growthub-creative-video-pipeline-v1` | studio | generative, external-repo handoff |
+| `growthub-custom-workspace-starter-v1` | workspace | persistence, auth, payment, reporting, integration |
 
-The repetition across two unrelated kit families is what justified
-promoting `AdapterContractRef` into the SDK. Other kits in the catalog
-are eligible to adopt this specialization when they grow provider
+The workspace starter is the canonical adoption surface. Other exported
+workspace templates may adopt this specialization when they grow provider
 variability.
 
 ---
@@ -196,9 +192,6 @@ variability.
 
 ## Cross-references
 
-- [`WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md) — foundation contract
-- [`PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md) — pipeline kit specialization (uses adapters at stage boundaries)
-- [`PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md) — trace events including `adapter-selected`
 - [`packages/api-contract/src/adapters.ts`](../packages/api-contract/src/adapters.ts) — SDK types
 - [`packages/api-contract/src/execution.ts`](../packages/api-contract/src/execution.ts) — `DynamicRegistryPipeline`
 - [`packages/api-contract/src/events.ts`](../packages/api-contract/src/events.ts) — `ExecutionEvent`

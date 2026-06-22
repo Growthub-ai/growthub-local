@@ -33,9 +33,8 @@ It is composed entirely from existing primitives. Nothing new is invented.
 | `templates/self-eval.md` cycles   | `packet.selfEval` (`maxRetries: 3`)       |
 | `templates/project.md`            | `packet.projectMd` (excerpted)            |
 
-See the [universal kit contract](./WORKER_KIT_CONTRACT_V1.md) and
-[skills + MCP discovery](./SKILLS_MCP_DISCOVERY.md) for the kit-side surface
-the packet mirrors.
+See [skills + MCP discovery](./SKILLS_MCP_DISCOVERY.md) for the workspace-side
+surface the packet mirrors.
 
 ## CLI usage
 
@@ -192,10 +191,8 @@ The packet is composed from existing primitives only. It never invents data.
 | `traceTail` (fork stream)          | `cli/src/kits/fork-trace.ts#tailKitForkTrace`                            |
 | `sources.manifestEnvelope`         | `cli/src/runtime/cms-manifest-cache/index.ts#readManifestCache`          |
 
-The `traceTail.stream` discriminator (`"fork"` vs `"pipeline"`) is reserved
-for v1.x: today only fork trace is surfaced; pipeline-trace events
-(`@growthub/api-contract/pipeline-trace`) will land additively when a hosted
-trace endpoint is wired in.
+The `traceTail.stream` discriminator is reserved for the fork trace stream in
+v1.
 
 ## Stop conditions
 
@@ -246,9 +243,6 @@ Until then, treat the packet as an internal CLI emitter contract.
 
 ## Related
 
-- [`docs/WORKER_KIT_CONTRACT_V1.md`](./WORKER_KIT_CONTRACT_V1.md) — universal kit contract
 - [`docs/SKILLS_MCP_DISCOVERY.md`](./SKILLS_MCP_DISCOVERY.md) — six-primitive discovery layer
 - [`docs/CMS_SDK_V1.md`](./CMS_SDK_V1.md) — public api-contract surface
 - [`docs/CMS_SDK_V1_USER_GUIDE.md`](./CMS_SDK_V1_USER_GUIDE.md) — practical usage
-- [`docs/PIPELINE_KIT_CONTRACT_V1.md`](./PIPELINE_KIT_CONTRACT_V1.md) — multi-stage kits
-- [`docs/PIPELINE_TRACE_CONVENTION_V1.md`](./PIPELINE_TRACE_CONVENTION_V1.md) — stage-boundary events

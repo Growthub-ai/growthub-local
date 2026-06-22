@@ -21,7 +21,7 @@ anything build-sensitive.
 
 | Lane | Contains | Can rebuild `cli/dist`? | Who works here |
 | --- | --- | --- | --- |
-| **OSS tree** (this repo) | `cli/`, `server/`, `ui/`, `packages/shared`, `packages/db/src/**`, `packages/api-contract`, `packages/create-growthub-local`, CI gates, docs | ❌ No (adapter/plugin packages absent **by design**) | every agent — **Phase A** |
+| **OSS tree** (this repo) | `cli/`, `server/`, `packages/shared`, `packages/db/src/**`, `packages/api-contract`, `packages/create-growthub-local`, CI gates, docs | ❌ No (adapter/plugin packages absent **by design**) | every agent — **Phase A** |
 | **Full workspace** (super-admin private) | OSS tree **+** `packages/adapters/*`, `packages/plugins/*`, `packages/db/package.json` | ✅ Yes | super-admin only — **Phase B** |
 
 Consequences an agent must internalize:
@@ -51,8 +51,8 @@ radius of a change. Mirrors `scripts/check-monorepo-boundary.mjs`.
 
 | Zone | Paths | Role | Cleanup stance |
 | --- | --- | --- | --- |
-| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/`, `cli/dist/`), `packages/api-contract/` (`@growthub/api-contract` SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, and the exportable kits. | Keep backwards-compatible. Changes here are first-class but gated by dist rebuild + freeze. |
-| **vendored-runtime** | `server/` (`@paperclipai/server`), `ui/`, `packages/shared/` (`@paperclipai/shared`) | The bundled **local runtime** (`ARCHITECTURE.md §Main Surfaces`). Real and required to run a workspace locally, but it is the Paperclip backend, **not** the product the README sells. | Primary trim target: surface the workspace export value never reaches is removable, reachability-gated. |
+| **core-product** | `cli/` (incl. `cli/src/`, `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/`, `cli/dist/`), `packages/api-contract/` (`@growthub/api-contract` SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, and the exportable workspace starter. | Keep backwards-compatible. Changes here are first-class but gated by dist rebuild + freeze. |
+| **vendored-runtime** | `server/` (`@paperclipai/server`), `packages/shared/` (`@paperclipai/shared`) | Bundled API/runtime support. Real where still reachable, but it is the Paperclip backend, **not** the product the README sells. | Primary trim target: surface the workspace export value never reaches is removable, reachability-gated. |
 | **core-product (partial view)** | `packages/db/` (ships only `src/**` here; its `package.json` lives in the full workspace) | A real package shown partially in the OSS tree. | **Not** an orphan — do not delete. |
 | **scaffolding** | `docs/`, `scripts/`, root contracts (`README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.cursorrules`), `.github/`, `.githooks/`, `.claude/`, `.agents/`, root config (`package.json`, `tsconfig*`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`) | Tooling, contracts, docs, CI. | Freely editable here; keep docs aligned (`ARCHITECTURE.md` Documentation Contract). |
 
@@ -67,7 +67,7 @@ Straight from `README.md` — three published artifacts and their inputs:
 | `@growthub/cli` | `cli/` |
 | `@growthub/create-growthub-local` | `packages/create-growthub-local/` |
 | `@growthub/api-contract` (SDK v1, `1.5.0`) | `packages/api-contract/` |
-| Exportable inputs | `cli/assets/worker-kits/*` (ship via the CLI's `files: ["assets"]`) |
+| Exportable inputs | `cli/assets/worker-kits/growthub-custom-workspace-starter-v1` (ships via the CLI's `files: ["assets"]`) |
 
 The export value chain (the canonical journey, `ARCHITECTURE.md §Core Intent`):
 
@@ -92,22 +92,20 @@ There is **no top-level `apps/` in this repository.** `apps/` is a property of a
 the mono-repo. An agent that goes looking for `apps/` at the repo root is in the wrong place.
 
 ```
-# In the repo                                # In an EXPORTED workspace (the artifact)
-cli/assets/worker-kits/                      <workspace>/
-  growthub-custom-workspace-starter-v1/        ├── growthub.config.json      (V1 contract)
-    apps/workspace/   ← the Next.js builder    ├── apps/workspace/            ← no-code builder + /api/workspace
-  growthub-agency-portal-starter-v1/           │     ├── app/                 Next.js app router
-    apps/agency-portal/                        │     └── lib/workspace-*.js   validator · config · adapters
-  ui/src/apps/  ← Paperclip web app roots      ├── .growthub-fork/            governed canonical state
-  (dx-root.tsx, gtm-root.tsx) — RUNTIME        └── SKILL.md · AGENTS.md · helpers/ · skills/
+# In the repo                                      # In an EXPORTED workspace (the artifact)
+cli/assets/worker-kits/                            <workspace>/
+  growthub-custom-workspace-starter-v1/              ├── growthub.config.json      (V1 contract)
+    apps/workspace/   ← the Next.js builder          ├── apps/workspace/            ← no-code builder + /api/workspace
+                                                       ├── .growthub-fork/            governed canonical state
+                                                       └── SKILL.md · AGENTS.md · helpers/ · skills/
 ```
 
-- The **product** `apps/` is `apps/workspace` inside the custom-workspace starter (and `apps/agency-portal` in
-  the agency kit). Its full topology, file-by-file authority, and the `PATCH /api/workspace` mutation boundary
+- The **product** `apps/` is `apps/workspace` inside the custom-workspace starter. Its full topology,
+  file-by-file authority, and the `PATCH /api/workspace` mutation boundary
   are specified in **`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`** — that document is the optimal-form workspace
   topology and is **frozen**.
-- `ui/src/apps/` (`dx-root`, `gtm-root`) are the **vendored** Paperclip SPA roots — local runtime, not the
-  exported product. Do not conflate them with the workspace `apps/`.
+- The old top-level Paperclip SPA roots were removed; do not reintroduce a repo-root `ui/` app for the
+  exported-product path.
 
 ---
 
@@ -119,14 +117,14 @@ The cleanup goal — *remove stale code outside the core-value mental model, kee
 - [x] **Decouple the legacy private-monorepo sync** (`scripts/sync-from-monorepo.sh`, the `sync:monorepo`
       script, `pnpm-workspace.upstream.yaml`, `.github/workflows/sync-to-monorepo.yml`). This was the
       conflicting "edit-elsewhere" coupling; the OSS tree is the source-of-truth lane. **Done.**
-- [ ] **Trim old non-workspace worker kits — Phase A source change.** Edit `cli/src/kits/catalog.ts` (and
-      `cli/src/skills/catalog.ts`) to drop the kit **before** removing its `cli/assets/worker-kits/<kit>`
-      directory, so `dist/index.js` never references a missing kit. Bump versions in lockstep, run the six gate
-      scripts + `check-worker-kits.mjs`, flag *"dist rebuild required in Phase B."* Never touch `cli/dist/**`.
-- [ ] **Trim `vendored-runtime` surface the export value never reaches** (`@paperclipai/server` / `ui`). This is
-      a **separate publish path** (`AGENT_DIST_REBUILD_GUIDE.md` §4: server/ui are out of the cli-dist lane).
+- [x] **Trim old non-workspace worker kits — Phase A source change.** `cli/src/kits/catalog.ts`, package checks,
+      setup/demo surfaces, and tests now keep only `growthub-custom-workspace-starter-v1`; deleted stale
+      worker-kit directories and the old starter `studio/` Vite shell. `cli/dist/**` remains untouched; flag
+      *"dist rebuild required in Phase B"* before release.
+- [ ] **Trim `vendored-runtime` surface the export value never reaches** (`@paperclipai/server`). This is
+      a **separate publish path** (`AGENT_DIST_REBUILD_GUIDE.md` §4: server is out of the cli-dist lane).
       Candidate families: `server/src/routes/{tickets,issues,board-claim,...}` + services + matching
-      `ui/src/pages/*`, reachability-gated from `cli/src/commands/run.ts` → bundled `runtime/server` so the
+      stale UI/page layers, reachability-gated from `cli/src/commands/run.ts` → bundled `runtime/server` so the
       local runtime still boots. Only if the `cli/dist/runtime/server/` payload changes does a cli-dist rebuild
       apply (Phase B).
 - [ ] **Reconcile owned-doc drift** (e.g. `WORKSPACE_BUILDER_RUNTIME_V1.md` + `_V1_1.md`) into current +

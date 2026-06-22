@@ -483,7 +483,7 @@ export function fuzzyResolveKitId(input: string): string | null {
   // 1. Exact match
   const exact = BUNDLED_KIT_CATALOG.find((e) => e.id === needle);
   if (exact) return exact.id;
-  // 2. Suffix match (e.g. "higgsfield-studio-v1" matches "growthub-open-higgsfield-studio-v1")
+  // 2. Suffix match (e.g. "custom-workspace-starter-v1" matches "growthub-custom-workspace-starter-v1")
   const suffix = BUNDLED_KIT_CATALOG.find((e) => e.id.endsWith(needle));
   if (suffix) return suffix.id;
   // 3. Contains match

@@ -55,18 +55,13 @@ export function printStartupBanner(opts) {
     const baseHost = opts.host === "0.0.0.0" ? "localhost" : opts.host;
     const baseUrl = `http://${baseHost}:${opts.listenPort}`;
     const apiUrl = `${baseUrl}/api`;
-    const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
     const configPath = resolvePaperclipConfigPath();
     const envFilePath = resolvePaperclipEnvPath();
     const agentJwtSecret = resolveAgentJwtSecretStatus(envFilePath);
     const dbMode = opts.db.mode === "embedded-postgres"
         ? color("embedded-postgres", "green")
         : color("external-postgres", "yellow");
-    const uiMode = opts.uiMode === "vite-dev"
-        ? color("vite-dev-middleware", "cyan")
-        : opts.uiMode === "static"
-            ? color("static-ui", "magenta")
-            : color("headless-api", "yellow");
+    const uiMode = color("headless-api", "yellow");
     const portValue = opts.requestedPort === opts.listenPort
         ? `${opts.listenPort}`
         : `${opts.listenPort} ${color(`(requested ${opts.requestedPort})`, "dim")}`;
@@ -96,7 +91,6 @@ export function printStartupBanner(opts) {
         row("Auth", opts.authReady ? color("ready", "green") : color("not-ready", "yellow")),
         row("Server", portValue),
         row("API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
-        row("UI", uiUrl),
         row("Database", dbDetails),
         row("Migrations", opts.migrationSummary),
         row("Agent JWT", agentJwtSecret.status === "pass"

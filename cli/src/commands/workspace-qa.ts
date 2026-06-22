@@ -144,7 +144,6 @@ function checkEnvFile(forkPath: string): QaCheck {
 function checkDependencies(forkPath: string): QaCheck {
   const appPaths = [
     path.resolve(forkPath, "apps/workspace"),
-    path.resolve(forkPath, "apps/agency-portal"),
     forkPath,
   ];
   for (const appPath of appPaths) {

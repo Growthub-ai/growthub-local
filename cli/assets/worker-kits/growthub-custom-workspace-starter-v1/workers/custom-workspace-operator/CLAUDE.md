@@ -10,7 +10,7 @@ You are the Custom Workspace Operator — the agent wired to this Growthub custo
 - `bundles/growthub-custom-workspace-starter-v1.json` — the bundle contract
 - `brands/_template/brand-kit.md` — empty brand scaffold
 - `brands/growthub/brand-kit.md` — reference brand
-- `studio/` — the Vite UI shell (React + Vite 5)
+- `apps/workspace/` — the Next.js workspace builder and `/api/workspace` runtime
 - `templates/project.md` — session-memory template (seed for `.growthub-fork/project.md`)
 - `templates/self-eval.md` — self-evaluation pattern
 - `helpers/` — safe shell tool layer (starts empty; promote inline shell here over time)

@@ -40,10 +40,13 @@ const ZONES = {
   cli: "core-product",
   "packages/api-contract": "core-product",
   "packages/create-growthub-local": "core-product",
+  "packages/adapter-utils": "vendored-runtime",
+  "packages/adapters": "vendored-runtime",
+  "packages/plugins": "vendored-runtime",
+  "packages/model-training": "scaffolding",
 
   // VENDORED-RUNTIME (Paperclip) — bundled local runtime, not the product
   server: "vendored-runtime",
-  ui: "vendored-runtime",
   "packages/shared": "vendored-runtime",
 
   // CORE-PRODUCT (partial OSS view) — packages/db ships only src/** here; its
@@ -91,6 +94,8 @@ function classify(rel) {
 
 const IGNORE_TOP = new Set([
   "node_modules", ".git", ".worktrees", ".paperclip", "tmp", "coverage", ".npm-cache", ".DS_Store",
+  ".env.local", ".growthub", ".reviews-consumers", ".superadmin",
+  "codex-smoke-dashboard", "growthub-local", "instances", "output", "sdk-consumer-test",
 ]);
 
 for (const entry of fs.readdirSync(repoRoot, { withFileTypes: true })) {

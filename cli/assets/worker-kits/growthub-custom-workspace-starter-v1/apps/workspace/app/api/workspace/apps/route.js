@@ -68,7 +68,7 @@ function safeRuntime(warnings) {
 
 // Mirrors the CLI probe (cli/src/commands/workspace-surface.ts) so detection
 // lives inside the artifact too — the bridge roadmap Item 4 called for.
-const KNOWN_APP_DIRS = ["apps/workspace", "apps/agency-portal", "apps/portal", "studio", "app", "src"];
+const KNOWN_APP_DIRS = ["apps/workspace"];
 
 function detectFramework(absPath) {
   try {

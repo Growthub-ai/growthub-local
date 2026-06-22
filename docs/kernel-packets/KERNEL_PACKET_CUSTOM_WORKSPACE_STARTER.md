@@ -20,7 +20,7 @@ Users who want to customize one worker kit shouldn't have to fork the whole repo
 - The starter kit is registered in `BUNDLED_KIT_CATALOG` with `family: "studio"`, `executionMode: "export"`, `activationModes: ["export"]`.
 - `kit.json` is schemaVersion 2; every path in `frozenAssetPaths` and `outputStandard.requiredPaths` physically exists on disk.
 - `bundles/growthub-custom-workspace-starter-v1.json` `requiredFrozenAssets` is a subset of `kit.json.frozenAssetPaths`.
-- `studio/` ships source only — no `dist/` is frozen in the starter (the user runs `npm run build` after init).
+- `apps/workspace` is the only bundled app surface; the old `studio/` Vite shell is no longer part of the starter.
 
 **Orchestrator invariants (`cli/src/starter/init.ts`)**
 

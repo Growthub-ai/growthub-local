@@ -29,14 +29,13 @@ growthub starter init \
 
 After export, set `NANGO_SECRET_KEY` in the workspace runtime, complete provider OAuth, then fill `providerConfigKey`, `connectionIds`, and project identifiers in the Data Model before running the workflow.
 
-## Run the bundled Vite UI shell
+## Run the workspace app
 
 ```bash
-cd studio
+cd apps/workspace
 npm install
-npm run dev          # local dev server
-npm run build        # produces studio/dist
-node serve.mjs       # serves the built shell
+npm run dev          # local workspace builder
+npm run build        # production build
 ```
 
 ## Build out the agent contract
@@ -57,7 +56,7 @@ growthub kit fork trace --fork-id <fork-id> --tail 50
 ```bash
 growthub kit fork policy --fork-id <fork-id> --set \
   autoApprove=additive \
-  untouchablePaths+=studio/src/views/MyFeature.jsx \
+  untouchablePaths+=apps/workspace/app/custom/MyFeature.jsx \
   confirmBeforeChange+=workers/custom-workspace-operator/CLAUDE.md \
   remoteSyncMode=pr
 ```

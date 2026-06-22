@@ -96,12 +96,6 @@ This packet is reusable for other CLI extension work by keeping the same shape:
 
 Apply the same structure for Templates, Workflows, Local Intelligence, and future discovery lanes.
 
-## Specializations
-
-When a worker kit's external target is a hosted third-party SaaS REST API (no fork, no self-host, no new executor), use the narrower specialization that inherits every invariant of this packet and adds the thin-hosted-provider discipline:
-
-- [Hosted SaaS Kit Kernel Packet](./KERNEL_PACKET_HOSTED_SAAS_KIT.md)
-
 ## Release Bundle Contract
 
 This contract governs the relationship between source changes, the esbuild bundle, and what remote npm users actually receive. It is the most common source of silent drift and must be understood before any release.
@@ -185,15 +179,13 @@ The `pr-validate.yml` CI check inlines `${{ github.event.pull_request.body }}` d
 
 ## Discovery Parity Contract
 
-This contract governs the required parity between the demo CLI preview and the npm-published `growthub discover` command. They must be identical at all times.
+This contract governs the npm-published `growthub discover` command and the custom-workspace starter assets it exposes.
 
 ### Why they are the same
 
-Both surfaces call the same function:
+The published command calls the same workspace-first function:
 
-- `scripts/demo-cli.sh cli discover` → `runCli(["discover"])` → `runDiscoveryHub` → `runInteractivePicker`
 - `growthub discover` (npm install) → `runDiscoveryHub` → `runInteractivePicker`
-- `scripts/demo-cli.sh interactive` → `runSourceKitPicker` → `runInteractivePicker`
 
 `runInteractivePicker` calls `listBundledKits()` which reads from `BUNDLED_KIT_CATALOG` and validates every kit's assets at runtime. The catalog and assets ship inside `cli/assets/` which is in `"files": ["dist", "assets"]` in `cli/package.json`.
 
@@ -224,14 +216,13 @@ node scripts/check-worker-kits.mjs
 # 2. Version parity
 node -e "const p=require('./cli/package.json');const s=require('fs').readFileSync('cli/src/index.ts','utf8');const m=s.match(/\.version\(\"([^\"]+)\"\)/);console.log('package.json:',p.version,'index.ts:',m?m[1]:'NOT FOUND',p.version===m?.[1]?'✓ MATCH':'✗ DRIFT')"
 
-# 3. Discovery round-trip
-bash scripts/demo-cli.sh cli discover
+# 3. Custom workspace starter validation
+node scripts/check-worker-kits.mjs
 ```
 
 ## Canonical Commands
 
 ```bash
-bash scripts/demo-cli.sh cli discover
 node scripts/check-worker-kits.mjs
 bash scripts/check-custom-workspace-kernel.sh
 bash scripts/pr-ready.sh

@@ -19,6 +19,7 @@ import { execute as hermesExecute, testEnvironment as hermesTestEnvironment, ses
 import { agentConfigurationDoc as hermesAgentConfigurationDoc, models as hermesModels, } from "hermes-paperclip-adapter";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
+import { qwenLocalAdapter } from "./qwen/index.js";
 const claudeLocalAdapter = {
     type: "claude_local",
     execute: claudeExecute,
@@ -111,6 +112,7 @@ const adaptersByType = new Map([
     geminiLocalAdapter,
     openclawGatewayAdapter,
     hermesLocalAdapter,
+    qwenLocalAdapter,
     processAdapter,
     httpAdapter,
 ].map((a) => [a.type, a]));

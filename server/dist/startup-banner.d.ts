@@ -1,5 +1,5 @@
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
-type UiMode = "none" | "static" | "vite-dev";
+type UiMode = "none";
 type ExternalPostgresInfo = {
     mode: "external-postgres";
     connectionString: string;

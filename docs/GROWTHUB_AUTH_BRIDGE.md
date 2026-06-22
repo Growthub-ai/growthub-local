@@ -701,7 +701,5 @@ In addition to the auth checklist above, validate bridge resources:
 ## Related Docs
 
 - [Growthub Local Hosted Contract](./LOCAL_HOSTED_CONTRACT.md)
-- [Worker Kits Overview](./WORKER_KITS.md)
-- [CLI Template Contribution Extension Workflows](./CLI_TEMPLATE_CONTRIBUTION_EXTENSION_WORKFLOWS.md)
 
 For the internal architecture record, see the frozen snapshot protocol document in `gh-app/docs/protocol`.

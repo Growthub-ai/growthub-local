@@ -24,7 +24,6 @@ import {
 const ORIGINAL_ENV = { ...process.env };
 const CUSTOM_WORKSPACE_KIT_IDS = [
   "growthub-custom-workspace-starter-v1",
-  "growthub-agency-portal-starter-v1",
 ] as const;
 
 function makeTempDir(prefix: string): string {
@@ -102,18 +101,10 @@ describe("worker kit service", () => {
     const kits = listBundledKits();
     expect(kits.map((kit) => kit.id)).toEqual([
       "growthub-custom-workspace-starter-v1",
-      "growthub-agency-portal-starter-v1",
     ]);
     expect(kits.find((kit) => kit.id === "growthub-custom-workspace-starter-v1")).toMatchObject({
       bundleId: "growthub-custom-workspace-starter-v1",
       briefType: "custom-workspace-starter",
-      type: "worker",
-      executionMode: "export",
-      activationModes: ["export"],
-    });
-    expect(kits.find((kit) => kit.id === "growthub-agency-portal-starter-v1")).toMatchObject({
-      bundleId: "growthub-agency-portal-starter-v1",
-      briefType: "agency-portal-workspace",
       type: "worker",
       executionMode: "export",
       activationModes: ["export"],
@@ -157,41 +148,6 @@ describe("worker kit service", () => {
     expect(result.zipPath).toBe(`${outDir}.zip`);
   });
 
-  it("inspects the kit with capability metadata and default export paths", () => {
-    const paperclipHome = makeTempDir("paperclip-home-");
-    process.env.PAPERCLIP_HOME = paperclipHome;
-
-    const info = inspectBundledKit("growthub-agency-portal-starter-v1");
-
-    expect(info.type).toBe("worker");
-    expect(info.executionMode).toBe("export");
-    expect(info.activationModes).toEqual(["export"]);
-    expect(info.schemaVersion).toBe(2);
-    expect(info.publicExampleBrandPaths).toEqual(["brands/growthub/brand-kit.md"]);
-    expect(info.exportFolderPath).toBe(
-      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-agency-portal-starter-v1"),
-    );
-    expect(info.requiredPaths).toContain("docs");
-  });
-
-  it("downloads both the expanded folder and zip and keeps zip contents aligned", () => {
-    const outDir = makeTempDir("worker-kit-out-");
-    const result = downloadBundledKit("growthub-agency-portal-starter-v1", outDir);
-
-    expect(fs.existsSync(result.folderPath)).toBe(true);
-    expect(fs.existsSync(result.zipPath)).toBe(true);
-    expect(listRelativeFiles(result.folderPath)).toContain("brands/growthub/brand-kit.md");
-    expect(listRelativeFiles(result.folderPath)).not.toContain("brands/clarifion/brand-kit.md");
-
-    const folderFiles = listRelativeFiles(result.folderPath);
-    const zipEntries = readZipEntryNames(result.zipPath);
-    const expectedZipEntries = folderFiles.map((relativePath) =>
-      path.posix.join("growthub-agent-worker-kit-agency-portal-starter-v1", relativePath),
-    );
-
-    expect(zipEntries).toEqual(expectedZipEntries);
-  });
-
   it("inspects the custom workspace starter and exposes its export path", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;
@@ -212,9 +168,9 @@ describe("worker kit service", () => {
     const paperclipHome = makeTempDir("paperclip-home-");
     process.env.PAPERCLIP_HOME = paperclipHome;
 
-    const resolvedPath = resolveKitPath("growthub-agency-portal-starter-v1");
+    const resolvedPath = resolveKitPath("growthub-custom-workspace-starter-v1");
     expect(resolvedPath).toBe(
-      path.resolve(paperclipHome, "kits", "exports", "growthub-agent-worker-kit-agency-portal-starter-v1"),
+      path.resolve(paperclipHome, "kits", "exports", "growthub-custom-workspace-starter-v1"),
     );
     expect(fs.existsSync(resolvedPath)).toBe(false);
   });

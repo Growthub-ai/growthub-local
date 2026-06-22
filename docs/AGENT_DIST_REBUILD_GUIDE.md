@@ -34,7 +34,7 @@ If you violate this, the npm release silently regresses.
 
 | Lane | Contains | Can rebuild dist? | Who works here |
 | --- | --- | --- | --- |
-| **OSS tree** (`growthub-ai/growthub-local`, this repo) | `cli/`, `server/`, `ui/`, `packages/shared`, `packages/db/src/**`, `packages/create-growthub-local`, CI gates, docs | ❌ No (missing adapter/plugin packages) | Every contributor, every agent (Phase A) |
+| **OSS tree** (`growthub-ai/growthub-local`, this repo) | `cli/`, `server/`, `packages/shared`, `packages/db/src/**`, `packages/create-growthub-local`, CI gates, docs | ❌ No (missing adapter/plugin packages) | Every contributor, every agent (Phase A) |
 | **Full workspace** (super-admin private) | OSS tree + `packages/adapters/*` + `packages/plugins/*` + `packages/db/package.json` + `@paperclipai/server` source | ✅ Yes | Super-admin only (Phase B) |
 
 `pnpm-workspace.yaml` enumerates globs that resolve to empty directories on the OSS tree on purpose. **Agents should never try to fill them in.**
@@ -99,8 +99,8 @@ What am I editing?
 │         as files alongside dist.
 │       → Run: bash scripts/agent-dist-verify.sh assets
 │
-└── server/src/**, ui/src/**
-        → Out of scope for this guide. Server/UI have their own publish path
+└── server/src/**
+        → Out of scope for this guide. Server has its own publish path
           (@paperclipai/server). Skip dist rebuild unless the cli/dist/runtime/server/
           payload also changed.
 ```

@@ -68,7 +68,6 @@ What changed:
 Do not treat these as source of truth:
 
 - `gtm-fresh/growthub-local/server/dist/**`
-- `gtm-fresh/growthub-local/server/ui-dist/**`
 - `gtm-fresh/growthub-local/cli/dist/runtime/**`
 
 Those files may be patched or rebuilt for validation, but they are derived artifacts only.
@@ -77,10 +76,9 @@ Those files may be patched or rebuilt for validation, but they are derived artif
 
 1. Preserve the source fix in `growthub-local`.
 2. Mirror the same source fix into the full monorepo build environment when needed.
-3. Rebuild `server/ui-dist` and `cli/dist/runtime/server/ui-dist` from the full build environment.
-4. Rebuild the bundled server runtime used by `@growthub/cli`.
-5. Run `node scripts/release-check.mjs`.
-6. If the behavior ships to npm users, bump `@growthub/cli` and `create-growthub-local` patch versions together.
+3. Rebuild the bundled server runtime used by `@growthub/cli`.
+4. Run `node scripts/release-check.mjs`.
+5. If the behavior ships to npm users, bump `@growthub/cli` and `create-growthub-local` patch versions together.
 
 ## PR Size Rule
 

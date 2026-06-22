@@ -2,7 +2,7 @@
 
 `@growthub/cli` is the local control plane for Growthub Local and Agent Workspace as Code (AWaC).
 
-It turns repos, skills, starters, kits, and templates into governed **Workspaces** that can be exported, forked, inspected, operated by agents, kept current, and optionally connected to hosted authority. The Workspace is the top-level product object; the CLI is the executor that moves it through the lifecycle.
+It turns repos, skills, starters, and templates into governed **Workspaces** that can be exported, forked, inspected, operated by agents, kept current, and optionally connected to hosted authority. The Workspace is the top-level product object; the CLI is the executor that moves it through the lifecycle.
 
 ## Start here: create a governed Workspace
 
@@ -40,20 +40,19 @@ Growthub Local keeps the Workspace as the owned artifact: a forkable app, `growt
 
 The CLI is the machine-readable path through that architecture:
 
-- **Export** a starter, repo, skill, template, or worker kit into a local Workspace.
+- **Export** a starter, repo, skill, or template into a local Workspace.
 - **Register and inspect forks** so customization carries identity, policy, and trace instead of becoming an untracked copy.
 - **Operate ongoing lifecycle checks** for workspace status, QA, deploy readiness, upstream drift, surface detection, and portal preparation.
 - **Connect optional authority** through Growthub auth, bridge-backed integrations, hosted agents, and capability activation when local value is already clear.
 - **Expose the same contracts to agents and humans** through structured commands, JSON output, skill manifests, helper scripts, and the Workspace Builder.
 
-## Profile-first setup (recommended)
+## Workspace-first setup (recommended)
 
-The guided flow is profile-first before deeper harness/workflow choices:
+The guided flow starts at the governed workspace export path before deeper harness/workflow choices:
 
 ```bash
-npm create @growthub/growthub-local@latest -- --profile gtm
-npm create @growthub/growthub-local@latest -- --profile dx
 npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
 ```
 
 ## Discovery lanes
@@ -66,7 +65,7 @@ growthub discover
 
 Core lanes:
 
-1. Worker Kits
+1. Workspace Templates
 2. Templates
 3. Workflows
 4. Local Intelligence
@@ -120,18 +119,16 @@ Compatibility examples used by package validation:
 ```bash
 growthub kit list
 growthub kit inspect growthub-custom-workspace-starter-v1
-growthub kit inspect growthub-agency-portal-starter-v1
 growthub kit download growthub-custom-workspace-starter-v1
-growthub kit download growthub-agency-portal-starter-v1
 growthub kit path growthub-custom-workspace-starter-v1
 growthub kit validate /absolute/path/to/kit
 ```
 
-### How local adapters use worker kits
+### How local adapters use workspace exports
 
-1. Download or resolve a kit path from the CLI.
+1. Export or resolve a workspace path from the CLI.
 2. Point the agent working directory at the exported folder.
-3. Start a new session so the kit contract loads from `CLAUDE.md`.
+3. Start a new session so the workspace contract loads from `AGENTS.md` / `SKILL.md`.
 
 ### Workflows + pipelines
 
@@ -168,7 +165,7 @@ When ready, activate deeper hosted lanes:
 ## Docs
 
 - [Growthub Local README](https://github.com/Growthub-ai/growthub-local#readme)
-- [Worker Kits](https://github.com/Growthub-ai/growthub-local/blob/main/docs/WORKER_KITS.md)
+- [First-Run Paths](https://github.com/Growthub-ai/growthub-local/blob/main/docs/FIRST_RUN_PATHS.md)
 - [CLI Workflows Discovery](https://github.com/Growthub-ai/growthub-local/blob/main/docs/CLI_WORKFLOWS_DISCOVERY_V1.md)
 - [Agent Harness Auth Primitive](https://github.com/Growthub-ai/growthub-local/blob/main/docs/AGENT_HARNESS_AUTH_PRIMITIVE.md)
 - [Contributing](https://github.com/Growthub-ai/growthub-local/blob/main/CONTRIBUTING.md)

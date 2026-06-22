@@ -140,10 +140,6 @@ export function loadConfig() {
         databaseBackupIntervalMinutes,
         databaseBackupRetentionDays,
         databaseBackupDir,
-        serveUi: process.env.SERVE_UI !== undefined
-            ? process.env.SERVE_UI === "true"
-            : fileConfig?.server.serveUi ?? true,
-        uiDevMiddleware: process.env.PAPERCLIP_UI_DEV_MIDDLEWARE === "true",
         secretsProvider,
         secretsStrictMode,
         secretsMasterKeyFilePath: resolveHomeAwarePath(process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??

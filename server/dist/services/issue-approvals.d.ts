@@ -42,12 +42,12 @@ export declare function issueApprovalService(db: Db): {
         updatedAt: Date;
     }[]>;
     link: (issueId: string, approvalId: string, actor?: LinkActor) => Promise<{
-        createdAt: Date;
         companyId: string;
-        approvalId: string;
         issueId: string;
+        approvalId: string;
         linkedByAgentId: string | null;
         linkedByUserId: string | null;
+        createdAt: Date;
     }>;
     unlink: (issueId: string, approvalId: string) => Promise<void>;
     linkManyForApproval: (approvalId: string, issueIds: string[], actor?: LinkActor) => Promise<void>;

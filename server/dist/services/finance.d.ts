@@ -62,25 +62,23 @@ export declare function financeService(db: Db): {
     }[]>;
     list: (companyId: string, range?: FinanceDateRange, limit?: number) => Promise<{
         id: string;
-        description: string | null;
-        createdAt: Date;
         companyId: string;
-        provider: string | null;
         agentId: string | null;
-        goalId: string | null;
-        projectId: string | null;
-        billingCode: string | null;
-        heartbeatRunId: string | null;
         issueId: string | null;
-        biller: string;
-        model: string | null;
-        occurredAt: Date;
+        projectId: string | null;
+        goalId: string | null;
+        heartbeatRunId: string | null;
         costEventId: string | null;
+        billingCode: string | null;
+        description: string | null;
         eventKind: string;
         direction: string;
+        biller: string;
+        provider: string | null;
         executionAdapterType: string | null;
         pricingTier: string | null;
         region: string | null;
+        model: string | null;
         quantity: number | null;
         unit: string | null;
         amountCents: number;
@@ -88,6 +86,8 @@ export declare function financeService(db: Db): {
         estimated: boolean;
         externalInvoiceId: string | null;
         metadataJson: Record<string, unknown> | null;
+        occurredAt: Date;
+        createdAt: Date;
     }[]>;
 };
 //# sourceMappingURL=finance.d.ts.map

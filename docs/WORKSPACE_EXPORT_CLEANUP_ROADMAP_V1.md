@@ -13,8 +13,8 @@ happens here.**
 
 | Role | Paths | Relation to the export value |
 | --- | --- | --- |
-| **core-product** | `cli/` (`@growthub/cli` + `cli/assets/worker-kits/*`), `packages/api-contract/` (SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, the exportable kits. |
-| **vendored-runtime** | `server/` (`@paperclipai/server`), `ui/`, `packages/shared/` | The bundled Paperclip **local runtime** — required to run a workspace locally, but not the product. The primary stale-code mass. |
+| **core-product** | `cli/` (`@growthub/cli` + `cli/assets/worker-kits/growthub-custom-workspace-starter-v1`), `packages/api-contract/` (SDK v1), `packages/create-growthub-local/` | The published value: the exporter, the SDK contract, the installer, the exportable workspace starter. |
+| **vendored-runtime** | `server/` (`@paperclipai/server`), `packages/shared/` | Bundled API/runtime support. Required only where still export-reachable; not the product. |
 | **scaffolding** | `docs/`, `scripts/`, `.github/`, root contracts | Tooling/docs/CI. (`packages/db` is a partial-view **core** package, not an orphan.) |
 
 The export value chain (`ARCHITECTURE.md §Core Intent`):
@@ -65,13 +65,13 @@ machine-checked, and decouples the conflicting legacy "edit-elsewhere" model. No
 validated by the six gate scripts, flagged for the super-admin's Phase B dist rebuild. Agents never edit
 `cli/dist/**`.*
 
-### 2.1 — Deprecate/remove old non-workspace worker kits (CLI catalog first)
+### 2.1 — Deprecate/remove old non-workspace worker kits (CLI catalog first) ✅ shipped
 
-- [ ] Edit `cli/src/kits/catalog.ts` (and `cli/src/skills/catalog.ts`) to drop the deprecated kit **before**
-      removing its directory under `cli/assets/worker-kits/`, so `dist/index.js` never references a missing kit.
-- [ ] Bump `cli` + `create-growthub-local` versions in lockstep; run `bash scripts/agent-dist-verify.sh
-      pre-push` (six gates incl. `check-worker-kits.mjs`) + the kit tests in `cli/src/__tests__/`. Flag *"dist
-      rebuild required in Phase B."* Do **not** touch `cli/dist/**`.
+- [x] Keep only `growthub-custom-workspace-starter-v1` in `cli/src/kits/catalog.ts`, package checks, setup/demo
+      surfaces, and source tests.
+- [x] Remove deprecated worker-kit directories plus the old Vite `studio/` shell from the preserved starter.
+- [ ] Run `bash scripts/agent-dist-verify.sh pre-push` (six gates incl. `check-worker-kits.mjs`) + focused kit
+      tests. Flag *"dist rebuild required in Phase B."* Do **not** touch `cli/dist/**`.
 
 ### 2.2 — Reachability-trace the vendored runtime
 
@@ -83,7 +83,8 @@ validated by the six gate scripts, flagged for the super-admin's Phase B dist re
 
 ### 2.3 — Remove paperclip-only runtime surface (separate `@paperclipai/server` publish path)
 
-- [ ] Delete the unreachable route/service/page families from `server/src/**` + `ui/src/**`, smallest-blast-
+- [x] Delete the top-level Paperclip/Vite `ui/` workspace and generated `server/ui-dist` payload.
+- [ ] Delete the remaining unreachable route/service families from `server/src/**`, smallest-blast-
       radius first. Per `AGENT_DIST_REBUILD_GUIDE.md` §4 these are out of the cli-dist lane; a cli-dist rebuild
       applies **only** if the `cli/dist/runtime/server/` payload changes.
 - [ ] After each removal confirm `growthub run` still boots and an exported `apps/workspace` still serves; run
