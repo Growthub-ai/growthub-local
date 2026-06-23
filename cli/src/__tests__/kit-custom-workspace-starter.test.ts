@@ -2727,6 +2727,9 @@ describe("workspace-health-agent-context-v1 — file presence", () => {
     expect(panel).toContain("Re-check");
     expect(panel).toMatch(/\/data-model/);
     expect(panel).toMatch(/\/workflows/);
+    // Pipeline issues deep-link to the exact failing pipeline using the same
+    // addressing convention the data-model surface uses to reach workflows.
+    expect(panel).toContain("field=orchestrationConfig");
     // Read-only: never issues a mutation from the panel.
     expect(panel).not.toMatch(/method:\s*["'`](POST|PATCH|PUT|DELETE)["'`]/);
     // No new icon grammar (mirrors WorkspaceGraphInspectorPanel — structure only).

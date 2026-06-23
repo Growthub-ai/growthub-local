@@ -211,11 +211,18 @@ function derivePipelineIssues(store) {
   for (const pipeline of safeArray(store.pipelineHealth)) {
     const status = safeString(pipeline.status).trim();
     const label = safeString(pipeline.label).trim();
+    // Thread the addressing tuple the workflows surface consumes
+    // (?object=&row=&field=orchestrationConfig) so the issue deep-links to the
+    // exact failing pipeline rather than the workflows index.
+    const objectId = safeString(pipeline.objectId).trim();
+    const rowName = safeString(pipeline.rowId).trim();
     if (status === "unhealthy") {
       issues.push({
         type: "unhealthy_pipeline",
         severity: "error",
         workflow: label,
+        objectId,
+        rowName,
         reason: `pipeline "${label}" last run failed (run ${safeString(pipeline.latestRunId) || "unknown"})`
       });
     } else if (status === "untested") {
@@ -223,6 +230,8 @@ function derivePipelineIssues(store) {
         type: "untested_pipeline",
         severity: "warning",
         workflow: label,
+        objectId,
+        rowName,
         reason: `pipeline "${label}" is live but has no recorded successful run`
       });
     }

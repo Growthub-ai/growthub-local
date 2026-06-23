@@ -387,7 +387,12 @@ test("PROBE: a failing pipeline is unhealthy; a live untested pipeline is degrad
   };
   let res = buildAll(failing, {});
   let health = deriveWorkspaceHealth(res.store, res.graph);
-  assert.ok(health.issues.some((i) => i.type === "unhealthy_pipeline" && i.severity === "error"));
+  const failIssue = health.issues.find((i) => i.type === "unhealthy_pipeline");
+  assert.ok(failIssue && failIssue.severity === "error");
+  // The issue must carry the addressing tuple the workflows surface consumes,
+  // so the panel can deep-link to the exact failing pipeline (not the index).
+  assert.equal(failIssue.objectId, "swarm");
+  assert.equal(failIssue.rowName, "job-fail");
   assert.equal(health.status, "unhealthy");
 
   // Same row, live, with a graph but no run → untested (warning → degraded).

@@ -76,7 +76,13 @@ function fixTargetFor(issue) {
       return { href: "/", label: "Open in Builder" };
     case "unhealthy_pipeline":
     case "untested_pipeline":
-      return { href: "/workflows", label: "Open Workflows" };
+      // The workflows surface focuses a pipeline from ?object=&row=&field=.
+      return issue.objectId && issue.rowName
+        ? {
+            href: `/workflows?object=${encodeURIComponent(issue.objectId)}&row=${encodeURIComponent(issue.rowName)}&field=orchestrationConfig`,
+            label: "Open pipeline",
+          }
+        : { href: "/workflows", label: "Open Workflows" };
     default:
       return { href: "/", label: "Open Builder" };
   }
