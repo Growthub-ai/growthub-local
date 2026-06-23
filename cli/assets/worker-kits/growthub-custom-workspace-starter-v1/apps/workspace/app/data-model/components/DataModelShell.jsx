@@ -182,6 +182,27 @@ const FILTER_OPERATOR_OPTIONS = [
   { value: "isNotEmpty", label: "Is not empty" },
 ];
 
+// Plain-English chip copy so active filters read like a sentence
+// ("Status is Active") instead of exposing raw operator keys ("eq").
+const FILTER_OPERATOR_LABELS = FILTER_OPERATOR_OPTIONS.reduce((map, item) => {
+  map[item.value] = item.label.toLowerCase();
+  return map;
+}, {});
+
+function describeFilterClause(clause) {
+  const operator = FILTER_OPERATOR_LABELS[clause?.operator] || clause?.operator || "is";
+  const hasValue = clause?.value !== undefined && clause?.value !== "";
+  return `${clause?.fieldId || "Field"} ${operator}${hasValue ? ` ${clause.value}` : ""}`.trim();
+}
+
+// Quiet, case-insensitive substring match across the visible columns of a
+// row. Search is ephemeral view state only — it never persists to config.
+function rowMatchesSearch(row, query, columns) {
+  const needle = String(query || "").trim().toLowerCase();
+  if (!needle) return true;
+  return columns.some((column) => String(row?.[column] ?? "").toLowerCase().includes(needle));
+}
+
 function mergeColumnOrder(order, columns) {
   return Array.from(new Set([...(order || []), ...columns])).filter((column) => columns.includes(column));
 }
@@ -2383,6 +2404,7 @@ function DataModelTableSurface({
   const [mode, setMode] = useState("append");
   const [filterDraft, setFilterDraft] = useState({ fieldId: "", operator: "eq", value: "" });
   const [filterTarget, setFilterTarget] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [menuColumn, setMenuColumn] = useState("");
   const [selectedRows, setSelectedRows] = useState(() => new Set());
   const [confirmDeleteSelection, setConfirmDeleteSelection] = useState(false);
@@ -2407,6 +2429,7 @@ function DataModelTableSurface({
     setLastSelectedRowIndex(null);
     setSelectMenuOpen(false);
     setPageIndex(0);
+    setSearchQuery("");
   }, [table.id]);
 
   useEffect(() => {
@@ -2428,7 +2451,10 @@ function DataModelTableSurface({
   const visibleColumns = useMemo(() => orderedColumns.filter((column) => !settings.hidden.includes(column)), [orderedColumns, settings.hidden]);
   const rowEntries = useMemo(() => {
     const indexed = (table.rows || []).map((row, originalIndex) => ({ row, originalIndex }));
-    const filtered = indexed.filter((entry) => rowMatchesFilter(entry.row, settings.filter));
+    const filtered = indexed.filter((entry) => (
+      rowMatchesFilter(entry.row, settings.filter)
+      && rowMatchesSearch(entry.row, searchQuery, visibleColumns)
+    ));
     if (!settings.sort?.length) return filtered;
     const clauses = settings.sort;
     return [...filtered].sort((left, right) => {
@@ -2439,7 +2465,7 @@ function DataModelTableSurface({
       }
       return 0;
     });
-  }, [table.rows, settings]);
+  }, [table.rows, settings, searchQuery, visibleColumns]);
   const selectedRowCount = selectedRows.size;
   const pageCount = Math.max(1, Math.ceil(rowEntries.length / pageSize));
   const safePageIndex = Math.min(pageIndex, pageCount - 1);
@@ -2491,7 +2517,7 @@ function DataModelTableSurface({
     setSelectedRow(null);
     setLastSelectedRowIndex(null);
     setSelectMenuOpen(false);
-  }, [settings.filter, settings.sort, pageSize]);
+  }, [settings.filter, settings.sort, pageSize, searchQuery]);
 
   function commitField() {
     const name = fieldName.trim();
@@ -2676,15 +2702,41 @@ function DataModelTableSurface({
       )}
       <div className="dm-db-toolbar">
         <div className="dm-filter-chip-row">
+          <label className="dm-db-search">
+            <Search size={13} aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              placeholder="Search records"
+              aria-label={`Search ${table.label || table.source} records`}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery && (
+              <button type="button" className="dm-db-search-clear" aria-label="Clear search" onClick={() => setSearchQuery("")}>
+                <X size={12} />
+              </button>
+            )}
+          </label>
           {selectedRowCount > 0 && (
             <span className="dm-filter-chip dm-selection-count">
               {pluralize(selectedRowCount, "record")} selected
             </span>
           )}
+          {settings.sort?.[0]?.fieldId && (
+            <span className="dm-filter-chip dm-filter-chip--meta">
+              {settings.sort[0].direction === "desc" ? <ArrowDownAZ size={12} /> : <ArrowUpAZ size={12} />}
+              Sorted by {settings.sort[0].fieldId}
+            </span>
+          )}
+          {settings.filter?.clauses?.length > 0 && (
+            <span className="dm-filter-chip dm-filter-chip--meta">
+              <Filter size={12} />{pluralize(settings.filter.clauses.length, "filter")}
+            </span>
+          )}
           {settings.filter?.clauses?.map((clause) => (
-            <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip" onClick={() => removeFilter(clause.fieldId)}>
+            <button key={`${clause.fieldId}:${clause.operator}`} type="button" className="dm-filter-chip dm-filter-chip--active" title="Remove filter" onClick={() => removeFilter(clause.fieldId)}>
               <LucideIcon name={FIELD_TYPE_ICON_NAMES[settings.types?.[clause.fieldId] || inferFieldType(clause.fieldId)] || "Type"} size={12} />
-              <span>{clause.fieldId}: {clause.operator}{clause.value !== undefined ? ` ${clause.value}` : ""}</span>
+              <span>{describeFilterClause(clause)}</span>
               <X size={12} />
             </button>
           ))}
@@ -2927,7 +2979,48 @@ function DataModelTableSurface({
                 {table.mutable && <td className="dm-db-empty-cell" />}
               </tr>
             );})}
-            {table.mutable && (
+            {rowEntries.length === 0 && (
+              <tr className="dm-db-empty-row">
+                <td colSpan={visibleColumns.length + 1 + (table.mutable ? 1 : 0)}>
+                  <div className="dm-db-empty">
+                    <span className="dm-db-empty-icon" aria-hidden="true"><Database size={20} /></span>
+                    {(searchQuery.trim() || settings.filter?.clauses?.length) ? (
+                      <>
+                        <strong>No matching records</strong>
+                        <p>No records match the current search and filters.</p>
+                        <div className="dm-db-empty-actions">
+                          {searchQuery.trim() && (
+                            <button type="button" className="dm-btn-outline" onClick={() => setSearchQuery("")}>Clear search</button>
+                          )}
+                          {settings.filter?.clauses?.length > 0 && (
+                            <button type="button" className="dm-btn-outline" onClick={resetView}>Clear filters</button>
+                          )}
+                        </div>
+                      </>
+                    ) : table.mutable ? (
+                      <>
+                        <strong>No records yet</strong>
+                        <p>Add your first row or import a CSV to start using this object.</p>
+                        <div className="dm-db-empty-actions">
+                          <button type="button" className="dm-btn-primary-sm" disabled={saving} onClick={() => onSave((config) => addTableRow(config, table))}>
+                            <Plus size={13} />Add record
+                          </button>
+                          <button type="button" className="dm-btn-outline" onClick={() => setCsvOpen(true)}>
+                            <Upload size={13} />Import CSV
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong>No records yet</strong>
+                        <p>Records for this object are resolved from its source at runtime.</p>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+            {table.mutable && rowEntries.length > 0 && (
               <tr className="dm-db-new-row" onClick={() => onSave((config) => addTableRow(config, table))}>
                 <td className="dm-db-rownum">+</td>
                 <td colSpan={Math.max(visibleColumns.length, 1) + 1}>Add record</td>
@@ -3740,6 +3833,9 @@ export default function DataModelShell() {
                   />
                 </span>
                 <h1>{selectedTable.label}</h1>
+                <span className={`dm-type-pill ${objectTypeBadge(selectedTable.objectType).cls}`}>
+                  {objectTypeBadge(selectedTable.objectType).label}
+                </span>
               </div>
               <p className="workspace-toolbar-object-meta">
                 {(selectedTable.columns?.length || 0)} {(selectedTable.columns?.length || 0) === 1 ? "Field" : "Fields"}

@@ -4941,16 +4941,20 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   background: #fff;
 }
 .dm-db-toolbar + * { padding-top: 0; }
-.dm-db-toolbar .dm-records-actions {
+/* Two clusters: search + filter/sort summary on the LEFT, action buttons
+   (Filter, Export, Import, Add record) on the RIGHT — the standard SaaS
+   table rhythm. */
+.dm-db-toolbar .dm-filter-chip-row {
   order: 1;
-  margin-left: 0;
-  margin-right: auto;
+  flex: 1 1 auto;
+  min-width: 0;
   justify-content: flex-start;
 }
-.dm-db-toolbar .dm-filter-chip-row {
+.dm-db-toolbar .dm-records-actions {
   order: 2;
-  justify-content: flex-end;
+  flex: 0 0 auto;
   margin-left: auto;
+  justify-content: flex-end;
 }
 .dm-db-toolbar-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .dm-db-toolbar-title strong { font-size: 13px; color: #111827; font-weight: 650; }
@@ -4958,9 +4962,25 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-inline-panel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid #dfe3e8; border-radius: 10px; background: #fbfdff; }
 .dm-inline-panel input { height: 32px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 10px; }
 .dm-filter-chip-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 0; }
-.dm-filter-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; border: 1px solid #c7d2fe; border-radius: 8px; background: #eef2ff; color: #3730a3; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; }
+.dm-filter-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; color: #475569; font: inherit; font-size: 12px; padding: 0 10px; cursor: pointer; }
+/* Neutral, non-interactive summary chips ("2 filters", "Sorted by …"). */
+.dm-filter-chip--meta { cursor: default; color: #64748b; }
+.dm-filter-chip--meta svg { color: #94a3b8; }
+/* Removable active-filter chips carry the only accent in the toolbar. */
+.dm-filter-chip--active { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
+.dm-filter-chip--active:hover { border-color: #a5b4fc; background: #e0e7ff; }
+.dm-filter-chip--active svg:last-child { color: #818cf8; }
 .dm-selection-count { border-color: #d1d5db; background: #fff; color: #475569; cursor: default; }
 .dm-filter-chip span { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Compact search box, sized to match the toolbar control rhythm. */
+.dm-db-search { display: inline-flex; align-items: center; gap: 6px; height: 28px; min-width: 180px; max-width: 260px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #475569; padding: 0 8px; }
+.dm-db-search:focus-within { border-color: #cbd5e1; box-shadow: 0 0 0 3px rgba(148,163,184,.16); }
+.dm-db-search svg { color: #94a3b8; flex-shrink: 0; }
+.dm-db-search input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: #111827; font: inherit; font-size: 12px; padding: 0; outline: none; }
+.dm-db-search input::placeholder { color: #9ca3af; }
+.dm-db-search input::-webkit-search-cancel-button { appearance: none; }
+.dm-db-search-clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: #94a3b8; cursor: pointer; flex-shrink: 0; }
+.dm-db-search-clear:hover { background: #f1f5f9; color: #475569; }
 .dm-filter-popover { position: absolute; z-index: 40; display: grid; gap: 8px; width: 320px; padding: 10px; border: 1px solid #dbe2ea; border-radius: 10px; background: #fff; box-shadow: 0 18px 42px rgba(15,23,42,.18), 0 3px 10px rgba(15,23,42,.08); }
 .dm-filter-popover input { height: 32px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 10px; }
 .dm-filter-anchor { position: relative; display: inline-flex; }
@@ -5012,6 +5032,18 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-field-creator-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dm-db-empty-cell { background: #fbfdff; }
 .dm-db-new-row td { color: #64748b; background: #fbfdff; font-weight: 600; }
+/* In-grid empty state — replaces a blank table with a clear next action. */
+.dm-db-empty-row td { cursor: default; background: #fff; border-right: 0; }
+.dm-db-empty-row td:hover { background: #fff; }
+.dm-db-empty { display: grid; justify-items: center; gap: 6px; padding: 48px 16px; text-align: center; color: #6b7280; }
+.dm-db-empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: #f1f5f9; color: #94a3b8; margin-bottom: 4px; }
+.dm-db-empty strong { font-size: 14px; font-weight: 650; color: #111827; }
+.dm-db-empty p { margin: 0; max-width: 360px; font-size: 12px; color: #6b7280; }
+.dm-db-empty-actions { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; }
+/* Object-type pill beside the object name in the surface header. */
+.dm-type-pill { display: inline-flex; align-items: center; border-radius: 6px; border: 1px solid #e4e4e4; background: #f5f5f5; color: #475569; padding: 2px 8px; font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: .01em; }
+/* Subtle accent rail on the active record row so selection reads clearly. */
+.dm-db-grid tbody tr.selected td:first-child { box-shadow: inset 2px 0 0 #818cf8; }
 .dm-pagination-bar { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; padding: 8px 14px; background: #fff; color: #64748b; font-size: 12px; border-top: 1px solid #edf0f3; }
 .dm-pagination-summary { white-space: nowrap; }
 .dm-pagination-controls { display: inline-flex; align-items: center; gap: 8px; }
