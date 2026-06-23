@@ -174,3 +174,169 @@ test("the deriver source is pure (no fetch/fs/storage/window/React/require)", ()
   // not match the source either (belt-and-suspenders against future edits).
   assert.equal(/localStorage|sessionStorage/.test(source), false);
 });
+
+// ---------------------------------------------------------------------------
+// API contract probes — positive + negative + adversarial. The cockpit is a
+// pure consumer of GET /api/workspace/agent-outcomes; these probes exercise the
+// full range of receipt-stream shapes that endpoint can return.
+// ---------------------------------------------------------------------------
+
+// Build a stream in the SHAPE the endpoint returns: newest-first, server `seq`
+// present. The deriver must re-sort to chronological order regardless.
+function endpointStream(receiptsOldestFirst) {
+  return receiptsOldestFirst
+    .map((r, i) => ({ seq: i, createdAt: new Date(1_700_000_000_000 + i * 1000).toISOString(), summary: "x", ...r }))
+    .reverse(); // endpoint hands back newest-first
+}
+
+test("probe[+]: realistic multi-actor stream isolates the one true route-shop", () => {
+  const stream = endpointStream([
+    { receiptId: "r1", actor: "agent:alpha", lane: "untrusted-direct", outcomeStatus: "blocked",
+      policyVerdict: { ok: false, violationCodes: ["LIVE_WORKFLOW_MUTATION"] },
+      objectRefs: [{ objectId: "swarm-workflows", rowName: "nightly" }] },
+    { receiptId: "r2", actor: "agent:beta", lane: "helper-apply", outcomeStatus: "verified" }, // noise lane
+    { receiptId: "r3", actor: "agent:alpha", lane: "execution-proof", outcomeStatus: "verified",
+      objectRefs: [{ objectId: "swarm-workflows", rowName: "nightly" }] }, // alpha shops
+    { receiptId: "r4", actor: "agent:gamma", lane: "execution-proof", outcomeStatus: "verified" }, // proof w/o prior block
+    { receiptId: "r5", actor: "agent:beta", lane: "untrusted-direct", outcomeStatus: "blocked" }, // beta blocked, never shops
+    { receiptId: "r6", actor: "agent:delta", lane: "workflow-publish", outcomeStatus: "published" }, // noise lane
+  ]);
+  const model = deriveGovernanceCausation({ receipts: stream });
+  assert.equal(model.signals.length, 1);
+  assert.equal(model.signals[0].actor, "agent:alpha");
+  assert.equal(model.signals[0].blockedReceiptId, "r1");
+  assert.equal(model.signals[0].followOnReceiptId, "r3");
+  assert.equal(model.signals[0].handoff.name, "nightly");
+  assert.equal(model.totals.blockedDirect, 2); // alpha + beta blocked
+  assert.equal(model.totals.executionProofs, 2); // alpha + gamma
+  assert.equal(model.attention.actor, "agent:alpha");
+});
+
+test("probe[+]: two shopping actors → two signals, attention is highest-then-newest", () => {
+  const stream = endpointStream([
+    { receiptId: "b1", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked" },
+    { receiptId: "p1", actor: "a", lane: "execution-proof", outcomeStatus: "blocked" }, // held → low
+    { receiptId: "b2", actor: "z", lane: "untrusted-direct", outcomeStatus: "blocked" },
+    { receiptId: "p2", actor: "z", lane: "execution-proof", outcomeStatus: "verified" }, // accepted + close → higher
+  ]);
+  const model = deriveGovernanceCausation({ receipts: stream });
+  assert.equal(model.signals.length, 2);
+  // Newest-first display ordering.
+  assert.equal(model.signals[0].followOnReceiptId, "p2");
+  assert.equal(model.attention.actor, "z");
+});
+
+test("probe[-]: malformed / partial receipts are ignored, never throw", () => {
+  const stream = [
+    null,
+    7,
+    "garbage",
+    { lane: "untrusted-direct", outcomeStatus: "blocked" }, // no receiptId
+    { receiptId: "ok-b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked" },
+    { receiptId: "ok-p", actor: "a", lane: "execution-proof", outcomeStatus: "verified" },
+    { receiptId: "x", actor: "a", lane: undefined, outcomeStatus: null },
+  ];
+  const model = deriveGovernanceCausation({ receipts: stream });
+  assert.equal(model.signals.length, 1);
+  assert.equal(model.signals[0].blockedReceiptId, "ok-b");
+});
+
+test("probe[-]: malformed objectRefs yield no handoff but still a signal", () => {
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked",
+      objectRefs: ["nope", null, { rowName: "no-object-id" }, 42], createdAt: "2026-01-01T00:00:00Z", seq: 0 },
+    { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified",
+      objectRefs: "not-an-array", createdAt: "2026-01-01T00:00:05Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.deepEqual(signals[0].objectRefs, []); // none resolvable
+  assert.equal(signals[0].handoff, null); // no addressable row → no Open
+});
+
+test("probe[-]: secret-shaped strings are bounded and not expanded", () => {
+  const longSecret = "Bearer sk-" + "A".repeat(5000);
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked",
+      summary: longSecret, createdAt: "2026-01-01T00:00:00Z", seq: 0,
+      objectRefs: [{ objectId: "o".repeat(5000), rowName: "r".repeat(5000) }] },
+    { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified",
+      summary: longSecret, createdAt: "2026-01-01T00:00:01Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  // Every surfaced string is truncated to its declared bound (never unbounded).
+  assert.ok(signals[0].blockedSummary.length <= 201);
+  assert.ok(signals[0].objectRefs[0].objectId.length <= 121);
+  // The deriver never lengthens input; serialized signal stays bounded.
+  assert.ok(JSON.stringify(signals[0]).length < longSecret.length);
+});
+
+test("probe[-]: out-of-order timestamps clamp elapsedMs to >= 0", () => {
+  // seq says block precedes proof, but the proof's wall-clock is EARLIER.
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked",
+      createdAt: "2026-01-01T00:01:00Z", seq: 0 },
+    { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified",
+      createdAt: "2026-01-01T00:00:00Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].elapsedMs, 0); // clamped, never negative
+});
+
+test("probe[-]: a second block before any proof supersedes the first (closest pair)", () => {
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b1", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked", createdAt: "2026-01-01T00:00:00Z", seq: 0 },
+    { receiptId: "b2", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked", createdAt: "2026-01-01T00:00:01Z", seq: 1 },
+    { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified", createdAt: "2026-01-01T00:00:02Z", seq: 2 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].blockedReceiptId, "b2");
+});
+
+test("probe[-]: large stream stays bounded and correct (no quadratic blowup of signals)", () => {
+  const big = [];
+  for (let i = 0; i < 1000; i += 1) {
+    big.push({ receiptId: `n${i}`, actor: `actor${i % 7}`, lane: "execution-proof", outcomeStatus: "verified",
+      createdAt: new Date(1_700_000_000_000 + i * 1000).toISOString(), seq: i });
+  }
+  // Inject exactly 3 genuine shops for actor0.
+  big.push({ receiptId: "B1", actor: "actor0", lane: "untrusted-direct", outcomeStatus: "blocked", createdAt: new Date(1_700_000_999_000).toISOString(), seq: 1000 });
+  big.push({ receiptId: "P1", actor: "actor0", lane: "execution-proof", outcomeStatus: "verified", createdAt: new Date(1_700_001_000_000).toISOString(), seq: 1001 });
+  const model = deriveGovernanceCausation({ receipts: big });
+  assert.equal(typeof model.totals.routeShopSignals, "number");
+  assert.equal(model.signals.length, 1);
+  assert.equal(model.signals[0].blockedReceiptId, "B1");
+  assert.equal(model.status, model.totals.highSeverity > 0 ? "alert" : "watch");
+});
+
+test("probe[-]: non-string actor is coerced, never crashes grouping", () => {
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", actor: 12345, lane: "untrusted-direct", outcomeStatus: "blocked", createdAt: "2026-01-01T00:00:00Z", seq: 0 },
+    { receiptId: "p", actor: 12345, lane: "execution-proof", outcomeStatus: "verified", createdAt: "2026-01-01T00:00:01Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].actor, "12345");
+});
+
+test("probe[+]: hand-off prefers the execution-proof row over the blocked direct target", () => {
+  // The block reached for a dashboard (non-executable); the proof ran a sandbox
+  // row. Open must land on the sandbox row Background Tasks can render.
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked",
+      objectRefs: [{ objectId: "marketing-dashboard", rowName: "kpis", objectType: "dashboard" }],
+      createdAt: "2026-01-01T00:00:00Z", seq: 0 },
+    { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified",
+      objectRefs: [{ objectId: "swarm-workflows", rowName: "nightly", objectType: "sandbox-environment" }],
+      createdAt: "2026-01-01T00:00:03Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.deepEqual(signals[0].handoff, { surface: "swarm-run", objectId: "swarm-workflows", name: "nightly" });
+});
+
+test("probe[+]: an actorless block+proof pair correlates under the unattributed bucket", () => {
+  const signals = deriveRouteShoppingSignals([
+    { receiptId: "b", lane: "untrusted-direct", outcomeStatus: "blocked", createdAt: "2026-01-01T00:00:00Z", seq: 0 },
+    { receiptId: "p", lane: "execution-proof", outcomeStatus: "verified", createdAt: "2026-01-01T00:00:01Z", seq: 1 },
+  ]);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].actor, "unattributed");
+});

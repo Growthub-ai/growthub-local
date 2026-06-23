@@ -28,6 +28,12 @@
  * guidance; "Open" hands off to the EXISTING swarm-run surface for the row
  * that was reached for — the cockpit never executes and never mutates.
  *
+ * Secret safety: receipts are already secret-redacted at WRITE time
+ * (`lib/workspace-outcome-receipts.js` runs `redactSecrets` before persisting).
+ * This deriver therefore reads pre-redacted text; it additionally truncates
+ * every string it surfaces (defense against unbounded values) and never echoes
+ * raw payloads — only named, bounded fields.
+ *
  * Truthful telemetry: a missing/unparseable `createdAt` yields `elapsedMs:
  * null` (never 0); an absent `actor` is grouped under a single "unattributed"
  * bucket and never silently merged with a named actor.
@@ -216,6 +222,11 @@ export function deriveRouteShoppingSignals(receipts) {
         ? Math.max(0, followOnTs - blockedTs)
         : null;
       const objectRefs = mergeObjectRefs(blocked, receipt);
+      // Hand-off prefers the EXECUTION-PROOF (follow-on) receipt's refs: that is
+      // the row sandbox-run actually executed, so "Open" lands on a row
+      // Background Tasks can render — not the direct-PATCH target (which may be
+      // a non-executable object). Falls back to the merged set.
+      const followOnRefs = mergeObjectRefs(receipt);
       const followOnSucceeded = SUCCEEDED_FOLLOW_ON.has(status);
 
       const signal = {
@@ -241,7 +252,7 @@ export function deriveRouteShoppingSignals(receipts) {
         followOnOutcome: status || null,
         followOnSucceeded,
         repeatIndex,
-        handoff: handoffArtifactFor(objectRefs),
+        handoff: handoffArtifactFor(followOnRefs) || handoffArtifactFor(objectRefs),
       };
       signal.severity = deriveSeverity({ elapsedMs, repeatIndex, followOnSucceeded });
       signal.headline = headlineFor(signal);

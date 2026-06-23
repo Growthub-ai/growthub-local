@@ -8,103 +8,61 @@
  *
  * Read-only. It reads the ONE endpoint that already exists
  * (`GET /api/workspace/agent-outcomes`), runs the PURE deriver
- * (`deriveGovernanceCausation`), and renders confirmed route-shop pairs as
- * "Background tasks"-grammar cards. It adds NO new route, NO new schema, NO new
- * PATCH field, NO new persistence, NO new visual vocabulary:
+ * (`deriveGovernanceCausation`), and renders confirmed route-shop pairs using
+ * the SAME grammar the CEO cockpit uses — a totals section-row, a single
+ * "Needs your attention" emphasized card, then the capped history list. It adds
+ * NO new route, NO new schema, NO new PATCH field, NO new persistence, NO new
+ * visual vocabulary; the only icon is the inherited ArrowUpRight (the CEO
+ * cockpit's hand-off affordance).
  *
- *   data lane:  GET /api/workspace/agent-outcomes → receipts[]
- *               → deriveGovernanceCausation({ receipts }) (pure)
- *   surface:    dm-* primitives only; icon set inherited from SwarmRunCockpit
- *               (ArrowUpRight / ChevronDown / ChevronRight).
+ * Closed-loop mental model (mirrors the CEO cockpit exactly): open → read the
+ * one thing that needs review → Open the targeted workflow (hand-off to the
+ * EXISTING swarm-run surface) → act there → Refresh → confirm it cleared.
  *
- * Every "Open" hands off to the EXISTING swarm-run surface for the row that was
- * reached for (when an addressable row is in the signal's objectRefs) — the
- * cockpit never executes and never mutates. Truthful telemetry: an unknown
- * elapsed renders "—", never 0.
+ * State machine (every state is rendered — no blank first frame):
+ *   loading        first fetch in flight                → "Reading the receipt stream…"
+ *   error          fetch failed                         → error + Retry (no misleading "clear")
+ *   empty-activity loaded, 0 receipts                   → "No agent activity recorded yet"
+ *   clear          loaded, receipts > 0, 0 signals      → "No route-shopping detected"
+ *   watch          ≥1 signal, none high                 → attention + history
+ *   alert          ≥1 high-severity signal              → attention + history
+ *
+ * Truthful telemetry: an unknown elapsed renders "—", never 0.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { deriveGovernanceCausation } from "@/lib/governance-causation-console";
 
-const STATUS_DOT = {
-  clear: "ok",
-  watch: "pending",
-  alert: "fail",
-};
+const STATUS_DOT = { clear: "ok", watch: "pending", alert: "fail" };
+const SEVERITY_LABEL = { high: "High", medium: "Medium", low: "Low" };
 
-const SEVERITY_LABEL = {
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-};
+// Bound the rendered list so a workspace with a long shop history stays a tidy,
+// scrollable list. The attention pick is always shown above this; the overflow
+// count is disclosed. Mirrors CEO_FLEET_VISIBLE_CAP.
+const GOVERNANCE_VISIBLE_CAP = 50;
 
-function StatusSummary({ model }) {
-  const { totals, status } = model;
-  const headline = status === "clear"
-    ? "No route-shopping detected across the receipt stream."
-    : status === "alert"
-      ? "Confirmed high-severity route-shopping — review before it repeats."
-      : "Route-shopping observed — keep an eye on these actors.";
-  return (
-    <div className="dm-helper-toolcall dm-swarm-card" data-governance-summary={status}>
-      <div className="dm-swarm-card-head">
-        <span className="dm-run-console__tree-dot" data-variant={STATUS_DOT[status] || "pending"} />
-        <span className="dm-helper-toolcall-title dm-swarm-card-title">Authority supervision</span>
-        <span className="dm-run-console__hint">{model.totals.routeShopSignals} signal{model.totals.routeShopSignals === 1 ? "" : "s"}</span>
-      </div>
-      <div className="dm-helper-stream dm-swarm-card-desc">{headline}</div>
-      <div className="dm-swarm-card-meta">
-        <span className="dm-run-console__hint">{totals.receipts} receipt{totals.receipts === 1 ? "" : "s"}</span>
-        <span className="dm-run-console__hint">{totals.actors} actor{totals.actors === 1 ? "" : "s"}</span>
-        <span className="dm-run-console__hint">{totals.blockedDirect} blocked direct</span>
-        <span className="dm-run-console__hint">{totals.executionProofs} proof attempt{totals.executionProofs === 1 ? "" : "s"}</span>
-      </div>
-    </div>
-  );
-}
-
-function ReceiptLine({ label, receiptId, summary }) {
-  return (
-    <div className="dm-swarm-card-meta" data-governance-receipt={receiptId || ""}>
-      <span className="dm-field-label">{label}</span>
-      <span className="dm-run-console__hint">{receiptId || "—"}</span>
-      {summary ? <span className="dm-run-console__hint">{summary}</span> : null}
-    </div>
-  );
-}
-
-function SignalCard({ signal, expanded, onToggle, onOpen, isAttention }) {
+// One flat signal card — mirrors CeoReportCard (dot + title + hand-off action;
+// meta rows; headline as description). No expand/collapse, no extra icon: every
+// piece of evidence is visible inline so there is no hidden state.
+function SignalCard({ signal, onOpen, emphasis }) {
+  const canOpen = Boolean(signal.handoff && typeof onOpen === "function");
   const target = signal.objectRefs && signal.objectRefs[0];
   const reach = target
     ? `${target.rowName ? `${target.rowName} · ` : ""}${target.objectId}`
     : "no addressable row";
+  const violations = signal.policyVerdict?.violationCodes || [];
   return (
     <div
       className="dm-helper-toolcall dm-swarm-card"
       data-governance-signal={signal.signalId}
       data-governance-severity={signal.severity}
-      data-governance-attention={isAttention ? "true" : "false"}
+      data-governance-emphasis={emphasis ? "true" : "false"}
     >
-      <button
-        type="button"
-        className="dm-helper-toolcall-row dm-swarm-card-head"
-        onClick={onToggle}
-        aria-expanded={expanded}
-      >
+      <div className="dm-swarm-card-head">
         <span className="dm-run-console__tree-dot" data-variant={signal.variant} />
         <span className="dm-helper-toolcall-title dm-swarm-card-title">{signal.actor}</span>
-        <span className="dm-run-console__hint">{SEVERITY_LABEL[signal.severity] || signal.severity}</span>
-        {expanded
-          ? <ChevronDown size={14} className="dm-helper-toolcall-chevron" aria-hidden="true" />
-          : <ChevronRight size={14} className="dm-helper-toolcall-chevron" aria-hidden="true" />}
-      </button>
-      <div className="dm-helper-stream dm-swarm-card-desc">{signal.headline}</div>
-      <div className="dm-swarm-card-meta">
-        <span className="dm-run-console__hint dm-swarm-card-kind">Route-shop</span>
-        <span className="dm-run-console__hint">{signal.elapsedLabel} elapsed</span>
-        <span className="dm-run-console__hint">{signal.followOnSucceeded ? "proof accepted" : "proof held"}</span>
-        {signal.handoff && (
+        {canOpen && (
           <button
             type="button"
             className="dm-btn-ghost dm-swarm-card-action"
@@ -112,45 +70,56 @@ function SignalCard({ signal, expanded, onToggle, onOpen, isAttention }) {
             aria-label={`Open ${reach} in Background tasks`}
             title="Open the targeted workflow in Background tasks"
           >
-            Open
             <ArrowUpRight size={12} aria-hidden="true" />
           </button>
         )}
       </div>
-      {expanded && (
-        <div className="dm-helper-toolcall-body">
-          <ReceiptLine label="Blocked (direct)" receiptId={signal.blockedReceiptId} summary={signal.blockedSummary} />
-          <ReceiptLine label="Follow-on (proof)" receiptId={signal.followOnReceiptId} summary={signal.followOnSummary} />
-          <div className="dm-swarm-card-meta">
-            <span className="dm-field-label">Reached for</span>
-            <span className="dm-run-console__hint">{reach}</span>
-          </div>
-          {signal.policyVerdict && signal.policyVerdict.violationCodes.length > 0 && (
-            <div className="dm-swarm-card-meta">
-              <span className="dm-field-label">Why the direct lane refused</span>
-              <span className="dm-run-console__hint">{signal.policyVerdict.violationCodes.join(", ")}</span>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="dm-swarm-card-meta">
+        <span className="dm-run-console__hint dm-swarm-card-kind">Route-shop</span>
+        <span className="dm-run-console__hint">{SEVERITY_LABEL[signal.severity] || signal.severity}</span>
+        <span className="dm-run-console__hint">{signal.elapsedLabel} elapsed</span>
+        <span className="dm-run-console__hint">{signal.followOnSucceeded ? "proof accepted" : "proof held"}</span>
+      </div>
+      <div className="dm-swarm-card-meta">
+        <span className="dm-run-console__hint">Reached for {reach}</span>
+        {violations.length > 0 && (
+          <span className="dm-run-console__hint" title="Why the direct lane refused">
+            Refused: {violations.join(", ")}
+          </span>
+        )}
+      </div>
+      <div className="dm-helper-stream dm-swarm-card-desc">{signal.headline}</div>
+      <div className="dm-swarm-card-meta">
+        <span className="dm-run-console__hint" title="The two receipts this signal correlates">
+          {signal.blockedReceiptId} → {signal.followOnReceiptId}
+        </span>
+      </div>
     </div>
   );
 }
 
 export function GovernanceCausationCockpit({ onOpenArtifact }) {
   const [receipts, setReceipts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [expandedId, setExpandedId] = useState(null);
 
   const refreshReceipts = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
     try {
       const res = await fetch("/api/workspace/agent-outcomes");
+      if (!res.ok) throw new Error(`receipt stream returned ${res.status}`);
       const data = await res.json();
       setReceipts(Array.isArray(data?.receipts) ? data.receipts : []);
-      setLoadError("");
+      setLoaded(true);
     } catch (err) {
-      // Non-fatal — the cockpit renders a clear state and a retry affordance.
-      setLoadError(err?.message || "Could not load the receipt stream.");
+      // Non-fatal — render an explicit error + Retry, never a misleading
+      // "all clear". The previous receipts (if any) are kept so a transient
+      // refresh failure does not blank a populated cockpit.
+      setLoadError(err?.message || "Could not read the receipt stream.");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -167,35 +136,92 @@ export function GovernanceCausationCockpit({ onOpenArtifact }) {
     [onOpenArtifact]
   );
 
+  const { totals, signals, attention, status } = model;
+  // Filter by stable signalId, never by actor — two shops by the same actor
+  // must both survive in the history list.
+  const others = attention ? signals.filter((s) => s.signalId !== attention.signalId) : signals;
+  const visible = others.slice(0, GOVERNANCE_VISIBLE_CAP);
+  const overflow = others.length - visible.length;
+
+  const summaryLine = `${totals.routeShopSignals} signal${totals.routeShopSignals === 1 ? "" : "s"}`
+    + ` · ${totals.highSeverity} high`
+    + ` · ${totals.blockedDirect} blocked direct`
+    + ` · ${totals.executionProofs} proof attempt${totals.executionProofs === 1 ? "" : "s"}`;
+
   return (
-    <div className="dm-swarm-cockpit" data-governance-cockpit="" data-governance-status={model.status}>
+    <div className="dm-swarm-cockpit" data-governance-cockpit="" data-governance-status={loaded ? status : "loading"}>
+      <div className="dm-swarm-section-row">
+        <span className="dm-run-console__hint">
+          {loaded ? summaryLine : "Authority supervision"}
+        </span>
+        <button
+          type="button"
+          className="dm-btn-ghost"
+          onClick={refreshReceipts}
+          disabled={loading}
+          title="Re-read the receipt stream"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
       {loadError && (
         <div className="dm-helper-error" role="alert">
           <span>{loadError}</span>
+          <button type="button" className="dm-btn-ghost" onClick={refreshReceipts} disabled={loading}>
+            Retry
+          </button>
         </div>
       )}
-      <StatusSummary model={model} />
-      <div className="dm-swarm-cockpit-list">
-        {model.signals.length === 0 ? (
-          <p className="dm-run-console__hint">
-            No route-shopping detected. A signal appears here when an actor is
-            blocked on the direct lane (PATCH /api/workspace) and then reaches for
-            the same work through sandbox-run — the receipt stream already records
-            every byte this needs.
-          </p>
-        ) : (
-          model.signals.map((signal) => (
-            <SignalCard
-              key={signal.signalId}
-              signal={signal}
-              expanded={expandedId === signal.signalId}
-              isAttention={model.attention?.signalId === signal.signalId}
-              onToggle={() => setExpandedId((prev) => (prev === signal.signalId ? null : signal.signalId))}
-              onOpen={handleOpen}
-            />
-          ))
-        )}
-      </div>
+
+      {!loaded && !loadError && (
+        <p className="dm-run-console__hint">Reading the receipt stream…</p>
+      )}
+
+      {loaded && (
+        <>
+          {totals.receipts === 0 ? (
+            <p className="dm-run-console__hint">
+              No agent activity recorded yet. Once mutations and runs flow through
+              the governed lanes, this cockpit correlates a blocked direct attempt
+              (PATCH /api/workspace) with a later sandbox-run by the same actor —
+              route-shopping — from the receipt stream alone.
+            </p>
+          ) : signals.length === 0 ? (
+            <p className="dm-run-console__hint">
+              No route-shopping detected across {totals.receipts} receipt
+              {totals.receipts === 1 ? "" : "s"} from {totals.actors} actor
+              {totals.actors === 1 ? "" : "s"}. A signal appears here when an actor
+              is blocked on the direct lane and then reaches for the same work
+              through sandbox-run.
+            </p>
+          ) : (
+            <>
+              {attention && (
+                <>
+                  <span className="dm-field-label">Needs your attention</span>
+                  <SignalCard signal={attention} onOpen={handleOpen} emphasis />
+                </>
+              )}
+              {others.length > 0 && (
+                <>
+                  <span className="dm-run-console__hint">All signals</span>
+                  <div className="dm-swarm-cockpit-list" data-governance-list="">
+                    {visible.map((signal) => (
+                      <SignalCard key={signal.signalId} signal={signal} onOpen={handleOpen} />
+                    ))}
+                  </div>
+                  {overflow > 0 && (
+                    <span className="dm-run-console__hint">
+                      {`Showing ${visible.length} of ${others.length} signals.`}
+                    </span>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -37,23 +37,36 @@ mirroring the shipped CEO cockpit) limited surfaces.
   filesystem, no config writes, no browser storage, no CSS. Correlates strictly
   within a single actor's chronological timeline (server `seq` first, then
   `createdAt`, then stable index); one block is consumed by at most one
-  follow-on. Severity is derived from evidence only (proximity + repeat count +
+  follow-on; a second block before any proof supersedes the first (closest
+  pair). Severity is derived from evidence only (proximity + repeat count +
   whether the follow-on succeeded). Truthful telemetry: a missing/unparseable
-  `createdAt` yields `elapsedMs: null` (never `0`). Receipts are already
-  secret-redacted at write time; the deriver additionally clips every string and
-  never echoes raw payloads.
+  `createdAt` yields `elapsedMs: null` (never `0`); out-of-order timestamps
+  clamp to `>= 0`. The `handoff` prefers the EXECUTION-PROOF receipt's object
+  refs (the row sandbox-run actually executed), so "Open" lands on a row
+  Background Tasks can render — not the direct-PATCH target. Receipts are
+  already secret-redacted at write time; the deriver additionally truncates
+  every surfaced string and never echoes raw payloads.
 
-### Phase 2 — Cockpit (mirrors SwarmRunCockpit / CeoCockpit)
+### Phase 2 — Cockpit (mirrors CeoCockpit's state model exactly)
 - `…/app/data-model/components/GovernanceCausationCockpit.jsx` (new) — reads the
   ONE existing endpoint (`GET /api/workspace/agent-outcomes`), runs the pure
-  deriver, and renders confirmed route-shop pairs as `dm-helper-toolcall` /
-  `dm-swarm-card` cards with `dm-run-console__tree-dot[data-variant=fail]` for
-  high-severity pairs. Icon set is strictly inherited grammar (ArrowUpRight /
-  ChevronDown / ChevronRight). Read-only: it never patches config and never
-  calls `sandbox-run`. Each card's "Open" hands off to the EXISTING swarm-run
-  surface for the row reached for (when an addressable row is in the signal's
-  `objectRefs`), through the same `handleOpenArtifact` router the CEO cockpit
-  uses.
+  deriver, and renders the SAME grammar the CEO cockpit uses: a
+  `dm-swarm-section-row` totals line, a single **"Needs your attention"**
+  (`dm-field-label`) emphasized card, then the capped "All signals" list with an
+  overflow disclosure (`GOVERNANCE_VISIBLE_CAP = 50`, mirroring
+  `CEO_FLEET_VISIBLE_CAP`). Cards are flat (mirror `CeoReportCard`): no
+  expand/collapse, no hidden state — every piece of evidence is inline. The only
+  icon is the inherited **ArrowUpRight** (the CEO hand-off affordance); no new
+  icon, color, or visual grammar. **Every UI state is rendered — no blank first
+  frame:** `loading` (first fetch) → "Reading the receipt stream…"; `error` →
+  message + **Retry** (never a misleading "all clear", and prior receipts are
+  kept so a transient refresh failure does not blank a populated cockpit);
+  `empty-activity` (0 receipts); `clear` (receipts > 0, 0 signals); `watch`
+  (signals, none high) and `alert` (≥1 high) → attention + history. A restrained
+  text **Refresh** closes the habitual loop (open → review → Open → act →
+  Refresh → confirm cleared). Read-only: never patches config, never calls
+  `sandbox-run`; every "Open" routes through the same `handleOpenArtifact`
+  router the CEO cockpit uses.
 
 ### Phase 3 — The limited surfaces (additive)
 - `…/app/data-model/components/helper-commands.js` — one `HELPER_COMMANDS` row:
@@ -68,10 +81,17 @@ mirroring the shipped CEO cockpit) limited surfaces.
   cockpit (the rail carries only the "Ask helper" pill).
 
 ### Phase 4 — Tests and docs
-- `scripts/unit-governance-causation-console.test.mjs` (8 tests, `node --test`).
+- `scripts/unit-governance-causation-console.test.mjs` (19 tests, `node --test`)
+  — core correlation + positive/negative/adversarial API-contract probes:
+  realistic multi-actor streams with lane noise, malformed/partial receipts,
+  malformed `objectRefs`, secret-shaped/oversized strings (bounded, not
+  expanded), out-of-order timestamps, closest-pair supersede, a 1000-receipt
+  stream, non-string actors, the unattributed bucket, and the execution-proof
+  hand-off preference.
 - `cli/src/__tests__/kit-custom-workspace-starter.test.ts` — four new describe
   blocks: file presence + four surfaces, kit.json frozen paths, pure-deriver
   behavior (dynamic import), and purity/secret-safety assertions (10 tests).
+- JSX/deriver transpile-checked with `esbuild` (valid JSX, resolvable imports).
 - `cli/assets/.../kit.json` — the two new assets added to `frozenAssetPaths`.
 - This snapshot; `CEO_PRIMITIVE_COCKPIT_ROADMAP_V1.md` R3 marked shipped.
 
@@ -105,7 +125,7 @@ pick (highest severity, most recent).
 
 ## Gates
 
-- `node --test scripts/unit-governance-causation-console.test.mjs` — 8/8 ✓
+- `node --test scripts/unit-governance-causation-console.test.mjs` — 19/19 ✓
 - `node --test scripts/unit-helper-command-registry.test.mjs` — 7/7 ✓ (the live
   `/governance` entry passes `isGovernedHelperCommand`)
 - `npx vitest run src/__tests__/kit-custom-workspace-starter.test.ts` — the 10
