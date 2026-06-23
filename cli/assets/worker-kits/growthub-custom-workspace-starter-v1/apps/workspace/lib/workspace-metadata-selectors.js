@@ -237,6 +237,164 @@ function selectImpactedNodes(graph, nodeId) {
   return findDependents(graph, nodeId);
 }
 
+/**
+ * Project the full metadata graph down to a curated, read-only "Workspace
+ * Map" view — the schema/relationship canvas that lets an operator see, at a
+ * glance, how sources feed objects, and which workflows and dashboards
+ * consume them.
+ *
+ * This is deliberately a SELECTOR (not component logic): rolling multi-hop
+ * relationships up into direct edges (workflow→object via workflowNode,
+ * dashboard→object via widget) is graph derivation and belongs in the pure,
+ * tested layer. The canvas component only positions and renders what this
+ * returns.
+ *
+ * Rendered node types (everything else in the graph is intentionally
+ * collapsed away to keep the map legible):
+ *   - dataModelObject  (centre column)
+ *   - sourceRecord     (left / inputs)
+ *   - integration      (left / inputs)
+ *   - workflow         (right / consumers)
+ *   - dashboard        (right / consumers)
+ *
+ * Rolled-up edges (every endpoint is one of the rendered nodes above):
+ *   sourceRecord  feeds  dataModelObject   (from object backedBySourceRecord)
+ *   integration   feeds  dataModelObject   (from object boundToIntegration)
+ *   workflow      reads/writes  dataModelObject (via workflowNode read/write)
+ *   dashboard     reads  dataModelObject   (via widget bindsToObject)
+ *
+ * Object cards carry up to `fieldLimit` non-secret field labels. Secret
+ * fields are dropped — they never reach the map. Pure, deterministic, and
+ * never throws.
+ */
+function projectWorkspaceMap(graph, options = {}) {
+  const empty = { kind: "growthub-workspace-map-v1", version: 1, columns: [], nodes: [], edges: [], warnings: [] };
+  if (!graph || typeof graph !== "object") {
+    return { ...empty, warnings: ["graph missing"] };
+  }
+  const fieldLimit = Number.isFinite(options.fieldLimit) ? Math.max(0, options.fieldLimit) : 6;
+  const rawNodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const rawEdges = Array.isArray(graph.edges) ? graph.edges : [];
+  const nodesById = new Map(rawNodes.map((node) => [node.id, node]));
+
+  // Collect up to `fieldLimit` non-secret field labels per object id.
+  const fieldsByObjectId = new Map();
+  for (const node of rawNodes) {
+    if (node.type !== "field") continue;
+    const summary = node.summary || {};
+    if (summary.isSecret) continue;
+    const objectId = safeString(summary.objectId).trim();
+    if (!objectId) continue;
+    const list = fieldsByObjectId.get(objectId) || [];
+    if (list.length < fieldLimit) list.push({ label: safeString(node.label).trim(), type: safeString(summary.type).trim() });
+    fieldsByObjectId.set(objectId, list);
+  }
+  const fieldCountByObjectId = new Map();
+  for (const node of rawNodes) {
+    if (node.type !== "field") continue;
+    const objectId = safeString(node.summary?.objectId).trim();
+    if (!objectId) continue;
+    fieldCountByObjectId.set(objectId, (fieldCountByObjectId.get(objectId) || 0) + 1);
+  }
+
+  const RENDERED = {
+    dataModelObject: { column: "objects" },
+    sourceRecord: { column: "sources" },
+    integration: { column: "sources" },
+    workflow: { column: "consumers" },
+    dashboard: { column: "consumers" }
+  };
+
+  const nodes = [];
+  const renderedIds = new Set();
+  for (const node of rawNodes) {
+    const spec = RENDERED[node.type];
+    if (!spec) continue;
+    const summary = node.summary || {};
+    let card;
+    if (node.type === "dataModelObject") {
+      card = {
+        objectId: safeString(summary.objectId).trim(),
+        objectType: safeString(summary.objectType).trim(),
+        isLiveBacked: Boolean(summary.isLiveBacked),
+        readOnly: Boolean(summary.readOnly),
+        rowCount: Number(summary.rowCount) || 0,
+        fields: fieldsByObjectId.get(safeString(summary.objectId).trim()) || [],
+        fieldCount: fieldCountByObjectId.get(safeString(summary.objectId).trim()) || 0
+      };
+    } else if (node.type === "sourceRecord") {
+      card = {
+        recordCount: Number(summary.recordCount) || 0,
+        fetchedAt: safeString(summary.fetchedAt).trim(),
+        integrationId: safeString(summary.integrationId).trim()
+      };
+    } else if (node.type === "integration") {
+      card = { lane: safeString(summary.lane).trim(), status: safeString(summary.status).trim() };
+    } else if (node.type === "workflow") {
+      card = {
+        objectId: safeString(summary.objectId).trim(),
+        rowId: safeString(summary.rowId).trim(),
+        lifecycleStatus: safeString(summary.lifecycleStatus).trim(),
+        nodeCount: Number(summary.nodeCount) || 0,
+        requiresInput: Boolean(summary.requiresInput)
+      };
+    } else if (node.type === "dashboard") {
+      card = { widgetCount: Number(summary.widgetCount) || 0 };
+    } else {
+      card = {};
+    }
+    nodes.push({ id: node.id, type: node.type, label: safeString(node.label).trim(), column: spec.column, card });
+    renderedIds.add(node.id);
+  }
+
+  // ── Roll up edges to direct rendered-node → rendered-node relationships.
+  const edges = [];
+  const seenEdges = new Set();
+  const pushEdge = (from, to, relation) => {
+    if (!from || !to || from === to) return;
+    if (!renderedIds.has(from) || !renderedIds.has(to)) return;
+    const id = `${from}::${relation}::${to}`;
+    if (seenEdges.has(id)) return;
+    seenEdges.add(id);
+    edges.push({ id, from, to, relation });
+  };
+
+  // workflowNode → workflow (containsNode is workflow→workflowNode), and
+  // widget → dashboard (containsWidget is dashboard→widget).
+  const workflowByNodeId = new Map();
+  const dashboardByWidgetId = new Map();
+  for (const edge of rawEdges) {
+    if (edge.relation === "containsNode") workflowByNodeId.set(edge.to, edge.from);
+    if (edge.relation === "containsWidget") dashboardByWidgetId.set(edge.to, edge.from);
+  }
+
+  for (const edge of rawEdges) {
+    // sourceRecord feeds object / integration feeds object (object → x).
+    if (edge.relation === "backedBySourceRecord" && nodesById.get(edge.from)?.type === "dataModelObject") {
+      pushEdge(edge.to, edge.from, "feeds");
+    } else if (edge.relation === "boundToIntegration" && nodesById.get(edge.from)?.type === "dataModelObject") {
+      pushEdge(edge.to, edge.from, "feeds");
+    } else if (edge.relation === "readsObject" && nodesById.get(edge.from)?.type === "workflowNode") {
+      const workflowId = workflowByNodeId.get(edge.from);
+      if (workflowId) pushEdge(workflowId, edge.to, "reads");
+    } else if (edge.relation === "writesObject" && nodesById.get(edge.from)?.type === "workflowNode") {
+      const workflowId = workflowByNodeId.get(edge.from);
+      if (workflowId) pushEdge(workflowId, edge.to, "writes");
+    } else if (edge.relation === "bindsToObject" && nodesById.get(edge.from)?.type === "widget") {
+      const dashboardId = dashboardByWidgetId.get(edge.from);
+      if (dashboardId) pushEdge(dashboardId, edge.to, "reads");
+    }
+  }
+
+  const columns = [
+    { key: "sources", label: "Sources", nodeIds: nodes.filter((n) => n.column === "sources").map((n) => n.id) },
+    { key: "objects", label: "Objects", nodeIds: nodes.filter((n) => n.column === "objects").map((n) => n.id) },
+    { key: "consumers", label: "Workflows & dashboards", nodeIds: nodes.filter((n) => n.column === "consumers").map((n) => n.id) }
+  ];
+
+  return { kind: "growthub-workspace-map-v1", version: 1, columns, nodes, edges, warnings: [] };
+}
+
 export {
   selectWidgetRequiredFields,
   selectWorkflowNodeInputSchema,
@@ -245,5 +403,6 @@ export {
   selectObjectAggregatableFields,
   selectRunLineage,
   selectStaleMetadataGroups,
-  selectImpactedNodes
+  selectImpactedNodes,
+  projectWorkspaceMap
 };

@@ -40,6 +40,7 @@ import {
   Terminal,
   ToggleLeft,
   Trash2,
+  Network,
   Type,
   Unlock,
   Upload,
@@ -3861,6 +3862,9 @@ export default function DataModelShell() {
                 onDuplicateObject={duplicateObject}
               />
             )}
+            <button type="button" className="dm-btn-ghost" onClick={() => router.push("/workspace-map")}>
+              <Network size={14} />Workspace Map
+            </button>
             <button type="button" className="dm-btn-primary" onClick={() => setAddOpen(true)}>
               <Plus size={14} />New object
             </button>
