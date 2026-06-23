@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, GitBranch, Play, RefreshCw, Search, Square } from "lucide-react";
 import { parseSandboxRunTrace, normalizeRunRecord } from "@/lib/orchestration-run-trace";
+import { RunStatusTimeline } from "./RunStatusTimeline.jsx";
 import {
   buildRunTimeline,
   downloadRunBundle,
@@ -532,6 +533,7 @@ export function OrchestrationRunTracePanel({
           </span>
           <h2>Run console</h2>
           <p>{summaryText} · {row?.Name || "Workflow"}</p>
+          <RunStatusTimeline record={activeRawRecord || row?.lastResponse} />
         </div>
         <div className="dm-run-console__head-actions">
           {canReplay && (
