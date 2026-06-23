@@ -49,6 +49,7 @@ import {
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import { CeoCockpit } from "./CeoCockpit.jsx";
+import { GovernanceCausationCockpit } from "./GovernanceCausationCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -980,6 +981,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // oversight surface). Kept separate from inSwarmView so the swarm cockpit's
   // run machinery and header affordances are untouched.
   const inCeoView = activeView === "ceo";
+  // Governance cockpit shares the same sidecar shell as the CEO/swarm views
+  // (read-only authority-supervision surface). Kept separate so the swarm
+  // run machinery and CEO fleet derivation are untouched.
+  const inGovernanceView = activeView === "governance";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1014,7 +1019,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {(inSwarmView || inCeoView) && (
+            {(inSwarmView || inCeoView || inGovernanceView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1035,9 +1040,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 ? "Background tasks"
                 : inCeoView
                   ? "CEO Cockpit"
-                  : threadActive
-                    ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                    : "Workspace Helper"}
+                  : inGovernanceView
+                    ? "Governance"
+                    : threadActive
+                      ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                      : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -1117,11 +1124,24 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
+        {/* Governance cockpit view — the authority-supervision surface. Same
+            sidecar shell, read-only: it derives route-shopping signals from the
+            agent-outcomes receipt stream and hands every "Open" back to the
+            swarm-detail surface (handleOpenArtifact) — no new route, no
+            execution, no config mutation. */}
+        {activeTab === "assistant" && inGovernanceView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-governance-view={activeView}>
+            <GovernanceCausationCockpit
+              onOpenArtifact={(artifact) => { if (artifact) handleOpenArtifact(artifact); }}
+            />
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && !inCeoView && (
+        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inGovernanceView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble

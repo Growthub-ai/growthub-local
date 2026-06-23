@@ -138,6 +138,8 @@
     "apps/workspace/app/data-model/page.jsx",
     "apps/workspace/app/data-model/components/DataModelShell.jsx",
     "apps/workspace/app/data-model/components/HelperSidecar.jsx",
+    "apps/workspace/lib/governance-causation-console.js",
+    "apps/workspace/app/data-model/components/GovernanceCausationCockpit.jsx",
     "apps/workspace/app/data-model/components/SandboxAgentAuthPanel.jsx",
     "apps/workspace/app/views/[viewId]/page.jsx",
     "apps/workspace/lib/adapters/payments/index.js",

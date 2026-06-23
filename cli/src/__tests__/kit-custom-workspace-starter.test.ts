@@ -4132,3 +4132,163 @@ describe("workspace-activation — Customer Activation Layer V1", () => {
     expect(frozen).toContain("apps/workspace/app/components/WorkspaceActivationPanel.jsx");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Governance Causation Cockpit V1 (R3) — the authority-supervision projection
+// over the agent-outcomes receipt stream (GOVERNED_COCKPIT_ENTRY_POINT_PATTERN_V1
+// §3 worked example + CEO_PRIMITIVE_COCKPIT_ROADMAP_V1 R3).
+// ---------------------------------------------------------------------------
+
+describe("governance-causation-cockpit-v1 — file presence + four surfaces", () => {
+  it("lib/governance-causation-console.js ships", () => {
+    expect(appExists("lib/governance-causation-console.js")).toBe(true);
+  });
+
+  it("GovernanceCausationCockpit.jsx ships and is read-only", () => {
+    expect(appExists("app/data-model/components/GovernanceCausationCockpit.jsx")).toBe(true);
+    const cockpit = appText("app/data-model/components/GovernanceCausationCockpit.jsx");
+    expect(cockpit).toContain("GovernanceCausationCockpit");
+    // Reads the ONE existing endpoint — no new route.
+    expect(cockpit).toContain("/api/workspace/agent-outcomes");
+    expect(cockpit).toContain("deriveGovernanceCausation");
+    // Read-only: never patches config and never executes a run directly.
+    expect(cockpit).not.toContain("/api/workspace/sandbox-run");
+    expect(cockpit).not.toMatch(/method:\s*["']PATCH["']/);
+    expect(cockpit).not.toMatch(/localStorage|sessionStorage/);
+  });
+
+  it("helper-commands.js registers /governance as a read-only view command", () => {
+    const commands = appText("app/data-model/components/helper-commands.js");
+    expect(commands).toContain('name: "/governance"');
+    expect(commands).toContain('view: "governance"');
+    // Read-only command — must not declare a mutating intent.
+    const block = commands.slice(commands.indexOf('name: "/governance"'));
+    const entryEnd = block.indexOf("}");
+    expect(block.slice(0, entryEnd)).toContain("mutates: false");
+  });
+
+  it("HelperSidecar.jsx mounts the cockpit on a dedicated activeView", () => {
+    const sidecar = appText("app/data-model/components/HelperSidecar.jsx");
+    expect(sidecar).toContain("GovernanceCausationCockpit");
+    expect(sidecar).toContain('activeView === "governance"');
+    expect(sidecar).toContain("inGovernanceView");
+    // Open hands off through the existing artifact router — no new route.
+    expect(sidecar).toContain("handleOpenArtifact");
+  });
+});
+
+describe("governance-causation-cockpit-v1 — kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+  const required = [
+    "apps/workspace/lib/governance-causation-console.js",
+    "apps/workspace/app/data-model/components/GovernanceCausationCockpit.jsx",
+  ];
+  for (const p of required) {
+    it(`kit.json frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});
+
+describe("governance-causation-console — pure deriver", () => {
+  type Signal = {
+    signalId: string;
+    actor: string;
+    blockedReceiptId: string;
+    followOnReceiptId: string;
+    elapsedMs: number | null;
+    severity: string;
+    followOnSucceeded: boolean;
+    handoff: { surface: string; objectId: string; name: string } | null;
+    policyVerdict: { ok: boolean; violationCodes: string[] } | null;
+  };
+  type Model = {
+    title: string;
+    status: string;
+    totals: { receipts: number; actors: number; routeShopSignals: number; highSeverity: number };
+    signals: Signal[];
+    attention: Signal | null;
+    generatedFromReceipts: boolean;
+  };
+  let deriveRouteShoppingSignals: (receipts: unknown) => Signal[];
+  let deriveGovernanceCausation: (args: unknown) => Model;
+
+  beforeEach(async () => {
+    const modPath = path.join(APP_ROOT, "lib/governance-causation-console.js");
+    const mod = (await import(`file://${modPath}?t=${Date.now()}`)) as {
+      deriveRouteShoppingSignals: typeof deriveRouteShoppingSignals;
+      deriveGovernanceCausation: typeof deriveGovernanceCausation;
+    };
+    deriveRouteShoppingSignals = mod.deriveRouteShoppingSignals;
+    deriveGovernanceCausation = mod.deriveGovernanceCausation;
+  });
+
+  it("never throws on empty / malformed input and reports a clear status", () => {
+    for (const input of [undefined, null, "nope", [null, 1], 7]) {
+      expect(deriveRouteShoppingSignals(input as unknown)).toEqual([]);
+      const model = deriveGovernanceCausation({ receipts: input });
+      expect(model.title).toBe("Governance");
+      expect(model.status).toBe("clear");
+      expect(model.signals).toEqual([]);
+      expect(model.attention).toBeNull();
+    }
+  });
+
+  it("pairs a blocked direct receipt with a same-actor execution-proof follow-on", () => {
+    const t0 = Date.parse("2026-06-23T00:00:00.000Z");
+    const signals = deriveRouteShoppingSignals([
+      {
+        receiptId: "block-1",
+        actor: "agent:alpha",
+        lane: "untrusted-direct",
+        outcomeStatus: "blocked",
+        summary: "PATCH refused",
+        createdAt: new Date(t0).toISOString(),
+        policyVerdict: { ok: false, violationCodes: ["LIVE_WORKFLOW_MUTATION"] },
+        objectRefs: [{ objectId: "swarm-workflows", rowName: "nightly" }],
+      },
+      {
+        receiptId: "proof-1",
+        actor: "agent:alpha",
+        lane: "execution-proof",
+        outcomeStatus: "verified",
+        summary: "sandbox-run ok",
+        createdAt: new Date(t0 + 4000).toISOString(),
+        objectRefs: [{ objectId: "swarm-workflows", rowName: "nightly" }],
+      },
+    ]);
+    expect(signals).toHaveLength(1);
+    expect(signals[0].actor).toBe("agent:alpha");
+    expect(signals[0].blockedReceiptId).toBe("block-1");
+    expect(signals[0].followOnReceiptId).toBe("proof-1");
+    expect(signals[0].followOnSucceeded).toBe(true);
+    // Hands off to the EXISTING swarm-run surface — never a new route/object.
+    expect(signals[0].handoff).toEqual({ surface: "swarm-run", objectId: "swarm-workflows", name: "nightly" });
+    expect(signals[0].policyVerdict?.violationCodes).toEqual(["LIVE_WORKFLOW_MUTATION"]);
+  });
+
+  it("never merges distinct actors and reports null elapsed when timestamps are absent", () => {
+    expect(
+      deriveRouteShoppingSignals([
+        { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked" },
+        { receiptId: "p", actor: "b", lane: "execution-proof", outcomeStatus: "verified" },
+      ]),
+    ).toEqual([]);
+    const sameActor = deriveRouteShoppingSignals([
+      { receiptId: "b", actor: "a", lane: "untrusted-direct", outcomeStatus: "blocked" },
+      { receiptId: "p", actor: "a", lane: "execution-proof", outcomeStatus: "verified" },
+    ]);
+    expect(sameActor).toHaveLength(1);
+    expect(sameActor[0].elapsedMs).toBeNull();
+  });
+
+  it("source is a pure deriver — no React/fetch/fs/storage/CSS", () => {
+    const source = appText("lib/governance-causation-console.js");
+    expect(source).not.toMatch(/from\s+["']react/);
+    expect(source).not.toContain("fetch(");
+    expect(source).not.toMatch(/localStorage|sessionStorage/);
+    expect(source).not.toMatch(/process\.env\.[A-Z_]*(?:TOKEN|SECRET|API_KEY|PASSWORD)/);
+    expect(source).not.toMatch(/Bearer\s+[A-Za-z0-9._-]{8,}/);
+  });
+});

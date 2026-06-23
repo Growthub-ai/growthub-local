@@ -58,6 +58,14 @@ export const HELPER_COMMANDS = [
     view: "ceo"
   },
   {
+    name: "/governance",
+    label: "Governance",
+    description: "Open the governance cockpit — route-shopping detection over the receipt stream (read-only)",
+    scope: "workspace",
+    mutates: false,
+    view: "governance"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",

@@ -182,11 +182,15 @@ a readiness packet ("3 ready · 1 blocked: missing agent host → fix Z"). Mirro
 CEO rule "never launch an agent whose adapter env did not pass." Read-only; reuses the
 eligibility driver verbatim. *This is the explicit "test" verb, made fleet-wide.*
 
-**R3 — Governance Causation Cockpit** *(CEO: supervise / audit authority)*
+**R3 — Governance Causation Cockpit** *(CEO: supervise / audit authority)* —
+**SHIPPED** (snapshot: [`GOVERNANCE_CAUSATION_COCKPIT_RELEASE_SNAPSHOT_V1.md`](./GOVERNANCE_CAUSATION_COCKPIT_RELEASE_SNAPSHOT_V1.md)).
 The pattern doc's own §3 worked example: `deriveRouteShoppingSignals(receipts)`
 correlates a blocked `untrusted-direct` receipt with a later `execution-proof`
 attempt by the same `actor`. Pure, read-only, lowest-risk — it is the canonical
-template. *Include verbatim from the pattern doc.*
+template. Shipped as `lib/governance-causation-console.js` +
+`GovernanceCausationCockpit.jsx`, reachable via the `/governance` slash command
+on `activeView: "governance"`; UI-only (contract version stays `1`, no
+`routeShopSignals?` field added). *Include verbatim from the pattern doc.*
 
 **R4 — Cost / Budget Decomposition Cockpit** *(CEO: `budgetMonthlyCents` ceiling, `budget_override_required`)*
 `deriveSwarmCostSignals(receipts)` over per-receipt `runId` token telemetry → cost
