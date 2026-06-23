@@ -2678,6 +2678,158 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Workspace Health & Agent Context V1 — read-only rollups built on the
+// metadata store + graph. Coverage:
+//   - file presence + frozen asset paths
+//   - GET-only route surfaces, no write helper imports, no secret persistence
+//   - health derivation (status rollup, stale/dangling/missing detection)
+//   - agent context packet (summary, capabilities, critical state, entrypoints)
+// ---------------------------------------------------------------------------
+
+describe("workspace-health-agent-context-v1 — file presence", () => {
+  it("lib/workspace-health.js ships", () => {
+    expect(appExists("lib/workspace-health.js")).toBe(true);
+  });
+
+  it("app/api/workspace/health/route.js ships and is GET-only", () => {
+    expect(appExists("app/api/workspace/health/route.js")).toBe(true);
+    const route = appText("app/api/workspace/health/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*GET[^}]*\}/);
+    expect(route).not.toMatch(/export\s+(?:async\s+)?function\s+(?:POST|PATCH|PUT|DELETE)\b/);
+    expect(route).not.toMatch(/export\s*\{[^}]*\b(?:POST|PATCH|PUT|DELETE)\b[^}]*\}/);
+  });
+
+  it("app/api/workspace/agent-context/route.js ships and is GET-only", () => {
+    expect(appExists("app/api/workspace/agent-context/route.js")).toBe(true);
+    const route = appText("app/api/workspace/agent-context/route.js");
+    expect(route).toMatch(/export\s*\{[^}]*GET[^}]*\}/);
+    expect(route).not.toMatch(/export\s+(?:async\s+)?function\s+(?:POST|PATCH|PUT|DELETE)\b/);
+    expect(route).not.toMatch(/export\s*\{[^}]*\b(?:POST|PATCH|PUT|DELETE)\b[^}]*\}/);
+  });
+
+  it("health + agent-context routes import only read helpers (no write lane)", () => {
+    for (const rel of ["app/api/workspace/health/route.js", "app/api/workspace/agent-context/route.js"]) {
+      const route = appText(rel);
+      expect(route).toContain("@/lib/workspace-health");
+      expect(route).toContain("readWorkspaceConfig");
+      expect(route).not.toContain("applyWorkspaceConfigPatch");
+      expect(route).not.toMatch(/writeWorkspaceConfig|persistWorkspace/);
+    }
+  });
+});
+
+describe("workspace-health-agent-context-v1 — kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+  const required = [
+    "apps/workspace/lib/workspace-health.js",
+    "apps/workspace/app/api/workspace/health/route.js",
+    "apps/workspace/app/api/workspace/agent-context/route.js",
+  ];
+  for (const p of required) {
+    it(`kit.json frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+});
+
+describe("workspace-health-agent-context-v1 — derivation", () => {
+  type Health = {
+    kind: string;
+    version: number;
+    status: string;
+    issues: Array<{ type: string; severity: string; widgetId?: string; reason: string }>;
+    metrics: Record<string, number | string>;
+  };
+  type Packet = {
+    kind: string;
+    version: number;
+    summary: { name: string; objects: number; widgets: number };
+    capabilities: string[];
+    health: { status: string; issueCount: number };
+    criticalState: {
+      staleWidgets: unknown[];
+      missingSources: unknown[];
+      danglingEdges: unknown[];
+      unhealthyPipelines: unknown[];
+    };
+    entrypoints: { dataModel: string; api: string; health: string; dashboards: unknown[] };
+  };
+
+  let buildStore: (input: unknown) => unknown;
+  let buildGraph: (store: unknown) => unknown;
+  let deriveWorkspaceHealth: (store: unknown, graph: unknown) => Health;
+  let deriveAgentContextPacket: (store: unknown, graph: unknown, health: unknown, config: unknown) => Packet;
+
+  beforeEach(async () => {
+    const storeMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-store.js")}?t=${Date.now()}`);
+    const graphMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`);
+    const healthMod = await import(`file://${path.join(APP_ROOT, "lib/workspace-health.js")}?t=${Date.now()}`);
+    buildStore = storeMod.buildWorkspaceMetadataStore;
+    buildGraph = graphMod.buildWorkspaceMetadataGraph;
+    deriveWorkspaceHealth = healthMod.deriveWorkspaceHealth;
+    deriveAgentContextPacket = healthMod.deriveAgentContextPacket;
+  });
+
+  const issueConfig = () => ({
+    name: "Kit Workspace",
+    dashboards: [
+      {
+        id: "dash-1",
+        name: "Ops",
+        tabs: [
+          {
+            id: "t1",
+            name: "Tab",
+            widgets: [
+              { id: "w-stale", kind: "chart", title: "Stale", config: { binding: { sourceType: "workspace-data-model", objectId: "leads" } } },
+              { id: "w-dangle", kind: "chart", title: "Dangle", config: { binding: { sourceType: "workspace-data-model", objectId: "ghost" }, xAxis: { field: "a" }, yAxis: { field: "b", operation: "sum" } } },
+            ],
+          },
+        ],
+      },
+    ],
+    dataModel: {
+      objects: [
+        { id: "leads", label: "Leads", objectType: "custom", columns: ["stage", "amount"], binding: { sourceStorage: "workspace-source-records", sourceId: "leads-src" } },
+      ],
+    },
+  });
+
+  it("derives a typed health envelope with status rollup", () => {
+    const store = buildStore({ workspaceConfig: issueConfig(), workspaceSourceRecords: {} });
+    const graph = buildGraph(store);
+    const health = deriveWorkspaceHealth(store, graph);
+    expect(health.kind).toBe("growthub-workspace-health-v1");
+    expect(health.version).toBe(1);
+    expect(["healthy", "degraded", "unhealthy"]).toContain(health.status);
+    const types = health.issues.map((i) => i.type);
+    expect(types).toContain("dangling_edge");
+    expect(types).toContain("stale_widget");
+  });
+
+  it("never throws on empty input and reports a healthy baseline", () => {
+    const health = deriveWorkspaceHealth(undefined, undefined);
+    expect(health.status).toBe("healthy");
+    expect(health.issues).toEqual([]);
+  });
+
+  it("derives an agent context packet with summary, capabilities, and entrypoints", () => {
+    const config = issueConfig();
+    const store = buildStore({ workspaceConfig: config, workspaceSourceRecords: {} });
+    const graph = buildGraph(store);
+    const health = deriveWorkspaceHealth(store, graph);
+    const packet = deriveAgentContextPacket(store, graph, health, config);
+    expect(packet.kind).toBe("growthub-workspace-agent-context-v1");
+    expect(packet.summary.name).toBe("Kit Workspace");
+    expect(packet.capabilities).toContain("dashboards");
+    expect(packet.entrypoints.api).toBe("/api/workspace");
+    expect(packet.entrypoints.health).toBe("/api/workspace/health");
+    expect(packet.criticalState.danglingEdges.length).toBeGreaterThan(0);
+  });
+});
+
 describe("workspace-metadata-store — derivation", () => {
   type MetadataStore = {
     kind: string;
