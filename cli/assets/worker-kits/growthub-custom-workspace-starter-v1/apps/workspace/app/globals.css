@@ -9261,3 +9261,159 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
 .dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
 .dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SaaS facelift layer — Attio-inspired polish (v0.14.7)
+   Additive only. Refines existing dm-* light-theme primitives via the
+   cascade (equal specificity, later wins) and introduces the shared
+   vocabulary consumed by the table, drawer, Workspace Map, and run-status
+   work. No new theme, no token renames — existing classes keep working.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Calm, unified surface system for the light data-model surfaces. */
+  --dm-line: #e7eaee;          /* default hairline border */
+  --dm-line-soft: #f0f2f5;     /* inner cell / row separators */
+  --dm-surface: #ffffff;
+  --dm-surface-soft: #fafbfc;  /* headers, toolbars, footers */
+  --dm-hover: #f6f8fa;         /* calm row/control hover */
+  --dm-ink: #1f2733;           /* primary text */
+  --dm-muted: #6b7686;         /* secondary text */
+  --dm-faint: #9aa4b2;         /* tertiary / placeholder */
+  --dm-accent: #4f6bed;        /* single accent — active states only */
+  --dm-accent-soft: #eef1fe;   /* accent background wash */
+  --dm-accent-line: #c9d3fb;   /* accent border */
+  --dm-radius: 8px;
+  --dm-radius-sm: 6px;
+  --dm-radius-lg: 12px;
+  --dm-shadow-pop: 0 12px 32px rgba(20, 28, 46, 0.12), 0 2px 6px rgba(20, 28, 46, 0.06);
+  --dm-ok: #16a34a;
+  --dm-ok-soft: #f0fdf4;
+  --dm-ok-line: #bbf7d0;
+  --dm-bad: #dc2626;
+  --dm-bad-soft: #fef2f2;
+  --dm-bad-line: #fecaca;
+  --dm-warn: #d97706;
+  --dm-warn-soft: #fffbeb;
+  --dm-warn-line: #fde68a;
+  --dm-run: #4f6bed;
+  --dm-run-soft: #eef1fe;
+  --dm-run-line: #c9d3fb;
+}
+
+/* ── Toolbar + buttons: softer borders, unified radius/hover ───────────── */
+.dm-db-toolbar { border-bottom-color: var(--dm-line); }
+.dm-btn-ghost { border-radius: var(--dm-radius-sm); border-color: var(--dm-line); color: var(--dm-muted); }
+.dm-btn-ghost:hover { background: var(--dm-hover); border-color: #d3d9e0; color: var(--dm-ink); }
+.dm-btn-ghost.is-active { background: var(--dm-accent-soft); border-color: var(--dm-accent-line); color: var(--dm-accent); }
+.dm-btn-outline { border-radius: var(--dm-radius-sm); border-color: var(--dm-line); }
+.dm-btn-primary-sm { border-radius: var(--dm-radius-sm); }
+
+/* ── Compact search field for the table toolbar (P1) ──────────────────── */
+.dm-toolbar-search { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--dm-line); border-radius: var(--dm-radius-sm); background: var(--dm-surface); color: var(--dm-faint); transition: border-color .12s, box-shadow .12s; }
+.dm-toolbar-search:focus-within { border-color: var(--dm-accent-line); box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.dm-toolbar-search input { border: 0; outline: 0; background: transparent; font: inherit; font-size: 12px; color: var(--dm-ink); width: 150px; }
+.dm-toolbar-search input::placeholder { color: var(--dm-faint); }
+.dm-toolbar-count { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--dm-surface-soft); border: 1px solid var(--dm-line); color: var(--dm-muted); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.dm-toolbar-divider { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--dm-line); }
+
+/* ── Filter / sort pill chips: calmer, clearer active state ───────────── */
+.dm-filter-chip { border-radius: var(--dm-radius-sm); border-color: var(--dm-accent-line); background: var(--dm-accent-soft); color: var(--dm-accent); font-weight: 600; transition: background .12s, border-color .12s; }
+.dm-filter-chip:hover { background: #e4e9fd; }
+.dm-filter-chip-count { margin-left: 1px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--dm-accent); color: #fff; font-size: 10px; font-weight: 700; }
+.dm-selection-count { border-color: var(--dm-line); background: var(--dm-surface); color: var(--dm-muted); }
+
+/* ── Grid: calmer hairlines + hover, refined sticky header ────────────── */
+.dm-db-grid-wrap { border-color: var(--dm-line); border-radius: var(--dm-radius); }
+.dm-db-grid th { background: var(--dm-surface-soft); color: var(--dm-muted); border-bottom-color: var(--dm-line); border-right-color: var(--dm-line-soft); letter-spacing: .01em; }
+.dm-db-grid td { border-bottom-color: var(--dm-line-soft); border-right-color: var(--dm-line-soft); }
+.dm-db-grid tbody tr:hover td { background: var(--dm-hover); }
+.dm-db-grid tbody tr.selected td { background: var(--dm-accent-soft); box-shadow: inset 2px 0 0 var(--dm-accent); }
+.dm-db-field-type { background: var(--dm-surface-soft); color: var(--dm-faint); border-radius: 5px; }
+
+/* ── Object sidebar: calmer active state (less heavy than solid black) ── */
+.dm-obj-row { border-radius: var(--dm-radius-sm); }
+.dm-obj-row:hover { background: var(--dm-hover); }
+.dm-obj-row.active { background: var(--dm-accent-soft); color: var(--dm-accent); font-weight: 600; }
+.dm-obj-row.active .dm-obj-icon { color: var(--dm-accent); }
+.dm-obj-row.active .dm-badge { background: rgba(79,107,237,.12); color: var(--dm-accent); border-color: var(--dm-accent-line); }
+.dm-obj-meta { margin-left: auto; font-size: 11px; color: var(--dm-faint); font-variant-numeric: tabular-nums; }
+.dm-obj-row.active .dm-obj-meta { color: var(--dm-accent); }
+
+/* ── Badges: thinner, calmer ──────────────────────────────────────────── */
+.dm-badge { border-radius: 5px; border-color: var(--dm-line); }
+
+/* ════ Live status chips — shared by StatusPill + run-status work (P4) ══ */
+.dm-status-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 1px solid var(--dm-line); border-radius: 999px; background: var(--dm-surface-soft); color: var(--dm-muted); font-size: 11px; font-weight: 650; line-height: 1; white-space: nowrap; }
+.dm-status-chip > .dm-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dm-faint); flex: 0 0 auto; }
+.dm-status-chip.is-ok { border-color: var(--dm-ok-line); background: var(--dm-ok-soft); color: #166534; }
+.dm-status-chip.is-ok > .dm-status-dot { background: var(--dm-ok); }
+.dm-status-chip.is-bad { border-color: var(--dm-bad-line); background: var(--dm-bad-soft); color: #991b1b; }
+.dm-status-chip.is-bad > .dm-status-dot { background: var(--dm-bad); }
+.dm-status-chip.is-warn { border-color: var(--dm-warn-line); background: var(--dm-warn-soft); color: #92400e; }
+.dm-status-chip.is-warn > .dm-status-dot { background: var(--dm-warn); }
+.dm-status-chip.is-running { border-color: var(--dm-run-line); background: var(--dm-run-soft); color: #3a4fc0; }
+.dm-status-chip.is-running > .dm-status-dot { background: var(--dm-run); animation: dm-pulse 1.15s ease-in-out infinite; }
+.dm-status-chip.is-waiting > .dm-status-dot { background: var(--dm-faint); }
+@keyframes dm-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.72); } }
+@media (prefers-reduced-motion: reduce) { .dm-status-chip.is-running > .dm-status-dot { animation: none; } }
+
+/* ── Toggle switch — upgrades ToggleField's checkbox into a real switch ─ */
+.dm-switch-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--dm-ink); }
+.dm-switch-row.is-disabled { opacity: .55; cursor: not-allowed; }
+.dm-switch-row > input { position: absolute; opacity: 0; width: 0; height: 0; }
+.dm-switch-track { position: relative; flex: 0 0 auto; width: 34px; height: 20px; margin-top: 1px; border-radius: 999px; background: #d7dce3; transition: background .14s; }
+.dm-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(20,28,46,.28); transition: transform .14s; }
+.dm-switch-row > input:checked + .dm-switch-track { background: var(--dm-accent); }
+.dm-switch-row > input:checked + .dm-switch-track::after { transform: translateX(14px); }
+.dm-switch-row > input:focus-visible + .dm-switch-track { box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.dm-switch-label { display: grid; gap: 2px; }
+.dm-switch-desc { color: var(--dm-muted); font-size: 12px; }
+
+/* ════ Workspace Map / Data Model Canvas (P3) ═════════════════════════════
+   Schema node-canvas reusing the dotted-grid + card language. Read-only. */
+.wm-shell { display: flex; flex-direction: column; min-height: 0; flex: 1; background: var(--dm-surface); }
+.wm-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--dm-line); background: var(--dm-surface); flex-wrap: wrap; }
+.wm-toolbar h1 { margin: 0; font-size: 15px; font-weight: 650; color: var(--dm-ink); }
+.wm-toolbar .wm-sub { font-size: 12px; color: var(--dm-faint); }
+.wm-legend { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+.wm-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dm-muted); }
+.wm-legend-swatch { width: 9px; height: 9px; border-radius: 3px; }
+.wm-canvas { position: relative; flex: 1; min-height: 460px; overflow: auto; background-color: #fbfcfd; background-image: radial-gradient(circle, #dde2e8 1px, transparent 1px); background-size: 22px 22px; }
+.wm-canvas-inner { position: relative; transform-origin: 0 0; }
+.wm-edge { position: absolute; pointer-events: none; }
+.wm-edge path { stroke: #c4ccd6; stroke-width: 1.5; fill: none; }
+.wm-edge.is-source path { stroke: var(--dm-accent-line); }
+.wm-edge.is-warn path { stroke: var(--dm-warn-line); stroke-dasharray: 4 4; }
+.wm-node { position: absolute; width: 220px; border: 1px solid var(--dm-line); border-radius: var(--dm-radius-lg); background: var(--dm-surface); box-shadow: 0 1px 2px rgba(20,28,46,.06); cursor: pointer; transition: box-shadow .12s, border-color .12s, transform .12s; text-align: left; padding: 0; font: inherit; }
+.wm-node:hover { border-color: #cfd6df; box-shadow: var(--dm-shadow-pop); transform: translateY(-1px); }
+.wm-node.is-selected { border-color: var(--dm-accent); box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.wm-node-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--dm-line-soft); }
+.wm-node-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: var(--dm-surface-soft); color: var(--dm-muted); flex: 0 0 auto; }
+.wm-node-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; color: var(--dm-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-node-body { padding: 9px 12px; display: grid; gap: 4px; }
+.wm-node-stat { font-size: 12px; color: var(--dm-muted); font-variant-numeric: tabular-nums; }
+.wm-node-fields { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.wm-node-field { font-size: 10.5px; color: var(--dm-faint); background: var(--dm-surface-soft); border: 1px solid var(--dm-line-soft); border-radius: 4px; padding: 1px 5px; }
+.wm-node-warn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dm-warn); }
+.wm-zoom { position: sticky; bottom: 12px; left: 12px; display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--dm-line); border-radius: 999px; background: var(--dm-surface); box-shadow: var(--dm-shadow-pop); width: fit-content; margin: 12px; }
+.wm-zoom button { width: 28px; height: 28px; border: 0; border-radius: 999px; background: transparent; color: var(--dm-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.wm-zoom button:hover { background: var(--dm-hover); color: var(--dm-ink); }
+.wm-empty { display: grid; place-items: center; gap: 8px; padding: 64px 24px; text-align: center; color: var(--dm-muted); }
+.wm-empty strong { font-size: 16px; color: var(--dm-ink); }
+
+/* ── Run timeline — log-derived step deltas (P4) ──────────────────────── */
+.dm-run-timeline { display: grid; gap: 0; margin: 4px 0; }
+.dm-run-step { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: start; padding: 6px 0; position: relative; }
+.dm-run-step::before { content: ""; position: absolute; left: 8px; top: 18px; bottom: -6px; width: 1.5px; background: var(--dm-line); }
+.dm-run-step:last-child::before { display: none; }
+.dm-run-step-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--dm-line); background: var(--dm-surface); margin-top: 2px; z-index: 1; }
+.dm-run-step.is-ok .dm-run-step-dot { border-color: var(--dm-ok); background: var(--dm-ok); }
+.dm-run-step.is-bad .dm-run-step-dot { border-color: var(--dm-bad); background: var(--dm-bad); }
+.dm-run-step.is-running .dm-run-step-dot { border-color: var(--dm-run); animation: dm-pulse 1.15s ease-in-out infinite; }
+.dm-run-step-label { font-size: 12px; color: var(--dm-ink); }
+.dm-run-step-meta { font-size: 11px; color: var(--dm-faint); font-variant-numeric: tabular-nums; }
+.dm-run-step-note { font-size: 11px; color: var(--dm-muted); margin-top: 2px; word-break: break-word; }
+.dm-run-derived-note { font-size: 10.5px; color: var(--dm-faint); margin-top: 6px; font-style: italic; }
+
+/* ── Workflow canvas node run-status chips (P4) ───────────────────────── */
+.dm-canvas-node-status { position: absolute; top: -9px; right: 8px; }

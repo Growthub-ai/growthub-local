@@ -1,0 +1,319 @@
+"use client";
+
+/**
+ * Workspace Map — read-only schema/relationship canvas.
+ *
+ * Renders the workspace data model as a node canvas using the SAME visual
+ * grammar as the workflow OrchestrationGraphCanvas (dotted grid, card nodes,
+ * connector edges, zoom controls), but the CONTENT is the metadata graph, not
+ * an executable workflow.
+ *
+ * Hard rules (mirrors the kit's governance invariants):
+ *   - Graph data comes ONLY from buildWorkspaceMetadataStore →
+ *     buildWorkspaceMetadataGraph. No ad-hoc config parsing here.
+ *   - No mutations, no PATCH, no localStorage. This surface only reads
+ *     /api/workspace and navigates to existing surfaces on click.
+ *   - Secrets never reach the graph (the store strips them); we render only
+ *     labels, counts, and types.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Maximize2, Search, ZoomIn, ZoomOut } from "lucide-react";
+
+import { buildWorkspaceMetadataStore } from "@/lib/workspace-metadata-store";
+import { buildWorkspaceMetadataGraph } from "@/lib/workspace-metadata-graph";
+import { LucideIcon, OBJECT_TYPE_PRESETS, objectTypeBadge, pluralize } from "./dm-shared.jsx";
+
+// Which node types appear on the map, in lane (left→right) order, with the
+// icon + legend swatch for each. Workflow execution detail (nodes, inputs,
+// runs) stays in the Workflow Canvas — the map is the structural overview.
+const LANES = [
+  { key: "integration", types: ["integration"], label: "Integrations", icon: "Globe", color: "#0ea5e9" },
+  { key: "source", types: ["sourceRecord"], label: "Sources", icon: "Database", color: "#14b8a6" },
+  { key: "object", types: ["dataModelObject"], label: "Objects", icon: "Box", color: "#4f6bed" },
+  { key: "flow", types: ["workflow", "sandbox"], label: "Workflows", icon: "Zap", color: "#8b5cf6" },
+  { key: "dashboard", types: ["dashboard"], label: "Dashboards", icon: "LayoutDashboard", color: "#f97316" },
+];
+
+const RENDERED_TYPES = new Set(LANES.flatMap((lane) => lane.types));
+const NODE_WIDTH = 220;
+const COL_GAP = 60;
+const ROW_GAP = 24;
+const PAD = 28;
+
+function nodeHeight(node) {
+  // Object cards carry a field strip + stat → taller. Everything else is compact.
+  return node.type === "dataModelObject" ? 122 : 80;
+}
+
+function nodeIconName(node) {
+  if (node.type === "dataModelObject") {
+    return node.summary?.objectType
+      ? OBJECT_TYPE_PRESETS[node.summary.objectType]?.icon || "Box"
+      : "Box";
+  }
+  const lane = LANES.find((entry) => entry.types.includes(node.type));
+  return lane?.icon || "Box";
+}
+
+export function WorkspaceDataModelCanvas() {
+  const router = useRouter();
+  const [workspaceConfig, setWorkspaceConfig] = useState(null);
+  const [sourceRecords, setSourceRecords] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [scale, setScale] = useState(1);
+  const [selectedId, setSelectedId] = useState("");
+  const [query, setQuery] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/workspace", { cache: "no-store" });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
+      setWorkspaceConfig(payload.workspaceConfig || null);
+      setSourceRecords(
+        payload.workspaceSourceRecords && typeof payload.workspaceSourceRecords === "object"
+          ? payload.workspaceSourceRecords
+          : {}
+      );
+    } catch (err) {
+      setError(err.message || "Failed to load workspace");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Derived graph — never throws on malformed config (the store/graph guard).
+  const graph = useMemo(() => {
+    if (!workspaceConfig) return { nodes: [], edges: [] };
+    try {
+      const store = buildWorkspaceMetadataStore({
+        workspaceConfig,
+        workspaceSourceRecords: sourceRecords,
+      });
+      return buildWorkspaceMetadataGraph(store);
+    } catch {
+      return { nodes: [], edges: [] };
+    }
+  }, [workspaceConfig, sourceRecords]);
+
+  // Group field labels by the object id they belong to, for the object cards.
+  const fieldsByObjectId = useMemo(() => {
+    const map = new Map();
+    for (const node of graph.nodes) {
+      if (node.type !== "field") continue;
+      const objectId = node.summary?.objectId;
+      if (!objectId) continue;
+      if (!map.has(objectId)) map.set(objectId, []);
+      map.get(objectId).push(node.label);
+    }
+    return map;
+  }, [graph.nodes]);
+
+  // Deterministic lane layout — no randomness, stable across renders.
+  const { placed, positions, width, height } = useMemo(() => {
+    const positionMap = new Map();
+    const placedNodes = [];
+    let maxBottom = 0;
+    LANES.forEach((lane, laneIndex) => {
+      const laneNodes = graph.nodes.filter((node) => lane.types.includes(node.type));
+      const x = PAD + laneIndex * (NODE_WIDTH + COL_GAP);
+      let y = PAD;
+      for (const node of laneNodes) {
+        const h = nodeHeight(node);
+        positionMap.set(node.id, { x, y, w: NODE_WIDTH, h });
+        placedNodes.push(node);
+        y += h + ROW_GAP;
+      }
+      maxBottom = Math.max(maxBottom, y);
+    });
+    return {
+      placed: placedNodes,
+      positions: positionMap,
+      width: PAD + LANES.length * (NODE_WIDTH + COL_GAP),
+      height: Math.max(maxBottom, 460),
+    };
+  }, [graph.nodes]);
+
+  // Only edges whose BOTH endpoints are rendered on the map. Deduped by id.
+  const edges = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const edge of graph.edges) {
+      if (!positions.has(edge.from) || !positions.has(edge.to)) continue;
+      if (seen.has(edge.id)) continue;
+      seen.add(edge.id);
+      out.push(edge);
+    }
+    return out;
+  }, [graph.edges, positions]);
+
+  const needle = query.trim().toLowerCase();
+  const matches = useCallback(
+    (node) => !needle || node.label.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle),
+    [needle]
+  );
+
+  function handleOpen(node) {
+    const summary = node.summary || {};
+    if (node.type === "dataModelObject") {
+      router.push(`/data-model?object=${encodeURIComponent(summary.objectId || "")}`);
+    } else if (node.type === "workflow" || node.type === "sandbox") {
+      const params = new URLSearchParams();
+      if (summary.objectId) params.set("object", summary.objectId);
+      if (summary.rowId) params.set("row", summary.rowId);
+      router.push(`/workflows${params.toString() ? `?${params.toString()}` : ""}`);
+    } else {
+      router.push("/data-model");
+    }
+  }
+
+  function zoom(delta) {
+    setScale((current) => Math.min(1.4, Math.max(0.6, Math.round((current + delta) * 10) / 10)));
+  }
+
+  const hasNodes = placed.length > 0;
+
+  return (
+    <div className="wm-shell">
+      <div className="wm-toolbar">
+        <div>
+          <h1>Workspace Map</h1>
+          <span className="wm-sub">
+            {hasNodes ? `${pluralize(placed.length, "node")} · ${pluralize(edges.length, "link")}` : "Read-only view of your workspace data model"}
+          </span>
+        </div>
+        <label className="dm-toolbar-search" style={{ marginLeft: 16 }}>
+          <Search size={13} aria-hidden="true" />
+          <input
+            value={query}
+            placeholder="Search objects, sources, workflows"
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label="Search the workspace map"
+          />
+        </label>
+        <div className="wm-legend">
+          {LANES.map((lane) => (
+            <span key={lane.key} className="wm-legend-item">
+              <span className="wm-legend-swatch" style={{ background: lane.color }} />
+              {lane.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="wm-canvas">
+        {loading && <div className="wm-empty"><span>Loading workspace map…</span></div>}
+        {!loading && error && <div className="wm-empty"><strong>Could not load the map</strong><span>{error}</span></div>}
+        {!loading && !error && !hasNodes && (
+          <div className="wm-empty">
+            <strong>Nothing to map yet</strong>
+            <span>Add objects, link a data source, or publish a workflow and they will appear here.</span>
+          </div>
+        )}
+        {!loading && !error && hasNodes && (
+          <>
+            <div className="wm-canvas-inner" style={{ width, height, transform: `scale(${scale})` }}>
+              <svg className="wm-edge" width={width} height={height} style={{ left: 0, top: 0 }}>
+                {edges.map((edge) => {
+                  const from = positions.get(edge.from);
+                  const to = positions.get(edge.to);
+                  const x1 = from.x + from.w;
+                  const y1 = from.y + from.h / 2;
+                  const x2 = to.x;
+                  const y2 = to.y + to.h / 2;
+                  const midX = (x1 + x2) / 2;
+                  const cls = edge.relation === "backedBySourceRecord"
+                    ? "is-source"
+                    : edge.relation === "boundToIntegration"
+                      ? "is-source"
+                      : "";
+                  // Curve right→left even when lanes are reversed (x2 < x1).
+                  const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                  return <path key={edge.id} className={cls} d={d} />;
+                })}
+              </svg>
+              {placed.map((node) => {
+                const pos = positions.get(node.id);
+                const dim = needle && !matches(node);
+                const isObject = node.type === "dataModelObject";
+                const badge = isObject ? objectTypeBadge(node.summary?.objectType) : null;
+                const fields = isObject ? (fieldsByObjectId.get(node.summary?.objectId) || []).slice(0, 5) : [];
+                const rowCount = node.summary?.rowCount;
+                const recordCount = node.summary?.recordCount;
+                return (
+                  <button
+                    type="button"
+                    key={node.id}
+                    className={`wm-node${node.id === selectedId ? " is-selected" : ""}`}
+                    style={{ left: pos.x, top: pos.y, width: pos.w, opacity: dim ? 0.32 : 1 }}
+                    onClick={() => { setSelectedId(node.id); handleOpen(node); }}
+                    title={`Open ${node.label}`}
+                  >
+                    <span className="wm-node-head">
+                      <span className="wm-node-icon"><LucideIcon name={nodeIconName(node)} size={14} /></span>
+                      <span className="wm-node-title">{node.label || node.type}</span>
+                      {badge && <span className={`dm-badge ${badge.cls}`}>{badge.label}</span>}
+                    </span>
+                    <span className="wm-node-body">
+                      {isObject && (
+                        <span className="wm-node-stat">
+                          {Number.isFinite(rowCount) ? pluralize(rowCount, "record") : "—"}
+                          {node.summary?.isLiveBacked ? " · live" : node.summary?.readOnly ? " · read-only" : " · manual"}
+                        </span>
+                      )}
+                      {node.type === "sourceRecord" && (
+                        <span className="wm-node-stat">
+                          {Number.isFinite(recordCount) ? pluralize(recordCount, "record") : "no records"}
+                          {node.summary?.fetchedAt ? ` · fetched ${String(node.summary.fetchedAt).slice(0, 10)}` : ""}
+                        </span>
+                      )}
+                      {node.type === "workflow" && (
+                        <span className="wm-node-stat">
+                          {pluralize(node.summary?.nodeCount || 0, "step")}
+                          {node.summary?.lifecycleStatus ? ` · ${node.summary.lifecycleStatus}` : ""}
+                        </span>
+                      )}
+                      {node.type === "sandbox" && (
+                        <span className="wm-node-stat">
+                          {node.summary?.adapter || "sandbox"}
+                          {node.summary?.authStatus ? ` · ${node.summary.authStatus}` : ""}
+                        </span>
+                      )}
+                      {node.type === "integration" && (
+                        <span className="wm-node-stat">{node.summary?.status || node.summary?.lane || "integration"}</span>
+                      )}
+                      {node.type === "dashboard" && (
+                        <span className="wm-node-stat">{pluralize(node.summary?.widgetCount || 0, "widget")}</span>
+                      )}
+                      {fields.length > 0 && (
+                        <span className="wm-node-fields">
+                          {fields.map((field, index) => (
+                            <span key={`${node.id}-f-${index}`} className="wm-node-field">{field}</span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="wm-zoom" role="group" aria-label="Zoom controls">
+              <button type="button" onClick={() => zoom(-0.1)} aria-label="Zoom out"><ZoomOut size={15} /></button>
+              <button type="button" onClick={() => setScale(1)} aria-label="Reset zoom"><Maximize2 size={14} /></button>
+              <button type="button" onClick={() => zoom(0.1)} aria-label="Zoom in"><ZoomIn size={15} /></button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default WorkspaceDataModelCanvas;

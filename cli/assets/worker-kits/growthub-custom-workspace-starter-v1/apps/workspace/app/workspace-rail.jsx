@@ -56,6 +56,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share2,
   SlidersHorizontal,
   Table as TableIcon,
   Trash2,
@@ -1769,6 +1770,16 @@ export function WorkspaceRail({
             }}
           >
             <Search size={13} />
+          </button>
+          <button
+            type="button"
+            className={"workspace-rail-icon-btn" + (pathname.startsWith("/workspace-map") ? " active" : "")}
+            aria-label="Workspace map"
+            title="Workspace map"
+            aria-pressed={pathname.startsWith("/workspace-map")}
+            onClick={() => router.push("/workspace-map")}
+          >
+            <Share2 size={13} />
           </button>
           <button
             type="button"
