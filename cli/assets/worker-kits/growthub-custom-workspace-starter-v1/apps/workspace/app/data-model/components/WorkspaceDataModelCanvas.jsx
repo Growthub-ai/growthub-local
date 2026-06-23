@@ -168,6 +168,9 @@ export function WorkspaceDataModelCanvas() {
       const params = new URLSearchParams();
       if (summary.objectId) params.set("object", summary.objectId);
       if (summary.rowId) params.set("row", summary.rowId);
+      // Explicit field for consistency with the CEO/Agent Team handoff pattern;
+      // WorkflowSurface still falls back to orchestrationGraph if absent.
+      params.set("field", "orchestrationConfig");
       router.push(`/workflows${params.toString() ? `?${params.toString()}` : ""}`);
     } else {
       router.push("/data-model");
@@ -219,24 +222,35 @@ export function WorkspaceDataModelCanvas() {
         )}
         {!loading && !error && hasNodes && (
           <>
-            <div className="wm-canvas-inner" style={{ width, height, transform: `scale(${scale})` }}>
+            {/* Sizer reserves the SCALED footprint so .wm-canvas (overflow:auto)
+                scrolls fully when zoomed in on dense workspaces. The inner
+                layer holds the unscaled coordinate system and is transformed. */}
+            <div className="wm-canvas-inner" style={{ width: width * scale, height: height * scale }}>
+              <div className="wm-canvas-scale" style={{ width, height, transform: `scale(${scale})` }}>
               <svg className="wm-edge" width={width} height={height} style={{ left: 0, top: 0 }}>
+                <defs>
+                  <marker id="wm-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+                    <path d="M0,0 L6,3 L0,6 Z" fill="#c4ccd6" />
+                  </marker>
+                </defs>
                 {edges.map((edge) => {
-                  const from = positions.get(edge.from);
-                  const to = positions.get(edge.to);
-                  const x1 = from.x + from.w;
-                  const y1 = from.y + from.h / 2;
-                  const x2 = to.x;
-                  const y2 = to.y + to.h / 2;
+                  const a = positions.get(edge.from);
+                  const b = positions.get(edge.to);
+                  // Normalize the RENDERED direction to read left → right so a
+                  // source/integration visually feeds its object, regardless of
+                  // the logical edge direction. The metadata graph contract is
+                  // unchanged — this is display-only anchoring.
+                  const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+                  const x1 = left.x + left.w;
+                  const y1 = left.y + left.h / 2;
+                  const x2 = right.x;
+                  const y2 = right.y + right.h / 2;
                   const midX = (x1 + x2) / 2;
-                  const cls = edge.relation === "backedBySourceRecord"
+                  const cls = ["backedBySourceRecord", "boundToIntegration", "belongsToIntegration"].includes(edge.relation)
                     ? "is-source"
-                    : edge.relation === "boundToIntegration"
-                      ? "is-source"
-                      : "";
-                  // Curve right→left even when lanes are reversed (x2 < x1).
+                    : "";
                   const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
-                  return <path key={edge.id} className={cls} d={d} />;
+                  return <path key={edge.id} className={cls} d={d} markerEnd="url(#wm-arrow)" />;
                 })}
               </svg>
               {placed.map((node) => {
@@ -303,6 +317,7 @@ export function WorkspaceDataModelCanvas() {
                   </button>
                 );
               })}
+              </div>
             </div>
             <div className="wm-zoom" role="group" aria-label="Zoom controls">
               <button type="button" onClick={() => zoom(-0.1)} aria-label="Zoom out"><ZoomOut size={15} /></button>
