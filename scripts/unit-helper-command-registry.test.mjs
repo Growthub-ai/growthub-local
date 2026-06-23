@@ -123,6 +123,42 @@ test("fuzzy matching finds commands by name, label, and subsequence", () => {
   assert.equal(matchHelperCommands("zzzqqq").length, 0);
 });
 
+test("/ceo is read-only and opens the CEO cockpit view", () => {
+  const ceo = HELPER_COMMANDS.find((c) => c.name === "/ceo");
+  assert.ok(ceo, "/ceo command is registered");
+  assert.equal(ceo.mutates, false);
+  assert.equal(ceo.view, "ceo");
+  assert.equal(ceo.intent, undefined, "read-only command seeds no proposal intent");
+});
+
+test("/governance is read-only and aliases the unified Authority cockpit", () => {
+  const gov = HELPER_COMMANDS.find((c) => c.name === "/governance");
+  assert.ok(gov, "/governance command is registered");
+  assert.equal(gov.mutates, false);
+  // It must point at the unified authority view — the same surface the CEO ›
+  // Authority tab renders — never a separate "governance" product island.
+  assert.equal(gov.view, "authority");
+  assert.notEqual(gov.view, "governance", "/governance must not be a separate island view");
+  assert.equal(gov.intent, undefined, "read-only command seeds no proposal intent");
+  assert.equal(gov.promptTemplate, undefined, "read-only view switch seeds no prompt");
+  // Governed validator must accept it as a clean read-only command.
+  assert.equal(isGovernedHelperCommand(gov).ok, true, isGovernedHelperCommand(gov).error);
+});
+
+test("no command executes or patches directly (full registry, including authority commands)", () => {
+  for (const cmd of HELPER_COMMANDS) {
+    const verdict = isGovernedHelperCommand(cmd);
+    assert.equal(verdict.ok, true, verdict.error);
+    // Behavioral surface is fixed: no execute/patch/fetch hooks anywhere.
+    for (const key of Object.keys(cmd)) {
+      assert.ok(
+        HELPER_COMMAND_ALLOWED_KEYS.includes(key),
+        `${cmd.name} carries non-governed behavior key "${key}"`
+      );
+    }
+  }
+});
+
 test("slash parsing only engages at the start of the prompt", () => {
   assert.equal(parseSlashInput("/").active, true);
   assert.equal(parseSlashInput("/sw").active, true);

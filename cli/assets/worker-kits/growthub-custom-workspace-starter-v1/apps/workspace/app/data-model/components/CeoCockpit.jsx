@@ -37,6 +37,7 @@ import {
   summarizeTeam,
 } from "@/lib/ceo-agent-teams";
 import { findSwarmRunRows } from "@/lib/workspace-swarm-proposal";
+import { WorkspaceAuthorityCockpit } from "./WorkspaceAuthorityCockpit.jsx";
 
 // k-formatting identical to SwarmRunCockpit's truthful display.
 function formatCount(value) {
@@ -511,9 +512,20 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
             >
               Agent Teams
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeOperationalTab === "authority"}
+              className={activeOperationalTab === "authority" ? "is-active" : ""}
+              onClick={() => setActiveOperationalTab("authority")}
+            >
+              Authority
+            </button>
           </div>
           {activeOperationalTab === "history" ? (
             <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+          ) : activeOperationalTab === "authority" ? (
+            <WorkspaceAuthorityCockpit onOpenArtifact={handleOpenArtifact} />
           ) : (
             <CeoAgentTeamsSection
               teams={teamsModel}

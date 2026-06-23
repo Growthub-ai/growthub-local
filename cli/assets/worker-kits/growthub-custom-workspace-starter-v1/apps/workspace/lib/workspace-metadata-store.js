@@ -1084,6 +1084,8 @@ function deriveWorkspacePipelineHealthMetadataItems(sandboxItems, runItems) {
       metadataId: stableId("pipelineHealth", sandbox.objectId, sandbox.rowId),
       sandboxMetadataId: sandbox.metadataId,
       workflowMetadataId,
+      objectId: sandbox.objectId,
+      rowId: sandbox.rowId,
       label: sandbox.label,
       lifecycleStatus: sandbox.lifecycleStatus,
       authStatus: sandbox.authStatus,

@@ -4132,3 +4132,130 @@ describe("workspace-activation — Customer Activation Layer V1", () => {
     expect(frozen).toContain("apps/workspace/app/components/WorkspaceActivationPanel.jsx");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Workspace Authority Intelligence V1 — the converged primitive
+//
+// Replaces the two formerly-separate releases (#250 health/agent-context,
+// #251 governance causation) with ONE read-model layer + ONE cockpit surface:
+//   - pure derivers ship (workspace-health, governance-causation, and the
+//     workspace-authority-intelligence combiner)
+//   - the two GET read models stay GET-only (health, agent-context)
+//   - exactly one cockpit (WorkspaceAuthorityCockpit) — no orphaned
+//     WorkspaceHealthPanel, no standalone GovernanceCausationCockpit island
+//   - /governance aliases the unified authority view
+//   - canonical files are frozen; no new mutation routes; derivers are pure
+// ---------------------------------------------------------------------------
+
+describe("workspace-authority-intelligence-v1 — file presence + surface", () => {
+  it("the three pure derivers ship", () => {
+    expect(appExists("lib/workspace-health.js")).toBe(true);
+    expect(appExists("lib/governance-causation-console.js")).toBe(true);
+    expect(appExists("lib/workspace-authority-intelligence.js")).toBe(true);
+  });
+
+  it("the combiner composes health + agent-context + governance and adds no new authority", () => {
+    const lib = appText("lib/workspace-authority-intelligence.js");
+    expect(lib).toContain("deriveWorkspaceAuthorityIntelligence");
+    expect(lib).toContain("deriveAuthorityStatus");
+    expect(lib).toContain("deriveAuthorityNextActions");
+    expect(lib).toContain("growthub-workspace-authority-intelligence-v1");
+    // Pulls from the existing pure derivers — no duplicated derivation logic.
+    expect(lib).toContain("./workspace-health.js");
+    expect(lib).toContain("./governance-causation-console.js");
+  });
+
+  it("the two read models stay GET-only", () => {
+    for (const rel of [
+      "app/api/workspace/health/route.js",
+      "app/api/workspace/agent-context/route.js",
+    ]) {
+      expect(appExists(rel)).toBe(true);
+      const route = appText(rel);
+      expect(route).toMatch(/export\s*\{[^}]*GET[^}]*\}/);
+      expect(route).not.toMatch(/export\s+(?:async\s+)?function\s+(?:POST|PATCH|PUT|DELETE)\b/);
+      expect(route).not.toMatch(/export\s*\{[^}]*\b(?:POST|PATCH|PUT|DELETE)\b[^}]*\}/);
+    }
+  });
+
+  it("ships exactly one cockpit surface — WorkspaceAuthorityCockpit", () => {
+    expect(appExists("app/data-model/components/WorkspaceAuthorityCockpit.jsx")).toBe(true);
+    const cockpit = appText("app/data-model/components/WorkspaceAuthorityCockpit.jsx");
+    // It composes all three lanes into one surface.
+    expect(cockpit).toContain("/api/workspace/health");
+    expect(cockpit).toContain("/api/workspace/agent-context");
+    expect(cockpit).toContain("/api/workspace/agent-outcomes");
+    expect(cockpit).toContain("deriveAuthorityNextActions");
+  });
+
+  it("does not leave the formerly-orphaned panels as separate product islands", () => {
+    // Folded into the one cockpit — no unmounted health panel, no standalone
+    // governance cockpit island.
+    expect(appExists("app/data-model/components/WorkspaceHealthPanel.jsx")).toBe(false);
+    expect(appExists("app/data-model/components/GovernanceCausationCockpit.jsx")).toBe(false);
+  });
+});
+
+describe("workspace-authority-intelligence-v1 — governed entry points", () => {
+  const helperCommands = () => appText("app/data-model/components/helper-commands.js");
+
+  it("/governance aliases the unified authority view (not a separate island)", () => {
+    const cmds = helperCommands();
+    expect(cmds).toContain('name: "/governance"');
+    expect(cmds).toContain('view: "authority"');
+    expect(cmds).not.toContain('view: "governance"');
+  });
+
+  it("HelperSidecar mounts the unified authority cockpit on the authority view", () => {
+    const sidecar = appText("app/data-model/components/HelperSidecar.jsx");
+    expect(sidecar).toContain("WorkspaceAuthorityCockpit");
+    expect(sidecar).toContain('activeView === "authority"');
+    expect(sidecar).not.toContain("GovernanceCausationCockpit");
+  });
+
+  it("CeoCockpit exposes an Authority tab over the same cockpit", () => {
+    const ceo = appText("app/data-model/components/CeoCockpit.jsx");
+    expect(ceo).toContain("WorkspaceAuthorityCockpit");
+    expect(ceo).toContain('"authority"');
+  });
+});
+
+describe("workspace-authority-intelligence-v1 — purity + no new mutation", () => {
+  it("the combiner derivers are pure (no fetch/storage/React/fs writes)", () => {
+    const lib = appText("lib/workspace-authority-intelligence.js");
+    const code = lib.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    for (const banned of ["fetch(", "window.", "localStorage", "sessionStorage", "writeFileSync", "from \"react\""]) {
+      expect(code.includes(banned)).toBe(false);
+    }
+  });
+
+  it("governance + health derivers introduce no mutation lane", () => {
+    for (const rel of ["lib/workspace-health.js", "lib/governance-causation-console.js", "lib/workspace-authority-intelligence.js"]) {
+      const code = appText(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      expect(code).not.toMatch(/method:\s*["'](POST|PATCH|PUT|DELETE)["']/);
+    }
+  });
+});
+
+describe("workspace-authority-intelligence-v1 — kit.json frozen paths", () => {
+  const kitJson = JSON.parse(readText("kit.json"));
+  const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+  const required = [
+    "apps/workspace/lib/workspace-health.js",
+    "apps/workspace/lib/governance-causation-console.js",
+    "apps/workspace/lib/workspace-authority-intelligence.js",
+    "apps/workspace/app/api/workspace/health/route.js",
+    "apps/workspace/app/api/workspace/agent-context/route.js",
+    "apps/workspace/app/data-model/components/WorkspaceAuthorityCockpit.jsx",
+  ];
+  for (const p of required) {
+    it(`kit.json frozen asset paths include: ${p}`, () => {
+      expect(frozen).toContain(p);
+    });
+  }
+
+  it("does not freeze the folded-away orphan panels", () => {
+    expect(frozen).not.toContain("apps/workspace/app/data-model/components/WorkspaceHealthPanel.jsx");
+    expect(frozen).not.toContain("apps/workspace/app/data-model/components/GovernanceCausationCockpit.jsx");
+  });
+});

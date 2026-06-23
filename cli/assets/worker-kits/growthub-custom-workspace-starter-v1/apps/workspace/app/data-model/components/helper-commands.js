@@ -58,6 +58,14 @@ export const HELPER_COMMANDS = [
     view: "ceo"
   },
   {
+    name: "/governance",
+    label: "Governance",
+    description: "Open Workspace Authority — health, agent context, and route-shopping governance in one read-only cockpit (also the CEO › Authority tab)",
+    scope: "workspace",
+    mutates: false,
+    view: "authority"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",
