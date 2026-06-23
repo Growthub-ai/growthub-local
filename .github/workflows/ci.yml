@@ -43,6 +43,13 @@ jobs:
           node scripts/check-resolver-registry.mjs
           node --test scripts/unit-resolver-registry.test.mjs
 
+      - name: Validate Workspace Authority Intelligence (unit tests)
+        run: |
+          node --test scripts/unit-workspace-health.test.mjs
+          node --test scripts/unit-governance-causation-console.test.mjs
+          node --test scripts/unit-workspace-authority-intelligence.test.mjs
+          node --test scripts/unit-helper-command-registry.test.mjs
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 
