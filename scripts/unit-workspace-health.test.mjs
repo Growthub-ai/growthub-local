@@ -325,6 +325,100 @@ test("deriveCapabilities reflects only the surfaces that exist", () => {
   }
 });
 
+// ── negative + positive probes (the exact envelope the routes emit) ─────────
+
+test("PROBE: source with 0 records is a warning ('refresh'), absent source is an error", () => {
+  const config = healthyConfig();
+  config.dataModel.objects.push({
+    id: "orders",
+    label: "Orders",
+    objectType: "custom",
+    columns: ["total"],
+    binding: { sourceStorage: "workspace-source-records", sourceId: "orders-src" },
+  });
+  // orders-src present but empty → warning; leads-src present with rows → fine.
+  const sources = { ...sourceRecordsWithLeads(), "orders-src": { records: [], recordCount: 0, fetchedAt: "2026-01-01T00:00:00Z" } };
+  const { store, graph } = buildAll(config, sources);
+  const health = deriveWorkspaceHealth(store, graph);
+  const missing = health.issues.filter((i) => i.type === "missing_source");
+  assert.equal(missing.length, 1);
+  assert.equal(missing[0].severity, "warning");
+  assert.match(missing[0].reason, /refresh the source/);
+  // A 0-record source is a warning, not an error → workspace is degraded.
+  assert.equal(health.status, "degraded");
+});
+
+test("PROBE: widget referencing an unregistered integration is a dangling_edge", () => {
+  const config = healthyConfig();
+  config.dashboards[0].tabs[0].widgets.push({
+    id: "w-int",
+    kind: "chart",
+    title: "Int",
+    config: {
+      binding: { sourceType: "workspace-data-model", objectId: "leads", integrationId: "ghost-int" },
+      xAxis: { field: "stage" },
+      yAxis: { field: "amount", operation: "sum" },
+    },
+  });
+  const { store, graph } = buildAll(config, sourceRecordsWithLeads());
+  const health = deriveWorkspaceHealth(store, graph);
+  const dangling = health.issues.filter((i) => i.type === "dangling_edge" && i.ref?.integrationId === "ghost-int");
+  assert.equal(dangling.length, 1);
+  assert.equal(dangling[0].severity, "error");
+});
+
+test("PROBE: a failing pipeline is unhealthy; a live untested pipeline is degraded", () => {
+  const graphJson = JSON.stringify({ nodes: [{ id: "n1", type: "ai-agent" }], edges: [] });
+  const failing = {
+    name: "Pipelines",
+    dataModel: {
+      objects: [
+        {
+          id: "swarm",
+          label: "Swarm",
+          objectType: "sandbox-environment",
+          columns: ["Name", "lifecycleStatus", "orchestrationGraph", "lastResponse"],
+          rows: [
+            { Name: "job-fail", lifecycleStatus: "live", orchestrationGraph: graphJson, lastResponse: JSON.stringify({ runId: "r1", ranAt: "2026-01-02T00:00:00Z", exitCode: 1, error: "boom" }) },
+          ],
+        },
+      ],
+    },
+  };
+  let res = buildAll(failing, {});
+  let health = deriveWorkspaceHealth(res.store, res.graph);
+  assert.ok(health.issues.some((i) => i.type === "unhealthy_pipeline" && i.severity === "error"));
+  assert.equal(health.status, "unhealthy");
+
+  // Same row, live, with a graph but no run → untested (warning → degraded).
+  const untested = structuredClone(failing);
+  untested.dataModel.objects[0].rows = [
+    { Name: "job-new", lifecycleStatus: "live", orchestrationGraph: graphJson },
+  ];
+  res = buildAll(untested, {});
+  health = deriveWorkspaceHealth(res.store, res.graph);
+  assert.ok(health.issues.some((i) => i.type === "untested_pipeline" && i.severity === "warning"));
+  assert.equal(health.status, "degraded");
+});
+
+test("PROBE: agent packet reports workflow + integration capabilities when present", () => {
+  const config = {
+    name: "Cap Workspace",
+    dataModel: {
+      integrations: [{ integrationId: "stripe", label: "Stripe", lane: "payments", status: "connected" }],
+      objects: [
+        { id: "swarm", label: "Swarm", objectType: "sandbox-environment", columns: ["Name", "orchestrationGraph"], rows: [{ Name: "job", orchestrationGraph: JSON.stringify({ nodes: [{ id: "n1", type: "ai-agent" }], edges: [] }) }] },
+      ],
+    },
+  };
+  const { store, graph } = buildAll(config, {});
+  const packet = deriveAgentContextPacket(store, graph, deriveWorkspaceHealth(store, graph), config);
+  assert.ok(packet.capabilities.includes("workflows"));
+  assert.ok(packet.capabilities.includes("sandboxes"));
+  assert.ok(packet.capabilities.includes("integrations"));
+  assert.equal(packet.summary.sandboxes, 1);
+});
+
 // ── secret safety ──────────────────────────────────────────────────────────
 
 test("health + packet JSON never echoes secret-shaped values", () => {

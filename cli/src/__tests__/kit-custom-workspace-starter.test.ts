@@ -2717,6 +2717,21 @@ describe("workspace-health-agent-context-v1 — file presence", () => {
       expect(route).not.toMatch(/writeWorkspaceConfig|persistWorkspace/);
     }
   });
+
+  it("WorkspaceHealthPanel.jsx ships as a read-only surface over the health route", () => {
+    expect(appExists("app/data-model/components/WorkspaceHealthPanel.jsx")).toBe(true);
+    const panel = appText("app/data-model/components/WorkspaceHealthPanel.jsx");
+    expect(panel).toContain("WorkspaceHealthPanel");
+    expect(panel).toContain("/api/workspace/health");
+    // Closed loop: re-check affordance + deep links into existing fix surfaces.
+    expect(panel).toContain("Re-check");
+    expect(panel).toMatch(/\/data-model/);
+    expect(panel).toMatch(/\/workflows/);
+    // Read-only: never issues a mutation from the panel.
+    expect(panel).not.toMatch(/method:\s*["'`](POST|PATCH|PUT|DELETE)["'`]/);
+    // No new icon grammar (mirrors WorkspaceGraphInspectorPanel — structure only).
+    expect(panel).not.toMatch(/from\s+["']lucide-react["']/);
+  });
 });
 
 describe("workspace-health-agent-context-v1 — kit.json frozen paths", () => {
@@ -2726,6 +2741,7 @@ describe("workspace-health-agent-context-v1 — kit.json frozen paths", () => {
     "apps/workspace/lib/workspace-health.js",
     "apps/workspace/app/api/workspace/health/route.js",
     "apps/workspace/app/api/workspace/agent-context/route.js",
+    "apps/workspace/app/data-model/components/WorkspaceHealthPanel.jsx",
   ];
   for (const p of required) {
     it(`kit.json frozen asset paths include: ${p}`, () => {

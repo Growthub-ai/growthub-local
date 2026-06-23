@@ -111,6 +111,7 @@
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/api/workspace/health/route.js",
     "apps/workspace/app/api/workspace/agent-context/route.js",
+    "apps/workspace/app/data-model/components/WorkspaceHealthPanel.jsx",
     "apps/workspace/app/api/workspace/swarm-condition/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
     "apps/workspace/lib/sandbox-agent-auth.js",

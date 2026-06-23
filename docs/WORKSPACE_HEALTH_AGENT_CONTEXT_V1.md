@@ -78,6 +78,20 @@ The packet is the "semantic compression" that lets an agent avoid inferring
 workspace state from raw files: counters, derived capability tags, the health
 critical-state slice, and entrypoints into the real surfaces.
 
+### Read surface — `WorkspaceHealthPanel.jsx`
+
+A read-only panel ships with the kit (`app/data-model/components/WorkspaceHealthPanel.jsx`),
+mirroring `WorkspaceGraphInspectorPanel` exactly: it fetches
+`GET /api/workspace/health`, covers every state (loading, error, healthy
+empty, degraded, unhealthy), and renders the status rollup, the issue list
+(errors before warnings), and the metrics readout. Each issue carries a deep
+link into the **existing** surface where it is fixed (Data Model, Builder,
+Workflows), and a `Re-check` button re-fetches — so the panel is a
+self-contained closed loop: check → see issues → open the fix surface →
+re-check → confirm resolved. It introduces no new colors, icons, or
+`globals.css` grammar and changes no shared navigation pattern. Like the graph
+inspector it ships **unmounted** in V1 and is importable directly.
+
 ## Source Of Truth
 
 | Concern | Source |
@@ -89,6 +103,7 @@ critical-state slice, and entrypoints into the real surfaces.
 | Authoritative artifacts | `growthub.config.json` + `growthub.source-records.json` |
 | Health route | `GET /api/workspace/health` |
 | Agent context route | `GET /api/workspace/agent-context` |
+| Read panel | `app/data-model/components/WorkspaceHealthPanel.jsx` (read-only, ships unmounted) |
 
 ## Required Product Invariants
 
