@@ -286,6 +286,7 @@ function ObjectViewPicker({ tables, selectedTable, onSelectSource, onToggleLock,
                   }}>
                     <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
                     <span>{table.label}</span>
+                    {table.rows?.length > 0 && <span className="dm-picker-meta">{table.rows.length}</span>}
                     {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
                   </button>
                   <div className="dm-picker-actions">

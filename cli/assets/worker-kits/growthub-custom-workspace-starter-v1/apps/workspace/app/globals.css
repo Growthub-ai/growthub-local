@@ -9336,8 +9336,10 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-obj-row.active { background: var(--dm-accent-soft); color: var(--dm-accent); font-weight: 600; }
 .dm-obj-row.active .dm-obj-icon { color: var(--dm-accent); }
 .dm-obj-row.active .dm-badge { background: rgba(79,107,237,.12); color: var(--dm-accent); border-color: var(--dm-accent-line); }
-.dm-obj-meta { margin-left: auto; font-size: 11px; color: var(--dm-faint); font-variant-numeric: tabular-nums; }
-.dm-obj-row.active .dm-obj-meta { color: var(--dm-accent); }
+/* Record count on the live object picker rows (P2). The picker — not the
+   legacy ObjectSidebar — is the rendered object nav. */
+.dm-picker-meta { margin-left: auto; flex: 0 0 auto; color: var(--dm-faint); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.dm-picker-item.active .dm-picker-meta { color: var(--dm-muted); font-weight: 500; }
 
 /* ── Badges: thinner, calmer ──────────────────────────────────────────── */
 .dm-badge { border-radius: 5px; border-color: var(--dm-line); }
