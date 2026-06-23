@@ -9230,76 +9230,6 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-template-context-banner.is-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .workspace-template-context-banner .workspace-template-context-link { color: inherit; text-decoration: underline; font-weight: 600; margin-left: auto; }
 
-/* ---------------------------------------------------------------------------
-   Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1) — structural layout ONLY.
-   No new colors, borders, backgrounds, icons, or motion: every visual
-   treatment comes from existing primitives composed in the JSX —
-   dm-helper-toolcall(-row/-title/-chevron/-body/-json), dm-helper-stream,
-   dm-helper-error, dm-run-console__hint, dm-run-console__tree-dot,
-   dm-btn-ghost, dm-sidecar-header, dm-helper-pill-menu. The dm-swarm-*
-   classes below carry layout, spacing, grid, overflow, and typography
-   weight/size exclusively. */
-
-/* Slash command menu — same dm-helper-pill-menu primitive, anchored above
-   the composer textarea instead of below a pill. */
-.dm-helper-composer-input { position: relative; }
-.dm-helper-slash-menu { bottom: calc(100% + 6px); top: auto; left: 0; right: 0; }
-.dm-helper-slash-menu .dm-helper-pill-menu-item { justify-content: space-between; gap: 10px; }
-.dm-helper-slash-menu .dm-field-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-helper-slash-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-
-/* Cockpit body — scrolling list inside the existing sidecar body. */
-.dm-swarm-body { display: flex; flex-direction: column; min-height: 0; }
-.dm-swarm-cockpit { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-.dm-swarm-cockpit-list { display: flex; flex-direction: column; gap: 8px; }
-.dm-ceo-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: -4px 0 2px; }
-.dm-ceo-tabs button { min-height: 30px; padding: 5px 10px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fff; color: #374151; font-size: 12px; font-weight: 600; cursor: pointer; }
-.dm-ceo-tabs button:hover { border-color: #cbd5e1; color: #111827; }
-.dm-ceo-tabs button.is-active { background: #111827; border-color: #111827; color: #fff; }
-/* CEO fleet list — layout-only grouping; the parent .dm-swarm-cockpit owns the
-   scroll, so this never introduces a second scrollbar. Visible count is capped
-   in the component (CEO_FLEET_VISIBLE_CAP). */
-.dm-ceo-report-list { display: grid; gap: 8px; }
-.dm-swarm-section-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-
-/* Run card — surface chrome comes from dm-helper-toolcall in the JSX. */
-.dm-swarm-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
-.dm-swarm-card-head { display: flex; align-items: center; gap: 8px; }
-.dm-swarm-card-title { flex: 1; }
-.dm-swarm-card-action { height: 24px; padding: 0 7px; }
-.dm-ceo-card-redirect { opacity: 0; transition: opacity .12s ease, border-color .12s ease, color .12s ease; }
-.dm-swarm-card:hover .dm-ceo-card-redirect,
-.dm-swarm-card:focus-within .dm-ceo-card-redirect { opacity: 1; }
-.dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; }
-.dm-swarm-card-meta .dm-run-console__hint { font-size: 12px; }
-.dm-swarm-card-kind { font-weight: 600; }
-.dm-swarm-card-desc { font-size: 12px; padding: 7px 9px; }
-
-/* Phase groups — dm-helper-toolcall card + dm-helper-toolcall-row head. */
-.dm-swarm-phases { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
-.dm-swarm-phase { display: flex; flex-direction: column; }
-.dm-swarm-phase-head { grid-template-columns: 1fr auto; min-height: 30px; padding: 6px 10px; }
-.dm-swarm-dotstrip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 10px 8px; }
-
-/* Agent table — Agent | Tokens | Tools | Time, inside dm-helper-toolcall-body. */
-.dm-swarm-agent-table { display: flex; flex-direction: column; gap: 1px; }
-.dm-swarm-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 44px 48px; align-items: center; gap: 6px; padding: 3px 4px; font: inherit; font-size: 12px; background: transparent; border: 0; cursor: pointer; text-align: left; }
-.dm-swarm-agent-header { cursor: default; }
-.dm-swarm-agent-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-swarm-agent-cell { text-align: right; font-variant-numeric: tabular-nums; }
-
-/* Transcript drill-in — existing tool-call JSON pre is the output frame. */
-.dm-swarm-transcript { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.dm-swarm-transcript-head { display: flex; align-items: center; justify-content: space-between; }
-.dm-swarm-transcript-expand { align-self: flex-end; margin-top: 4px; }
-
-/* Expand view — full-width takeover within the same sidecar shell; the
-   head reuses dm-sidecar-header chrome. */
-.dm-swarm-expand { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
-.dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
-.dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
-
 /* ─── Workspace Map — read-only data-model schema canvas ──────────────────────
    Reuses the workflow-canvas visual language (light dotted canvas, floating
    zoom tools, calm node cards) but lays the Data Model out as a left→right
@@ -9395,3 +9325,73 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-run-strip__note { font-size: 11px; color: #94a3b8; font-style: italic; }
 .dm-run-strip__spin { animation: dm-run-spin 0.9s linear infinite; }
 @keyframes dm-run-spin { to { transform: rotate(360deg); } }
+
+/* ---------------------------------------------------------------------------
+   Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1) — structural layout ONLY.
+   No new colors, borders, backgrounds, icons, or motion: every visual
+   treatment comes from existing primitives composed in the JSX —
+   dm-helper-toolcall(-row/-title/-chevron/-body/-json), dm-helper-stream,
+   dm-helper-error, dm-run-console__hint, dm-run-console__tree-dot,
+   dm-btn-ghost, dm-sidecar-header, dm-helper-pill-menu. The dm-swarm-*
+   classes below carry layout, spacing, grid, overflow, and typography
+   weight/size exclusively. */
+
+/* Slash command menu — same dm-helper-pill-menu primitive, anchored above
+   the composer textarea instead of below a pill. */
+.dm-helper-composer-input { position: relative; }
+.dm-helper-slash-menu { bottom: calc(100% + 6px); top: auto; left: 0; right: 0; }
+.dm-helper-slash-menu .dm-helper-pill-menu-item { justify-content: space-between; gap: 10px; }
+.dm-helper-slash-menu .dm-field-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-helper-slash-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+/* Cockpit body — scrolling list inside the existing sidecar body. */
+.dm-swarm-body { display: flex; flex-direction: column; min-height: 0; }
+.dm-swarm-cockpit { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.dm-swarm-cockpit-list { display: flex; flex-direction: column; gap: 8px; }
+.dm-ceo-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: -4px 0 2px; }
+.dm-ceo-tabs button { min-height: 30px; padding: 5px 10px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fff; color: #374151; font-size: 12px; font-weight: 600; cursor: pointer; }
+.dm-ceo-tabs button:hover { border-color: #cbd5e1; color: #111827; }
+.dm-ceo-tabs button.is-active { background: #111827; border-color: #111827; color: #fff; }
+/* CEO fleet list — layout-only grouping; the parent .dm-swarm-cockpit owns the
+   scroll, so this never introduces a second scrollbar. Visible count is capped
+   in the component (CEO_FLEET_VISIBLE_CAP). */
+.dm-ceo-report-list { display: grid; gap: 8px; }
+.dm-swarm-section-row { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+
+/* Run card — surface chrome comes from dm-helper-toolcall in the JSX. */
+.dm-swarm-card { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dm-swarm-card-head { display: flex; align-items: center; gap: 8px; }
+.dm-swarm-card-title { flex: 1; }
+.dm-swarm-card-action { height: 24px; padding: 0 7px; }
+.dm-ceo-card-redirect { opacity: 0; transition: opacity .12s ease, border-color .12s ease, color .12s ease; }
+.dm-swarm-card:hover .dm-ceo-card-redirect,
+.dm-swarm-card:focus-within .dm-ceo-card-redirect { opacity: 1; }
+.dm-swarm-card-meta { display: flex; align-items: center; gap: 10px; }
+.dm-swarm-card-meta .dm-run-console__hint { font-size: 12px; }
+.dm-swarm-card-kind { font-weight: 600; }
+.dm-swarm-card-desc { font-size: 12px; padding: 7px 9px; }
+
+/* Phase groups — dm-helper-toolcall card + dm-helper-toolcall-row head. */
+.dm-swarm-phases { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.dm-swarm-phase { display: flex; flex-direction: column; }
+.dm-swarm-phase-head { grid-template-columns: 1fr auto; min-height: 30px; padding: 6px 10px; }
+.dm-swarm-dotstrip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 0 10px 8px; }
+
+/* Agent table — Agent | Tokens | Tools | Time, inside dm-helper-toolcall-body. */
+.dm-swarm-agent-table { display: flex; flex-direction: column; gap: 1px; }
+.dm-swarm-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) 56px 44px 48px; align-items: center; gap: 6px; padding: 3px 4px; font: inherit; font-size: 12px; background: transparent; border: 0; cursor: pointer; text-align: left; }
+.dm-swarm-agent-header { cursor: default; }
+.dm-swarm-agent-name { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-swarm-agent-cell { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Transcript drill-in — existing tool-call JSON pre is the output frame. */
+.dm-swarm-transcript { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.dm-swarm-transcript-head { display: flex; align-items: center; justify-content: space-between; }
+.dm-swarm-transcript-expand { align-self: flex-end; margin-top: 4px; }
+
+/* Expand view — full-width takeover within the same sidecar shell; the
+   head reuses dm-sidecar-header chrome. */
+.dm-swarm-expand { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
+.dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
+.dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
