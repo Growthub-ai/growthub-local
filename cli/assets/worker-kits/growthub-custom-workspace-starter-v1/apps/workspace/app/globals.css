@@ -6284,6 +6284,12 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-drawer-section.open .dm-drawer-section-toggle { border-bottom: 1px solid #e2e8f0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .dm-drawer-section.open .dm-drawer-section-toggle svg { transform: rotate(90deg); }
 .dm-drawer-section-body { display: grid; gap: 10px; padding: 11px; }
+/* Optional plain-English subtitle + count badge so section groups read like
+   a SaaS control plane rather than a list of raw config keys. */
+.dm-drawer-section-titles { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.dm-drawer-section-title { font-size: 12px; font-weight: 700; color: #334155; }
+.dm-drawer-section-desc { font-size: 11px; font-weight: 500; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-drawer-section-badge { flex: 0 0 auto; margin-left: auto; display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 999px; background: #eef2f7; color: #64748b; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dm-sandbox-config { display: grid; gap: 8px; }
 .dm-sandbox-config > .dm-cockpit { width: 100%; margin: 12px 0 8px; box-sizing: border-box; }
 .dm-radio-row { display: grid; gap: 8px; }

@@ -548,7 +548,7 @@ function StaticSelect({ value, options, disabled, onChange, placeholder = "Selec
   );
 }
 
-function DrawerSection({ title, children, defaultOpen = false, forceOpen = false }) {
+function DrawerSection({ title, description, badge, children, defaultOpen = false, forceOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => {
     if (forceOpen) setOpen(true);
@@ -557,7 +557,11 @@ function DrawerSection({ title, children, defaultOpen = false, forceOpen = false
     <section className={`dm-drawer-section${open ? " open" : ""}`}>
       <button type="button" className="dm-drawer-section-toggle" onClick={() => setOpen((current) => !current)}>
         <ChevronRight size={14} aria-hidden="true" />
-        <span>{title}</span>
+        <span className="dm-drawer-section-titles">
+          <span className="dm-drawer-section-title">{title}</span>
+          {description && <span className="dm-drawer-section-desc">{description}</span>}
+        </span>
+        {badge != null && <span className="dm-drawer-section-badge">{badge}</span>}
       </button>
       {open && <div className="dm-drawer-section-body">{children}</div>}
     </section>
@@ -798,7 +802,7 @@ function SandboxRecordFields({
           eyebrow={serverlessState.isServerless ? "Serverless workflow" : "Workflow runtime"}
         />
       )}
-      <DrawerSection title="Identity & Mode">
+      <DrawerSection title="Identity & Mode" description="What this agent step is and how it runs">
         <label className="dm-record-field">
           <span>Name</span>
           <input
@@ -830,7 +834,7 @@ function SandboxRecordFields({
         </label>
       </DrawerSection>
 
-      <DrawerSection title="Execution Target">
+      <DrawerSection title="Execution Target" description="Where the agent runs and which host executes it">
         <SegmentedToggle
           name="sandbox-run-locality"
           label="Where it runs"
@@ -948,7 +952,7 @@ function SandboxRecordFields({
         </label>
       </DrawerSection>
 
-      <DrawerSection title="Environment & Network">
+      <DrawerSection title="Environment & Network" description="Browser, network, and server access for this run">
         <div className="dm-record-field">
           <span>Env key references</span>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1005,7 +1009,7 @@ function SandboxRecordFields({
         )}
       </DrawerSection>
 
-      <DrawerSection title="Prompt & Limits">
+      <DrawerSection title="Prompt & Limits" description="Instructions and guardrails the agent runs under">
         <label className="dm-record-field">
           <span>Instructions</span>
           <textarea
@@ -1042,7 +1046,7 @@ function SandboxRecordFields({
         </label>
       </DrawerSection>
 
-      <DrawerSection title="Orchestration">
+      <DrawerSection title="Orchestration" description="Open or build this row's workflow graph">
         <div className="dm-record-field">
           <span>orchestrationConfig</span>
           <button
@@ -1056,7 +1060,7 @@ function SandboxRecordFields({
         </div>
       </DrawerSection>
 
-      <DrawerSection title="Response & History">
+      <DrawerSection title="Response & History" description="Latest run output and past run trace">
         <SandboxTraceFieldButton
           label="lastRunId"
           value={draft.lastRunId}
