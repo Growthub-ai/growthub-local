@@ -11,6 +11,7 @@ import {
   normalizeRunConsoleRecord
 } from "@/lib/orchestration-run-console";
 import { redactSecretsFromText } from "@/lib/orchestration-graph";
+import { RunStatusStrip } from "./RunStatusStrip.jsx";
 
 const ACTIVE_STATUSES = new Set(["executing", "queued", "testing", "running"]);
 const LIVE_POLL_MS = 1500;
@@ -575,6 +576,8 @@ export function OrchestrationRunTracePanel({
           )}
         </div>
       </header>
+
+      <RunStatusStrip record={activeRawRecord} isRunning={isClientRunning} />
 
       <div className="dm-run-console__split">
         <aside className="dm-run-console__left">
