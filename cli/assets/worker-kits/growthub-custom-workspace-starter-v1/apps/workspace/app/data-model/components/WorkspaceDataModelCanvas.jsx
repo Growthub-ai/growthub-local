@@ -340,20 +340,21 @@ export function WorkspaceDataModelCanvas() {
                 {edges.map((edge) => {
                   const a = positions.get(edge.from);
                   const b = positions.get(edge.to);
-                  // Normalize the RENDERED direction to read left → right so a
-                  // source/integration visually feeds its object, regardless of
-                  // the logical edge direction. The metadata graph contract is
-                  // unchanged — this is display-only anchoring.
+                  if (!a || !b) return null;
+                  const overlapsX = Math.max(a.x, b.x) < Math.min(a.x + a.w, b.x + b.w);
+                  const [top, bottom] = a.y <= b.y ? [a, b] : [b, a];
                   const [left, right] = a.x <= b.x ? [a, b] : [b, a];
-                  const x1 = left.x + left.w;
-                  const y1 = left.y + left.h / 2;
-                  const x2 = right.x;
-                  const y2 = right.y + right.h / 2;
-                  const midX = (x1 + x2) / 2;
                   const cls = ["backedBySourceRecord", "boundToIntegration", "belongsToIntegration"].includes(edge.relation)
                     ? "is-source"
                     : "";
-                  const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                  const d = overlapsX
+                    ? `M ${top.x + top.w / 2} ${top.y + top.h} L ${bottom.x + bottom.w / 2} ${bottom.y}`
+                    : [
+                        `M ${left.x + left.w} ${left.y + left.h / 2}`,
+                        `H ${(left.x + left.w + right.x) / 2}`,
+                        `V ${right.y + right.h / 2}`,
+                        `H ${right.x}`,
+                      ].join(" ");
                   return <path key={edge.id} className={cls} d={d} markerEnd="url(#wm-arrow)" />;
                 })}
               </svg>
