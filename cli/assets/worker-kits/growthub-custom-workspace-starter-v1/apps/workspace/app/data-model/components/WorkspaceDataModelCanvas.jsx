@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Maximize2, Search, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import { buildWorkspaceMetadataStore } from "@/lib/workspace-metadata-store";
 import { buildWorkspaceMetadataGraph } from "@/lib/workspace-metadata-graph";
@@ -156,8 +156,65 @@ export function WorkspaceDataModelCanvas() {
 
   const needle = query.trim().toLowerCase();
   const matches = useCallback(
-    (node) => !needle || node.label.toLowerCase().includes(needle) || node.type.toLowerCase().includes(needle),
+    (node) => {
+      if (!needle) return true;
+      const s = node.summary || {};
+      // Match the fields a customer actually searches by — object type, source
+      // id, integration/status, workflow lifecycle, adapter/auth, fetched date —
+      // not just label/type.
+      const haystack = [
+        node.label, node.type,
+        s.objectType, s.objectId, s.status, s.lane, s.lifecycleStatus,
+        s.adapter, s.authStatus, s.authProvider, s.integrationId,
+        s.runLocality, s.fetchedAt, s.sourceAuthority,
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(needle);
+    },
     [needle]
+  );
+
+  // Human-readable label for the open action, by node type.
+  function openLabel(node) {
+    if (node.type === "workflow" || node.type === "sandbox") return "Open in Workflow Canvas";
+    return "Open in Data Model";
+  }
+
+  // Read-only metadata rows for the detail panel — derived from the graph
+  // summary only (no secrets, no config parsing).
+  function detailRows(node) {
+    const s = node.summary || {};
+    const rows = [];
+    const push = (k, v) => { if (v !== undefined && v !== null && v !== "") rows.push({ k, v: String(v) }); };
+    if (node.type === "dataModelObject") {
+      push("Type", s.objectType);
+      push("Records", Number.isFinite(s.rowCount) ? s.rowCount : undefined);
+      push("Backing", s.isLiveBacked ? "live" : s.readOnly ? "read-only" : "manual");
+      push("Source authority", s.sourceAuthority);
+    } else if (node.type === "sourceRecord") {
+      push("Records", Number.isFinite(s.recordCount) ? s.recordCount : 0);
+      push("Integration", s.integrationId);
+      push("Fetched", s.fetchedAt ? String(s.fetchedAt).slice(0, 10) : undefined);
+    } else if (node.type === "workflow") {
+      push("Steps", Number.isFinite(s.nodeCount) ? s.nodeCount : 0);
+      push("Lifecycle", s.lifecycleStatus);
+      push("Requires input", s.requiresInput ? "yes" : undefined);
+    } else if (node.type === "sandbox") {
+      push("Adapter", s.adapter);
+      push("Auth", s.authStatus);
+      push("Locality", s.runLocality);
+      push("Lifecycle", s.lifecycleStatus);
+    } else if (node.type === "integration") {
+      push("Status", s.status);
+      push("Lane", s.lane);
+    } else if (node.type === "dashboard") {
+      push("Widgets", Number.isFinite(s.widgetCount) ? s.widgetCount : 0);
+    }
+    return rows;
+  }
+
+  const selectedNode = useMemo(
+    () => placed.find((node) => node.id === selectedId) || null,
+    [placed, selectedId]
   );
 
   function handleOpen(node) {
@@ -267,8 +324,9 @@ export function WorkspaceDataModelCanvas() {
                     key={node.id}
                     className={`wm-node${node.id === selectedId ? " is-selected" : ""}`}
                     style={{ left: pos.x, top: pos.y, width: pos.w, opacity: dim ? 0.32 : 1 }}
-                    onClick={() => { setSelectedId(node.id); handleOpen(node); }}
-                    title={`Open ${node.label}`}
+                    onClick={() => setSelectedId(node.id)}
+                    aria-pressed={node.id === selectedId}
+                    title={`Inspect ${node.label}`}
                   >
                     <span className="wm-node-head">
                       <span className="wm-node-icon"><LucideIcon name={nodeIconName(node)} size={14} /></span>
@@ -324,6 +382,23 @@ export function WorkspaceDataModelCanvas() {
               <button type="button" onClick={() => setScale(1)} aria-label="Reset zoom"><Maximize2 size={14} /></button>
               <button type="button" onClick={() => zoom(0.1)} aria-label="Zoom in"><ZoomIn size={15} /></button>
             </div>
+            {selectedNode && (
+              <aside className="wm-detail" aria-label={`${selectedNode.label} detail`}>
+                <div className="wm-detail-head">
+                  <span className="wm-node-icon"><LucideIcon name={nodeIconName(selectedNode)} size={14} /></span>
+                  <span className="wm-detail-title">{selectedNode.label || selectedNode.type}</span>
+                  <button type="button" className="wm-detail-close" aria-label="Close detail" onClick={() => setSelectedId("")}><X size={14} /></button>
+                </div>
+                <dl className="wm-detail-meta">
+                  {detailRows(selectedNode).map((row) => (
+                    <div key={row.k} className="wm-detail-row"><dt>{row.k}</dt><dd>{row.v}</dd></div>
+                  ))}
+                </dl>
+                <button type="button" className="dm-btn-primary-sm wm-detail-cta" onClick={() => handleOpen(selectedNode)}>
+                  {openLabel(selectedNode)}
+                </button>
+              </aside>
+            )}
           </>
         )}
       </div>

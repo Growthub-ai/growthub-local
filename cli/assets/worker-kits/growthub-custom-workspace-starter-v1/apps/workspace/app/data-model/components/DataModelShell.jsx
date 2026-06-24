@@ -286,7 +286,12 @@ function ObjectViewPicker({ tables, selectedTable, onSelectSource, onToggleLock,
                   }}>
                     <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
                     <span>{table.label}</span>
-                    {table.rows?.length > 0 && <span className="dm-picker-meta">{table.rows.length}</span>}
+                    {/* Show the count for manual objects even when 0 (zero is known);
+                        for live/dynamic objects rows resolve at runtime, so only show
+                        a count when rows have actually materialized. */}
+                    {table.mutable
+                      ? <span className="dm-picker-meta">{table.rows?.length || 0}</span>
+                      : (table.rows?.length > 0 && <span className="dm-picker-meta">{table.rows.length}</span>)}
                     {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
                   </button>
                   <div className="dm-picker-actions">
@@ -2709,7 +2714,11 @@ function DataModelTableSurface({
               aria-label={`Search ${table.label || "records"}`}
             />
           </label>
-          <span className="dm-toolbar-count">{pluralize(rowEntries.length, "record")}</span>
+          <span className="dm-toolbar-count">
+            {(search.trim() || settings.filter?.clauses?.length)
+              ? `${rowEntries.length} of ${pluralize(table.rows?.length || 0, "record")}`
+              : pluralize(table.rows?.length || 0, "record")}
+          </span>
           <span className="dm-toolbar-divider" aria-hidden="true" />
           <span className="dm-filter-anchor">
             <button type="button" className={`dm-btn-ghost${settings.filter?.clauses?.length ? " is-active" : ""}`} onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>

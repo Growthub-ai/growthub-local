@@ -9403,6 +9403,17 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .wm-zoom button:hover { background: var(--dm-hover); color: var(--dm-ink); }
 .wm-empty { display: grid; place-items: center; gap: 8px; padding: 64px 24px; text-align: center; color: var(--dm-muted); }
 .wm-empty strong { font-size: 16px; color: var(--dm-ink); }
+/* Read-only selected-node detail panel — additive, docks top-right of canvas. */
+.wm-detail { position: sticky; top: 12px; margin: -12px 12px 12px auto; float: right; width: 248px; background: var(--dm-surface); border: 1px solid var(--dm-line); border-radius: var(--dm-radius-lg); box-shadow: var(--dm-shadow-pop); z-index: 5; }
+.wm-detail-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--dm-line-soft); }
+.wm-detail-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; color: var(--dm-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-detail-close { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--dm-faint); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.wm-detail-close:hover { background: var(--dm-hover); color: var(--dm-ink); }
+.wm-detail-meta { margin: 0; padding: 10px 12px; display: grid; gap: 6px; }
+.wm-detail-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.wm-detail-row dt { color: var(--dm-faint); }
+.wm-detail-row dd { margin: 0; color: var(--dm-ink); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-detail-cta { margin: 0 12px 12px; width: calc(100% - 24px); justify-content: center; }
 
 /* ── Run timeline — log-derived step deltas (P4) ──────────────────────── */
 .dm-run-timeline { display: grid; gap: 0; margin: 4px 0; }

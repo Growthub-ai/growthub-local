@@ -91,10 +91,34 @@ test("structured events take precedence and are trusted per declared status", ()
     ],
   });
   assert.equal(d.derivedFrom, "events");
-  assert.equal(d.steps.length, 3);
+  // 3 event steps + 1 authoritative terminal step from exitCode.
   assert.equal(d.steps[0].state, "ok");
   assert.equal(d.steps[1].state, "running");
   assert.equal(d.steps[2].state, "bad");
+  assert.equal(d.steps.at(-1).label, "Completed");
+  assert.equal(d.steps.at(-1).state, "ok");
+});
+
+test("terminal truth: structured events all completed but exitCode 1 → failed terminal step", () => {
+  const d = deriveRunStatusDeltas({
+    exitCode: 1,
+    events: [{ label: "Build", status: "completed" }],
+  });
+  assert.equal(d.phase, "failed");
+  const terminal = d.steps.at(-1);
+  assert.equal(terminal.label, "Failed");
+  assert.equal(terminal.state, "bad");
+});
+
+test("terminal truth: structured events plus exitCode 0 → completion truth", () => {
+  const d = deriveRunStatusDeltas({
+    exitCode: 0,
+    events: [{ label: "Build", status: "completed" }],
+  });
+  assert.equal(d.phase, "succeeded");
+  const terminal = d.steps.at(-1);
+  assert.equal(terminal.label, "Completed");
+  assert.equal(terminal.state, "ok");
 });
 
 test("secret-shaped strings are redacted in notes/logs", () => {
@@ -118,8 +142,10 @@ test("long log lines are bounded", () => {
 test("malformed events entries are skipped without throwing", () => {
   const d = deriveRunStatusDeltas({ exitCode: 0, events: [null, 5, "x", { label: "Real", status: "completed" }] });
   assert.equal(d.derivedFrom, "events");
-  assert.equal(d.steps.length, 1);
+  // One valid event step + the appended terminal Completed; junk entries dropped.
   assert.equal(d.steps[0].label, "Real");
+  assert.equal(d.steps.at(-1).label, "Completed");
+  assert.equal(d.steps.length, 2);
 });
 
 test("JSON string envelope is parsed (legacy lastResponse stored as string)", () => {
@@ -141,8 +167,11 @@ test("classifyEventState mapping", () => {
   assert.equal(classifyEventState(""), "waiting");
 });
 
-test("event count is bounded to a sane maximum", () => {
+test("event count is bounded but the terminal step is always preserved", () => {
   const events = Array.from({ length: 200 }, (_, i) => ({ label: `s${i}`, status: "completed" }));
-  const d = deriveRunStatusDeltas({ exitCode: 0, events });
+  const d = deriveRunStatusDeltas({ exitCode: 1, events });
   assert.ok(d.steps.length <= 50);
+  // Even when the event stream overflows the cap, terminal truth survives.
+  assert.equal(d.steps.at(-1).label, "Failed");
+  assert.equal(d.steps.at(-1).state, "bad");
 });

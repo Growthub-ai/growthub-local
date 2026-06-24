@@ -211,7 +211,13 @@ function deriveRunStatusDeltas(input) {
           note: redactAndBound(latest, MAX_NOTE),
         });
       }
-      // 3) Terminal — from exitCode/error only.
+    }
+
+    // Terminal truth from exitCode/error ONLY — appended regardless of how the
+    // body steps were derived. A structured event stream that omits the final
+    // state (e.g. all events "completed" but the run exited non-zero) still
+    // gets an authoritative Completed/Failed step from exitCode/error.
+    if (steps.length) {
       if (phase === "succeeded") {
         steps.push({ label: "Completed", state: "ok", at: "", note: durationMs != null ? `${durationMs} ms` : "" });
       } else if (phase === "failed") {
@@ -219,7 +225,13 @@ function deriveRunStatusDeltas(input) {
       }
     }
 
-    return { phase, ok, exitCode, error, ranAt, durationMs, derivedFrom, steps: steps.slice(0, MAX_STEPS) };
+    // Cap length, but always preserve the terminal step (the last entry) so
+    // truth is never sliced off by a long event stream.
+    const capped = steps.length > MAX_STEPS
+      ? [...steps.slice(0, MAX_STEPS - 1), steps[steps.length - 1]]
+      : steps;
+
+    return { phase, ok, exitCode, error, ranAt, durationMs, derivedFrom, steps: capped };
   } catch {
     return empty;
   }
