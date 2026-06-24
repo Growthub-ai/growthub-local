@@ -96,14 +96,17 @@ async function readSandboxRunStream(response, onEvent) {
   const decoder = new TextDecoder();
   let buffer = "";
   let finalPayload = null;
-  const handle = (line) => {
+  const handle = async (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
     try {
       const event = JSON.parse(trimmed);
       if (event.kind !== "growthub-sandbox-run-delta-v1") return;
       if (event.type === "sandbox-run.final") finalPayload = event.payload || finalPayload;
-      else if (typeof onEvent === "function") onEvent((prev) => [...prev, event].slice(-300));
+      else if (typeof onEvent === "function") {
+        onEvent((prev) => [...prev, event].slice(-300));
+        await new Promise((resolve) => setTimeout(resolve, 90));
+      }
     } catch {
       // Ignore malformed cosmetic chunks; the final payload still arrives.
     }
@@ -114,9 +117,9 @@ async function readSandboxRunStream(response, onEvent) {
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() || "";
-    for (const line of lines) handle(line);
+    for (const line of lines) await handle(line);
   }
-  if (buffer.trim()) handle(buffer);
+  if (buffer.trim()) await handle(buffer);
   return finalPayload;
 }
 
