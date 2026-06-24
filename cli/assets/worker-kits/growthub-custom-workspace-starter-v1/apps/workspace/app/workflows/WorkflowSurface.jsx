@@ -37,6 +37,7 @@ import {
   getNextCanonicalNodeId,
   getOrchestrationGraphUiState,
   isAgentSwarmGraph,
+  orderedGraphNodes,
   parseOrchestrationGraph,
   redactSecretsFromText,
   serializeOrchestrationGraph,
@@ -333,6 +334,29 @@ export default function WorkflowSurface() {
   );
 
   const sandboxRow = resolved.row;
+
+  // Per-node run-status for the canvas chips. Evidence-only: we only have a
+  // run-level result (the sandbox row's lastResponse), so we attribute status
+  // per node ONLY when that result is unambiguous for the whole graph — a
+  // terminal success means every node in the executed graph completed. On
+  // failure or an in-flight run we have no per-node evidence, so we attribute
+  // nothing rather than fake which node is running/failed.
+  const runNodeStatuses = useMemo(() => {
+    if (!orchestrationGraph) return null;
+    let lastResponse = sandboxRow?.lastResponse;
+    if (typeof lastResponse === "string") {
+      try { lastResponse = JSON.parse(lastResponse); } catch { lastResponse = null; }
+    }
+    if (!lastResponse || typeof lastResponse !== "object") return null;
+    const exitCode = Number.isFinite(lastResponse.exitCode) ? Number(lastResponse.exitCode) : null;
+    const ok = exitCode === 0 && !String(lastResponse.error || "").trim();
+    if (!ok) return null;
+    const ids = orderedGraphNodes(parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph)
+      .map((node) => String(node.id || ""))
+      .filter(Boolean);
+    if (!ids.length) return null;
+    return Object.fromEntries(ids.map((id) => [id, "completed"]));
+  }, [sandboxRow, orchestrationGraph]);
   const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
   const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
     ? fieldName
@@ -1042,6 +1066,7 @@ export default function WorkflowSurface() {
                         setConfigTab("node");
                       }}
                       onConnectorAction={handleConnectorAction}
+                      nodeStatuses={runNodeStatuses}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
                     />
                     {nextNodeId && (

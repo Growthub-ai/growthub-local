@@ -9429,6 +9429,12 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-run-step-note { font-size: 11px; color: var(--dm-muted); margin-top: 2px; word-break: break-word; }
 .dm-run-derived-note { font-size: 10.5px; color: var(--dm-faint); margin-top: 6px; font-style: italic; }
 
+/* Per-node run-status chip on the Workflow Canvas — docked outside the node's
+   top-right corner, Attio-style. The node/step must not clip it. */
+.dm-orchestration-node { position: relative; overflow: visible; }
+.dm-orchestration-canvas__step { overflow: visible; }
+.dm-orchestration-node__status { position: absolute; top: -10px; right: 10px; z-index: 3; height: 19px; padding: 0 7px; background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.14); }
+
 /* ── Table empty / no-results state (P1) ──────────────────────────────── */
 .dm-db-empty-row td { padding: 0 !important; background: var(--dm-surface) !important; cursor: default !important; }
 .dm-db-empty-row:hover td { background: var(--dm-surface) !important; }
