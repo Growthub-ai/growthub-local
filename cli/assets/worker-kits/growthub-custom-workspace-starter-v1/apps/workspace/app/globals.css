@@ -9415,26 +9415,6 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .wm-detail-row dd { margin: 0; color: var(--dm-ink); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wm-detail-cta { margin: 0 12px 12px; width: calc(100% - 24px); justify-content: center; }
 
-/* ── Run timeline — log-derived step deltas (P4) ──────────────────────── */
-.dm-run-timeline { display: grid; gap: 0; margin: 4px 0; }
-.dm-run-step { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: start; padding: 6px 0; position: relative; }
-.dm-run-step::before { content: ""; position: absolute; left: 8px; top: 18px; bottom: -6px; width: 1.5px; background: var(--dm-line); }
-.dm-run-step:last-child::before { display: none; }
-.dm-run-step-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--dm-line); background: var(--dm-surface); margin-top: 2px; z-index: 1; }
-.dm-run-step.is-ok .dm-run-step-dot { border-color: var(--dm-ok); background: var(--dm-ok); }
-.dm-run-step.is-bad .dm-run-step-dot { border-color: var(--dm-bad); background: var(--dm-bad); }
-.dm-run-step.is-running .dm-run-step-dot { border-color: var(--dm-run); animation: dm-pulse 1.15s ease-in-out infinite; }
-.dm-run-step-label { font-size: 12px; color: var(--dm-ink); }
-.dm-run-step-meta { font-size: 11px; color: var(--dm-faint); font-variant-numeric: tabular-nums; }
-.dm-run-step-note { font-size: 11px; color: var(--dm-muted); margin-top: 2px; word-break: break-word; }
-.dm-run-derived-note { font-size: 10.5px; color: var(--dm-faint); margin-top: 6px; font-style: italic; }
-
-/* Per-node run-status chip on the Workflow Canvas — docked outside the node's
-   top-right corner, Attio-style. The node/step must not clip it. */
-.dm-orchestration-node { position: relative; overflow: visible; }
-.dm-orchestration-canvas__step { overflow: visible; }
-.dm-orchestration-node__status { position: absolute; top: -10px; right: 10px; z-index: 3; height: 19px; padding: 0 7px; background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.14); }
-
 /* ── Table empty / no-results state (P1) ──────────────────────────────── */
 .dm-db-empty-row td { padding: 0 !important; background: var(--dm-surface) !important; cursor: default !important; }
 .dm-db-empty-row:hover td { background: var(--dm-surface) !important; }

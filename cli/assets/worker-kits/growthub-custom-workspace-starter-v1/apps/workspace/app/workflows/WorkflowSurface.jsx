@@ -37,7 +37,6 @@ import {
   getNextCanonicalNodeId,
   getOrchestrationGraphUiState,
   isAgentSwarmGraph,
-  orderedGraphNodes,
   parseOrchestrationGraph,
   redactSecretsFromText,
   serializeOrchestrationGraph,
@@ -45,7 +44,6 @@ import {
   validateOrchestrationGraph
 } from "@/lib/orchestration-graph";
 import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
-import { deriveOrchestrationNodeRunStatuses } from "@/lib/orchestration-run-console";
 import {
   nodeSandboxRecordRef,
   patchSandboxRowInConfig,
@@ -335,25 +333,6 @@ export default function WorkflowSurface() {
   );
 
   const sandboxRow = resolved.row;
-
-  // Per-node run-status for the canvas chips. Source of truth: the run record
-  // of THIS workflow/orchestration on the sandbox row (lastResponse), projected
-  // onto the pipeline order by the shared run-console model — terminal truth via
-  // deriveRunSummary, success/failure attributed per node, and live "running"
-  // hydration while the run is in flight, settling on completion. No fake work.
-  const runNodeStatuses = useMemo(() => {
-    if (!orchestrationGraph) return null;
-    let lastResponse = sandboxRow?.lastResponse;
-    if (typeof lastResponse === "string") {
-      try { lastResponse = JSON.parse(lastResponse); } catch { lastResponse = null; }
-    }
-    const orderedNodes = orderedGraphNodes(parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph)
-      .map((node) => ({ id: String(node?.id || ""), type: String(node?.type || "") }))
-      .filter((node) => node.id);
-    if (!orderedNodes.length) return null;
-    const map = deriveOrchestrationNodeRunStatuses(orderedNodes, lastResponse, { running });
-    return Object.keys(map).length ? map : null;
-  }, [sandboxRow, orchestrationGraph, running]);
   const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
   const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
     ? fieldName
@@ -1063,7 +1042,6 @@ export default function WorkflowSurface() {
                         setConfigTab("node");
                       }}
                       onConnectorAction={handleConnectorAction}
-                      nodeStatuses={runNodeStatuses}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
                     />
                     {nextNodeId && (
