@@ -365,6 +365,11 @@ export default function WorkflowSurface() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Reset live per-node deltas when the active workflow changes, so a prior
+  // run's stream never bleeds onto a different workflow's canvas — the new
+  // workflow settles from its own persisted nodeTrace until it is run.
+  useEffect(() => { setLiveRunEvents([]); }, [objectId, rowId]);
+
   const resolved = useMemo(
     () => (workspaceConfig ? findSandboxRowByWorkflowRef(workspaceConfig, objectId, rowId) : { object: null, row: null, rowIndex: -1 }),
     [workspaceConfig, objectId, rowId]
