@@ -1,7 +1,7 @@
 # Workspace UI Facelift — Stabilized Patterns V1
 
 The production patterns established by PR #254 (workspace OS UI facelift,
-`@growthub/cli` 0.14.7). This is the architecture-truth record for the surgical
+`@growthub/cli` 0.14.8). This is the architecture-truth record for the surgical
 implementation: what each pattern is, where it lives, why it is truthful, and
 the boundaries it must not cross. It is **additive** — no new runtime, no new
 mutation lane, no new persistence, no new object authority.
@@ -116,7 +116,7 @@ malformed-input safety.
 
 ## 6. Governance & release
 
-- Lockstep version bump 0.14.6 → 0.14.7 (`@growthub/cli` +
+- Lockstep version bump 0.14.7 → 0.14.8 (`@growthub/cli` +
   `@growthub/create-growthub-local`).
 - **Asset-only change** — ships from `cli/assets` via `files: ["assets"]`, read
   by `dist/index.js` at export time; `cli/src` untouched, `cli/dist` carries no
@@ -133,9 +133,10 @@ malformed-input safety.
 - [x] Pill opens the Run Console trace (raw stdout/stderr/JSON/log tree preserved).
 - [x] Single run-truth source; no swarm mirroring; no duplicate code.
 - [x] All touched files parse; unit tests pass; export validates 5/5; gates green.
-- [ ] Interactive human smoke on a booted workspace (run a graph workflow, watch
-      pills hydrate live → settle; click a pill → trace) — remaining before the
-      PR leaves draft.
+- [x] Super-admin interactive smoke passed on the booted feature workspace:
+      Workflow Canvas run, real per-node pills, settled trace, Run Console raw
+      proof, Workspace Map navigation/drag/connectors, and Data Model table
+      search/filter behavior.
 
 See also: [`AGENTIC_PRODUCT_PR_REVIEW_LOOP.md`](./AGENTIC_PRODUCT_PR_REVIEW_LOOP.md),
 [`GOVERNED_WORKSPACE_TOPOLOGY_V1.md`](./GOVERNED_WORKSPACE_TOPOLOGY_V1.md),

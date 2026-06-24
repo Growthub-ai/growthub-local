@@ -9272,7 +9272,7 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
 
 /* ════════════════════════════════════════════════════════════════════════
-   SaaS facelift layer — Attio-inspired polish (v0.14.7)
+   SaaS facelift layer — Attio-inspired polish (v0.14.8)
    Additive only. Refines existing dm-* light-theme primitives via the
    cascade (equal specificity, later wins) and introduces the shared
    vocabulary consumed by the table, drawer, Workspace Map, and run-status
