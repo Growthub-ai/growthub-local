@@ -9415,6 +9415,12 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .wm-detail-row dd { margin: 0; color: var(--dm-ink); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wm-detail-cta { margin: 0 12px 12px; width: calc(100% - 24px); justify-content: center; }
 
+/* Per-node run-status pill on the Workflow Canvas — docked outside the node's
+   top-right corner. Driven by the live swarm stream + persisted projection. */
+.dm-orchestration-node { position: relative; overflow: visible; }
+.dm-orchestration-canvas__step { overflow: visible; }
+.dm-orchestration-node__status { position: absolute; top: -10px; right: 10px; z-index: 3; height: 19px; padding: 0 7px; background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.14); }
+
 /* ── Table empty / no-results state (P1) ──────────────────────────────── */
 .dm-db-empty-row td { padding: 0 !important; background: var(--dm-surface) !important; cursor: default !important; }
 .dm-db-empty-row:hover td { background: var(--dm-surface) !important; }

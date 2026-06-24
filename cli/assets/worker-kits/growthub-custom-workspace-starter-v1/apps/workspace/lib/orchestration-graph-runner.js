@@ -301,11 +301,43 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   const inputPayload = { ...baseInputPayload, ...manualPayload };
   const consumedInputKeys = Object.keys(manualPayload);
   const transformConfig = extractTransformConfig(graph);
+  const transformNode = (Array.isArray(graph.nodes) ? graph.nodes : [])
+    .find((n) => n?.type === "transform-filter" || n?.type === "normalize-output");
   const resultNode = graph.nodes?.find((n) => n?.type === "tool-result");
   const successCodes = Array.isArray(resultNode?.config?.successStatusCodes)
     ? resultNode.config.successStatusCodes.map(Number).filter(Number.isFinite)
     : [200];
 
+  // Per-node execution deltas for the GENERAL orchestration pipeline (not
+  // swarm-specific): stream node lifecycle through the same onEvent NDJSON hook
+  // the route already wires, and record a terminal nodeTrace persisted on the
+  // run record. Every event corresponds to a real pipeline stage executing.
+  const onEvent = typeof executionContext?.onEvent === "function" ? executionContext.onEvent : null;
+  const runId = String(executionContext?.runId || "").trim();
+  const nodeTrace = [];
+  const emitNode = (nodeId, status, error) => {
+    const id = String(nodeId || "").trim();
+    if (!id) return;
+    if (status === "completed" || status === "failed" || status === "skipped") {
+      nodeTrace.push(error ? { id, status, error: String(error) } : { id, status });
+    }
+    if (onEvent) {
+      onEvent({
+        kind: "growthub-sandbox-run-delta-v1",
+        type: `orchestration.node.${status}`,
+        nodeId: id,
+        runId,
+        emittedAt: new Date().toISOString(),
+        ...(error ? { error: String(error) } : {})
+      });
+    }
+  };
+
+  // Input stage — payload is assembled above; it ran.
+  if (inputNode?.id) { emitNode(inputNode.id, "started"); emitNode(inputNode.id, "completed"); }
+
+  // API Registry call stage.
+  if (apiNode?.id) emitNode(apiNode.id, "started");
   const raw = await executeApiRegistryCall(
     workspaceConfig,
     apiNode.config,
@@ -320,14 +352,29 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
       raw.exitCode = 1;
       raw.error = `HTTP ${httpStatus} is not in successStatusCodes`;
     }
+  }
+
+  if (apiNode?.id) {
+    if (raw.ok) emitNode(apiNode.id, "completed");
+    else emitNode(apiNode.id, "failed", raw.error);
+  }
+
+  if (raw.ok && raw.rawPayload !== undefined) {
+    if (transformNode?.id) emitNode(transformNode.id, "started");
     const transformed = transformProviderPayload(raw.rawPayload, transformConfig);
     raw.stdout = typeof transformed === "string"
       ? transformed
       : normalizeJsonAtPath(transformed, "");
     delete raw.rawPayload;
     delete raw.httpStatus;
+    if (transformNode?.id) emitNode(transformNode.id, "completed");
+    if (resultNode?.id) { emitNode(resultNode.id, "started"); emitNode(resultNode.id, "completed"); }
   } else if (raw.error) {
     raw.error = redactSecretsFromText(raw.error);
+    // Downstream stages never executed → record them as skipped (not-run), not
+    // failed: only the api stage actually failed.
+    if (transformNode?.id) emitNode(transformNode.id, "skipped");
+    if (resultNode?.id) emitNode(resultNode.id, "skipped");
   }
 
   if (raw.stdout) {
@@ -336,6 +383,7 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
 
   return {
     ...raw,
+    nodeTrace,
     adapterMeta: {
       ...(raw.adapterMeta || {}),
       orchestrationProvider: graph.provider,

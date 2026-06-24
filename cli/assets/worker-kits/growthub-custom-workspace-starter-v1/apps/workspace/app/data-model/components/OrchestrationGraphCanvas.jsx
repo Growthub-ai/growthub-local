@@ -103,6 +103,21 @@ function nodeRecordName(node) {
   return "";
 }
 
+// Per-node run-status pill (Attio-style), docked outside the node top-right.
+// Driven only by the real general-orchestration run signal passed in
+// `nodeStatuses` — the streamed orchestration.node.* deltas and the persisted
+// nodeTrace (see lib/orchestration-node-status.js). Never fabricated here.
+const NODE_STATUS_CHIP = {
+  completed: { cls: "is-ok", label: "Completed" },
+  ok: { cls: "is-ok", label: "Completed" },
+  running: { cls: "is-running", label: "Running" },
+  executing: { cls: "is-running", label: "Running" },
+  failed: { cls: "is-bad", label: "Failed" },
+  skipped: { cls: "is-waiting", label: "Skipped" },
+  pending: { cls: "is-waiting", label: "Waiting" },
+  queued: { cls: "is-waiting", label: "Waiting" },
+};
+
 export function OrchestrationGraphCanvas({
   graph,
   selectedNodeId,
@@ -112,6 +127,7 @@ export function OrchestrationGraphCanvas({
   onRunTest,
   runStatus,
   runMessage,
+  nodeStatuses,
   statusLabel = "Draft",
 }) {
   const parsed = useMemo(() => parseOrchestrationGraph(graph) || graph, [graph]);
@@ -222,6 +238,9 @@ export function OrchestrationGraphCanvas({
           const isSelected = activeId === id;
           const prevId = index > 0 ? String(nodes[index - 1].id || "") : "";
           const Icon = NODE_ICONS[node.type] || ArrowDownToLine;
+          const nodeStatusChip = nodeStatuses
+            ? NODE_STATUS_CHIP[String(nodeStatuses[id] || "").toLowerCase()] || null
+            : null;
 
           return (
             <div key={id || index} className="dm-orchestration-canvas__step">
@@ -285,6 +304,12 @@ export function OrchestrationGraphCanvas({
                   onSelectNode?.(node);
                 }}
               >
+                {nodeStatusChip && (
+                  <span className={`dm-status-chip ${nodeStatusChip.cls} dm-orchestration-node__status`}>
+                    <span className="dm-status-dot" aria-hidden="true" />
+                    {nodeStatusChip.label}
+                  </span>
+                )}
                 <span className="dm-orchestration-node__icon" aria-hidden="true">
                   <Icon size={14} />
                 </span>

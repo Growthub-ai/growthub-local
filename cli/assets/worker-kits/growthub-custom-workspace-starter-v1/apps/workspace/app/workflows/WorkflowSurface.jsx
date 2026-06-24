@@ -44,6 +44,7 @@ import {
   validateOrchestrationGraph
 } from "@/lib/orchestration-graph";
 import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
+import { deriveOrchestrationNodeStatuses } from "@/lib/orchestration-node-status";
 import {
   nodeSandboxRecordRef,
   patchSandboxRowInConfig,
@@ -81,6 +82,42 @@ function withUiCacheFlag(workspaceConfig, flag, value) {
     ? objects.map((o) => (o?.id === "workspace-ui-cache" ? nextCache : o))
     : [...objects, nextCache];
   return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
+// Read the sandbox-run NDJSON delta stream (same shape SwarmRunCockpit
+// consumes): push each growthub-sandbox-run-delta-v1 event to `onEvent` for
+// live canvas hydration, and return the sandbox-run.final payload (the run
+// result). Falls back to plain JSON when the response is not a stream.
+async function readSandboxRunStream(response, onEvent) {
+  if (!response?.body || typeof response.body.getReader !== "function") {
+    return response.json().catch(() => null);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalPayload = null;
+  const handle = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const event = JSON.parse(trimmed);
+      if (event.kind !== "growthub-sandbox-run-delta-v1") return;
+      if (event.type === "sandbox-run.final") finalPayload = event.payload || finalPayload;
+      else if (typeof onEvent === "function") onEvent((prev) => [...prev, event].slice(-300));
+    } catch {
+      // Ignore malformed cosmetic chunks; the final payload still arrives.
+    }
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) handle(line);
+  }
+  if (buffer.trim()) handle(buffer);
+  return finalPayload;
 }
 
 // Workspace Metadata Graph V1 — read-only dependency metadata for workflow
@@ -281,6 +318,7 @@ export default function WorkflowSurface() {
   const [publishing, setPublishing] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [running, setRunning] = useState(false);
+  const [liveRunEvents, setLiveRunEvents] = useState([]);
   const [runMessage, setRunMessage] = useState("");
   const [sidecarMode, setSidecarMode] = useState(runId ? "trace" : "graph");
 
@@ -333,6 +371,18 @@ export default function WorkflowSurface() {
   );
 
   const sandboxRow = resolved.row;
+
+  // Per-node Workflow Canvas pill status — GENERAL orchestration (not swarm).
+  // Live from the streamed orchestration.node.* deltas while a run is in
+  // flight; settled from the persisted run record's nodeTrace once complete.
+  const runNodeStatuses = useMemo(() => {
+    let record = sandboxRow?.lastResponse;
+    if (typeof record === "string") {
+      try { record = JSON.parse(record); } catch { record = null; }
+    }
+    const map = deriveOrchestrationNodeStatuses({ events: liveRunEvents, record });
+    return Object.keys(map).length ? map : null;
+  }, [liveRunEvents, sandboxRow]);
   const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
   const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
     ? fieldName
@@ -564,17 +614,21 @@ export default function WorkflowSurface() {
       : null;
     setRunning(true);
     setRunMessage("");
+    setLiveRunEvents([]);
     try {
       const draft = await saveDraft({ orchestrationDraftStatus: "testing" });
       const draftGraph = draft?.serialized || serializeCurrentGraph();
-      const body = { objectId, name: rowId, useDraft: true, draftGraph };
+      const body = { objectId, name: rowId, useDraft: true, draftGraph, stream: true };
       if (runInputs) body.runInputs = runInputs;
       const res = await fetch("/api/workspace/sandbox-run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", accept: "application/x-ndjson" },
         body: JSON.stringify(body),
       });
-      const payload = await res.json();
+      // Consume the NDJSON delta stream: per-node orchestration.node.* events
+      // hydrate the canvas pills live; the sandbox-run.final payload is the
+      // run result we persist. Falls back to plain JSON if not a stream.
+      const payload = (await readSandboxRunStream(res, setLiveRunEvents)) || {};
       const responseText = redactSecretsFromText(JSON.stringify(payload.response ?? payload, null, 2));
       const status = payload.ok && String(payload.status || "").toLowerCase() === "connected" ? "connected" : "failed";
       const pass = isPassingRun(payload);
@@ -1042,6 +1096,7 @@ export default function WorkflowSurface() {
                         setConfigTab("node");
                       }}
                       onConnectorAction={handleConnectorAction}
+                      nodeStatuses={runNodeStatuses}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
                     />
                     {nextNodeId && (
