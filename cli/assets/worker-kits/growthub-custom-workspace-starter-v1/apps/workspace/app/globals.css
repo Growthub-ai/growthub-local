@@ -9392,7 +9392,8 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .wm-legend { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; flex-wrap: wrap; }
 .wm-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dm-muted); }
 .wm-legend-swatch { width: 9px; height: 9px; border-radius: 3px; }
-.wm-canvas { position: relative; flex: 1; min-height: 460px; overflow: auto; background-color: #fbfcfd; background-image: radial-gradient(circle, #dde2e8 1px, transparent 1px); background-size: 22px 22px; }
+.wm-canvas { position: relative; flex: 1; min-height: 460px; overflow: auto; background-color: #fbfcfd; background-image: radial-gradient(circle, #dde2e8 1px, transparent 1px); background-size: 22px 22px; cursor: grab; touch-action: none; }
+.wm-canvas.is-panning { cursor: grabbing; user-select: none; }
 .wm-canvas-inner { position: relative; }
 .wm-canvas-scale { position: relative; transform-origin: 0 0; }
 .wm-edge { position: absolute; pointer-events: none; }

@@ -17,7 +17,7 @@
  *     labels, counts, and types.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Maximize2, Search, X, ZoomIn, ZoomOut } from "lucide-react";
@@ -67,6 +67,9 @@ export function WorkspaceDataModelCanvas() {
   const [scale, setScale] = useState(1);
   const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
+  const canvasRef = useRef(null);
+  const dragRef = useRef(null);
+  const [isPanning, setIsPanning] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -239,6 +242,38 @@ export function WorkspaceDataModelCanvas() {
     setScale((current) => Math.min(1.4, Math.max(0.6, Math.round((current + delta) * 10) / 10)));
   }
 
+  const handleCanvasPointerDown = useCallback((event) => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (target?.closest?.("button, a, input, label, .wm-detail, .wm-zoom")) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: canvas.scrollLeft,
+      scrollTop: canvas.scrollTop,
+    };
+    setIsPanning(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, []);
+
+  const handleCanvasPointerMove = useCallback((event) => {
+    const drag = dragRef.current;
+    const canvas = canvasRef.current;
+    if (!drag || !canvas || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    canvas.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+    canvas.scrollTop = drag.scrollTop - (event.clientY - drag.startY);
+  }, []);
+
+  const endCanvasPan = useCallback((event) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setIsPanning(false);
+  }, []);
+
   const hasNodes = placed.length > 0;
 
   return (
@@ -272,7 +307,15 @@ export function WorkspaceDataModelCanvas() {
         </div>
       </div>
 
-      <div className="wm-canvas">
+      <div
+        ref={canvasRef}
+        className={`wm-canvas${isPanning ? " is-panning" : ""}`}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={endCanvasPan}
+        onPointerCancel={endCanvasPan}
+        onPointerLeave={endCanvasPan}
+      >
         {loading && <div className="wm-empty"><span>Loading workspace map…</span></div>}
         {!loading && error && <div className="wm-empty"><strong>Could not load the map</strong><span>{error}</span></div>}
         {!loading && !error && !hasNodes && (
