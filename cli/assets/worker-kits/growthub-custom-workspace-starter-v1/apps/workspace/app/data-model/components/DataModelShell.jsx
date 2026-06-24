@@ -286,12 +286,6 @@ function ObjectViewPicker({ tables, selectedTable, onSelectSource, onToggleLock,
                   }}>
                     <LucideIcon name={table.icon || OBJECT_TYPE_PRESETS[table.objectType]?.icon || "Database"} size={14} />
                     <span>{table.label}</span>
-                    {/* Show the count for manual objects even when 0 (zero is known);
-                        for live/dynamic objects rows resolve at runtime, so only show
-                        a count when rows have actually materialized. */}
-                    {table.mutable
-                      ? <span className="dm-picker-meta">{table.rows?.length || 0}</span>
-                      : (table.rows?.length > 0 && <span className="dm-picker-meta">{table.rows.length}</span>)}
                     {isLockedObject(table) && <Lock size={12} className="dm-picker-lock" />}
                   </button>
                   <div className="dm-picker-actions">
