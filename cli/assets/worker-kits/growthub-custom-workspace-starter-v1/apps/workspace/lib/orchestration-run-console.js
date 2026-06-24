@@ -794,6 +794,59 @@ function formatCompactRunDuration(ms) {
   return `${minutes}m ${padded}s`;
 }
 
+// Index of the node that owns a failure, derived from the run record. The
+// native runner executes a deterministic pipeline (input → api-registry-call →
+// transform → tool-result) and surfaces a single result; the overwhelming
+// majority of failures (HTTP error, timeout, invalid URL, missing registry row)
+// occur at the api-registry-call stage, so attribute there when present, else
+// at the terminal node. Nodes before it ran; nodes after it never executed.
+function failingNodeIndex(orderedNodes) {
+  const types = (orderedNodes || []).map((node) => String(node?.type || ""));
+  const apiIdx = types.findIndex((type) => type === "api-registry-call");
+  if (apiIdx >= 0) return apiIdx;
+  return Math.max(0, (orderedNodes || []).length - 1);
+}
+
+/**
+ * Per-node run-status for the Workflow Canvas, derived ONLY from the real run
+ * of THIS workflow/orchestration (the sandbox row's run record) and the known
+ * pipeline order. Terminal truth comes from `deriveRunSummary()` — the same
+ * authority the Run Console uses; this is a projection, not a second model.
+ *
+ *   - in-flight (running, no terminal record): every node "running" — the run
+ *     is active; the runtime emits no per-node frontier, so we never fabricate
+ *     which single node is executing.
+ *   - completed: every node "completed" (the whole pipeline executed).
+ *   - failed/canceled: nodes before the failing stage "completed", the failing
+ *     node "failed", downstream nodes "waiting" (they never ran).
+ *   - no record / unknown: {} (no chips).
+ *
+ * Returns a plain id→status map. Pure, never throws.
+ */
+function deriveOrchestrationNodeRunStatuses(orderedNodes, record, { running = false } = {}) {
+  const nodes = Array.isArray(orderedNodes) ? orderedNodes : [];
+  const ids = nodes.map((node) => String(node?.id || "")).filter(Boolean);
+  if (!ids.length) return {};
+  const summary = record ? deriveRunSummary(record) : { status: "unknown", ok: false };
+  const terminal = summary.status === "completed" || summary.status === "failed" || summary.status === "canceled";
+
+  if (running && !terminal) {
+    return Object.fromEntries(ids.map((id) => [id, "running"]));
+  }
+  if (summary.status === "completed") {
+    return Object.fromEntries(ids.map((id) => [id, "completed"]));
+  }
+  if (summary.status === "failed" || summary.status === "canceled") {
+    const failIdx = failingNodeIndex(nodes);
+    const out = {};
+    ids.forEach((id, index) => {
+      out[id] = index < failIdx ? "completed" : index === failIdx ? "failed" : "waiting";
+    });
+    return out;
+  }
+  return {};
+}
+
 function downloadRunBundle({ record, runId, sourceId } = {}) {
   const normalized = normalizeRunConsoleRecord(record || {});
   return {
@@ -819,5 +872,6 @@ export {
   buildRunTimeline,
   filterRunLogTree,
   formatRunDuration,
+  deriveOrchestrationNodeRunStatuses,
   downloadRunBundle
 };

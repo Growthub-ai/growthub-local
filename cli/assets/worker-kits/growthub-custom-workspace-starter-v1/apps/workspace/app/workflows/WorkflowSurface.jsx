@@ -45,6 +45,7 @@ import {
   validateOrchestrationGraph
 } from "@/lib/orchestration-graph";
 import { resolveConnectorAction } from "@/lib/orchestration-sidecar-routing";
+import { deriveOrchestrationNodeRunStatuses } from "@/lib/orchestration-run-console";
 import {
   nodeSandboxRecordRef,
   patchSandboxRowInConfig,
@@ -335,28 +336,24 @@ export default function WorkflowSurface() {
 
   const sandboxRow = resolved.row;
 
-  // Per-node run-status for the canvas chips. Evidence-only: we only have a
-  // run-level result (the sandbox row's lastResponse), so we attribute status
-  // per node ONLY when that result is unambiguous for the whole graph — a
-  // terminal success means every node in the executed graph completed. On
-  // failure or an in-flight run we have no per-node evidence, so we attribute
-  // nothing rather than fake which node is running/failed.
+  // Per-node run-status for the canvas chips. Source of truth: the run record
+  // of THIS workflow/orchestration on the sandbox row (lastResponse), projected
+  // onto the pipeline order by the shared run-console model — terminal truth via
+  // deriveRunSummary, success/failure attributed per node, and live "running"
+  // hydration while the run is in flight, settling on completion. No fake work.
   const runNodeStatuses = useMemo(() => {
     if (!orchestrationGraph) return null;
     let lastResponse = sandboxRow?.lastResponse;
     if (typeof lastResponse === "string") {
       try { lastResponse = JSON.parse(lastResponse); } catch { lastResponse = null; }
     }
-    if (!lastResponse || typeof lastResponse !== "object") return null;
-    const exitCode = Number.isFinite(lastResponse.exitCode) ? Number(lastResponse.exitCode) : null;
-    const ok = exitCode === 0 && !String(lastResponse.error || "").trim();
-    if (!ok) return null;
-    const ids = orderedGraphNodes(parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph)
-      .map((node) => String(node.id || ""))
-      .filter(Boolean);
-    if (!ids.length) return null;
-    return Object.fromEntries(ids.map((id) => [id, "completed"]));
-  }, [sandboxRow, orchestrationGraph]);
+    const orderedNodes = orderedGraphNodes(parseOrchestrationGraph(orchestrationGraph) || orchestrationGraph)
+      .map((node) => ({ id: String(node?.id || ""), type: String(node?.type || "") }))
+      .filter((node) => node.id);
+    if (!orderedNodes.length) return null;
+    const map = deriveOrchestrationNodeRunStatuses(orderedNodes, lastResponse, { running });
+    return Object.keys(map).length ? map : null;
+  }, [sandboxRow, orchestrationGraph, running]);
   const hasGraphValue = (value) => Boolean(parseOrchestrationGraph(value));
   const effectiveFieldName = hasGraphValue(sandboxRow?.[fieldName])
     ? fieldName
