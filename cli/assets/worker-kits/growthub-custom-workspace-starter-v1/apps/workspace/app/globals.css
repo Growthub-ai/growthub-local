@@ -9416,10 +9416,14 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .wm-detail-cta { margin: 0 12px 12px; width: calc(100% - 24px); justify-content: center; }
 
 /* Per-node run-status pill on the Workflow Canvas — docked outside the node's
-   top-right corner. Driven by the live swarm stream + persisted projection. */
+   top-right corner. Driven by the general orchestration stream
+   (orchestration.node.* deltas) + the persisted nodeTrace; clickable to open
+   the Live Runs trace. */
 .dm-orchestration-node { position: relative; overflow: visible; }
 .dm-orchestration-canvas__step { overflow: visible; }
-.dm-orchestration-node__status { position: absolute; top: -10px; right: 10px; z-index: 3; height: 19px; padding: 0 7px; background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.14); }
+.dm-orchestration-node__status { position: absolute; top: -10px; right: 10px; z-index: 3; height: 19px; padding: 0 7px; border: 0; background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.14); cursor: pointer; font: inherit; }
+.dm-orchestration-node__status:hover { box-shadow: 0 2px 6px rgba(20,28,46,.2); }
+.dm-orchestration-node__status:focus-visible { outline: 2px solid var(--dm-accent); outline-offset: 1px; }
 
 /* ── Table empty / no-results state (P1) ──────────────────────────────── */
 .dm-db-empty-row td { padding: 0 !important; background: var(--dm-surface) !important; cursor: default !important; }

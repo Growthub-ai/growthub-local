@@ -128,6 +128,7 @@ export function OrchestrationGraphCanvas({
   runStatus,
   runMessage,
   nodeStatuses,
+  onNodeStatusClick,
   statusLabel = "Draft",
 }) {
   const parsed = useMemo(() => parseOrchestrationGraph(graph) || graph, [graph]);
@@ -305,10 +306,15 @@ export function OrchestrationGraphCanvas({
                 }}
               >
                 {nodeStatusChip && (
-                  <span className={`dm-status-chip ${nodeStatusChip.cls} dm-orchestration-node__status`}>
+                  <button
+                    type="button"
+                    className={`dm-status-chip ${nodeStatusChip.cls} dm-orchestration-node__status`}
+                    title={`${nodeStatusChip.label} — open run trace`}
+                    onClick={(event) => { event.stopPropagation(); onNodeStatusClick?.(node); }}
+                  >
                     <span className="dm-status-dot" aria-hidden="true" />
                     {nodeStatusChip.label}
-                  </span>
+                  </button>
                 )}
                 <span className="dm-orchestration-node__icon" aria-hidden="true">
                   <Icon size={14} />

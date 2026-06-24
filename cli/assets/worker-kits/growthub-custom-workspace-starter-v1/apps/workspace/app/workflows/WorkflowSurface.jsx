@@ -1097,6 +1097,7 @@ export default function WorkflowSurface() {
                       }}
                       onConnectorAction={handleConnectorAction}
                       nodeStatuses={runNodeStatuses}
+                      onNodeStatusClick={(node) => { setSelectedNodeId(String(node?.id || "")); openTraceMode(); }}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
                     />
                     {nextNodeId && (
