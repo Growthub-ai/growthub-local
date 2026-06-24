@@ -18,8 +18,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Maximize2, Search, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, Maximize2, Search, X, ZoomIn, ZoomOut } from "lucide-react";
 
 import { buildWorkspaceMetadataStore } from "@/lib/workspace-metadata-store";
 import { buildWorkspaceMetadataGraph } from "@/lib/workspace-metadata-graph";
@@ -243,6 +244,9 @@ export function WorkspaceDataModelCanvas() {
   return (
     <div className="wm-shell">
       <div className="wm-toolbar">
+        <Link className="wm-back-link" href="/workspace-lens" aria-label="Back to Workspace Lens">
+          <ArrowLeft size={16} aria-hidden="true" />
+        </Link>
         <div>
           <h1>Workspace Map</h1>
           <span className="wm-sub">
