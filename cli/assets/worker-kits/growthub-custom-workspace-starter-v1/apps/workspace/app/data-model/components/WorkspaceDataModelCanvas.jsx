@@ -334,7 +334,7 @@ export function WorkspaceDataModelCanvas() {
               <svg className="wm-edge" width={width} height={height} style={{ left: 0, top: 0 }}>
                 <defs>
                   <marker id="wm-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse">
-                    <path d="M0,0 L6,3 L0,6 Z" fill="#cbd5e1" />
+                    <path className="wm-arrow-head" d="M0,0 L6,3 L0,6 Z" />
                   </marker>
                 </defs>
                 {edges.map((edge) => {
