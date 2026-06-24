@@ -413,6 +413,11 @@ function buildRunResponse({
   if (result && typeof result === "object" && Array.isArray(result.logTree)) {
     base.logTree = result.logTree;
   }
+  // Per-node orchestration execution trace (general pipeline, not swarm) so the
+  // Workflow Canvas can settle per-node status from the persisted record.
+  if (result && typeof result === "object" && Array.isArray(result.nodeTrace)) {
+    base.nodeTrace = result.nodeTrace;
+  }
   base.exports = {
     available: ["download-json", "copy-output", "download-stdout", "download-stderr", "download-log-node"],
     external: []

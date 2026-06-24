@@ -8977,10 +8977,14 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-lens-surface { width: 100%; padding: 0; background: #f7f7f8; overflow-y: auto; overflow-x: hidden; }
 .workspace-lens-shell { width: 100%; max-width: none; margin: 0; padding: 24px 28px 32px; }
 .workspace-lens-locked { border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; padding: 28px; max-width: 560px; margin: 48px auto; display: flex; flex-direction: column; gap: 8px; }
-.workspace-lens-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.workspace-lens-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.workspace-lens-head > div { min-width: 0; }
 .workspace-lens-title { font-size: 18px; font-weight: 600; color: #111827; margin: 0; }
 .workspace-lens-subtitle { font-size: 13px; color: #6b7280; margin: 4px 0 0; }
-.workspace-lens-score { font-size: 12px; color: #4b5563; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
+.workspace-lens-map-link { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 34px; border: 1px solid #d8dee8; border-radius: 8px; background: #ffffff; color: #111827; padding: 0 12px; text-decoration: none; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); }
+.workspace-lens-map-link:hover { background: #f9fafb; border-color: #cfd7e3; color: #111827; }
+.workspace-lens-map-link:focus-visible { outline: 2px solid #bfdbfe; outline-offset: 2px; }
+.workspace-lens-map-link svg { color: #4b5563; flex-shrink: 0; }
 .workspace-lens-controls.workspace-builder-filterbar { margin: 0 0 14px; border: 1px solid #e8edf3; border-radius: 8px; background: #fff; }
 .workspace-lens-filters.workspace-builder-filterbar__segments { max-width: 100%; overflow-x: auto; }
 .workspace-lens-filter { white-space: nowrap; }
@@ -9034,11 +9038,16 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .workspace-lens-action-menu button:hover,
 .workspace-lens-action-menu a:hover { background: #f3f4f6; }
 @media (max-width: 1100px) {
+  .workspace-lens-head { align-items: flex-start; }
   .workspace-lens-control-grid { grid-template-columns: 1fr; }
   .workspace-lens-branch-row { grid-template-columns: 1fr; align-items: flex-start; padding: 10px 12px; gap: 8px; }
   .workspace-lens-branch-actions { justify-content: flex-start; flex-wrap: wrap; }
   .workspace-lens-branch-summary,
   .workspace-lens-branch-next { margin-left: 22px; }
+}
+@media (max-width: 640px) {
+  .workspace-lens-head { flex-direction: column; }
+  .workspace-lens-map-link { align-self: stretch; }
 }
 .workspace-lens-stream { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .workspace-lens-card { border: 1px solid #e8edf3; border-radius: 10px; background: #fff; padding: 12px 14px; }
@@ -9261,3 +9270,180 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-swarm-expand-head { justify-content: flex-start; gap: 8px; }
 .dm-swarm-expand-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
 .dm-swarm-expand-body .dm-helper-toolcall-json { max-height: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   SaaS facelift layer — Attio-inspired polish (v0.14.8)
+   Additive only. Refines existing dm-* light-theme primitives via the
+   cascade (equal specificity, later wins) and introduces the shared
+   vocabulary consumed by the table, drawer, Workspace Map, and run-status
+   work. No new theme, no token renames — existing classes keep working.
+   ──────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Calm, unified surface system for the light data-model surfaces. */
+  --dm-line: #e7eaee;          /* default hairline border */
+  --dm-line-soft: #f0f2f5;     /* inner cell / row separators */
+  --dm-surface: #ffffff;
+  --dm-surface-soft: #fafbfc;  /* headers, toolbars, footers */
+  --dm-hover: #f6f8fa;         /* calm row/control hover */
+  --dm-ink: #1f2733;           /* primary text */
+  --dm-muted: #6b7686;         /* secondary text */
+  --dm-faint: #9aa4b2;         /* tertiary / placeholder */
+  --dm-accent: #4f6bed;        /* single accent — active states only */
+  --dm-accent-soft: #eef1fe;   /* accent background wash */
+  --dm-accent-line: #c9d3fb;   /* accent border */
+  --dm-radius: 8px;
+  --dm-radius-sm: 6px;
+  --dm-radius-lg: 12px;
+  --dm-shadow-pop: 0 12px 32px rgba(20, 28, 46, 0.12), 0 2px 6px rgba(20, 28, 46, 0.06);
+  --dm-ok: #16a34a;
+  --dm-ok-soft: #f0fdf4;
+  --dm-ok-line: #bbf7d0;
+  --dm-bad: #dc2626;
+  --dm-bad-soft: #fef2f2;
+  --dm-bad-line: #fecaca;
+  --dm-warn: #d97706;
+  --dm-warn-soft: #fffbeb;
+  --dm-warn-line: #fde68a;
+  --dm-run: #4f6bed;
+  --dm-run-soft: #eef1fe;
+  --dm-run-line: #c9d3fb;
+}
+
+/* ── Toolbar + buttons: softer borders, unified radius/hover ───────────── */
+.dm-db-toolbar { border-bottom-color: var(--dm-line); }
+.dm-btn-ghost { border-radius: var(--dm-radius-sm); border-color: var(--dm-line); color: var(--dm-muted); }
+.dm-btn-ghost:hover { background: var(--dm-hover); border-color: #d3d9e0; color: var(--dm-ink); }
+.dm-btn-ghost.is-active { background: var(--dm-accent-soft); border-color: var(--dm-accent-line); color: var(--dm-accent); }
+.dm-btn-outline { border-radius: var(--dm-radius-sm); border-color: var(--dm-line); }
+.dm-btn-primary-sm { border-radius: var(--dm-radius-sm); }
+
+/* ── Compact search field for the table toolbar (P1) ──────────────────── */
+.dm-toolbar-search { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--dm-line); border-radius: var(--dm-radius-sm); background: var(--dm-surface); color: var(--dm-faint); transition: border-color .12s, box-shadow .12s; }
+.dm-toolbar-search:focus-within { border-color: var(--dm-accent-line); box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.dm-toolbar-search input { border: 0; outline: 0; background: transparent; font: inherit; font-size: 12px; color: var(--dm-ink); width: 150px; }
+.dm-toolbar-search input::placeholder { color: var(--dm-faint); }
+.dm-toolbar-count { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--dm-surface-soft); border: 1px solid var(--dm-line); color: var(--dm-muted); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.dm-toolbar-divider { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--dm-line); }
+
+/* ── Filter / sort pill chips: calmer, clearer active state ───────────── */
+.dm-filter-chip { border-radius: var(--dm-radius-sm); border-color: var(--dm-accent-line); background: var(--dm-accent-soft); color: var(--dm-accent); font-weight: 600; transition: background .12s, border-color .12s; }
+.dm-filter-chip:hover { background: #e4e9fd; }
+.dm-filter-chip-count { margin-left: 1px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: var(--dm-accent); color: #fff; font-size: 10px; font-weight: 700; }
+.dm-selection-count { border-color: var(--dm-line); background: var(--dm-surface); color: var(--dm-muted); }
+
+/* ── Grid: calmer hairlines + hover, refined sticky header ────────────── */
+.dm-db-grid-wrap { border-color: var(--dm-line); border-radius: var(--dm-radius); }
+.dm-db-grid th { background: var(--dm-surface-soft); color: var(--dm-muted); border-bottom-color: var(--dm-line); border-right-color: var(--dm-line-soft); letter-spacing: .01em; }
+.dm-db-grid td { border-bottom-color: var(--dm-line-soft); border-right-color: var(--dm-line-soft); }
+.dm-db-grid tbody tr:hover td { background: var(--dm-hover); }
+.dm-db-grid tbody tr.selected td { background: var(--dm-accent-soft); box-shadow: inset 2px 0 0 var(--dm-accent); }
+.dm-db-field-type { background: var(--dm-surface-soft); color: var(--dm-faint); border-radius: 5px; }
+
+/* ── Object sidebar: calmer active state (less heavy than solid black) ── */
+.dm-obj-row { border-radius: var(--dm-radius-sm); }
+.dm-obj-row:hover { background: var(--dm-hover); }
+.dm-obj-row.active { background: var(--dm-accent-soft); color: var(--dm-accent); font-weight: 600; }
+.dm-obj-row.active .dm-obj-icon { color: var(--dm-accent); }
+.dm-obj-row.active .dm-badge { background: rgba(79,107,237,.12); color: var(--dm-accent); border-color: var(--dm-accent-line); }
+/* Record count on the live object picker rows (P2). The picker — not the
+   legacy ObjectSidebar — is the rendered object nav. */
+.dm-picker-meta { margin-left: auto; flex: 0 0 auto; color: var(--dm-faint); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.dm-picker-item.active .dm-picker-meta { color: var(--dm-muted); font-weight: 500; }
+
+/* ── Badges: thinner, calmer ──────────────────────────────────────────── */
+.dm-badge { border-radius: 5px; border-color: var(--dm-line); }
+
+/* ════ Live status chips — shared by StatusPill + run-status work (P4) ══ */
+.dm-status-chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border: 1px solid var(--dm-line); border-radius: 999px; background: var(--dm-surface-soft); color: var(--dm-muted); font-size: 11px; font-weight: 650; line-height: 1; white-space: nowrap; }
+.dm-status-chip > .dm-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dm-faint); flex: 0 0 auto; }
+.dm-status-chip.is-ok { border-color: var(--dm-ok-line); background: var(--dm-ok-soft); color: #166534; }
+.dm-status-chip.is-ok > .dm-status-dot { background: var(--dm-ok); }
+.dm-status-chip.is-bad { border-color: var(--dm-bad-line); background: var(--dm-bad-soft); color: #991b1b; }
+.dm-status-chip.is-bad > .dm-status-dot { background: var(--dm-bad); }
+.dm-status-chip.is-warn { border-color: var(--dm-warn-line); background: var(--dm-warn-soft); color: #92400e; }
+.dm-status-chip.is-warn > .dm-status-dot { background: var(--dm-warn); }
+.dm-status-chip.is-running { border-color: var(--dm-run-line); background: var(--dm-run-soft); color: #3a4fc0; }
+.dm-status-chip.is-running > .dm-status-dot { background: var(--dm-run); animation: dm-pulse 1.15s ease-in-out infinite; }
+.dm-status-chip.is-waiting > .dm-status-dot { background: var(--dm-faint); }
+@keyframes dm-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.72); } }
+@media (prefers-reduced-motion: reduce) { .dm-status-chip.is-running > .dm-status-dot { animation: none; } }
+
+/* ── Toggle switch — upgrades ToggleField's checkbox into a real switch ─ */
+.dm-switch-row { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 13px; color: var(--dm-ink); }
+.dm-switch-row.is-disabled { opacity: .55; cursor: not-allowed; }
+.dm-switch-row > input { position: absolute; opacity: 0; width: 0; height: 0; }
+.dm-switch-track { position: relative; flex: 0 0 auto; width: 34px; height: 20px; margin-top: 1px; border-radius: 999px; background: #d7dce3; transition: background .14s; }
+.dm-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(20,28,46,.28); transition: transform .14s; }
+.dm-switch-row > input:checked + .dm-switch-track { background: var(--dm-accent); }
+.dm-switch-row > input:checked + .dm-switch-track::after { transform: translateX(14px); }
+.dm-switch-row > input:focus-visible + .dm-switch-track { box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.dm-switch-label { display: grid; gap: 2px; }
+.dm-switch-desc { color: var(--dm-muted); font-size: 12px; }
+
+/* ════ Workspace Map / Data Model Canvas (P3) ═════════════════════════════
+   Schema node-canvas reusing the dotted-grid + card language. Read-only. */
+.wm-shell { display: flex; flex-direction: column; min-height: 0; flex: 1; background: var(--dm-surface); }
+.wm-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--dm-line); background: var(--dm-surface); flex-wrap: wrap; }
+.wm-back-link { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--dm-line); border-radius: 8px; background: var(--dm-surface); color: var(--dm-muted); text-decoration: none; box-shadow: 0 1px 2px rgba(20,28,46,.04); flex: 0 0 auto; }
+.wm-back-link:hover { background: var(--dm-hover); color: var(--dm-ink); border-color: #cfd6df; }
+.wm-back-link:focus-visible { outline: 2px solid #bfdbfe; outline-offset: 2px; }
+.wm-toolbar h1 { margin: 0; font-size: 15px; font-weight: 650; color: var(--dm-ink); }
+.wm-toolbar .wm-sub { font-size: 12px; color: var(--dm-faint); }
+.wm-legend { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+.wm-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dm-muted); }
+.wm-legend-swatch { width: 9px; height: 9px; border-radius: 3px; }
+.wm-canvas { position: relative; flex: 1; min-height: 460px; overflow: auto; background-color: #fbfcfd; background-image: radial-gradient(circle, #dde2e8 1px, transparent 1px); background-size: 22px 22px; cursor: grab; touch-action: none; }
+.wm-canvas.is-panning { cursor: grabbing; user-select: none; }
+.wm-canvas-inner { position: relative; }
+.wm-canvas-scale { position: relative; transform-origin: 0 0; }
+.wm-edge { position: absolute; pointer-events: none; }
+.wm-edge path { stroke: #cbd5e1; stroke-width: 1.25; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.wm-edge .wm-arrow-head { fill: #cbd5e1; stroke: none; }
+.wm-edge path.is-source { stroke: #cbd5e1; }
+.wm-edge path.is-warn { stroke: var(--dm-warn-line); stroke-dasharray: 4 4; }
+.wm-node { position: absolute; width: 220px; border: 1px solid var(--dm-line); border-radius: var(--dm-radius-lg); background: var(--dm-surface); box-shadow: 0 1px 2px rgba(20,28,46,.06); cursor: pointer; transition: box-shadow .12s, border-color .12s, transform .12s; text-align: left; padding: 0; font: inherit; }
+.wm-node:hover { border-color: #cfd6df; box-shadow: var(--dm-shadow-pop); transform: translateY(-1px); }
+.wm-node.is-selected { border-color: var(--dm-accent); box-shadow: 0 0 0 3px var(--dm-accent-soft); }
+.wm-node-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--dm-line-soft); }
+.wm-node-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; background: var(--dm-surface-soft); color: var(--dm-muted); flex: 0 0 auto; }
+.wm-node-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; color: var(--dm-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-node-body { padding: 9px 12px; display: grid; gap: 4px; }
+.wm-node-stat { font-size: 12px; color: var(--dm-muted); font-variant-numeric: tabular-nums; }
+.wm-node-fields { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.wm-node-field { font-size: 10.5px; color: var(--dm-faint); background: var(--dm-surface-soft); border: 1px solid var(--dm-line-soft); border-radius: 4px; padding: 1px 5px; }
+.wm-node-warn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dm-warn); }
+.wm-zoom { position: sticky; bottom: 12px; left: 12px; display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--dm-line); border-radius: 999px; background: var(--dm-surface); box-shadow: var(--dm-shadow-pop); width: fit-content; margin: 12px; }
+.wm-zoom button { width: 28px; height: 28px; border: 0; border-radius: 999px; background: transparent; color: var(--dm-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.wm-zoom button:hover { background: var(--dm-hover); color: var(--dm-ink); }
+.wm-empty { display: grid; place-items: center; gap: 8px; padding: 64px 24px; text-align: center; color: var(--dm-muted); }
+.wm-empty strong { font-size: 16px; color: var(--dm-ink); }
+/* Read-only selected-node detail panel — additive, docks top-right of canvas. */
+.wm-detail { position: sticky; top: 12px; margin: -12px 12px 12px auto; float: right; width: 248px; background: var(--dm-surface); border: 1px solid var(--dm-line); border-radius: var(--dm-radius-lg); box-shadow: var(--dm-shadow-pop); z-index: 5; }
+.wm-detail-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--dm-line-soft); }
+.wm-detail-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; color: var(--dm-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-detail-close { width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--dm-faint); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.wm-detail-close:hover { background: var(--dm-hover); color: var(--dm-ink); }
+.wm-detail-meta { margin: 0; padding: 10px 12px; display: grid; gap: 6px; }
+.wm-detail-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.wm-detail-row dt { color: var(--dm-faint); }
+.wm-detail-row dd { margin: 0; color: var(--dm-ink); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-detail-cta { margin: 0 12px 12px; width: calc(100% - 24px); justify-content: center; }
+
+/* Per-node run-status pill on the Workflow Canvas — docked outside the node's
+   top-right corner. Driven by the general orchestration stream
+   (orchestration.node.* deltas) + the persisted nodeTrace; clickable to open
+   the Live Runs trace. */
+.dm-orchestration-node { position: relative; overflow: visible; }
+.dm-orchestration-canvas__step { overflow: visible; }
+.dm-orchestration-node__status { position: absolute; top: -18px; right: 14px; z-index: 3; height: 16px; min-height: 16px; padding: 0 6px; gap: 3px; border: 1px solid var(--dm-line); background: var(--dm-surface); box-shadow: 0 1px 3px rgba(20,28,46,.12); cursor: pointer; font-size: 9.5px; font-weight: 700; line-height: 1; transform: translateY(-2px); }
+.dm-orchestration-node__status > .dm-status-dot { width: 5px; height: 5px; }
+.dm-orchestration-node__status:hover { box-shadow: 0 2px 6px rgba(20,28,46,.2); }
+.dm-orchestration-node__status:focus-visible { outline: 2px solid var(--dm-accent); outline-offset: 1px; }
+
+/* ── Table empty / no-results state (P1) ──────────────────────────────── */
+.dm-db-empty-row td { padding: 0 !important; background: var(--dm-surface) !important; cursor: default !important; }
+.dm-db-empty-row:hover td { background: var(--dm-surface) !important; }
+.dm-db-empty-state { display: grid; justify-items: center; gap: 6px; padding: 48px 24px; text-align: center; }
+.dm-db-empty-state strong { font-size: 15px; color: var(--dm-ink); font-weight: 650; }
+.dm-db-empty-state span { font-size: 12.5px; color: var(--dm-muted); max-width: 360px; }
+.dm-db-empty-actions { display: inline-flex; gap: 8px; margin-top: 8px; }

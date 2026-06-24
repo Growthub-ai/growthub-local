@@ -2390,6 +2390,7 @@ function DataModelTableSurface({
   const [selectMenuOpen, setSelectMenuOpen] = useState(false);
   const [pageSize, setPageSize] = useState(15);
   const [pageIndex, setPageIndex] = useState(0);
+  const [search, setSearch] = useState("");
   const fieldInputRef = useRef(null);
   const selectedOriginalIndex = selectedRecordIndex ?? localSelectedOriginalIndex;
 
@@ -2407,6 +2408,7 @@ function DataModelTableSurface({
     setLastSelectedRowIndex(null);
     setSelectMenuOpen(false);
     setPageIndex(0);
+    setSearch("");
   }, [table.id]);
 
   useEffect(() => {
@@ -2428,7 +2430,14 @@ function DataModelTableSurface({
   const visibleColumns = useMemo(() => orderedColumns.filter((column) => !settings.hidden.includes(column)), [orderedColumns, settings.hidden]);
   const rowEntries = useMemo(() => {
     const indexed = (table.rows || []).map((row, originalIndex) => ({ row, originalIndex }));
-    const filtered = indexed.filter((entry) => rowMatchesFilter(entry.row, settings.filter));
+    const needle = search.trim().toLowerCase();
+    const filtered = indexed.filter((entry) => {
+      if (!rowMatchesFilter(entry.row, settings.filter)) return false;
+      if (!needle) return true;
+      // Quick search across the visible columns only — additive to the
+      // column-level filter clauses, never replaces them.
+      return visibleColumns.some((column) => String(entry.row?.[column] ?? "").toLowerCase().includes(needle));
+    });
     if (!settings.sort?.length) return filtered;
     const clauses = settings.sort;
     return [...filtered].sort((left, right) => {
@@ -2439,7 +2448,7 @@ function DataModelTableSurface({
       }
       return 0;
     });
-  }, [table.rows, settings]);
+  }, [table.rows, settings, search, visibleColumns]);
   const selectedRowCount = selectedRows.size;
   const pageCount = Math.max(1, Math.ceil(rowEntries.length / pageSize));
   const safePageIndex = Math.min(pageIndex, pageCount - 1);
@@ -2491,7 +2500,7 @@ function DataModelTableSurface({
     setSelectedRow(null);
     setLastSelectedRowIndex(null);
     setSelectMenuOpen(false);
-  }, [settings.filter, settings.sort, pageSize]);
+  }, [settings.filter, settings.sort, pageSize, search]);
 
   function commitField() {
     const name = fieldName.trim();
@@ -2690,9 +2699,25 @@ function DataModelTableSurface({
           ))}
         </div>
         <div className="dm-records-actions">
+          <label className="dm-toolbar-search">
+            <Search size={13} aria-hidden="true" />
+            <input
+              value={search}
+              placeholder="Search records"
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label={`Search ${table.label || "records"}`}
+            />
+          </label>
+          <span className="dm-toolbar-count">
+            {(search.trim() || settings.filter?.clauses?.length)
+              ? `${rowEntries.length} of ${pluralize(table.rows?.length || 0, "record")}`
+              : pluralize(table.rows?.length || 0, "record")}
+          </span>
+          <span className="dm-toolbar-divider" aria-hidden="true" />
           <span className="dm-filter-anchor">
-            <button type="button" className="dm-btn-ghost" onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>
+            <button type="button" className={`dm-btn-ghost${settings.filter?.clauses?.length ? " is-active" : ""}`} onClick={() => setFilterTarget((current) => current === "toolbar" ? "" : "toolbar")}>
               <Filter size={13} />Filter
+              {settings.filter?.clauses?.length > 0 && <span className="dm-filter-chip-count">{settings.filter.clauses.length}</span>}
             </button>
             {filterTarget === "toolbar" && (
               <div className="dm-filter-popover dm-filter-popover-toolbar">
@@ -2843,6 +2868,35 @@ function DataModelTableSurface({
             </tr>
           </thead>
           <tbody>
+            {rowEntries.length === 0 && (
+              <tr className="dm-db-empty-row">
+                <td colSpan={visibleColumns.length + 1 + (table.mutable ? 1 : 0)}>
+                  <div className="dm-db-empty-state">
+                    {(search.trim() || settings.filter?.clauses?.length) ? (
+                      <>
+                        <strong>No records match</strong>
+                        <span>Try a different search or clear your filters.</span>
+                        <div className="dm-db-empty-actions">
+                          {search.trim() && <button type="button" className="dm-btn-outline" onClick={() => setSearch("")}>Clear search</button>}
+                          {settings.filter?.clauses?.length > 0 && <button type="button" className="dm-btn-outline" onClick={resetView}>Reset view</button>}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong>No records yet</strong>
+                        <span>{table.mutable ? "Add your first row or import a CSV to start using this object." : "Records resolve at runtime for this live-backed object."}</span>
+                        {table.mutable && (
+                          <div className="dm-db-empty-actions">
+                            <button type="button" className="dm-btn-primary-sm" disabled={saving} onClick={() => onSave((config) => addTableRow(config, table))}><Plus size={13} />Add record</button>
+                            <button type="button" className="dm-btn-outline" onClick={() => setCsvOpen(true)}><Upload size={13} />Import CSV</button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
             {pageEntries.map(({ row, originalIndex }, rowIndex) => {
               const visibleIndex = pageStart + rowIndex;
               const displayIndex = visibleIndex + 1;

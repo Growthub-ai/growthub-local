@@ -2,16 +2,17 @@
 
 export function ToggleField({ checked, disabled, label, onChange, description }) {
   return (
-    <label className="dm-check-row">
+    <label className={`dm-switch-row${disabled ? " is-disabled" : ""}`}>
       <input
         type="checkbox"
         checked={Boolean(checked)}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
-      <span>
-        {label}
-        {description && <span className="dm-cell-empty" style={{ display: "block", marginTop: 4 }}>{description}</span>}
+      <span className="dm-switch-track" aria-hidden="true" />
+      <span className="dm-switch-label">
+        <span>{label}</span>
+        {description && <span className="dm-switch-desc">{description}</span>}
       </span>
     </label>
   );

@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Check, Copy, Eye, GitBranch, MoreVertical, Search } from "lucide-react";
+import { Activity, BarChart3, Check, Copy, Eye, GitBranch, MoreVertical, Search, Share2 } from "lucide-react";
 import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
 import { WorkspaceContributionGraph } from "./WorkspaceContributionGraph.jsx";
 import { WorkspaceLensWalkthrough } from "./WorkspaceLensWalkthrough.jsx";
@@ -244,9 +244,10 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
           <h1 className="workspace-lens-title">Workspace Lens</h1>
           <p className="workspace-lens-subtitle">Live derived state for this workspace.</p>
         </div>
-        <p className="workspace-lens-score" aria-label="Workspace lens summary">
-          {counts.total} lenses · {counts.ready} ready · {counts.blocked} blocked · {counts.assignable} agent-assignable
-        </p>
+        <Link className="workspace-lens-map-link" href="/workspace-map" aria-label="Open Workspace Map">
+          <Share2 size={15} aria-hidden="true" />
+          <span>Workspace Map</span>
+        </Link>
       </header>
 
       {showWalk ? (

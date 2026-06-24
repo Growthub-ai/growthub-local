@@ -133,7 +133,7 @@ Use profile selection to choose the governed workspace export path before deeper
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.6` and the guided installer `@growthub/create-growthub-local@0.14.6`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
+Growthub Local currently ships `@growthub/cli@0.14.8` and the guided installer `@growthub/create-growthub-local@0.14.8`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
