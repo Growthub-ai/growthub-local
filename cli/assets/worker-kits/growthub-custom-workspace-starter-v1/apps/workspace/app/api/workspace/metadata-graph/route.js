@@ -39,6 +39,8 @@ import { deriveBlastRadius } from "@/lib/workspace-metadata-impact";
 import { deriveStaleSurfaces } from "@/lib/workspace-stale-surfaces";
 import { deriveWorkflowImpact } from "@/lib/workspace-workflow-impact";
 import { deriveProvenanceLineage } from "@/lib/workspace-provenance-lineage";
+import { deriveAppReadiness } from "@/lib/workspace-app-readiness";
+import { deriveMinimalChangeSet } from "@/lib/workspace-minimal-changeset";
 
 const ENVELOPE_KIND = "growthub-workspace-metadata-graph-v1";
 const ENVELOPE_VERSION = 1;
@@ -140,14 +142,17 @@ async function GET(request) {
   // the unconditional freshness baseline (timestamps already in the graph);
   // `impact` and `lineage` are computed on demand for one node.
   let staleSurfaces = null;
+  let readiness = null;
   let impact = null;
   let lineage = null;
   try {
     staleSurfaces = deriveStaleSurfaces(graph);
+    readiness = deriveAppReadiness(graph);
     if (impactId) {
       impact = {
         blastRadius: deriveBlastRadius(graph, impactId),
-        workflowImpact: deriveWorkflowImpact(graph, impactId)
+        workflowImpact: deriveWorkflowImpact(graph, impactId),
+        minimalChangeSet: deriveMinimalChangeSet(graph, impactId)
       };
     }
     if (lineageId) {
@@ -198,6 +203,7 @@ async function GET(request) {
     },
     // Causal intelligence layer — read-only derivations over `graph` above.
     staleSurfaces,
+    readiness,
     ...(impact ? { impact } : {}),
     ...(lineage ? { lineage } : {}),
     warnings,
@@ -212,7 +218,9 @@ async function GET(request) {
         "deriveStaleSurfaces",
         "deriveBlastRadius",
         "deriveWorkflowImpact",
-        "deriveProvenanceLineage"
+        "deriveProvenanceLineage",
+        "deriveAppReadiness",
+        "deriveMinimalChangeSet"
       ],
       helperOnly: [
         "selectWidgetRequiredFields",
