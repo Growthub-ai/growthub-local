@@ -94,6 +94,29 @@ function readJsonSafe(filePath: string): { value: Record<string, unknown> | null
 }
 
 /**
+ * Build the metadata store + graph from an IN-MEMORY config. Pure — no disk,
+ * no network. Used both by `buildGraphFromFork` and by the MCP `preflight_patch`
+ * tool (which merges a proposed patch over the config before re-deriving).
+ */
+export async function buildGraphFromConfig(
+  workspaceConfig: Record<string, unknown>,
+  workspaceSourceRecords: Record<string, unknown> = {},
+): Promise<{ store: WorkspaceGraphBundle["store"]; graph: WorkspaceGraphBundle["graph"]; warnings: string[] }> {
+  const warnings: string[] = [];
+  const storeMod = await importKitLib<{ buildWorkspaceMetadataStore: (input: unknown) => WorkspaceGraphBundle["store"] }>(
+    "workspace-metadata-store.js",
+  );
+  const graphMod = await importKitLib<{ buildWorkspaceMetadataGraph: (store: unknown) => WorkspaceGraphBundle["graph"] }>(
+    "workspace-metadata-graph.js",
+  );
+  const store = storeMod.buildWorkspaceMetadataStore({ workspaceConfig, workspaceSourceRecords });
+  if (Array.isArray(store.warnings)) warnings.push(...store.warnings);
+  const graph = graphMod.buildWorkspaceMetadataGraph(store);
+  if (Array.isArray(graph.warnings)) warnings.push(...graph.warnings);
+  return { store, graph, warnings };
+}
+
+/**
  * Build the metadata graph from an offline fork. Pure read — never writes.
  */
 export async function buildGraphFromFork(forkPath: string): Promise<WorkspaceGraphBundle> {
@@ -115,19 +138,32 @@ export async function buildGraphFromFork(forkPath: string): Promise<WorkspaceGra
     else warnings.push(`source-records sidecar parse error: ${sidecarError}`);
   }
 
-  const storeMod = await importKitLib<{ buildWorkspaceMetadataStore: (input: unknown) => WorkspaceGraphBundle["store"] }>(
-    "workspace-metadata-store.js",
-  );
-  const graphMod = await importKitLib<{ buildWorkspaceMetadataGraph: (store: unknown) => WorkspaceGraphBundle["graph"] }>(
-    "workspace-metadata-graph.js",
-  );
+  const built = await buildGraphFromConfig(workspaceConfig, workspaceSourceRecords);
+  warnings.push(...built.warnings);
+  return { configPath, workspaceConfig, store: built.store, graph: built.graph, warnings };
+}
 
-  const store = storeMod.buildWorkspaceMetadataStore({ workspaceConfig, workspaceSourceRecords });
-  if (Array.isArray(store.warnings)) warnings.push(...store.warnings);
-  const graph = graphMod.buildWorkspaceMetadataGraph(store);
-  if (Array.isArray(graph.warnings)) warnings.push(...graph.warnings);
-
-  return { configPath, workspaceConfig, store, graph, warnings };
+/**
+ * Graph traversal helpers + read-only selectors from the kit, for the MCP
+ * descriptive/drill-down tools (a widget's required fields, a workflow node's
+ * input schema, a run's lineage, single-hop dependents/dependencies).
+ */
+export async function loadGraphHelpers(): Promise<{
+  findDependents: (graph: unknown, id: string) => Array<{ node: GraphNode; relation: string }>;
+  findDependencies: (graph: unknown, id: string) => Array<{ node: GraphNode; relation: string }>;
+  selectWidgetRequiredFields: (store: unknown, widgetId: string) => Record<string, unknown>;
+  selectWorkflowNodeInputSchema: (store: unknown, nodeMetadataId: string) => Record<string, unknown>;
+  selectRunLineage: (store: unknown, runId: string) => Record<string, unknown> | null;
+}> {
+  const graphMod = await importKitLib<Record<string, never>>("workspace-metadata-graph.js");
+  const selMod = await importKitLib<Record<string, never>>("workspace-metadata-selectors.js");
+  return {
+    findDependents: graphMod.findDependents,
+    findDependencies: graphMod.findDependencies,
+    selectWidgetRequiredFields: selMod.selectWidgetRequiredFields,
+    selectWorkflowNodeInputSchema: selMod.selectWorkflowNodeInputSchema,
+    selectRunLineage: selMod.selectRunLineage,
+  };
 }
 
 /** The derivers, lazily imported once. */
