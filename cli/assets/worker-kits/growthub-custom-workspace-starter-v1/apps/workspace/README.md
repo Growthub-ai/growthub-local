@@ -18,7 +18,7 @@ It intentionally depends on adapter contracts:
 - `NANGO_ENVIRONMENT` (default `dev`)
 - `NANGO_MODE` (`cloud` | `self-hosted`, default `cloud`)
 
-The Growthub local-first operator shell remains at `../../studio`.
+This `apps/workspace` app is the only bundled app surface; the legacy `studio/` Vite shell has been removed. It is the governed control plane and audit surface — non-technical users do not operate it directly; an agent operates the Workspace on their behalf through the governed routes (see the workspace `SKILL.md` operating-role contract), while super admins use this app for inspection, proof, and governance.
 
 Settings exposes two universal integration lanes:
 

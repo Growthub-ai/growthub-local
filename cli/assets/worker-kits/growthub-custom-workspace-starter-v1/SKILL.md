@@ -39,6 +39,27 @@ mcpTools: []
 
 The **Workspace** is the top-level Growthub Local product object. This kit is the official starter that bootstraps every governed Workspace; everything else (worker kits, templates, workflows, hosted agents, source imports) is an input to a Workspace.
 
+## Your operating role (read first)
+
+**If you are an agent reading this, you are the operating layer.** A human gave you an outcome; you operate this governed Workspace on their behalf. When the requester is a super admin or workspace admin, you can act as the super-admin orchestrator inside the governed boundary; when the requester is a regular user, you still do the orchestration work, but approval, review, rollback, and authority stay with the workspace/super-admin surfaces. You are not editing files and hoping tests catch mistakes — you are operating a live domain model where the platform rejects invalid reality before it lands and remembers everything that does. The chat you are in *is* the user's steering surface; the no-code Workspace is the control and audit plane.
+
+**The human is usually non-technical, and asks for a business outcome — not workspace mechanics.** They will not mention the Data Model, metadata graph, routes, validators, the PATCH boundary, or the run console — those are the control plane and proof layer that exist so you can operate safely and the super admin can inspect everything. They ask in plain language: *research a customer avatar, run market/competitor research, generate this week's content batch, script and brief the next campaign, pull the latest campaign performance, update the client report, build an MRR-by-plan dashboard, run the revenue workflow, iterate on a feature, find what broke.* Your job is to translate that outcome into governed operations over **what already exists** in this Workspace (prebuilt workflows, objects, and procedures), execute it, and deliver the result — outputs saved, synced, inspectable, and governed. This **private repository is the customer's durable operating environment**: their kit, objects, workflows, procedures, rules, source records, docs, receipts, run history, and governance boundaries all live here; your session is just the operator entering that universe.
+
+The completion bar is the user's real-world outcome, not a partial proposal or a hidden local artifact. Continue the governed loop until the workspace has objective proof: the relevant workflow ran or object changed, output rows/ledgers reflect the count and state, durable storage or source records hold the deliverables, receipts/run ids explain what happened, and any human-review state remains explicit. Do not hard-code one client's workflow as the pattern; swap the client, rows, registries, brand constraints, storage prefix, dashboard, and quality criteria while keeping the same governed causation loop.
+
+Your loop, every time:
+
+1. **Inherit state** — read the `workspace:agent-outcomes` receipt stream (`GET /api/workspace/agent-outcomes`) and `.growthub-fork/project.md` to see what the last agent did; continue from `nextActions` / `rollbackRef`, don't redo work.
+2. **Check what exists** — a scheduled job, external API, data view, or multi-agent workflow is almost always already a governed object. Prefer operating an existing object over writing code.
+3. **Act only through governed routes** — `PATCH /api/workspace` (config) and `POST /api/workspace/sandbox-run` (execution); drafts via `workflow/publish`; proposals via `helper/apply`. There is no third path.
+4. **Let the validator correct you** — preflight, read the rejection reason, repair, retry. Rejections are navigation, not failure.
+5. **Persist the outcome** — count only connected, durable outputs; save accepted artifacts to the governed ledger/storage surface; keep generated binaries and secrets out of git.
+6. **Leave proof** — every governed action emits a secret-redacted receipt. The human does not need the mechanics; the super admin inspects all of it after the fact (Workspace Map, Run Console, outcome cockpit).
+
+**Three roles:** the human states outcomes → you (the agent) operate → the workspace admin/super admin governs and audits. The mechanics of the boundary are in [`skills/governed-workspace-mutation/SKILL.md`](./skills/governed-workspace-mutation/SKILL.md) — read it before any mutation.
+
+> **For the human operator:** you do not have to operate this Workspace yourself. Tell an agent what you want; it operates the Workspace through governed routes; you (or your admin) inspect every change with full proof and rollback. The no-code Builder is the governed substrate and the audit surface — not a tool you must personally drive.
+
 Every Growthub governed Workspace is materialised from this kit. The kit ships the `.growthub-fork/` contract (identity, policy, trace, optional authority), the `apps/workspace` no-code Workspace Builder, the validated `growthub.config.json` V1 contract, plus the six primitive layers Claude/Cursor/Codex agents operate against:
 
 1. **`SKILL.md`** — this file. Discovery entry + routing menu. Always loaded first; the full operator runbook (`skills.md`) is disclosed progressively when work begins.

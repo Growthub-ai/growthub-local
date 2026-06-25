@@ -265,10 +265,11 @@ function parseInstallCommand(html: string): {
 }
 
 function parseSectionValue(html: string, label: string): string | undefined {
-  if (label === "GitHub Stars") {
-    const starMatch = html.match(/GitHub Stars<\/span><\/div><div[^>]*>[\s\S]*?<span>([^<]+)<\/span>/);
-    return starMatch?.[1] ? cleanText(starMatch[1]) : undefined;
-  }
+  // The general regex below handles every metric section, including
+  // "GitHub Stars", whose value ships directly in the <div> (no inner <span>)
+  // on the live page. A previous GitHub-Stars-only special case required a
+  // <span> wrapper the page does not emit, so it captured the next section's
+  // label ("First Seen") instead of the value — removed.
   const regex = new RegExp(
     `${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/span><\\/div><div[^>]*>[\\s\\S]*?(?:<span>)?([^<]+)(?:<\\/span>)?[\\s\\S]*?<\\/div>`,
   );

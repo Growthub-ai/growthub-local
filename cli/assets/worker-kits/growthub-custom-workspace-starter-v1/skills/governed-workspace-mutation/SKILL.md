@@ -161,6 +161,17 @@ Every mutation lane emits the **same canonical receipt** (`@growthub/api-contrac
 
 **First-session continuation:** before acting, read the stream. Cite `receiptId`s, continue from `nextActions`, and inspect `rollbackRef` (previous version + delta index for publishes; sourceId for runs) before redoing anyone's work. Rejections come with `repairPlan[]` — follow it instead of retrying variations.
 
+**Outcome completion:** for regular user work, do not stop at "proposal created" or "run attempted" when the requested business outcome requires deliverables. The completion proof must live in governed state: successful run ids or source ids, connected output rows, durable storage/reference paths where applicable, review status, and a concise documentation/receipt trail. Failed or partial rows stay as evidence, but they do not count as delivered outputs. Human-review states remain explicit; an agent can execute and persist, but it does not silently approve or launch work that requires workspace-admin or super-admin judgment.
+
+## Intelligence layer — graph + blast radius (read-only)
+
+After a mutation lands, the platform **understands** it. Two read-only, secret-free surfaces:
+
+- **World model** — `GET /api/workspace/metadata-graph` projects the live config + source-record sidecar into a typed node/edge graph (`buildWorkspaceMetadataStore → buildWorkspaceMetadataGraph`, `lib/workspace-metadata-graph.js`); the Workspace Map (`/workspace-map`) renders the same graph. Every governed object becomes nodes; every dependency a deterministic edge (`bindsToObject`, `usesField`, `containsWidget`, `readsObject`/`writesObject`, `materializes`, …). A landed mutation expands this graph — the workspace knows more about itself than before.
+- **Causal impact** — the graph ships single-hop `findDependents(graph, nodeId)`; the transitive closure (the real blast radius) is `deriveBlastRadius(graph, nodeId)` in `lib/workspace-metadata-impact.js` — a deterministic, cycle-safe BFS of incoming edges returning every reachable dependent with hop distance and via-relation. This is the difference between *"what directly uses this field?"* (catalog) and *"if this field changes, which widgets, dashboards, and delivered workspace kits go stale?"* (intelligence). Verified live: editing `customers.mrr` → widget (`usesField`) → dashboard (`containsWidget`) → workerKit (`materializes`). Conceptual map: `docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md` in the source repo.
+
+Both are derived projections — they own no state and mutate nothing. Use them to size a change *before* you PATCH (pair with `patch/preflight`) and to explain what an accepted mutation affects.
+
 ## Applications as governed entities (Control Plane V1)
 
 Applications are first-class governed objects, not loose files. The source of truth is the `workspace-app-registry` Data Model object (objectType `"app-surface"`, preset ships in the Data Model) — one row per application, referencing its governed parts by id: `dashboardIds`, `workflowRefs` (`objectId:RowName`), `dataSourceIds`, `registryIds`. Rows mutate through the normal PATCH lane (policy + receipts apply).

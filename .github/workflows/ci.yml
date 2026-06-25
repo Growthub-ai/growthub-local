@@ -43,6 +43,9 @@ jobs:
           node scripts/check-resolver-registry.mjs
           node --test scripts/unit-resolver-registry.test.mjs
 
+      - name: Validate workspace metadata blast-radius deriver
+        run: node --test scripts/unit-workspace-metadata-impact.test.mjs
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 
