@@ -480,6 +480,26 @@ export function buildMcpTools(): McpTool[] {
       inputSchema: NODE_ARG,
       handler: (ctx, args) => ctx.d.deriveMinimalChangeSet(ctx.graph, String(args?.nodeId ?? "")),
     },
+    {
+      name: "agent_connector_bindings", layer: ANALYTICS_LAYER.intelligence,
+      description: "Causation-based, agent-AGNOSTIC view of which connectors bind to which agent host (local agent CLI or AI-agent account) — visible + configurable into governed steps. Reads SHAPE only (provider/tools/scopes); auth stays in the agent account, nothing stored. Pass the connectors the calling agent sees as `reports` (run-time self-report); `serveTime` optional.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          reports: { type: "array", description: "raw connector listing the agent sees now (run-time self-report)", items: { type: "object" } },
+          serveTime: { type: "array", description: "optional serve-time introspection listing", items: { type: "object" } },
+          surface: { type: "string", enum: ["local-agent", "ai-agent"], description: "which agent surface these came from" },
+          host: { type: "string", description: "agent host slug (claude, codex, cursor, …)" },
+        },
+      },
+      handler: (ctx, args) => {
+        const surface = String(args?.surface ?? "local-agent");
+        const host = String(args?.host ?? "unknown");
+        const runtime = ctx.d.normalizeConnectorReport(args?.reports, { surface, host });
+        const serveTime = ctx.d.normalizeConnectorReport(args?.serveTime, { surface, host });
+        return ctx.d.deriveConnectorBindings(ctx.graph, { serveTime, runtime });
+      },
+    },
     // ── Layer 2 — Law (dry-run only) ─────────────────────────────────────────
     {
       name: "preflight_patch", layer: ANALYTICS_LAYER.law,

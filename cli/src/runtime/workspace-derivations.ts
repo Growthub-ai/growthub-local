@@ -175,8 +175,10 @@ export async function loadDerivers(): Promise<{
   deriveAppReadiness: (graph: unknown, opts?: unknown) => Record<string, unknown>;
   deriveContractCompliance: (mutation: unknown, contract?: unknown, evidence?: unknown) => Record<string, unknown>;
   deriveMinimalChangeSet: (graph: unknown, id: string, opts?: unknown) => Record<string, unknown>;
+  deriveConnectorBindings: (graph: unknown, sources?: unknown) => Record<string, unknown>;
+  normalizeConnectorReport: (rawList: unknown, ctx?: unknown) => unknown[];
 }> {
-  const [impact, stale, workflow, lineage, readiness, compliance, changeset] = await Promise.all([
+  const [impact, stale, workflow, lineage, readiness, compliance, changeset, connectors] = await Promise.all([
     importKitLib<{ deriveBlastRadius: never }>("workspace-metadata-impact.js"),
     importKitLib<{ deriveStaleSurfaces: never }>("workspace-stale-surfaces.js"),
     importKitLib<{ deriveWorkflowImpact: never }>("workspace-workflow-impact.js"),
@@ -184,6 +186,7 @@ export async function loadDerivers(): Promise<{
     importKitLib<{ deriveAppReadiness: never }>("workspace-app-readiness.js"),
     importKitLib<{ deriveContractCompliance: never }>("workspace-contract-compliance.js"),
     importKitLib<{ deriveMinimalChangeSet: never }>("workspace-minimal-changeset.js"),
+    importKitLib<{ deriveConnectorBindings: never }>("workspace-connector-bindings.js"),
   ]);
   return {
     deriveBlastRadius: (impact as Record<string, never>).deriveBlastRadius,
@@ -193,6 +196,8 @@ export async function loadDerivers(): Promise<{
     deriveAppReadiness: (readiness as Record<string, never>).deriveAppReadiness,
     deriveContractCompliance: (compliance as Record<string, never>).deriveContractCompliance,
     deriveMinimalChangeSet: (changeset as Record<string, never>).deriveMinimalChangeSet,
+    deriveConnectorBindings: (connectors as Record<string, never>).deriveConnectorBindings,
+    normalizeConnectorReport: (connectors as Record<string, never>).normalizeConnectorReport,
   };
 }
 
