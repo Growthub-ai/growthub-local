@@ -241,7 +241,37 @@ governed mutation + transitive impact intelligence.
 
 ---
 
-## 8. Anti-patterns
+## 8. The three user layers — experience separated from governance
+
+The three-layer *control plane* (§1) exists to serve a three-layer *user model*. The product
+abstraction: **the workspace UI is the governed control plane, not necessarily the primary user
+experience.** The end user can simply state an outcome; Growthub Local is the invisible operating
+system underneath. Chat is the steering wheel; the governed workspace is the engine room.
+
+| Layer | Who | What they touch | Shipped substrate |
+|---|---|---|---|
+| **Outcome** | End user | A request: *"pull the latest ad metrics"*, *"generate this week's client report"*, *"why is the MRR widget stale?"* They never need the Data Model, Workspace Map, PATCH policy, or blast radius. | The helper engine: `POST /api/workspace/helper/query` → `apply` turns NL into governed proposals (8 intents); the in-app `Ask helper` pill + Chat tab (`app/workspace-rail.jsx`) and the `growthub workspace helper` CLI are conversational front doors over it. |
+| **Operating** | Agent | The actual work — knows which objects exist, which workflows are approved, which routes are legal, what rejected and why, what the downstream impact is. Behaves like a *trained operator inside a prebuilt business system*, not a generic assistant. | The governed routes + the SKILL card contract; the **app-scoped assignment packet** (`buildAppAssignmentPacket`, `lib/workspace-app-registry.js`) hands the agent `objectRefs`, `allowedRoutes`, `forbiddenActions`, `expectedEvidence` — its operating envelope. Finished workflows and procedures are already encoded as governed objects, so the agent starts trained, not from scratch. |
+| **Governance** | Super admin | Full visibility + control after the fact: topology, run proof, receipts, patch history, blast radius, failed attempts, next actions, rollback. | Workspace Map (`metadata-graph`), Run Console (`orchestration-run-console.js`), the Agent Outcome cockpit (`GET /api/workspace/agent-outcomes` — receipts + governance summary + `rollbackRef`), and the Fleet lens. |
+
+**Why this is the wedge.** Most no-code tools force the end user to become a builder. Here the
+no-code workspace exists, but the end user does not have to operate it — it is the admin-visible
+substrate and the agent-visible operating environment. A normal chat agent's work disappears into
+the conversation; here **the conversation is an operating layer over persistent governed state**:
+the agent changes the workspace, the workspace remembers, the workflows run again, the proof
+remains, and the admin can inspect everything. The result: user-friendly interaction + agent-powered
+execution + admin-grade governance + reproducible workflows + inspectable proof — a **governed,
+agent-operated workspace OS**, not a chat product.
+
+**The honest gap (a surface, not a backend).** Every layer's *engine* ships today — the helper
+propose→apply loop, the governed routes, the assignment packet, the outcome cockpit. What is not
+yet a first-class surface is a **dedicated end-user conversational front door distinct from the
+admin workspace UI**: today the chat/helper lives *inside* the builder (`workspace-rail.jsx`) or in
+the CLI. Closing that gap is a thin presentation layer over the existing helper engine and governed
+routes — it adds no new governance, no new mutation path. This is consistent with the whole
+roadmap's thesis: the backends are built; the frontier is surfacing.
+
+## 9. Anti-patterns
 
 - Treating validator rejections as failures instead of navigation — the corrected body is always
   reachable from the reason.
