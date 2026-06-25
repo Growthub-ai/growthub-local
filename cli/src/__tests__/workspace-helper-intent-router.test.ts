@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { inferIntentFromPrompt, VALID_INTENT_VALUES } from "../../assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-helper.js";
 
 describe("inferIntentFromPrompt", () => {
-  it("returns the seven canonical intents", () => {
+  it("returns the eight canonical intents", () => {
     expect(VALID_INTENT_VALUES).toEqual([
       "build_dashboard",
       "create_widget",
@@ -19,6 +19,7 @@ describe("inferIntentFromPrompt", () => {
       "edit_view",
       "repair",
       "explain",
+      "swarm",
     ]);
   });
 

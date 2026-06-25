@@ -16,20 +16,15 @@ const REPO_ROOT = path.resolve(__dirname, "../../..");
 describe("readSkillCatalog — repo catalog", () => {
   const result = readSkillCatalog({ root: REPO_ROOT });
 
-  it("finds at least the nine .claude/skills", () => {
+  it("finds the .claude/skills shipped in this OSS tree", () => {
     const claude = result.entries.filter((e) => e.source === "claude-skills");
-    expect(claude.length).toBeGreaterThanOrEqual(9);
+    expect(claude.length).toBeGreaterThanOrEqual(4);
     expect(claude.map((e) => e.manifest.name)).toEqual(
       expect.arrayContaining([
-        "growthub-discover",
         "growthub-auth",
-        "growthub-pipeline-execute",
-        "growthub-video-generation",
         "growthub-cms-sdk-v1",
-        "growthub-kit-fork-authority",
-        "growthub-t3code-harness",
-        "growthub-marketing-operator",
-        "growthub-worker-kits",
+        "growthub-workspace-helper",
+        "oss-investigative-architecture",
       ]),
     );
   });

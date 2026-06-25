@@ -143,7 +143,10 @@ describe("buildSourceImportPlan", () => {
       security: cautionReport(),
     });
     const pending = pendingConfirmations(plan);
-    expect(pending).toContain(".source-staging");
+    // Caution-risk github imports still require explicit confirmation; the
+    // pending confirmation is keyed by its label ("security-report"), not the
+    // staging targetPath.
+    expect(pending).toContain("security-report");
   });
 
   it("ALWAYS requires confirmation for skill imports — even with a safe report", () => {

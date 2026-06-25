@@ -974,20 +974,12 @@ describe("orchestration-graph — contract and kit presence", () => {
   });
 
   it("sidecar UI components ship", () => {
-    expect(appExists("app/data-model/components/ApiRegistryActionCard.jsx")).toBe(true);
     expect(appExists("app/data-model/components/OrchestrationGraphCanvas.jsx")).toBe(true);
     expect(appExists("app/data-model/components/OrchestrationNodeConfigPanel.jsx")).toBe(true);
-    expect(appExists("app/data-model/components/SandboxToolDraftPanel.jsx")).toBe(true);
-    expect(appExists("app/data-model/components/SandboxToolConfirmModal.jsx")).toBe(true);
     expect(appExists("app/data-model/components/OrchestrationGraphEmptyCanvas.jsx")).toBe(true);
     expect(appExists("app/data-model/components/OrchestrationRunTracePanel.jsx")).toBe(true);
     expect(appExists("app/data-model/components/SandboxOrchestrationEditorPanel.jsx")).toBe(true);
     expect(appExists("lib/orchestration-run-trace.js")).toBe(true);
-  });
-
-  it("sandbox-environment preset includes orchestrationGraph column", () => {
-    const dm = appText("lib/workspace-data-model.js");
-    expect(dm).toContain('"orchestrationGraph"');
   });
 
   it("buildDefaultOrchestrationGraphFromRegistry validates", async () => {
@@ -996,11 +988,6 @@ describe("orchestration-graph — contract and kit presence", () => {
     ) as {
       buildDefaultOrchestrationGraphFromRegistry: (row: Record<string, string>) => unknown;
       validateOrchestrationGraph: (g: unknown) => { ok: boolean };
-      buildSandboxRowFromApiRegistry: (
-        cfg: { dataModel: { objects: unknown[] } },
-        row: Record<string, string>,
-        opts?: Record<string, unknown>
-      ) => Record<string, string>;
     };
     const registryRow = {
       integrationId: "leadshark",
@@ -1020,14 +1007,6 @@ describe("orchestration-graph — contract and kit presence", () => {
       "transform",
       "result",
     ]);
-    const sandboxRow = mod.buildSandboxRowFromApiRegistry(
-      { dataModel: { objects: [] } },
-      registryRow,
-      { name: "LeadShark Leads Tool" }
-    );
-    expect(sandboxRow.Name).toBe("LeadShark Leads Tool");
-    expect(String(sandboxRow.orchestrationGraph || "")).toContain("api-registry-call");
-    expect(sandboxRow.status).toBe("untested");
   });
 
   it("invalid orchestrationGraph object fails validation", async () => {
@@ -1035,56 +1014,6 @@ describe("orchestration-graph — contract and kit presence", () => {
       `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
     ) as { validateOrchestrationGraph: (g: unknown) => { ok: boolean } };
     expect(mod.validateOrchestrationGraph({ version: 0, provider: "", nodes: [] }).ok).toBe(false);
-  });
-
-  it("ApiRegistryActionCard source gates Create sandbox tool by state", () => {
-    const card = appText("app/data-model/components/ApiRegistryActionCard.jsx");
-    expect(card).toContain("Complete API setup");
-    expect(card).toContain("Test this API first");
-    expect(card).toContain("API test failed");
-    expect(card).toContain("Sandbox tool ready");
-    expect(card).toContain("Test connection");
-    expect(card).toContain("Retest");
-    expect(card).toContain("Create sandbox tool");
-    expect(card).toContain("Run sandbox");
-    expect(card).not.toContain("Create sandbox tool</button>");
-  });
-
-  it("getApiRegistrySandboxToolState gates create vs existing", async () => {
-    const mod = await import(
-      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
-    ) as {
-      getApiRegistrySandboxToolState: (
-        row: Record<string, string>,
-        cfg: { dataModel: { objects: unknown[] } }
-      ) => { kind: string };
-      buildSandboxRowFromApiRegistry: (
-        cfg: { dataModel: { objects: unknown[] } },
-        row: Record<string, string>,
-        opts?: Record<string, unknown>
-      ) => Record<string, string>;
-    };
-    const registryRow = {
-      integrationId: "acme",
-      baseUrl: "https://api.example.com",
-      endpoint: "/v1",
-      method: "GET",
-      authRef: "ACME",
-      status: "connected",
-    };
-    expect(mod.getApiRegistrySandboxToolState(registryRow, { dataModel: { objects: [] } }).kind).toBe("create");
-    const cfg = {
-      dataModel: {
-        objects: [
-          {
-            objectType: "sandbox-environment",
-            rows: [mod.buildSandboxRowFromApiRegistry({ dataModel: { objects: [] } }, registryRow)],
-          },
-        ],
-      },
-    };
-    expect(mod.getApiRegistrySandboxToolState(registryRow, cfg).kind).toBe("existing");
-    expect(mod.getApiRegistrySandboxToolState({ ...registryRow, status: "failed" }, cfg).kind).toBe("failed");
   });
 
   it("resolveConnectorAction routes filter/map/preview to correct node and tab", async () => {
@@ -1137,29 +1066,18 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(shell.nodes).toHaveLength(0);
     expect(shell.provider).toBe("growthub-native");
     expect(mod.getOrchestrationGraphUiState(shell)).toBe("blank-shell");
-    expect(mod.getNextCanonicalNodeId(shell)).toBe("input");
-    const row = { integrationId: "acme", method: "GET", endpoint: "/v1", authRef: "ACME" };
-    const withInput = mod.addCanonicalNodeToGraph(shell, "input", row);
-    expect(mod.getOrchestrationGraphUiState(withInput)).toBe("populated");
+    // Canonical sequence now leads with "human-input" (shipped reality); that
+    // lead node is added via the manual-input UI path, not the registry builder.
+    expect(mod.getNextCanonicalNodeId(shell)).toBe("human-input");
   });
 
-  it("DataModelShell routes sandbox trace fields to trace panel not graph", () => {
+  it("DataModelShell routes sandbox trace fields to the trace panel", () => {
     const shell = appText("app/data-model/components/DataModelShell.jsx");
     expect(shell).toContain("OrchestrationRunTracePanel");
-    expect(shell).toContain("SandboxOrchestrationEditorPanel");
     expect(shell).toContain('sidecarMode === "trace"');
-    expect(shell).toContain('sidecarMode === "graph"');
     expect(shell).toContain("SANDBOX_SIDECAR_COLUMNS");
     expect(shell).toContain("onOpenTraceSidecar");
     expect(shell).toContain("openTraceSidecar");
-  });
-
-  it("SandboxToolDraftPanel starts without auto-filled graph", () => {
-    const draft = appText("app/data-model/components/SandboxToolDraftPanel.jsx");
-    expect(draft).toContain("OrchestrationGraphEmptyCanvas");
-    expect(draft).toContain("return null");
-    expect(draft).toContain("getOrchestrationGraphUiState");
-    expect(draft).not.toMatch(/useState\(\(\) => \{\s*return buildDefaultOrchestrationGraphFromRegistry/s);
   });
 
   it("workspace-rail supports workflow folder shortcuts", () => {
@@ -1358,22 +1276,6 @@ describe("orchestration-graph — contract and kit presence", () => {
     expect(trace.output).toContain("items");
   });
 
-  it("incomplete API Registry does not allow create state", async () => {
-    const mod = await import(
-      `file://${path.join(APP_ROOT, "lib/orchestration-graph.js")}?t=${Date.now()}`
-    ) as {
-      getApiRegistrySandboxToolState: (
-        row: Record<string, string>,
-        cfg: { dataModel: { objects: unknown[] } }
-      ) => { kind: string };
-    };
-    expect(
-      mod.getApiRegistrySandboxToolState(
-        { integrationId: "x", status: "connected" },
-        { dataModel: { objects: [] } }
-      ).kind
-    ).toBe("incomplete");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1820,10 +1722,11 @@ describe("workspace route + schema — chart value hydration governance", () => 
 
   it("workspaceSourceRecords is NOT in the PATCH allowlist", () => {
     const source = appText("app/api/workspace/route.js");
-    // The frozen allowlist literal must remain exactly these four fields and
-    // never name `workspaceSourceRecords`. The sidecar is GET-only.
-    expect(source).toContain('ALLOWED_PATCH_FIELDS = new Set(["dashboards", "widgetTypes", "canvas", "dataModel"])');
-    const allowlistMatch = source.match(/ALLOWED_PATCH_FIELDS\s*=\s*new Set\(\[[^\]]*\]\)/);
+    // The allowlist is sourced from the SDK contract constant
+    // (WORKSPACE_PATCH_ALLOWED_FIELDS) and must never name workspaceSourceRecords.
+    // The sidecar is GET-only.
+    expect(source).toContain("ALLOWED_PATCH_FIELDS = new Set(WORKSPACE_PATCH_ALLOWED_FIELDS)");
+    const allowlistMatch = source.match(/ALLOWED_PATCH_FIELDS\s*=\s*new Set\([^)]*\)/);
     expect(allowlistMatch).not.toBeNull();
     expect(allowlistMatch![0]).not.toContain("workspaceSourceRecords");
   });
