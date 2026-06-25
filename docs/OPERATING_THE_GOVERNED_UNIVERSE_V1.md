@@ -271,7 +271,33 @@ the CLI. Closing that gap is a thin presentation layer over the existing helper 
 routes — it adds no new governance, no new mutation path. This is consistent with the whole
 roadmap's thesis: the backends are built; the frontier is surfacing.
 
-## 9. Anti-patterns
+## 9. The entry contract — the agent in the chat is the surface
+
+There is no end-user chat UI to build. The surface already exists: **a human in a chat with a
+capable agent (Claude Code, Codex, any harness)**, and that agent — operating as the **super-admin
+orchestrator** — *is* the end-user experience. What makes this work for agents and humans who were
+never briefed is not a new front-end; it is making the operating model **self-evident on first
+contact**.
+
+So the artifact is a **role-first entry contract**, placed at the canonical discovery points, that
+declares the role before the mechanics:
+
+- **Agent first contact** — the workspace root `SKILL.md` (`growthub-custom-workspace-starter-v1/SKILL.md`)
+  opens with *"Your operating role (read first)"*: you are the operating layer; by default the
+  super-admin orchestrator; here is the inherit-state → check-what-exists → act-through-governed-routes
+  → let-the-validator-correct-you → leave-proof loop; the human is upstream, the admin is downstream.
+  The mechanical traversal and the mutation card hang off that role statement.
+- **Human first contact** — the same file carries a short *"For the human operator"* note: you don't
+  operate the Workspace; you tell an agent the outcome; you (or your admin) inspect the proof. The
+  no-code Builder is the governed substrate and audit surface, not a tool you must drive.
+
+This is additive documentation only — it changes nothing about how the Workspace runs. It assembles
+discovery primitives that already exist (`SKILL.md`, `project.md`, the assignment packet, the
+`agent-outcomes` stream, this doc) into a single role-first front door, so the orchestrator identity
+— *the agent in the chat is the operator* — is the first thing read, not something each operator has
+to re-explain.
+
+## 10. Anti-patterns
 
 - Treating validator rejections as failures instead of navigation — the corrected body is always
   reachable from the reason.
