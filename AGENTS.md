@@ -195,6 +195,8 @@ An agent does not edit this workspace from the outside — it operates **inside*
 
 The **Intelligence layer** is `GET /api/workspace/metadata-graph` (typed node/edge world model, also rendered by the Workspace Map) plus `deriveBlastRadius` (`apps/workspace/lib/workspace-metadata-impact.js`) — the transitive reverse-dependency closure over the graph's single-hop `findDependents`. Validate workspace changes by exporting and operating the live runtime (`node scripts/export-seed-workspace.mjs`), not by hand-built fixtures.
 
+For user-facing work inside a private governed repo, preserve the role split: the regular user states the real-world business outcome, the agent orchestrates the existing governed lanes until there is durable proof of completion, and the workspace/super-admin surfaces retain review, approval, rollback, and audit authority. Do not make the user drive Data Model mechanics, route names, validators, or ledgers; those are the control plane the agent uses. Do not auto-approve human-review states, launch outputs, or bypass a governed lane just because the agent completed execution.
+
 ## Workspace Helper
 
 The workspace helper is a governed, workspace-grammar-aware planning engine that drafts proposals for dashboards, widgets, API registry rows, and custom business objects. It operates in propose-only mode — mutations require an explicit apply step.

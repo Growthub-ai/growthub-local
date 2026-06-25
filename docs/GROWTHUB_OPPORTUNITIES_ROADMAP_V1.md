@@ -143,6 +143,8 @@ eyes** — so the CLI weapons that prove the thesis (B1–B4) ship `--json` firs
 
 > **Status: shipped + validated live.** `lib/workspace-metadata-impact.js` (`deriveBlastRadius`) + 8 unit tests (CI-wired). Proven on a booted runtime through the governed PATCH boundary — `customers.mrr → widget → dashboard → workerKit`. The operate-the-universe loop, three-layer control-plane model, and banked proof artifact are documented in [`OPERATING_THE_GOVERNED_UNIVERSE_V1.md`](./OPERATING_THE_GOVERNED_UNIVERSE_V1.md).
 
+> **Governance-plane reality check:** the same operating model has also been proven in long-running private workspace work where the agent reused existing workflow rows, registries, output ledgers, receipts, durable storage, review states, documentation snapshots, and git artifact policy to complete a real business objective. That proof does not add a new roadmap item; it strengthens the roadmap's constraint: every future "weapon" must reduce inference by exposing governed causation, not by creating a parallel lane.
+
 
 A single **pure** function over the existing metadata graph: given a node id (object / field /
 widget / workflow node), return the downstream set that goes stale, by reverse-walking the edge

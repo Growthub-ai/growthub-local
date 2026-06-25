@@ -53,6 +53,11 @@ rejects invalid reality before it lands**, and then **expands its own world mode
 did land**. The validator is not a safety bolt-on — it is the *law of physics* of the universe,
 and its rejections are navigation, not noise.
 
+The same model applies to long-running business work. The workspace constrains the agent's
+action space, evidence model, recovery path, output count, durable storage destination, review
+state, and final documentation. The agent is not supposed to infer all of that from a prompt.
+It follows governed causation until objective proof exists.
+
 ---
 
 ## 2. The behavioral loop (the closed control loop)
@@ -71,9 +76,10 @@ intent
   → receipt emitted into workspace:agent-outcomes (what changed, next actions, rollback)
 ```
 
-The agent is a **bounded workspace constructor**: it creates governed objects, binds UI to real
-fields, obeys policy/schema/layout constraints, repairs failed mutations from structured
-feedback, grows the live topology, and then asks the graph what changed. Mistakes become
+The agent is a **bounded workspace constructor and operator**: it creates governed objects, binds
+UI to real fields, executes approved workflow lanes, obeys policy/schema/layout constraints,
+repairs failed mutations from structured feedback, persists deliverables into governed ledgers or
+storage surfaces, grows the live topology, and then asks the graph what changed. Mistakes become
 structured feedback instead of corrupted state — which is exactly how you get safe autonomous
 behavior.
 
@@ -279,21 +285,56 @@ the CLI. Closing that gap is a thin presentation layer over the existing helper 
 routes — it adds no new governance, no new mutation path. This is consistent with the whole
 roadmap's thesis: the backends are built; the frontier is surfacing.
 
-## 9. The entry contract — the agent in the chat is the surface
+## 9. Governance-plane proof for real-world outcomes
+
+The live proof is broader than the canonical PATCH/metadata-graph smoke. In private workspaces,
+the same governed universe has handled long-running, multi-step business production work where a
+regular user or super admin supplies an outcome and guardrails, then the agent follows workspace
+causation until durable proof exists.
+
+First-principles pattern:
+
+```
+human goal + guardrails
+  → live workspace state resolves the official lane
+  → registries/brand/data rows resolve valid context
+  → sandbox/workflow runs execute in bounded passes
+  → receipts and failed rows guide recovery
+  → output ledger determines the real completion count
+  → bytes/source records/storage prove durable deliverables
+  → review state stays explicit
+  → docs snapshot the reusable learning
+  → git keeps code and governance docs, not generated binaries or secrets
+```
+
+This is not a hard-coded creative workflow. Swap the client, object rows, API Registry rows,
+brand constraints, offer, dashboard, storage prefix, workflow row, target count, and quality
+criteria. Keep the causation loop unchanged: live state resolves what exists, the agent uses the
+official governed lane, output ledgers and receipts define progress, durable storage/source
+records define deliverables, and super-admin surfaces preserve review authority.
+
+The practical completion bar is not "the agent responded" or "a local file exists." The bar is:
+the requested real-world outcome is represented in governed state, failed attempts remain
+inspectable, successful outputs are connected and durable, review/approval is explicit, and a
+future agent can resume from receipts instead of rediscovering the task from chat.
+
+## 10. The entry contract — the agent in the chat is the surface
 
 There is no end-user chat UI to build. The surface already exists: **a human in a chat with a
 capable agent (Claude Code, Codex, any harness)**, and that agent — operating as the **super-admin
-orchestrator** — *is* the end-user experience. What makes this work for agents and humans who were
-never briefed is not a new front-end; it is making the operating model **self-evident on first
-contact**.
+orchestrator when authorized, and as the governed operator for regular users** — *is* the end-user
+experience. What makes this work for agents and humans who were never briefed is not a new
+front-end; it is making the operating model **self-evident on first contact**.
 
 So the artifact is a **role-first entry contract**, placed at the canonical discovery points, that
 declares the role before the mechanics:
 
 - **Agent first contact** — the workspace root `SKILL.md` (`growthub-custom-workspace-starter-v1/SKILL.md`)
-  opens with *"Your operating role (read first)"*: you are the operating layer; by default the
-  super-admin orchestrator; here is the inherit-state → check-what-exists → act-through-governed-routes
-  → let-the-validator-correct-you → leave-proof loop; the human is upstream, the admin is downstream.
+  opens with *"Your operating role (read first)"*: you are the operating layer; act as the
+  super-admin orchestrator only when authorized, otherwise operate inside existing governed
+  procedures for the regular user's outcome; here is the inherit-state → check-what-exists →
+  act-through-governed-routes → let-the-validator-correct-you → leave-proof loop; the human is
+  upstream, the admin is downstream.
   The mechanical traversal and the mutation card hang off that role statement.
 - **Human first contact** — the same file carries a short *"For the human operator"* note: you don't
   operate the Workspace; you tell an agent the outcome; you (or your admin) inspect the proof. The
@@ -305,7 +346,7 @@ discovery primitives that already exist (`SKILL.md`, `project.md`, the assignmen
 — *the agent in the chat is the operator* — is the first thing read, not something each operator has
 to re-explain.
 
-## 10. Anti-patterns
+## 11. Anti-patterns
 
 - Treating validator rejections as failures instead of navigation — the corrected body is always
   reachable from the reason.
@@ -318,4 +359,8 @@ to re-explain.
 - Validating only on a hand-built fixture when the live universe can be booted and operated.
 - Bypassing app scope, smuggling history into rows, or putting credential values in any body —
   all runtime-blocked (see the SKILL card anti-patterns).
+- Stopping after a partial run, a proposal, or a local artifact when the user asked for a real-world
+  outcome with durable outputs.
+- Auto-approving review states or launching outputs without the user's or workspace admin's explicit
+  authority.
 </content>
