@@ -35,9 +35,22 @@ function isConnected(status) {
   return s === "connected" || s === "ok" || s === "active" || s === "ready";
 }
 
-function isAuthed(status) {
+// Three-state auth: "authed" | "unauthed" | "unknown". Empty is UNKNOWN, never
+// silently "authed" — unknown auth must not pass as ready (review finding D).
+function authState(status) {
   const s = safeString(status).toLowerCase();
-  return s === "authed" || s === "authenticated" || s === "ok" || s === "connected" || s === "ready" || s === "";
+  if (["authed", "authenticated", "ok", "connected", "ready"].includes(s)) return "authed";
+  if (!s) return "unknown";
+  return "unauthed";
+}
+
+// A local / no-auth sandbox legitimately has no credential — an intentional
+// exception, not a silent default.
+function isNoAuthSandbox(summary) {
+  const locality = safeString(summary.runLocality).toLowerCase();
+  const adapter = safeString(summary.adapter).toLowerCase();
+  const provider = safeString(summary.authProvider).toLowerCase();
+  return locality === "local" || adapter.includes("local") || provider === "none" || provider === "local";
 }
 
 /**
@@ -94,13 +107,25 @@ function deriveAppReadiness(graph, options = {}) {
       }
     } else if (node.type === "sandbox") {
       counts.sandboxes += 1;
-      if (!isAuthed(s.authStatus)) {
+      const state = authState(s.authStatus);
+      const subject = node.label || node.id;
+      if (state === "authed" || isNoAuthSandbox(s)) {
+        // authed, or a deliberate local/no-auth sandbox — ready.
+      } else if (state === "unknown") {
+        issues.push({
+          severity: "warning",
+          code: "sandbox_auth_unknown",
+          subject,
+          message: `Sandbox "${subject}" has no auth status — cannot confirm it can run, and it is not marked local/no-auth.`,
+          nextAction: `Authenticate sandbox "${subject}", or mark it local/no-auth (runLocality: local) if it needs no credential.`
+        });
+      } else {
         issues.push({
           severity: "blocker",
           code: "sandbox_unauthenticated",
-          subject: node.label || node.id,
-          message: `Sandbox "${node.label || node.id}" auth status is ${safeString(s.authStatus) || "unknown"}.`,
-          nextAction: `Authenticate sandbox "${node.label || node.id}" before running.`
+          subject,
+          message: `Sandbox "${subject}" auth status is ${safeString(s.authStatus)}.`,
+          nextAction: `Authenticate sandbox "${subject}" before running.`
         });
       }
     } else if (node.type === "pipelineHealth") {

@@ -68,6 +68,28 @@ test("deriveAppReadiness: extraBlockers merge in (env-status / deploy signals)",
   assert.equal(out.blocking[0].code, "env_missing");
 });
 
+test("deriveAppReadiness: a sandbox with MISSING auth is not silently ready (review D)", () => {
+  const graph = { nodes: [node("sbx", "sandbox", "Mystery", { authStatus: "" })], edges: [] };
+  const out = deriveAppReadiness(graph);
+  // unknown auth → warning, not a clean ready and not a silent pass.
+  assert.ok(out.warnings.some((w) => w.code === "sandbox_auth_unknown"));
+  assert.ok(out.score < 100);
+});
+
+test("deriveAppReadiness: an explicitly local/no-auth sandbox is ready by design", () => {
+  const graph = { nodes: [node("sbx", "sandbox", "Local", { authStatus: "", runLocality: "local" })], edges: [] };
+  const out = deriveAppReadiness(graph);
+  assert.equal(out.ready, true);
+  assert.ok(!out.warnings.some((w) => w.code === "sandbox_auth_unknown"));
+});
+
+test("deriveAppReadiness: an explicitly unauthenticated sandbox blocks", () => {
+  const graph = { nodes: [node("sbx", "sandbox", "Stripe", { authStatus: "expired" })], edges: [] };
+  const out = deriveAppReadiness(graph);
+  assert.equal(out.ready, false);
+  assert.ok(out.blocking.some((b) => b.code === "sandbox_unauthenticated"));
+});
+
 test("deriveAppReadiness: malformed graph never throws", () => {
   assert.equal(deriveAppReadiness(null).ready, false);
 });

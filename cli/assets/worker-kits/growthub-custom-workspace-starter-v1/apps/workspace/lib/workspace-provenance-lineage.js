@@ -1,25 +1,29 @@
 /**
  * Growthub Workspace Provenance-Lineage V1 — bidirectional lineage deriver.
  *
- * The mirror twin of `deriveBlastRadius`. Blast radius walks INCOMING edges
- * (reverse closure) to answer "what depends on X?". Lineage exposes BOTH
- * transitive directions over the SAME edge taxonomy:
+ * The mirror twin of `deriveBlastRadius`. It exposes BOTH transitive directions
+ * over the SAME edge taxonomy, named to MATCH the graph's own helper contract
+ * (`findDependents` = incoming, `findDependencies` = outgoing) so an agent never
+ * mis-reads a consumer as a producer:
  *
- *   - ancestors   — transitive INCOMING closure: the nodes that reference,
- *                   produce, or contribute to this node's current state
- *                   (e.g. for an output artifact: the run that produced it, the
- *                   workflow that ran, the sandbox/agent host, the inputs it
- *                   consumed). This answers "what led to this?".
- *   - descendants — transitive OUTGOING closure: the nodes this one feeds or
- *                   depends on downstream. This answers "what does this reach?".
+ *   - dependents    — transitive INCOMING closure (generalises `findDependents`):
+ *                     the nodes that DEPEND ON this node — its consumers and the
+ *                     things impacted if it changes (e.g. a widget that binds an
+ *                     object is the object's dependent). "What depends on this?"
+ *   - dependencies  — transitive OUTGOING closure (generalises `findDependencies`):
+ *                     the nodes this one DEPENDS ON — what it is built from /
+ *                     reads (e.g. an object's source record). "What does this
+ *                     depend on?"
  *
- * It reuses the per-hop semantics of the shipped `findDependents` (incoming)
- * and `findDependencies` (outgoing) and generalises them to their transitive
- * closure with one bounded, cycle-safe, deterministic BFS — the same skeleton
- * the spine uses. No new graph, no new edges, no mutation, no secrets.
+ * `ancestors` / `descendants` are kept ONLY as backward-compatible aliases of
+ * `dependents` / `dependencies` respectively — they read intuitively for the
+ * run→artifact case but mislead for objects/widgets/dashboards, so prefer the
+ * canonical names. The `direction` option accepts `dependents` | `dependencies`
+ * | `both` (and the legacy `ancestors` | `descendants`).
  *
- * `selectRunLineage` is the flat, single-run ancestor of this module; this is
- * its transitive generalisation across every node type and the full edge set.
+ * One bounded, cycle-safe, deterministic BFS — the same skeleton the spine uses.
+ * No new graph, no new edges, no mutation, no secrets. `selectRunLineage` is the
+ * flat single-run ancestor of this module.
  */
 
 import { summarizeGraphNode } from "./workspace-metadata-graph.js";
@@ -101,26 +105,34 @@ function walk(adjacency, nodesById, originId, maxNodes) {
  * @param {object} graph a `buildWorkspaceMetadataGraph` envelope
  * @param {string} originId the metadataId to trace lineage for
  * @param {object} [options]
- * @param {"ancestors"|"descendants"|"both"} [options.direction="both"]
+ * @param {"dependents"|"dependencies"|"both"|"ancestors"|"descendants"} [options.direction="both"]
  * @param {number} [options.maxNodes=500] hard cap PER direction
- * @returns {object} `{ kind, version, origin, ancestors[], descendants[], byType, truncated, summary, warnings }`
+ * @returns {object} `{ kind, version, origin, direction, dependents[], dependencies[],
+ *   ancestors[] (alias of dependents), descendants[] (alias of dependencies),
+ *   byType, truncated, summary, warnings }`
  */
 function deriveProvenanceLineage(graph, originId, options = {}) {
   const maxNodes = Number.isFinite(options.maxNodes) && options.maxNodes > 0
     ? Math.floor(options.maxNodes)
     : DEFAULT_MAX_NODES;
-  const direction = ["ancestors", "descendants", "both"].includes(options.direction)
-    ? options.direction
-    : "both";
+  // Normalise the requested direction to the canonical names (legacy aliases
+  // ancestors→dependents, descendants→dependencies).
+  const requested = safeString(options.direction) || "both";
+  const direction = requested === "ancestors" ? "dependents"
+    : requested === "descendants" ? "dependencies"
+      : ["dependents", "dependencies", "both"].includes(requested) ? requested
+        : "both";
 
   const empty = (warning) => ({
     kind: PROVENANCE_KIND,
     version: PROVENANCE_VERSION,
     origin: null,
     direction,
+    dependents: [],
+    dependencies: [],
     ancestors: [],
     descendants: [],
-    byType: { ancestors: {}, descendants: {} },
+    byType: { dependents: {}, dependencies: {} },
     truncated: false,
     summary: "No lineage computed.",
     warnings: warning ? [warning] : []
@@ -136,18 +148,18 @@ function deriveProvenanceLineage(graph, originId, options = {}) {
   const originNode = nodesById.get(id);
   if (!originNode) return empty(`origin "${id}" not found in graph`);
 
-  let ancestors = [];
-  let descendants = [];
+  let dependents = [];
+  let dependencies = [];
   let truncated = false;
 
-  if (direction === "ancestors" || direction === "both") {
+  if (direction === "dependents" || direction === "both") {
     const res = walk(buildAdjacency(graph, "incoming"), nodesById, id, maxNodes);
-    ancestors = res.reached;
+    dependents = res.reached;
     truncated = truncated || res.truncated;
   }
-  if (direction === "descendants" || direction === "both") {
+  if (direction === "dependencies" || direction === "both") {
     const res = walk(buildAdjacency(graph, "outgoing"), nodesById, id, maxNodes);
-    descendants = res.reached;
+    dependencies = res.reached;
     truncated = truncated || res.truncated;
   }
 
@@ -162,29 +174,33 @@ function deriveProvenanceLineage(graph, originId, options = {}) {
     version: PROVENANCE_VERSION,
     origin: summarizeGraphNode(originNode),
     direction,
-    ancestors,
-    descendants,
-    byType: { ancestors: countByType(ancestors), descendants: countByType(descendants) },
+    // Canonical names — match findDependents (incoming) / findDependencies (outgoing).
+    dependents,
+    dependencies,
+    // Backward-compatible aliases (deprecated; can mislead for non-run nodes).
+    ancestors: dependents,
+    descendants: dependencies,
+    byType: { dependents: countByType(dependents), dependencies: countByType(dependencies) },
     truncated,
-    summary: summarizeLineage(originNode, ancestors, descendants, direction, truncated),
+    summary: summarizeLineage(originNode, dependents, dependencies, direction, truncated),
     warnings: []
   };
 }
 
-function summarizeLineage(originNode, ancestors, descendants, direction, truncated) {
+function summarizeLineage(originNode, dependents, dependencies, direction, truncated) {
   const label = originNode?.label || originNode?.id || "node";
   const tail = truncated ? " (truncated)" : "";
-  if (direction === "ancestors") {
-    return ancestors.length
-      ? `"${label}" derives from ${ancestors.length} upstream node(s)${tail}.`
-      : `"${label}" has no recorded upstream lineage.`;
+  if (direction === "dependents") {
+    return dependents.length
+      ? `${dependents.length} node(s) depend on "${label}"${tail}.`
+      : `Nothing depends on "${label}".`;
   }
-  if (direction === "descendants") {
-    return descendants.length
-      ? `"${label}" feeds ${descendants.length} downstream node(s)${tail}.`
-      : `"${label}" feeds nothing downstream.`;
+  if (direction === "dependencies") {
+    return dependencies.length
+      ? `"${label}" depends on ${dependencies.length} node(s)${tail}.`
+      : `"${label}" depends on nothing.`;
   }
-  return `"${label}": ${ancestors.length} upstream, ${descendants.length} downstream node(s)${tail}.`;
+  return `"${label}": ${dependents.length} dependent(s), ${dependencies.length} dependenc(ies)${tail}.`;
 }
 
 export {

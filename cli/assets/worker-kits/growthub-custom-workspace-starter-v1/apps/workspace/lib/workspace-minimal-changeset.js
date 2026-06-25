@@ -10,10 +10,10 @@
  * sources on the target's provenance frontier — and labels it as such
  * (`optimal: false`). It composes the shipped derivers, builds NO new graph,
  * mutates nothing, exposes no secrets:
- *   - `deriveProvenanceLineage(target, { direction: "descendants" })` → the
- *     transitive set the target depends on (its upstream cone), since an
- *     outgoing edge A→B means "A depends on B".
- *   - the FRONTIER of that cone (the deepest upstream nodes, or the typed roots
+ *   - `deriveProvenanceLineage(target, { direction: "dependencies" })` → the
+ *     transitive set the target depends on (its dependency cone — outgoing
+ *     edges, what it is built from), since an edge A→B means "A depends on B".
+ *   - the FRONTIER of that cone (the deepest dependency nodes, or the typed roots
  *     — sources / integrations / inputs) is the minimal change set: changing a
  *     frontier node is necessary; changing an interior node alone cannot fix a
  *     target whose staleness originates upstream of it.
@@ -75,9 +75,9 @@ function deriveMinimalChangeSet(graph, targetId, options = {}) {
   const targetNode = nodesById.get(id);
   if (!targetNode) return empty(`target "${id}" not found in graph`);
 
-  // 1. Upstream cone (what the target depends on).
-  const lineage = deriveProvenanceLineage(graph, id, { direction: "descendants", maxNodes });
-  const cone = lineage.descendants;
+  // 1. Dependency cone (what the target depends on — outgoing closure).
+  const lineage = deriveProvenanceLineage(graph, id, { direction: "dependencies", maxNodes });
+  const cone = lineage.dependencies;
   if (!cone.length) {
     const out = empty();
     out.target = summarizeNode(targetNode);

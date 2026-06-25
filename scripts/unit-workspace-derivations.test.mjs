@@ -139,30 +139,41 @@ test("deriveWorkflowImpact: unknown origin never throws", () => {
 
 // ── deriveProvenanceLineage ────────────────────────────────────────────────
 
-test("deriveProvenanceLineage: an artifact traces back to the run that produced it", () => {
-  const out = deriveProvenanceLineage(fixture(), "art", { direction: "ancestors" });
+test("deriveProvenanceLineage: dependencies of an artifact reach the run that produced it", () => {
+  // art -> run via producedArtifact reversed? edge is run->art, so art's
+  // OUTGOING (dependencies) is empty; run is art's dependent (incoming).
+  const out = deriveProvenanceLineage(fixture(), "art", { direction: "dependents" });
   assert.equal(out.kind, "growthub-workspace-provenance-lineage-v1");
-  assert.deepEqual(out.ancestors.map((a) => a.id), ["run"]);
+  assert.deepEqual(out.dependents.map((a) => a.id), ["run"]);
+  // alias preserved for backward compat
+  assert.deepEqual(out.ancestors, out.dependents);
 });
 
-test("deriveProvenanceLineage: descendants of a run reach the full transitive chain it touched", () => {
-  const out = deriveProvenanceLineage(fixture(), "run", { direction: "descendants" });
-  const ids = out.descendants.map((d) => d.id).sort();
+test("deriveProvenanceLineage: dependencies of a run reach the full transitive chain it touched", () => {
+  const out = deriveProvenanceLineage(fixture(), "run", { direction: "dependencies" });
+  const ids = out.dependencies.map((d) => d.id).sort();
   // run -> wf -> wfn -> obj -> src, and run -> art. Transitive, not one-hop.
   assert.deepEqual(ids, ["art", "obj", "src", "wf", "wfn"]);
-  // nearest-first ordering: the two direct hops (distance 1) come first.
-  assert.equal(out.descendants[0].distance, 1);
+  assert.equal(out.dependencies[0].distance, 1);
+  assert.deepEqual(out.descendants, out.dependencies); // alias
 });
 
-test("deriveProvenanceLineage: both directions are deterministic and ordered", () => {
-  const a = deriveProvenanceLineage(fixture(), "obj");
-  const b = deriveProvenanceLineage(fixture(), "obj");
-  assert.deepEqual(a.ancestors, b.ancestors);
-  assert.deepEqual(a.descendants, b.descendants);
-  // object's ancestors (incoming) include the widget + workflow node that use it.
-  assert.ok(a.ancestors.some((n) => n.id === "wgt"));
-  // object's descendants (outgoing) include the source it is backed by.
-  assert.ok(a.descendants.some((n) => n.id === "src"));
+test("deriveProvenanceLineage: a widget that uses an object is the object's DEPENDENT, not its ancestor", () => {
+  // The naming-safety case the review flagged: a consumer must never read as
+  // an "ancestor" of the thing it consumes.
+  const out = deriveProvenanceLineage(fixture(), "obj");
+  // object's dependents (incoming) = the widget/workflow node that USE it.
+  assert.ok(out.dependents.some((n) => n.id === "wgt"));
+  // object's dependencies (outgoing) = the source it is backed by.
+  assert.ok(out.dependencies.some((n) => n.id === "src"));
+  // the widget is NOT in the object's dependencies (it does not depend ON the widget).
+  assert.ok(!out.dependencies.some((n) => n.id === "wgt"));
+});
+
+test("deriveProvenanceLineage: legacy direction aliases still resolve", () => {
+  const viaLegacy = deriveProvenanceLineage(fixture(), "obj", { direction: "ancestors" });
+  const viaCanonical = deriveProvenanceLineage(fixture(), "obj", { direction: "dependents" });
+  assert.deepEqual(viaLegacy.dependents.map((n) => n.id), viaCanonical.dependents.map((n) => n.id));
 });
 
 test("deriveProvenanceLineage: cycle terminates", () => {

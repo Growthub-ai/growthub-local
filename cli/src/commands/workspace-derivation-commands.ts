@@ -177,17 +177,40 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     setPath(proposed, dottedPath, value);
   }
 
-  // Rebuild the graph from the PROPOSED config to derive the blast radius.
+  // Re-derive the graph from the PROPOSED config IN MEMORY (no temp file) so the
+  // blast radius reflects the change. Reuse the same source-record sidecar.
   const d = await loadDerivers();
-  const tmpFork = path.join(root, ".growthub-fork");
-  fs.mkdirSync(tmpFork, { recursive: true });
-  const proposalPath = path.join(tmpFork, "patch-proposal.json");
-  fs.writeFileSync(proposalPath, `${JSON.stringify(proposed, null, 2)}\n`, "utf8");
-  const { graph } = await buildGraphFromFork(tmpFork);
+  let sourceRecords: Record<string, unknown> = {};
+  const sidecar = path.join(path.dirname(configPath), "growthub.source-records.json");
+  if (fs.existsSync(sidecar)) {
+    try { sourceRecords = JSON.parse(fs.readFileSync(sidecar, "utf8")) as Record<string, unknown>; } catch { sourceRecords = {}; }
+  }
+  const { graph } = await buildGraphFromConfig(proposed, sourceRecords);
 
-  const seedIds = graph.nodes
-    .filter((n) => n.type === "dataModelObject" || n.type === "dashboard")
+  // Scope impact to the object(s)/dashboard(s) the --set paths actually touched,
+  // resolved from the proposed config — not the whole workspace (review E).
+  const changedObjectIds = new Set<string>();
+  const changedDashboardIds = new Set<string>();
+  for (const assignment of sets) {
+    const dottedPath = assignment.slice(0, assignment.indexOf("=")).trim();
+    const parts = dottedPath.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+    if (parts[0] === "dataModel" && parts[1] === "objects" && /^\d+$/.test(parts[2] ?? "")) {
+      const obj = (proposed.dataModel as { objects?: Array<{ id?: string }> } | undefined)?.objects?.[Number(parts[2])];
+      if (obj?.id) changedObjectIds.add(obj.id);
+    } else if (parts[0] === "dashboards" && /^\d+$/.test(parts[1] ?? "")) {
+      const dash = (proposed.dashboards as Array<{ id?: string; name?: string }> | undefined)?.[Number(parts[1])];
+      if (dash?.id || dash?.name) changedDashboardIds.add(dash.id ?? dash.name ?? "");
+    }
+  }
+  const scopedSeeds = graph.nodes
+    .filter((n) =>
+      (n.type === "dataModelObject" && changedObjectIds.has(String(n.summary?.objectId ?? "")))
+      || (n.type === "dashboard" && (changedDashboardIds.has(n.label) || changedDashboardIds.has(n.metadataId))))
     .map((n) => n.id);
+  const impactMode = scopedSeeds.length ? "scoped" : "broad-fallback";
+  const seedIds = scopedSeeds.length
+    ? scopedSeeds
+    : graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
   const impact = d.deriveStaleSurfaces(graph, { seedIds });
   const compliance = d.deriveContractCompliance(
     { changedFields: Array.from(changedFields), touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow) },
@@ -207,10 +230,10 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     config: configPath,
     changedFields: Array.from(changedFields),
     disallowed,
+    impactMode,
     impact,
     compliance,
     wrote,
-    proposal: proposalPath,
     nextStep: disallowed.length
       ? `Remove disallowed field(s) ${disallowed.join(", ")} — only ${ALLOWED_PATCH_FIELDS.join(", ")} are patchable.`
       : wrote
@@ -222,7 +245,7 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     console.log(pc.bold("growthub patch") + pc.dim(` — ${configPath}`));
     console.log(`  changed: ${payload.changedFields.join(", ") || "(none)"}`);
     if (disallowed.length) console.log(`  ${pc.red("disallowed:")} ${disallowed.join(", ")}`);
-    console.log(`  ${pc.cyan("impact:")} ${impact.summary}`);
+    console.log(`  ${pc.cyan("impact:")} [${impactMode}] ${(impact as { summary?: string }).summary}`);
     console.log(`  ${pc.cyan("compliance:")} ${compliance.summary}`);
     console.log(`  ${wrote ? pc.green("written") : pc.yellow("dry-run")} — ${payload.nextStep}`);
   });
@@ -286,10 +309,12 @@ async function captureCommand(opts: CaptureOpts): Promise<void> {
 // Intelligence). It maps to the plane deliberately:
 //   - Layer 3 (Intelligence): every read-only projection (topology, blast
 //     radius, lineage, stale, readiness, minimal change set, outcome ledger).
-//   - Layer 2 (Law): preflight_patch — a DRY-RUN only. When a live runtime URL
-//     is configured it PROXIES the authoritative POST /api/workspace/patch/
-//     preflight (which "cannot disagree with the real PATCH"); offline it is a
-//     clearly-labelled approximation.
+//   - Layer 2 (Law): preflight_patch — a DRY-RUN only (never writes config,
+//     never applies a mutation). When a live runtime URL is configured it
+//     PROXIES the authoritative POST /api/workspace/patch/preflight (which
+//     "cannot disagree with the real PATCH") — note that route may record
+//     governance receipts for blocked attempts; offline it is a clearly-
+//     labelled approximation.
 //   - Layer 1 (Mutation): NONE. No write/execute tool — that would be the
 //     forbidden third mutation path. Instead `next_actions` emits the EXACT
 //     governed call (route + body sketch) for the agent to run through the
@@ -309,6 +334,8 @@ interface McpContext {
   d: Awaited<ReturnType<typeof loadDerivers>>;
   h: Awaited<ReturnType<typeof loadGraphHelpers>>;
   liveUrl: string | null;
+  // Truthful provenance of what the Intelligence tools are reading.
+  source: string;
 }
 
 interface McpTool {
@@ -327,7 +354,7 @@ function storeArr(ctx: McpContext, key: string): Array<Record<string, unknown>> 
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 }
 
-function buildMcpTools(): McpTool[] {
+export function buildMcpTools(): McpTool[] {
   return [
     // ── Layer 3 — Intelligence (read-only) ──────────────────────────────────
     {
@@ -340,7 +367,7 @@ function buildMcpTools(): McpTool[] {
         counts: Object.fromEntries(["objects", "fields", "views", "widgets", "dashboards", "workflows", "workflowNodes", "sandboxes", "integrations", "runs", "outputArtifacts", "pipelineHealth"].map((k) => [k, storeArr(ctx, k).length])),
         graph: { nodes: ctx.graph.nodes.length, edges: ctx.graph.edges.length },
         provenance: storeArr(ctx, "provenance")[0] ?? null,
-        source: ctx.liveUrl ? `live:${ctx.liveUrl}` : "offline-config",
+        source: ctx.source,
       }),
     },
     {
@@ -456,7 +483,7 @@ function buildMcpTools(): McpTool[] {
     // ── Layer 2 — Law (dry-run only) ─────────────────────────────────────────
     {
       name: "preflight_patch", layer: ANALYTICS_LAYER.law,
-      description: "DRY-RUN a proposed PATCH: allowlist + blast radius + contract compliance. With a live runtime it proxies the AUTHORITATIVE preflight route. Writes nothing.",
+      description: "DRY-RUN a proposed PATCH: allowlist + blast radius + contract compliance. With a live runtime it proxies the AUTHORITATIVE preflight route. Never writes workspace config and never applies a mutation; a live preflight may record governance receipts (e.g. blocked-attempt telemetry) per that route.",
       inputSchema: { type: "object", properties: { patch: { type: "object", description: "the exact PATCH body you intend to send" } }, required: ["patch"] },
       handler: async (ctx, args) => {
         const patch = (args?.patch && typeof args.patch === "object" ? args.patch : {}) as Record<string, unknown>;
@@ -473,7 +500,7 @@ function buildMcpTools(): McpTool[] {
             const authoritative = await res.json();
             return { mode: "live-authoritative", authoritative };
           } catch (error) {
-            return { mode: "offline-fallback", reason: `live preflight unreachable: ${(error as Error)?.message}`, ...offlinePreflight(ctx, patch, changedFields, disallowed) };
+            return { mode: "offline-fallback", reason: `live preflight unreachable: ${(error as Error)?.message}`, ...offlinePreflight(ctx, changedFields, disallowed) };
           }
         }
         return { mode: "offline-approximation", note: "Authoritative schema/layout/policy validation is POST /api/workspace/patch/preflight on the running runtime.", ...(await offlinePreflightAsync(ctx, patch, changedFields, disallowed)) };
@@ -501,7 +528,7 @@ function buildMcpTools(): McpTool[] {
 }
 
 // Offline approximation of the Law layer — clearly NON-authoritative.
-function offlinePreflight(ctx: McpContext, patch: Record<string, unknown>, changedFields: string[], disallowed: string[]) {
+function offlinePreflight(ctx: McpContext, changedFields: string[], disallowed: string[]) {
   const compliance = ctx.d.deriveContractCompliance({ changedFields }, undefined, {});
   return { allowlist: { ok: disallowed.length === 0, disallowed, allowed: ALL_FIELDS }, contractCompliance: compliance };
 }
@@ -515,14 +542,50 @@ async function offlinePreflightAsync(ctx: McpContext, patch: Record<string, unkn
     const seedIds = graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
     impact = ctx.d.deriveStaleSurfaces(graph, { seedIds });
   } catch { impact = null; }
-  return { ...offlinePreflight(ctx, patch, changedFields, disallowed), impact };
+  return { ...offlinePreflight(ctx, changedFields, disallowed), impact };
+}
+
+/**
+ * Build the MCP context. With a live URL, Intelligence reads are hydrated from
+ * the running control plane's OWN authoritative routes (GET /api/workspace/
+ * metadata-graph for store+graph, GET /api/workspace for config) — so a tool
+ * that reports `source: live:<url>` is genuinely reading live state (review A).
+ * On any live failure it falls back to the offline fork and says so honestly.
+ */
+async function hydrateContext(
+  root: string,
+  liveUrl: string | null,
+  d: McpContext["d"],
+  h: McpContext["h"],
+): Promise<McpContext> {
+  if (liveUrl) {
+    try {
+      const mgRes = await fetch(`${liveUrl}/api/workspace/metadata-graph`, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+      if (!mgRes.ok) throw new Error(`metadata-graph HTTP ${mgRes.status}`);
+      const mg = (await mgRes.json()) as { metadata?: Record<string, unknown>; graph?: { nodes: GraphNode[]; edges: GraphEdge[] } };
+      const wsRes = await fetch(`${liveUrl}/api/workspace`, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+      if (!wsRes.ok) throw new Error(`workspace HTTP ${wsRes.status}`);
+      const ws = (await wsRes.json()) as Record<string, unknown>;
+      return {
+        workspaceConfig: (ws.workspaceConfig ?? ws.config ?? {}) as Record<string, unknown>,
+        store: (mg.metadata ?? {}) as McpContext["store"],
+        graph: mg.graph ?? { nodes: [], edges: [] },
+        d, h, liveUrl, source: `live:${liveUrl}`,
+      };
+    } catch (error) {
+      const off = await buildGraphFromFork(root);
+      return { workspaceConfig: off.workspaceConfig, store: off.store, graph: off.graph, d, h, liveUrl, source: `offline-fallback (${liveUrl} unreachable: ${(error as Error)?.message})` };
+    }
+  }
+  const off = await buildGraphFromFork(root);
+  return { workspaceConfig: off.workspaceConfig, store: off.store, graph: off.graph, d, h, liveUrl: null, source: "offline-config" };
 }
 
 async function serveMcp(root: string, liveUrl: string | null): Promise<void> {
-  const { workspaceConfig, store, graph } = await buildGraphFromFork(root);
   const d = await loadDerivers();
   const h = await loadGraphHelpers();
-  const ctx: McpContext = { workspaceConfig, store, graph, d, h, liveUrl };
+  const ctx = await hydrateContext(root, liveUrl, d, h);
+  const graph = ctx.graph;
   const tools = buildMcpTools();
   const byName = new Map(tools.map((t) => [t.name, t]));
   const rl = readline.createInterface({ input: process.stdin });
@@ -555,7 +618,7 @@ async function serveMcp(root: string, liveUrl: string | null): Promise<void> {
       }
     })();
   });
-  process.stderr.write(`growthub serve --mcp ready (${graph.nodes.length} nodes, ${tools.length} tools${liveUrl ? `, live:${liveUrl}` : ", offline"}). Layers: Intelligence(read) + Law(dry-run) + governed hand-off.\n`);
+  process.stderr.write(`growthub serve --mcp ready (${graph.nodes.length} nodes, ${tools.length} tools, source=${ctx.source}). Layers: Intelligence(read) + Law(dry-run) + governed hand-off.\n`);
 }
 
 async function serveCommand(opts: ServeOpts): Promise<void> {

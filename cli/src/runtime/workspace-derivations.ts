@@ -14,7 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const KIT_ID = "growthub-custom-workspace-starter-v1";
 const LIB_REL = path.join("apps", "workspace", "lib");
@@ -51,7 +51,7 @@ export function resolveKitLibDir(): string {
 
 async function importKitLib<T = Record<string, unknown>>(file: string): Promise<T> {
   const full = path.join(resolveKitLibDir(), file);
-  return (await import(`file://${full}`)) as T;
+  return (await import(pathToFileURL(full).href)) as T;
 }
 
 export interface WorkspaceGraphBundle {
