@@ -189,6 +189,12 @@ Above the firewall sits **Agent Outcome Loop V1**: every mutation lane (direct P
 
 The runtime-verified contract card — exact request/response shapes, observed error envelopes, violation codes, and the row-shape traps (`Name` capital-N identity column, `command` as the executed payload) — is [`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/skills/governed-workspace-mutation/SKILL.md`](./cli/assets/worker-kits/growthub-custom-workspace-starter-v1/skills/governed-workspace-mutation/SKILL.md). It ships inside every exported workspace at `skills/governed-workspace-mutation/SKILL.md`, so first-session agents in any fork find it in the standard traversal. Read it before any workspace-configuration call. Enforcement tests: `scripts/unit-workspace-patch-policy.test.mjs` (policy) and `scripts/e2e-workspace-patch-policy-probe.mjs` (HTTP, adversarial).
 
+## Operating the governed universe (three-layer control plane)
+
+An agent does not edit this workspace from the outside — it operates **inside** it as a governed actor, through a three-layer control plane: **Mutation** (the canonical calls above request reality changes) → **Law** (preflight + policy + schema + layout/bounds/overlap validate before anything lands; rejections are navigation, not noise) → **Intelligence** (the live metadata graph absorbs what landed, and blast radius explains downstream impact). *Agents propose, the platform governs, the graph understands.* The full conceptual map, the reproducible export → boot → operate → graph-recompute → blast-radius loop, and the banked canonical proof artifact are in [`docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md`](./docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md).
+
+The **Intelligence layer** is `GET /api/workspace/metadata-graph` (typed node/edge world model, also rendered by the Workspace Map) plus `deriveBlastRadius` (`apps/workspace/lib/workspace-metadata-impact.js`) — the transitive reverse-dependency closure over the graph's single-hop `findDependents`. Validate workspace changes by exporting and operating the live runtime (`node scripts/export-seed-workspace.mjs`), not by hand-built fixtures.
+
 ## Workspace Helper
 
 The workspace helper is a governed, workspace-grammar-aware planning engine that drafts proposals for dashboards, widgets, API registry rows, and custom business objects. It operates in propose-only mode — mutations require an explicit apply step.

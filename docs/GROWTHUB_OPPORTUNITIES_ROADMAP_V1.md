@@ -141,6 +141,9 @@ eyes** — so the CLI weapons that prove the thesis (B1–B4) ship `--json` firs
 
 ### Sprint S1 — The shared spine: blast-radius deriver (do this first; everything reuses it)
 
+> **Status: shipped + validated live.** `lib/workspace-metadata-impact.js` (`deriveBlastRadius`) + 8 unit tests (CI-wired). Proven on a booted runtime through the governed PATCH boundary — `customers.mrr → widget → dashboard → workerKit`. The operate-the-universe loop, three-layer control-plane model, and banked proof artifact are documented in [`OPERATING_THE_GOVERNED_UNIVERSE_V1.md`](./OPERATING_THE_GOVERNED_UNIVERSE_V1.md).
+
+
 A single **pure** function over the existing metadata graph: given a node id (object / field /
 widget / workflow node), return the downstream set that goes stale, by reverse-walking the edge
 taxonomy already defined in `workspace-metadata-graph.js` (reverse of `bindsToObject`,
