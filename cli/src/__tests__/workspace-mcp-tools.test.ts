@@ -56,6 +56,17 @@ describe("MCP tool registry — contract & boundary", () => {
     expect(find("preflight_patch")!.description).toMatch(/never writes workspace config|never applies/i);
     expect(find("next_actions")!.layer).toMatch(/Mutation/);
   });
+
+  it("trace_lineage exposes the CANONICAL direction model (dependents/dependencies), not the legacy one", () => {
+    const tool = find("trace_lineage")!;
+    const enumVals = (tool.inputSchema as { properties: { direction: { enum: string[] } } }).properties.direction.enum;
+    expect(enumVals).toContain("dependents");
+    expect(enumVals).toContain("dependencies");
+    // description must teach the canonical terms, not present ancestors/descendants as primary
+    expect(tool.description).toMatch(/dependents/);
+    expect(tool.description).toMatch(/dependencies/);
+    expect(tool.description).toMatch(/deprecated/i);
+  });
 });
 
 describe("MCP handlers — truthful source & dry-run mode", () => {

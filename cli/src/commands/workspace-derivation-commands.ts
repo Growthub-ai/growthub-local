@@ -483,8 +483,8 @@ export function buildMcpTools(): McpTool[] {
     },
     {
       name: "trace_lineage", layer: ANALYTICS_LAYER.intelligence,
-      description: "Provenance ancestors (what produced this) + descendants (what it feeds).",
-      inputSchema: { type: "object", properties: { nodeId: { type: "string" }, direction: { type: "string", enum: ["ancestors", "descendants", "both"] } }, required: ["nodeId"] },
+      description: "Provenance over the graph: `dependents` = what depends on this node / is impacted if it changes (incoming closure); `dependencies` = what this node depends on / is built from (outgoing closure). Legacy `ancestors`/`descendants` are accepted but DEPRECATED — they can mislead on non-run nodes; prefer dependents/dependencies.",
+      inputSchema: { type: "object", properties: { nodeId: { type: "string" }, direction: { type: "string", enum: ["dependents", "dependencies", "both", "ancestors", "descendants"], description: "prefer dependents | dependencies | both (ancestors/descendants are deprecated aliases)" } }, required: ["nodeId"] },
       handler: (ctx, args) => ctx.d.deriveProvenanceLineage(ctx.graph, String(args?.nodeId ?? ""), { direction: args?.direction ?? "both" }),
     },
     {
@@ -680,7 +680,7 @@ export function registerWorkspaceDerivationCommands(program: Command): void {
     .option("--fork <path>", "Fork/workspace root (default: cwd)")
     .option("--impact <nodeId>", "Report blast radius + workflow impact of changing this node")
     .option("--workflow <nodeId>", "Report outcome-level workflow impact for this node")
-    .option("--lineage <nodeId>", "Trace provenance lineage (ancestors + descendants) of this node")
+    .option("--lineage <nodeId>", "Trace provenance lineage (dependents + dependencies) of this node")
     .option("--json", "Emit machine-readable JSON")
     .action((opts: PlanOpts) => planCommand(opts).catch((e: Error) => { console.error(pc.red(e.message)); process.exitCode = 1; }));
 
