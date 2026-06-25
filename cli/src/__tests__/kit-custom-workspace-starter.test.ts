@@ -2571,6 +2571,10 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
     "apps/workspace/lib/workspace-metadata-store.js",
     "apps/workspace/lib/workspace-metadata-graph.js",
     "apps/workspace/lib/workspace-metadata-selectors.js",
+    "apps/workspace/lib/workspace-metadata-impact.js",
+    "apps/workspace/lib/workspace-stale-surfaces.js",
+    "apps/workspace/lib/workspace-workflow-impact.js",
+    "apps/workspace/lib/workspace-provenance-lineage.js",
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
   ];
@@ -2579,6 +2583,40 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
       expect(frozen).toContain(p);
     });
   }
+});
+
+describe("workspace-derivation-twins-v1 — stale surfaces / workflow impact / lineage", () => {
+  const derivers = [
+    "lib/workspace-stale-surfaces.js",
+    "lib/workspace-workflow-impact.js",
+    "lib/workspace-provenance-lineage.js",
+  ];
+  for (const rel of derivers) {
+    it(`${rel} ships and is frozen`, () => {
+      expect(appExists(rel)).toBe(true);
+      const kitJson = JSON.parse(readText("kit.json"));
+      const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+      expect(frozen).toContain(`apps/workspace/${rel}`);
+    });
+  }
+
+  it("deriveStaleSurfaces marks the reverse closure of a fresh upstream change stale", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-stale-surfaces.js")}?t=${Date.now()}`
+    ) as { deriveStaleSurfaces: (g: unknown, o?: unknown) => { total: number; staleSurfaces: Array<{ id: string }> } };
+    const node = (id: string, type: string, summary: Record<string, unknown> = {}) => ({ id, type, label: id, summary, metadataId: id });
+    const edge = (from: string, to: string, relation: string) => ({ id: `${from}::${relation}::${to}`, from, to, relation });
+    const graph = {
+      nodes: [
+        node("src", "sourceRecord", { fetchedAt: "2026-06-20T00:00:00.000Z" }),
+        node("obj", "dataModelObject"),
+        node("wgt", "widget"),
+      ],
+      edges: [edge("obj", "src", "backedBySourceRecord"), edge("wgt", "obj", "bindsToObject")],
+    };
+    const out = mod.deriveStaleSurfaces(graph, { since: "2026-06-01T00:00:00.000Z" });
+    expect(out.staleSurfaces.map((s) => s.id).sort()).toEqual(["obj", "wgt"]);
+  });
 });
 
 describe("workspace-metadata-impact-v1 — blast radius (transitive causal closure)", () => {
