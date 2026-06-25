@@ -2678,6 +2678,39 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
   }
 });
 
+describe("workspace-metadata-impact-v1 — blast radius (transitive causal closure)", () => {
+  it("lib/workspace-metadata-impact.js ships and is frozen", () => {
+    expect(appExists("lib/workspace-metadata-impact.js")).toBe(true);
+    const kitJson = JSON.parse(readText("kit.json"));
+    const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+    expect(frozen).toContain("apps/workspace/lib/workspace-metadata-impact.js");
+  });
+
+  it("deriveBlastRadius reaches the transitive dependents single-hop findDependents misses", async () => {
+    const impact = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-metadata-impact.js")}?t=${Date.now()}`
+    ) as { deriveBlastRadius: (g: unknown, id: string) => { total: number; impacted: Array<{ id: string }> } };
+    const graphMod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-metadata-graph.js")}?t=${Date.now()}`
+    ) as { findDependents: (g: unknown, id: string) => Array<{ node: { id: string } }> };
+
+    // field ←usesField— widget ←containsWidget— dashboard
+    const node = (id: string, type: string) => ({ id, type, label: id, summary: {}, metadataId: id });
+    const edge = (from: string, to: string, relation: string) => ({ id: `${from}::${relation}::${to}`, from, to, relation });
+    const graph = {
+      nodes: [node("fld-mrr", "field"), node("wgt", "widget"), node("dsh", "dashboard")],
+      edges: [edge("wgt", "fld-mrr", "usesField"), edge("dsh", "wgt", "containsWidget")],
+    };
+
+    const oneHop = graphMod.findDependents(graph, "fld-mrr").map((d) => d.node.id);
+    expect(oneHop).toEqual(["wgt"]); // single-hop stops at the widget
+
+    const blast = impact.deriveBlastRadius(graph, "fld-mrr");
+    expect(blast.total).toBe(2); // transitive closure reaches the dashboard too
+    expect(blast.impacted.map((n) => n.id).sort()).toEqual(["dsh", "wgt"]);
+  });
+});
+
 describe("workspace-metadata-store — derivation", () => {
   type MetadataStore = {
     kind: string;
