@@ -47,12 +47,6 @@ growthub workspace status --json
 **Reference contracts:** [Workspace Config Contract V1](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 &nbsp;
 
-**▶️ [Watch on YouTube](https://youtu.be/DL38oRoIB3g)**
-
-<a href="https://youtu.be/DL38oRoIB3g"><img src="https://img.youtube.com/vi/DL38oRoIB3g/maxresdefault.jpg" alt="Watch the video" width="600"></a>
-
-&nbsp;
-
 ---
 
 ## Architecture
@@ -80,27 +74,6 @@ Growthub Local's current line is one coherent AWaC surface, not separate release
 This is the first-tier operating model for agents and humans: the browser is the no-code surface, helper proposals are reviewable, source records are evidence, workflows are governed rows, and Workspace Lens is the readiness surface.
 
 Read the unified map: [Workspace New Reality Value Map V1](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md). CEO operating loop: [Workspace CEO Primitive V1](./docs/WORKSPACE_CEO_PRIMITIVE_V1.md). Browser execution details: [Governed Sandbox Browser Access V1](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md).
-
----
-
-## Why this exists
-
-AI work creates the same pressure that made DevOps necessary for apps:
-
-- **Scale:** you cannot manually set up reliable environments for every agent, operator, client, repo, or workflow.
-- **Security and governance:** teams need to know what an agent can touch, what it cannot touch, and where that policy lives.
-- **Reliability:** when an agent workflow fails, the environment needs to be reconstructible so humans can debug what happened.
-
-Growthub Local answers that with Agent Workspace as Code: the app, builder, data model, workflows, integrations, fork policy, trace, and optional authority move together as one governed workspace artifact.
-
-That matters at every skill level:
-
-- **Non-technical teams** get a real workspace they can open, customize, hand off, and trust without learning how to wire repos, prompts, credentials, and scripts together.
-- **Builders and no-code innovators** can turn a repo, skill, starter, or template into a working product surface without losing upgrade paths or governance.
-- **Agents and operators** get clear commands, JSON status, policy, trace, and reusable workspace primitives instead of guessing what folder, prompt, or script matters.
-- **Enterprise developers** get local-first flexibility with fork safety, deploy checks, credential boundaries, audit trails, and optional hosted authority only when higher-trust flows need it.
-
-The practical result: Growthub Local keeps open-source speed and customization, but gives AI workspaces the structure teams expect from serious DevOps.
 
 ---
 
