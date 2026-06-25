@@ -8,7 +8,7 @@ This packet freezes the contract for the **Growthub Custom Workspace Starter Kit
 
 Users who want to customize one worker kit shouldn't have to fork the whole repository.  Before this primitive, there was no supported path for "just the one kit."  The starter kit gives that user:
 
-- A minimal but complete custom-workspace tree (kit.json, frozen assets, brand scaffolds, templates, examples, docs, studio UI shell, growthub-meta).
+- A minimal but complete custom-workspace tree (kit.json, frozen assets, brand scaffolds, templates, examples, docs, the `apps/workspace` no-code Builder, growthub-meta). The legacy `studio/` Vite shell is no longer part of the starter.
 - An auto-registered kit-fork with its own `forkId`, policy, and trace log.
 - An optional first-party native GitHub remote.
 - A guaranteed upgrade path back to upstream via the Self-Healing Fork Sync Agent.

@@ -248,6 +248,14 @@ abstraction: **the workspace UI is the governed control plane, not necessarily t
 experience.** The end user can simply state an outcome; Growthub Local is the invisible operating
 system underneath. Chat is the steering wheel; the governed workspace is the engine room.
 
+Outcomes span the business — customer-avatar and market/competitor research, recurring content
+generation, scripting and briefing, sales and marketing operations, client reporting, and even
+engineering feature-iteration loops. Each one lands as governed objects, workflow runs, and
+receipts inside the customer's private repository — not as text trapped in a chat. That private
+repo is the customer's durable operating environment; the agent session is the operator entering
+it, and rollout friction drops because you hand over a repo with prebuilt procedures rather than
+training every user on the UI.
+
 | Layer | Who | What they touch | Shipped substrate |
 |---|---|---|---|
 | **Outcome** | End user | A request: *"pull the latest ad metrics"*, *"generate this week's client report"*, *"why is the MRR widget stale?"* They never need the Data Model, Workspace Map, PATCH policy, or blast radius. | The helper engine: `POST /api/workspace/helper/query` → `apply` turns NL into governed proposals (8 intents); the in-app `Ask helper` pill + Chat tab (`app/workspace-rail.jsx`) and the `growthub workspace helper` CLI are conversational front doors over it. |
