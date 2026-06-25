@@ -140,6 +140,30 @@ async function readinessCommand(opts: ReadinessOpts): Promise<void> {
 
 const ALLOWED_PATCH_FIELDS = ["dashboards", "widgetTypes", "canvas", "dataModel"];
 
+type DeriverSet = Awaited<ReturnType<typeof loadDerivers>>;
+
+/**
+ * Shared offline patch preview — the SINGLE place that turns a proposed graph +
+ * changed fields into { impact, contract compliance, allowlist }. Used by both
+ * `growthub patch` and the MCP `preflight_patch` tool so the dry-run is computed
+ * one way, not two.
+ */
+function previewPatchImpact(
+  d: DeriverSet,
+  graph: { nodes: GraphNode[] },
+  opts: { changedFields: string[]; seedIds?: string[]; touchesLiveWorkflow?: boolean },
+): { impactMode: string; impact: Record<string, unknown>; contractCompliance: Record<string, unknown>; allowlist: { ok: boolean; disallowed: string[]; allowed: string[] } } {
+  const disallowed = opts.changedFields.filter((f) => !ALLOWED_PATCH_FIELDS.includes(f));
+  const scoped = opts.seedIds && opts.seedIds.length ? opts.seedIds : null;
+  const seedIds = scoped ?? graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
+  return {
+    impactMode: scoped ? "scoped" : "broad-fallback",
+    impact: d.deriveStaleSurfaces(graph, { seedIds }),
+    contractCompliance: d.deriveContractCompliance({ changedFields: opts.changedFields, touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow) }, undefined, { hasPreflightReceipt: false }),
+    allowlist: { ok: disallowed.length === 0, disallowed, allowed: ALLOWED_PATCH_FIELDS },
+  };
+}
+
 /** Set a dotted/bracket path (e.g. dataModel.objects[0].label) on a clone. */
 function setPath(target: Record<string, unknown>, dottedPath: string, value: unknown): void {
   const parts = dottedPath.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
@@ -207,18 +231,14 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
       (n.type === "dataModelObject" && changedObjectIds.has(String(n.summary?.objectId ?? "")))
       || (n.type === "dashboard" && (changedDashboardIds.has(n.label) || changedDashboardIds.has(n.metadataId))))
     .map((n) => n.id);
-  const impactMode = scopedSeeds.length ? "scoped" : "broad-fallback";
-  const seedIds = scopedSeeds.length
-    ? scopedSeeds
-    : graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
-  const impact = d.deriveStaleSurfaces(graph, { seedIds });
-  const compliance = d.deriveContractCompliance(
-    { changedFields: Array.from(changedFields), touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow) },
-    undefined,
-    { hasPreflightReceipt: false },
-  );
-
-  const disallowed = Array.from(changedFields).filter((f) => !ALLOWED_PATCH_FIELDS.includes(f));
+  const preview = previewPatchImpact(d, graph, {
+    changedFields: Array.from(changedFields),
+    seedIds: scopedSeeds,
+    touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow),
+  });
+  const { impactMode, impact } = preview;
+  const compliance = preview.contractCompliance;
+  const disallowed = preview.allowlist.disallowed;
   let wrote = false;
   if (opts.write && !disallowed.length) {
     fs.writeFileSync(configPath, `${JSON.stringify(proposed, null, 2)}\n`, "utf8");
@@ -322,7 +342,6 @@ async function captureCommand(opts: CaptureOpts): Promise<void> {
 // Live-aware: with --live, Intelligence reads reflect the running control plane;
 // offline-first otherwise. Reuses the one metadata graph — never a second model.
 
-const ALL_FIELDS = ALLOWED_PATCH_FIELDS;
 const ANALYTICS_LAYER = { mutation: "Layer 1 — Mutation", law: "Layer 2 — Law", intelligence: "Layer 3 — Intelligence" } as const;
 
 interface ServeOpts { fork?: string; mcp?: boolean; live?: string }
@@ -507,8 +526,6 @@ export function buildMcpTools(): McpTool[] {
       inputSchema: { type: "object", properties: { patch: { type: "object", description: "the exact PATCH body you intend to send" } }, required: ["patch"] },
       handler: async (ctx, args) => {
         const patch = (args?.patch && typeof args.patch === "object" ? args.patch : {}) as Record<string, unknown>;
-        const changedFields = Object.keys(patch);
-        const disallowed = changedFields.filter((f) => !ALL_FIELDS.includes(f));
 
         // Authoritative path: proxy the live preflight route when available.
         if (ctx.liveUrl) {
@@ -520,10 +537,10 @@ export function buildMcpTools(): McpTool[] {
             const authoritative = await res.json();
             return { mode: "live-authoritative", authoritative };
           } catch (error) {
-            return { mode: "offline-fallback", reason: `live preflight unreachable: ${(error as Error)?.message}`, ...offlinePreflight(ctx, changedFields, disallowed) };
+            return { mode: "offline-fallback", reason: `live preflight unreachable: ${(error as Error)?.message}`, ...(await offlinePatchPreview(ctx, patch)) };
           }
         }
-        return { mode: "offline-approximation", note: "Authoritative schema/layout/policy validation is POST /api/workspace/patch/preflight on the running runtime.", ...(await offlinePreflightAsync(ctx, patch, changedFields, disallowed)) };
+        return { mode: "offline-approximation", note: "Authoritative schema/layout/policy validation is POST /api/workspace/patch/preflight on the running runtime.", ...(await offlinePatchPreview(ctx, patch)) };
       },
     },
     // ── Layer 1 hand-off (NOT a mutation tool) ───────────────────────────────
@@ -547,22 +564,26 @@ export function buildMcpTools(): McpTool[] {
   ];
 }
 
-// Offline approximation of the Law layer — clearly NON-authoritative.
-function offlinePreflight(ctx: McpContext, changedFields: string[], disallowed: string[]) {
-  const compliance = ctx.d.deriveContractCompliance({ changedFields }, undefined, {});
-  return { allowlist: { ok: disallowed.length === 0, disallowed, allowed: ALL_FIELDS }, contractCompliance: compliance };
-}
-async function offlinePreflightAsync(ctx: McpContext, patch: Record<string, unknown>, changedFields: string[], disallowed: string[]) {
-  // Merge allowlisted keys over the config and re-derive blast radius.
+// Offline approximation of the Law layer — clearly NON-authoritative. Merges the
+// allowlisted keys over the live/offline config, rebuilds the graph, and runs the
+// SAME `previewPatchImpact` the `growthub patch` command uses (no second path).
+async function offlinePatchPreview(ctx: McpContext, patch: Record<string, unknown>) {
+  const changedFields = Object.keys(patch);
   const proposed = { ...ctx.workspaceConfig } as Record<string, unknown>;
-  for (const f of changedFields) if (ALL_FIELDS.includes(f)) proposed[f] = patch[f];
-  let impact: unknown = null;
+  for (const f of changedFields) if (ALLOWED_PATCH_FIELDS.includes(f)) proposed[f] = patch[f];
   try {
     const { graph } = await buildGraphFromConfig(proposed);
-    const seedIds = graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
-    impact = ctx.d.deriveStaleSurfaces(graph, { seedIds });
-  } catch { impact = null; }
-  return { ...offlinePreflight(ctx, changedFields, disallowed), impact };
+    const { impact, contractCompliance, allowlist } = previewPatchImpact(ctx.d, graph, { changedFields });
+    return { allowlist, contractCompliance, impact };
+  } catch {
+    // Graph build failed — still return the allowlist verdict (pure, no graph).
+    const disallowed = changedFields.filter((f) => !ALLOWED_PATCH_FIELDS.includes(f));
+    return {
+      allowlist: { ok: disallowed.length === 0, disallowed, allowed: ALLOWED_PATCH_FIELDS },
+      contractCompliance: ctx.d.deriveContractCompliance({ changedFields }, undefined, {}),
+      impact: null,
+    };
+  }
 }
 
 /**

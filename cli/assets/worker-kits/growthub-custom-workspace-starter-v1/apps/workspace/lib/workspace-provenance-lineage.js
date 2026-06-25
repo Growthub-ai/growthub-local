@@ -27,6 +27,7 @@
  */
 
 import { summarizeGraphNode } from "./workspace-metadata-graph.js";
+import { deriveBlastRadius } from "./workspace-metadata-impact.js";
 
 const PROVENANCE_KIND = "growthub-workspace-provenance-lineage-v1";
 const PROVENANCE_VERSION = 1;
@@ -39,20 +40,19 @@ function safeString(value) {
 }
 
 /**
- * Build a directional adjacency index once: `Map<nodeId, Array<{ to, relation }>>`
- * where `to` is the neighbour reached by following `direction`.
- *   - "incoming": neighbours are edge.from for every edge whose edge.to === id
- *   - "outgoing": neighbours are edge.to   for every edge whose edge.from === id
+ * Build the OUTGOING adjacency index once: `Map<fromId, Array<{ to, relation }>>`.
+ * (The INCOMING/dependents direction is NOT re-implemented here — it reuses the
+ * shipped `deriveBlastRadius` reverse closure, the single source of truth for
+ * incoming-edge traversal.)
  */
-function buildAdjacency(graph, direction) {
+function buildOutgoingIndex(graph) {
   const adjacency = new Map();
   const edges = Array.isArray(graph?.edges) ? graph.edges : [];
   for (const edge of edges) {
     if (!edge || edge.from == null || edge.to == null) continue;
-    const key = direction === "incoming" ? String(edge.to) : String(edge.from);
-    const neighbour = direction === "incoming" ? String(edge.from) : String(edge.to);
+    const key = String(edge.from);
     if (!adjacency.has(key)) adjacency.set(key, []);
-    adjacency.get(key).push({ to: neighbour, relation: edge.relation });
+    adjacency.get(key).push({ to: String(edge.to), relation: edge.relation });
   }
   return adjacency;
 }
@@ -153,12 +153,14 @@ function deriveProvenanceLineage(graph, originId, options = {}) {
   let truncated = false;
 
   if (direction === "dependents" || direction === "both") {
-    const res = walk(buildAdjacency(graph, "incoming"), nodesById, id, maxNodes);
-    dependents = res.reached;
-    truncated = truncated || res.truncated;
+    // Reuse the spine — `dependents` IS the transitive incoming (reverse) closure
+    // that deriveBlastRadius already computes. No second incoming BFS.
+    const blast = deriveBlastRadius(graph, id, { maxNodes });
+    dependents = blast.impacted;
+    truncated = truncated || blast.truncated;
   }
   if (direction === "dependencies" || direction === "both") {
-    const res = walk(buildAdjacency(graph, "outgoing"), nodesById, id, maxNodes);
+    const res = walk(buildOutgoingIndex(graph), nodesById, id, maxNodes);
     dependencies = res.reached;
     truncated = truncated || res.truncated;
   }
