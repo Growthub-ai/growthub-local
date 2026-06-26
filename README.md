@@ -68,6 +68,7 @@ Growthub Local's current line is one coherent AWaC surface, not separate release
 - **0.14.1** adds the governed agent swarm cockpit: helper-created swarm workflow rows inherit the active execution target, open thread-bounded Background Tasks, run through `sandbox-run`, render truthful subagent telemetry, and map canvas node delta tags back to the owning sandbox record.
 - **0.14.2** completes governed sandbox browser access: sandbox rows carry `browserAccess`, workflow and swarm nodes inherit it through the graph, local agents receive their native browser lanes, local processes receive the env contract, local intelligence executes browser tool intents through the local browser bridge, and serverless runs carry the same grant in the sandbox-run envelope.
 - **0.14.4** adds Workspace CEO Primitive V1: `/ceo` becomes the helper-sidecar oversight cockpit, first-use setup proves a governed swarm loop once, History shows runtime outcomes, Agent Teams stores reusable blueprints, and linked teams open the real workflow canvas.
+- **0.14.10** adds the causal derivation intelligence layer + the **agent-facing MCP operating console**: pure derivers (stale surfaces, workflow impact, provenance lineage, app readiness, contract compliance, patch impact incl. removals) over the existing metadata graph, surfaced through `growthub serve --mcp` as **read + dry-run + governed hand-off** — agents understand the workspace, simulate impact, dry-run against Law (`preflight_patch`), and hand off the exact governed mutation call; MCP never mutates. See [Governed MCP Console V1](./docs/GOVERNED_MCP_CONSOLE_V1.md).
 - **Growthub Browser agent protocol** packages the universal operating rule for agents: use the real in-app browser surface first, act through visible CUA when available, read back the DOM, and corroborate state through `/api/workspace`, source records, deployment status, or the configured store before claiming behavior.
 - **Hosted authority is C-tier**: useful after local workspace value is proven, but not required for the core AWaC loop and not front-page operating authority.
 
@@ -178,6 +179,8 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 - [**Governed Agent Swarm Cockpit Value Map V1**](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [**Governed Sandbox Browser Access V1**](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md)
 - [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
+- [**Operating the Governed Universe V1**](./docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md) — the three-layer control plane (Mutation → Law → Intelligence)
+- [**Governed MCP Console V1**](./docs/GOVERNED_MCP_CONSOLE_V1.md) — the agent-facing operating console (read → reason → dry-run → governed mutate → re-read)
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md)
 - [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md)

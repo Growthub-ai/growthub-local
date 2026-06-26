@@ -63,7 +63,7 @@ export const REGISTRY_WORKFLOW_GRAPH = {
   provider: "growthub-native",
   nodes: [
     { id: "input", type: "input", label: "Input", subtitle: "Manual or source payload", config: { inputMode: "manual", samplePayload: {}, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } },
-    { id: "api-request", type: "api-registry-call", label: "API Registry", subtitle: "probe-scheduler · POST /run", config: { registryId: PRIMARY_REGISTRY_ID, integrationId: PRIMARY_REGISTRY_ID, baseUrl: "https://example.invalid", endpoint: "/run", method: "POST", authRef: "PROBE_SCHEDULER", queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "x-api-key", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000 } },
+    { id: "api-request", type: "api-registry-call", label: "API Registry", subtitle: "probe-scheduler · POST /run", config: { registryId: PRIMARY_REGISTRY_ID, integrationId: PRIMARY_REGISTRY_ID, baseUrl: "mock://growthub-feature-seed", endpoint: "/run", method: "POST", authRef: "PROBE_SCHEDULER", queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "x-api-key", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000 } },
     { id: "transform", type: "transform-filter", label: "Transform", subtitle: "Map fields", config: { rootPath: "data", mode: "json", fieldMap: {}, includeFields: [], excludeFields: [], computedFields: {}, filters: [], filterMode: "and", maxRows: 0 } },
     { id: "result", type: "tool-result", label: "Result", subtitle: "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested" } },
   ],
@@ -85,7 +85,7 @@ export const API_REGISTRY_OBJECT = {
     {
       integrationId: PRIMARY_REGISTRY_ID,
       authRef: "PROBE_SCHEDULER",
-      baseUrl: "https://example.invalid",
+      baseUrl: "mock://growthub-feature-seed",
       endpoint: "/run",
       method: "POST",
       status: "connected",
@@ -134,7 +134,7 @@ export const DATA_SOURCE_OBJECT = {
     registryId: PRIMARY_REGISTRY_ID,
     endpoint: "/run",
     authRef: "PROBE_SCHEDULER",
-    baseUrl: "https://example.invalid",
+    baseUrl: "mock://growthub-feature-seed",
     status: "connected",
     lastTested: SEED_TIMESTAMP,
     lastResponse: PROBE_LAST_RESPONSE,

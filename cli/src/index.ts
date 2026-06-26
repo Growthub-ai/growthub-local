@@ -76,6 +76,7 @@ import { registerStarterCommands, runStarterInit } from "./commands/starter.js";
 import { registerSkillsCommands } from "./commands/skills.js";
 import { registerMemoryCommands } from "./commands/memory.js";
 import { registerFleetCommands, fleetView } from "./commands/fleet.js";
+import { registerWorkspaceDerivationCommands } from "./commands/workspace-derivation-commands.js";
 import { registerSetupCommands } from "./commands/setup.js";
 import { registerWorkspaceImproveCommands } from "./commands/workspace-improve.js";
 import { registerWorkspaceHelperCommands } from "./commands/workspace-helper.js";
@@ -2607,6 +2608,7 @@ registerStarterCommands(program);
 registerSkillsCommands(program);
 registerMemoryCommands(program);
 registerFleetCommands(program);
+registerWorkspaceDerivationCommands(program);
 if (surfaceRuntime.capabilities.dxEnabled) {
   registerDxCommands(program);
 } else {

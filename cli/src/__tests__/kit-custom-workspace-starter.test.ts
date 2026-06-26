@@ -41,6 +41,9 @@ const KIT_ROOT = path.resolve(
 
 const APP_ROOT = path.join(KIT_ROOT, "apps/workspace");
 
+type WorkspaceConfigError = Error & { code?: string; details?: string[] };
+type OrchestrationGraph = { nodes: Array<{ id: string }> };
+
 function readText(relative: string): string {
   return fs.readFileSync(path.join(KIT_ROOT, relative), "utf8");
 }
@@ -113,7 +116,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("off-grid widget (x + w > 12) → error detail mentions x/w", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -132,7 +135,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("widget overlap → error detail mentions grid cell coordinates", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -149,7 +152,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("duplicate widget ID → error detail mentions duplicates", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -166,7 +169,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("invalid activeTabId (no matching tab) → error detail mentions activeTabId", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -181,7 +184,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sourceStorage with invalid value → must be workspace-source-records", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -197,7 +200,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sourceStorage set without sourceId → sourceId is required", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -213,7 +216,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("duplicate dataModel object ID → error detail mentions duplicate", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -229,7 +232,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sandbox row with forbidden auth secret field (e.g. accessToken) → rejected", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -259,7 +262,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sandbox row with invalid agentAuthStatus → rejected", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -824,7 +827,7 @@ describe("workspace-schema — chart config validates Twenty-style nested keys",
     try {
       validateWorkspaceConfig(chartConfig({ yAxis: { field: "x", operation: "bogus-op" } }));
     } catch (e) { err = e as typeof err; }
-    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect((err as WorkspaceConfigError | null)?.code).toBe("INVALID_WORKSPACE_CONFIG");
   });
 
   it("rejects unknown date granularities", () => {
@@ -832,7 +835,7 @@ describe("workspace-schema — chart config validates Twenty-style nested keys",
     try {
       validateWorkspaceConfig(chartConfig({ xAxis: { field: "createdAt", dateGranularity: "century" } }));
     } catch (e) { err = e as typeof err; }
-    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect((err as WorkspaceConfigError | null)?.code).toBe("INVALID_WORKSPACE_CONFIG");
   });
 });
 
@@ -998,7 +1001,7 @@ describe("orchestration-graph — contract and kit presence", () => {
       baseUrl: "https://api.example.com",
       status: "connected",
     };
-    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow);
+    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow) as OrchestrationGraph;
     expect(mod.validateOrchestrationGraph(graph).ok).toBe(true);
     expect(graph.nodes).toHaveLength(4);
     expect(graph.nodes.map((n: { id: string }) => n.id)).toEqual([
@@ -2571,6 +2574,13 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
     "apps/workspace/lib/workspace-metadata-store.js",
     "apps/workspace/lib/workspace-metadata-graph.js",
     "apps/workspace/lib/workspace-metadata-selectors.js",
+    "apps/workspace/lib/workspace-metadata-impact.js",
+    "apps/workspace/lib/workspace-stale-surfaces.js",
+    "apps/workspace/lib/workspace-workflow-impact.js",
+    "apps/workspace/lib/workspace-provenance-lineage.js",
+    "apps/workspace/lib/workspace-app-readiness.js",
+    "apps/workspace/lib/workspace-contract-compliance.js",
+    "apps/workspace/lib/workspace-patch-impact.js",
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
   ];
@@ -2579,6 +2589,43 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
       expect(frozen).toContain(p);
     });
   }
+});
+
+describe("workspace-derivation-twins-v1 — stale surfaces / workflow impact / lineage", () => {
+  const derivers = [
+    "lib/workspace-stale-surfaces.js",
+    "lib/workspace-workflow-impact.js",
+    "lib/workspace-provenance-lineage.js",
+    "lib/workspace-app-readiness.js",
+    "lib/workspace-contract-compliance.js",
+    "lib/workspace-patch-impact.js",
+  ];
+  for (const rel of derivers) {
+    it(`${rel} ships and is frozen`, () => {
+      expect(appExists(rel)).toBe(true);
+      const kitJson = JSON.parse(readText("kit.json"));
+      const frozen: string[] = kitJson.frozenAssetPaths ?? [];
+      expect(frozen).toContain(`apps/workspace/${rel}`);
+    });
+  }
+
+  it("deriveStaleSurfaces marks the reverse closure of a fresh upstream change stale", async () => {
+    const mod = await import(
+      `file://${path.join(APP_ROOT, "lib/workspace-stale-surfaces.js")}?t=${Date.now()}`
+    ) as { deriveStaleSurfaces: (g: unknown, o?: unknown) => { total: number; staleSurfaces: Array<{ id: string }> } };
+    const node = (id: string, type: string, summary: Record<string, unknown> = {}) => ({ id, type, label: id, summary, metadataId: id });
+    const edge = (from: string, to: string, relation: string) => ({ id: `${from}::${relation}::${to}`, from, to, relation });
+    const graph = {
+      nodes: [
+        node("src", "sourceRecord", { fetchedAt: "2026-06-20T00:00:00.000Z" }),
+        node("obj", "dataModelObject"),
+        node("wgt", "widget"),
+      ],
+      edges: [edge("obj", "src", "backedBySourceRecord"), edge("wgt", "obj", "bindsToObject")],
+    };
+    const out = mod.deriveStaleSurfaces(graph, { since: "2026-06-01T00:00:00.000Z" });
+    expect(out.staleSurfaces.map((s) => s.id).sort()).toEqual(["obj", "wgt"]);
+  });
 });
 
 describe("workspace-metadata-impact-v1 — blast radius (transitive causal closure)", () => {

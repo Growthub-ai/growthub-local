@@ -172,6 +172,24 @@ a derived governance summary (blocked attempts, publishes, drafts awaiting test,
 without proof). A new session reads the stream, cites `receiptId`s, and continues from
 `nextActions` / `rollbackRef`. See the SKILL card §"Agent Outcome Loop V1".
 
+### 5.4 The agent-facing console (MCP) — read + dry-run + governed hand-off
+
+`growthub serve --mcp` is the **agent-facing operating console over this control
+plane** — not a separate feature, not a new backend, not a mutation tool. It maps
+exactly onto the three layers:
+
+- **Intelligence (read-only):** topology, data model, dashboards, workflows,
+  integrations, outcome ledger, blast radius, stale surfaces, lineage, readiness.
+- **Law (dry-run only):** `preflight_patch` proxies the authoritative
+  `POST /api/workspace/patch/preflight` (`--live`), forwards `appScope`, and
+  **never writes**.
+- **Mutation (hand-off only):** `next_actions` emits the exact governed call
+  (`PATCH` / `sandbox-run` / `publish` / `helper/apply`). MCP never mutates —
+  there is no third mutation path. In `--live` mode it rehydrates per tool call,
+  so the loop closes: **read → reason → dry-run → governed mutate → re-read.**
+
+Canonical contract: [`GOVERNED_MCP_CONSOLE_V1.md`](./GOVERNED_MCP_CONSOLE_V1.md).
+
 ---
 
 ## 6. The operate-the-universe loop (reproducible)

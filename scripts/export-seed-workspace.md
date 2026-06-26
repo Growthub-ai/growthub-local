@@ -70,6 +70,11 @@ Written **before** `next dev` starts (same lane as `e2e-workspace-sandbox-api-pr
 | Source records sidecar | `growthub.source-records.json` |
 | Runtime auth stub | `.env.local` (`PROBE_SCHEDULER=feature-seed-stub`) |
 
+The trusted probe registry uses `mock://growthub-feature-seed/run`. The
+workspace runner handles that exact transport as a deterministic local feature
+seed response so `registry-workflow` can be executed end-to-end without relying
+on an external provider during temp-export testing.
+
 ### Data model objects
 
 | Object id | Type | Role |

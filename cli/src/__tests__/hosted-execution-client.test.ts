@@ -103,8 +103,10 @@ describe("hosted execution client", () => {
       ],
     });
 
-    expect(requestBody?.userPrompt).toBe("Create a polished software product hero image.");
-    const cmsNode = (requestBody?.nodes as Array<Record<string, unknown>>)[1];
+    const capturedBody = requestBody as Record<string, unknown> | null;
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody!.userPrompt).toBe("Create a polished software product hero image.");
+    const cmsNode = (capturedBody!.nodes as Array<Record<string, unknown>>)[1];
     expect((cmsNode.data as Record<string, unknown>).inputs).toMatchObject({
       prompt: "Create a polished software product hero image.",
       brandKitId: "",

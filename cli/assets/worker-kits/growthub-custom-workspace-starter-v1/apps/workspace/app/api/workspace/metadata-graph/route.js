@@ -35,6 +35,11 @@ import { readWorkspaceConfig, readWorkspaceSourceRecords } from "@/lib/workspace
 import { buildWorkspaceMetadataStore } from "@/lib/workspace-metadata-store";
 import { buildWorkspaceMetadataGraph } from "@/lib/workspace-metadata-graph";
 import { selectStaleMetadataGroups } from "@/lib/workspace-metadata-selectors";
+import { deriveBlastRadius } from "@/lib/workspace-metadata-impact";
+import { deriveStaleSurfaces } from "@/lib/workspace-stale-surfaces";
+import { deriveWorkflowImpact } from "@/lib/workspace-workflow-impact";
+import { deriveProvenanceLineage } from "@/lib/workspace-provenance-lineage";
+import { deriveAppReadiness } from "@/lib/workspace-app-readiness";
 
 const ENVELOPE_KIND = "growthub-workspace-metadata-graph-v1";
 const ENVELOPE_VERSION = 1;
@@ -111,10 +116,17 @@ async function GET(request) {
   // Optional stale-group selector via query params.
   let staleGroups = [];
   let staleReasons = [];
+  // Parse all causal query params from one URL read.
+  let impactId = "";
+  let lineageId = "";
+  let lineageDirection = "both";
   try {
     const url = request && request.url ? new URL(request.url) : null;
     const staleKind = url ? (url.searchParams.get("staleKind") || "").trim() : "";
     const staleId = url ? (url.searchParams.get("staleId") || "").trim() : "";
+    impactId = url ? (url.searchParams.get("impactId") || "").trim() : "";
+    lineageId = url ? (url.searchParams.get("lineageId") || "").trim() : "";
+    lineageDirection = url ? (url.searchParams.get("lineageDirection") || "both").trim() : "both";
     if (staleKind && staleId) {
       const result = selectStaleMetadataGroups(metadataStore, { kind: staleKind, id: staleId });
       staleGroups = Array.isArray(result?.groups) ? result.groups : [];
@@ -122,6 +134,30 @@ async function GET(request) {
     }
   } catch (error) {
     warnings.push(`Failed to compute stale groups: ${error?.message || "unknown error"}`);
+  }
+
+  // Causal derivations over the same read-only graph (Mutation → Law →
+  // Intelligence). All pure, all bounded, all secret-free. `staleSurfaces` is
+  // the unconditional freshness baseline (timestamps already in the graph);
+  // `impact` and `lineage` are computed on demand for one node.
+  let staleSurfaces = null;
+  let readiness = null;
+  let impact = null;
+  let lineage = null;
+  try {
+    staleSurfaces = deriveStaleSurfaces(graph);
+    readiness = deriveAppReadiness(graph);
+    if (impactId) {
+      impact = {
+        blastRadius: deriveBlastRadius(graph, impactId),
+        workflowImpact: deriveWorkflowImpact(graph, impactId)
+      };
+    }
+    if (lineageId) {
+      lineage = deriveProvenanceLineage(graph, lineageId, { direction: lineageDirection });
+    }
+  } catch (error) {
+    warnings.push(`Failed to compute causal derivations: ${error?.message || "unknown error"}`);
   }
 
   return NextResponse.json({
@@ -163,6 +199,11 @@ async function GET(request) {
       groups: staleGroups,
       reasons: staleReasons
     },
+    // Causal intelligence layer — read-only derivations over `graph` above.
+    staleSurfaces,
+    readiness,
+    ...(impact ? { impact } : {}),
+    ...(lineage ? { lineage } : {}),
     warnings,
     selectors: {
       // Manifest of selectors the route honours. Only `selectStaleMetadataGroups`
@@ -170,7 +211,14 @@ async function GET(request) {
       // selectors are exposed as importable helpers for server-side consumers
       // and the read-only inspector; they are NOT toggled through query
       // params in V1.
-      httpEnabled: ["selectStaleMetadataGroups"],
+      httpEnabled: [
+        "selectStaleMetadataGroups",
+        "deriveStaleSurfaces",
+        "deriveBlastRadius",
+        "deriveWorkflowImpact",
+        "deriveProvenanceLineage",
+        "deriveAppReadiness"
+      ],
       helperOnly: [
         "selectWidgetRequiredFields",
         "selectWorkflowNodeInputSchema",
