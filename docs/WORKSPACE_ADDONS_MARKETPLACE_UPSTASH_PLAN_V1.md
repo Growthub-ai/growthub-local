@@ -1,0 +1,265 @@
+# Workspace Add-ons Marketplace + Upstash Provider — Completion Plan (V1)
+
+> **Status:** Implementation plan to close PR [#257](https://github.com/Growthub-ai/growthub-local/pull/257)
+> (`codex/workspace-marketplace-upstash`) to production standards.
+> **Scope:** `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`
+> **Principle (non-negotiable):** Add-ons are **governed capability installation inside the existing
+> workspace universe** — no separate plugin DB, marketplace runtime, workflow engine, scheduler
+> abstraction, or install state. Everything lands as API Registry rows, sandbox/workflow rows,
+> workspace config, and outcome receipts.
+
+---
+
+## 1. Where #257 actually stands (verified against the head commit)
+
+The PR is correctly self-described as a **foundation checkpoint (~60%)**. Reading the head
+(`58ce2d3`) against `main`, the foundation is real and the universe-shape is right. To avoid
+re-doing work, this plan is calibrated to what is **already present** vs. what is **genuinely
+missing**.
+
+### Already present (do NOT rebuild)
+
+| Capability | Evidence in head |
+|---|---|
+| Provider/product catalog + region model | `lib/workspace-add-ons.js` → `MARKETPLACE_PROVIDERS`, `UPSTASH_PRODUCTS`, `UPSTASH_REGION_OPTIONS` |
+| API Registry row normalization for add-ons | `apiRegistryColumns()`, `makeUpstashProductRow()`, `withUpstashProductRegistry()` |
+| **Real product credential probe** (not inferred) | `app/api/workspace/add-ons/upstash/sync/route.js` and `.../providers/[providerId]/products/sync/route.js` already run a server-side `probeJsonPaths()` (read-only `GET` with `Authorization: Bearer <token>`) against `/v2/schedules`, `/ping`, `/info`, `/stats` and only write `syncStatus=verified` on HTTP-OK |
+| Receipt-oriented install | every sync route calls `appendOutcomeReceipt({ lane:"server-authoritative", ... })` on both blocked and published paths |
+| Canvas reads installed add-ons | `WorkflowSurface.jsx` → `deriveWorkspaceAddOnsState()`, `WorkflowAddOnChooser`, `useInstalledQstashWorkflowAddOn()` gated on `addOnsState.qstashWorkflow` |
+| Verified-only gating helper | `findInstalledWorkspaceAddOns()` requires `syncStatus==="verified" && syncProof && syncCheckedAt` |
+
+So review-comment §2 ("prove credentials, not infer readiness") is **already largely satisfied at
+the product level**. The remaining work is the *live execution loop*, not the readiness probe.
+
+### Genuinely missing (this plan's targets)
+
+1. **Provider-level "verified" is written without a live probe.** `app/api/workspace/add-ons/upstash/provider/sync/route.js` marks the provider row `syncStatus=verified` purely from env *presence* (`configuredProviderProducts()` = env vars set). No Upstash Developer API call is made. → over-claims verification.
+2. **Settings prop mismatch — real bug.** `app/settings/add-ons/page.jsx` passes `envSignals.upstashProducts`, but `app/settings/add-ons/add-ons-client.jsx` normalizes `envSignals.providerProductReadiness`. The client always reads `{}`, so per-product readiness never drives install state. (Flagged in review §2.)
+3. **No QStash *schedule* creation.** Only a read probe of `/v2/schedules` exists. There is no deterministic `Upstash-Schedule-Id` create/update — i.e. no actual scheduler capability installed.
+4. **No serverless workflow endpoint.** No `@upstash/workflow` `serve()` adapter; nothing executes the existing orchestration-config loop in a serverless lane.
+5. **No callback / failure-callback routes.** Nothing receives QStash's response and writes it back. `lastResponse` is a hard-coded placeholder string in `makeUpstashProductRow()` (lines ~275–277).
+6. **Canvas binds on read-probe, not schedule-capability proof.** `useInstalledQstashWorkflowAddOn()` sets `runLocality=serverless` + `schedulerRegistryId` once the row is "verified" by a *read* probe — but a verified read probe ≠ an installed schedule. (Review §6 wants a schedule capability proof.)
+7. **No dependencies.** `@upstash/qstash` / `@upstash/workflow` are not in the kit `package.json`.
+8. **No tests, no green build output.** All six PR checkboxes around QA/build are open.
+
+---
+
+## 2. Target end-to-end loop (the "closed loop")
+
+```txt
+provider account/env refs
+  → product readiness PROOF (live probe)            [present for products; add for provider]
+  → API Registry capability row (governed)          [present]
+  → deterministic QStash schedule create/update      [NEW — §4.2]
+  → workflow row bound to verified scheduler row      [tighten gate — §4.5]
+  → serverless workflow endpoint runs existing
+    orchestration-config loop as durable steps        [NEW — §4.3]
+  → QStash callback / failure callback (signed)       [NEW — §4.4]
+  → last response synchronized into workspace config  [NEW — §4.4]
+  → outcome receipt (lane=server-authoritative)       [extend — §4.4]
+  → MCP / lens / readiness can inspect it             [free, once rows carry proof]
+```
+
+Closure point = **§4.4**. Without the callback writing real proof into workspace config, QStash can
+run but the workspace never learns the result.
+
+---
+
+## 3. Two auth lanes (must stay separate — review §1)
+
+| Lane | Purpose | Auth | Representation |
+|---|---|---|---|
+| **Provider/account management** | Upstash account/resource management (Developer API) | HTTP Basic `EMAIL:API_KEY`; *native Upstash accounts only* | Provider row = "verified account *path*" only. Does **not** imply products installed. |
+| **Runtime product** | QStash / Redis / Vector / Search runtime calls | Per-product URL + bearer token env refs | Each product = its own API Registry row + its own live readiness proof. |
+
+**Rule:** a verified provider row never auto-verifies products; each product still proves itself.
+This is already the catalog's intent (`UPSTASH_PRODUCTS[].requiredEnv`, per-product `probe`) — §4.1
+just makes the provider route honest about it.
+
+**Secrets rule (applies everywhere below):** never write `QSTASH_TOKEN`, signing keys, REST tokens,
+or any secret value into workspace config, API Registry rows, receipts, or HTTP responses. Persist
+only non-secret evidence: `status`, `syncStatus`, `syncProof`, `lastTested`, `missingEnv`,
+`scheduleId`, timestamps, body *previews*. Reuse the existing `redactSecrets()` path that
+`appendOutcomeReceipt()` already applies.
+
+---
+
+## 4. Work breakdown (additive, phased)
+
+### Phase 0 — Foundation correctness & deps (small, unblocks everything)
+
+**0.1 Fix the settings prop mismatch (bug).**
+- `app/settings/add-ons/page.jsx`: rename the emitted signal to match the consumer, i.e. provide
+  `providerProductReadiness` keyed by provider, e.g.
+  `providerProductReadiness: { upstash: listUpstashProductReadiness(process.env) }`
+  (or generalize to all `MARKETPLACE_PROVIDERS` via `listProviderProductReadiness`).
+- `app/settings/add-ons/add-ons-client.jsx`: keep consuming
+  `envSignals.providerProductReadiness`; confirm `WorkspaceAddOnsMarketplace.jsx` reads the same
+  shape. Add a unit test (§5) asserting the page-emitted key equals the client-consumed key.
+
+**0.2 Add dependencies.**
+- Add to kit `package.json`: `@upstash/qstash` (Receiver for signature verification, schedules
+  client) and `@upstash/workflow` (`serve` for Next.js). Pin to current major.
+- Keep the existing fallback-by-`fetch` probe style for read probes (no new dep needed there);
+  use the SDK only where it earns its keep (signature `Receiver`, schedule idempotency helpers).
+
+**0.3 Centralize env resolution through the canonical entry.**
+- Route all token reads through the kit's existing canonical resolver
+  (`readServerSecret()` / `envKeyCandidates()` in `app/api/workspace/sandbox-run/route.js` and
+  `lib/orchestration-graph-runner.js`) instead of ad-hoc `process.env[...]` in add-on routes, so
+  "the canonical entry returns the stored env tokens for the run" is literally true (PR checkbox 1).
+  Extract that resolver into a shared `lib/` helper if it is currently route-local.
+
+### Phase 1 — Provider verification honesty (review §1)
+
+**1.1** `app/api/workspace/add-ons/upstash/provider/sync/route.js`: before writing
+`syncStatus=verified`, perform a real provider-lane probe.
+- If `UPSTASH_EMAIL` + `UPSTASH_API_KEY` are present, do a single read-only Developer API call
+  (HTTP Basic) — e.g. `GET https://api.upstash.com/v2/redis/databases` — and store only
+  `proof`/`lastTested`. If the Developer API is unavailable (third-party account), fall back to
+  marking the provider `account-linked` (a distinct, weaker status) rather than `verified`, and
+  surface that in the receipt `nextActions`.
+- Preserve current behavior of listing `configuredProviderProducts()` for the UI, but the
+  provider's `syncStatus` must reflect the probe, not mere env presence.
+
+### Phase 2 — QStash schedule as an installed capability (review §3) — **NEW**
+
+**2.1 Deterministic schedule identity.** Derive a stable id for idempotent create/update:
+```txt
+growthub:{workspaceId}:{sandboxObjectId}:{sandboxRowId}:{workflowVersion}
+```
+Add a pure helper `deriveQstashScheduleId(...)` to `lib/workspace-add-ons.js` (unit-tested for
+idempotency — same inputs → same id).
+
+**2.2 Schedule create/update route.** Add
+`app/api/workspace/add-ons/upstash/qstash/schedule/route.js` (`POST`):
+- Resolve `QSTASH_TOKEN` via the canonical entry (§0.3); 422 with `missingEnv` if absent.
+- `POST /v2/schedules/{destination}` to QStash with headers:
+  `Authorization: Bearer <token>`, `Upstash-Cron: <cron>`,
+  `Upstash-Schedule-Id: <deriveQstashScheduleId(...)>`,
+  `Upstash-Callback: <workspace callback URL>`,
+  `Upstash-Failure-Callback: <workspace failure URL>`,
+  optional `Upstash-Forward-*` governed metadata (workspaceId/objectId/rowId/runId).
+  `destination` = the serverless workflow endpoint from §4.3.
+- On success, **update** the API Registry QStash row with non-secret scheduler metadata:
+  `scheduleId, scheduleDestination, callbackUrl, failureCallbackUrl, region,
+  lastScheduleTime, nextScheduleTime, lastScheduleStates, syncStatus=verified,
+  syncProof, lastTested`. Append a receipt (`changedFields: ["dataModel.api-registry"]`).
+- Add a matching `DELETE` (uninstall) that calls `DELETE /v2/schedules/{scheduleId}` and clears the
+  scheduler metadata + receipt.
+
+**2.3 Extend the row schema.** Add the new scheduler-metadata columns to `apiRegistryColumns()` in
+`lib/workspace-add-ons.js` so the row can carry schedule proof. `makeUpstashProductRow()` keeps
+returning placeholders **only** until a real schedule/callback overwrites them.
+
+### Phase 3 — Serverless workflow endpoint as a thin adapter (review §4) — **NEW**
+
+**3.1** Add `app/api/workspace/workflows/upstash/route.js` using `serve()` from
+`@upstash/workflow/nextjs`. It must be a **thin adapter over the existing governed run loop**, not a
+second workflow schema:
+- Parse `{ workspaceId, objectId, rowId, runId, orchestrationConfigVersion }` (forwarded headers/payload).
+- `readWorkspaceConfig()` → resolve the same sandbox/workflow row used by
+  `POST /api/workspace/sandbox-run`.
+- Execute the **existing** orchestration loop —
+  `runOrchestrationGraphIfPresent()` / `runAgentSwarmGraphIfPresent()`
+  (`lib/orchestration-graph-runner.js`, `lib/orchestration-agent-swarm.js`) — wrapping each node/phase
+  as a Workflow `context.run(...)` step so QStash provides durability/retry/resume. No node-type
+  changes; reuse `KNOWN_NODE_TYPES`.
+- Write outputs through the existing governed helpers and `appendOutcomeReceipt()`.
+- Return a compact run result. **Do not** introduce a parallel runner or persistence model.
+
+### Phase 4 — Callback / failure-callback = the synchronization bridge (review §5) — **NEW, closure point**
+
+**4.1** Add:
+- `app/api/workspace/add-ons/upstash/qstash/callback/route.js`
+- `app/api/workspace/add-ons/upstash/qstash/failure/route.js`
+
+**4.2** Both routes must:
+1. Verify `Upstash-Signature` using `Receiver` from `@upstash/qstash` with
+   `QSTASH_CURRENT_SIGNING_KEY` / `QSTASH_NEXT_SIGNING_KEY` (resolved via §0.3).
+2. Use the **raw request body** for verification (do not stringify a parsed object — per Upstash docs).
+   Reject invalid/missing signatures with 401 and a `blocked` receipt.
+3. Match the callback to the governed schedule/run via `scheduleId` / `messageId` / forwarded
+   workflow headers / payload ids.
+4. Write only normalized, non-secret proof into the workspace config + API Registry row + receipt:
+   `lastResponseStatus, lastResponseBodyPreview, lastMessageId, lastScheduleId, lastAttemptedAt,
+   lastSucceededAt | lastFailedAt, lastFailureReason, syncProof`.
+5. Append an outcome receipt: `lane="server-authoritative"`, `policyVerdict`, `changedFields`,
+   `objectRefs` pointing at the sandbox/workflow row.
+
+**4.3 Replace the placeholder.** This is what makes the PR's checkbox 4 true: the row's
+`lastResponse`/`lastResponseBodyPreview` now comes from a real scheduled run, synchronized into
+workspace config for that run.
+
+### Phase 5 — Canvas binds only on real schedule-capability proof (review §6)
+
+**5.1** Tighten `WorkflowSurface.jsx`:
+- `useInstalledQstashWorkflowAddOn()` should require the QStash API Registry row to have **both**
+  `syncStatus==="verified"` and a **schedule capability proof** (`scheduleId` present from §2.2),
+  not just a verified read probe.
+- Extend `deriveWorkspaceAddOnsState()` / `findInstalledWorkspaceAddOns()` in
+  `lib/workspace-add-ons.js` to expose `hasQstashSchedulerCapability` (verified row **with**
+  `scheduleId`). Gate the "Use for this workflow" CTA on that; otherwise keep the workflow local and
+  route to `/settings/add-ons` (the existing `openQstashSetup()` path).
+- Only then patch `runLocality=serverless` + `schedulerRegistryId=upstash-qstash-workflow`.
+
+---
+
+## 5. QA bar before merge (concretizes review §7 + PR checkboxes)
+
+**Unit**
+- [ ] Provider/product sync never writes `verified` without required env **and** a successful probe.
+- [ ] No secret value ever appears in workspace config, API Registry rows, receipts, or responses (assert against `redactSecrets()` output).
+- [ ] `deriveQstashScheduleId(...)` is deterministic/idempotent for identical inputs.
+- [ ] Callback route rejects invalid/missing `Upstash-Signature` (401 + blocked receipt).
+- [ ] Callback route updates the correct schedule/workflow row and appends a receipt.
+- [ ] `page.jsx` emits the exact `envSignals` key the client consumes (`providerProductReadiness`) — regression test for the §0.1 bug.
+- [ ] Canvas bind is blocked unless the row has `verified` **and** `scheduleId`.
+
+**Smoke**
+- [ ] Install/sync QStash product → API Registry row appears `verified`.
+- [ ] Create a schedule → row carries `scheduleId` + scheduler metadata.
+- [ ] Workflow canvas binds installed QStash row → `runLocality=serverless`, `schedulerRegistryId=upstash-qstash-workflow`.
+- [ ] One-minute schedule (or single publish test) → callback/failure route writes last-response proof into workspace config.
+
+**Build**
+- [ ] Kit `next build` (`--webpack`) green; existing kit smoke/QA gate green; paste output into the PR.
+
+---
+
+## 6. File-level change map
+
+| Action | Path (under `…/growthub-custom-workspace-starter-v1/apps/workspace/`) |
+|---|---|
+| FIX | `app/settings/add-ons/page.jsx` (prop key) |
+| EDIT | `lib/workspace-add-ons.js` (`apiRegistryColumns` += scheduler meta; `deriveQstashScheduleId`; `deriveWorkspaceAddOnsState` += `hasQstashSchedulerCapability`) |
+| EDIT | `app/api/workspace/add-ons/upstash/provider/sync/route.js` (live provider probe) |
+| NEW | `app/api/workspace/add-ons/upstash/qstash/schedule/route.js` (POST/DELETE) |
+| NEW | `app/api/workspace/workflows/upstash/route.js` (`serve()` thin adapter) |
+| NEW | `app/api/workspace/add-ons/upstash/qstash/callback/route.js` |
+| NEW | `app/api/workspace/add-ons/upstash/qstash/failure/route.js` |
+| EDIT | `app/workflows/WorkflowSurface.jsx` (gate bind on schedule capability) |
+| EDIT | `package.json` (`@upstash/qstash`, `@upstash/workflow`) |
+| EXTRACT | shared canonical env resolver helper in `lib/` (from `sandbox-run` route) |
+| NEW | unit/smoke tests per §5 |
+
+## 7. Sequencing & risk
+
+1. **Phase 0** first (bug fix + deps + canonical resolver) — unblocks and is low-risk/high-value.
+2. **Phase 1** (provider honesty) — small, removes the worst over-claim.
+3. **Phase 2 → 3 → 4** in order — this is the real loop; Phase 4 is the closure point and should be
+   the gate for flipping the PR out of WIP.
+4. **Phase 5** last — purely tightens UX gating once real proof exists.
+
+**Top risks:** (a) signature verification regressions if the parsed body is stringified — covered by
+a dedicated unit test; (b) read-only persistence runtimes (Vercel/Netlify) where
+`writeWorkspaceConfig` returns 409 — callbacks must degrade gracefully and still emit a receipt with
+`persisted:false`; (c) scope creep into a parallel runner — explicitly forbidden, Phase 3 is a thin
+adapter only.
+
+---
+
+*This plan keeps every new capability inside the same Growthub governed universe: API Registry rows,
+sandbox/workflow rows, workspace config, and outcome receipts. The marketplace surface and canonical
+entry are already a strong foundation; the next patch focuses almost entirely on proving the live
+install → schedule → callback → sync loop and the QA that backs it.*
