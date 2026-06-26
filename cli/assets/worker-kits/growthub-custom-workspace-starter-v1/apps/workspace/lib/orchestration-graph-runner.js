@@ -62,6 +62,27 @@ function buildAuthHeaders(record, secretValue) {
   return { [headerName]: prefix ? `${prefix} ${secretValue}` : secretValue };
 }
 
+function executeFeatureSeedMock(url, { registryId, method, startedAt }) {
+  if (!String(url || "").startsWith("mock://growthub-feature-seed/")) return null;
+  return {
+    ok: true,
+    exitCode: 0,
+    durationMs: Date.now() - startedAt,
+    stdout: JSON.stringify({ ok: true, status: 200, data: [{ id: "rec-1", label: "Probe record", registryId }] }, null, 2),
+    stderr: "",
+    rawPayload: { ok: true, status: 200, data: [{ id: "rec-1", label: "Probe record", registryId }] },
+    httpStatus: 200,
+    adapterMeta: {
+      mode: "orchestration-graph",
+      registryId,
+      url,
+      httpStatus: 200,
+      method,
+      transport: "feature-seed-mock"
+    }
+  };
+}
+
 function findRegistryRecord(workspaceConfig, registryId) {
   const id = String(registryId || "").trim();
   if (!id) return null;
@@ -201,6 +222,12 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
     } catch {
       body = bodyTemplate;
     }
+  }
+
+  const mockResult = executeFeatureSeedMock(url, { registryId, method, startedAt });
+  if (mockResult) {
+    clearTimeout(timer);
+    return mockResult;
   }
 
   try {
