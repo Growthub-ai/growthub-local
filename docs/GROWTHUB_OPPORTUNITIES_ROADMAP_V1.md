@@ -210,18 +210,31 @@ as an **optional** `readiness?` field on `GET /api/workspace/apps` (additive, ve
 Causation-ITT shape (`state → eligibility → guidance → action`) the single-workspace cockpit
 already uses.
 
-### Sprint S6 — `growthub serve --mcp` (capstone; the DNA as a queryable context engine)
+### Sprint S6 — `growthub serve --mcp` — LANDED as the agent-facing operating console
 
-Net-new but additive: a local MCP server that exposes the **already-derived** truth as tools —
-`get_workspace_topology` (the metadata graph), `find_downstream_dependencies` (S1 deriver),
-`simulate_causal_impact` (S2 `plan`), `list_contracts` (the `@growthub/api-contract` SDK +
-skills catalog). Read-only; it answers *"if I remove this endpoint, what breaks?"* from static
-JSON without touching the network. This is last because it is only valuable once S1–S2 expose
-clean, importable derivers — which they now would.
+Shipped (0.14.10) as the **agent-facing operating console over the universe** — not
+a separate feature, a new backend, or a mutation tool. It exposes the
+**already-derived** truth as read-only tools and maps onto the three-layer plane:
 
-- *Substrate:* the S1/S2 derivers, `packages/api-contract`, `cli/src/skills/catalog.ts`.
-  *Honesty:* this introduces an MCP dependency that does not exist today — flag it explicitly as
-  net-new in the PR, keep it an opt-in subcommand, no change to any existing command.
+- **Intelligence (read-only):** `describe_workspace`, `get_workspace_topology`,
+  `list_data_model` / `list_dashboards` / `list_workflows` / `list_integrations`,
+  `outcome_ledger`, `describe_node`, `find_downstream_dependencies`,
+  `simulate_causal_impact`, `trace_lineage`, `app_readiness`.
+- **Law (dry-run only):** `preflight_patch` — proxies the authoritative runtime
+  preflight (`--live`), forwards `appScope`, never writes.
+- **Mutation (hand-off only):** `next_actions` emits the governed call; MCP never
+  mutates. `--live` rehydrates per call → the loop closes
+  (**read → reason → dry-run → governed mutate → re-read**).
+
+Zero-dependency MCP-over-stdio (no new package). Canonical contract:
+[`GOVERNED_MCP_CONSOLE_V1.md`](./GOVERNED_MCP_CONSOLE_V1.md).
+
+- *Substrate:* the S1–S5 derivers + `workspace-patch-impact.js` (the one shared
+  impact model, incl. removals). *Honesty:* two roadmap candidates were
+  intentionally **not** shipped — a "minimal change set" solver (heuristic, not
+  exact) and a connector-discovery overlay (discovery half not built); both
+  removed rather than shipped half-done. Phase-A source-only; `cli/dist/**`
+  rebuild is the Phase-B release step.
 
 ---
 
