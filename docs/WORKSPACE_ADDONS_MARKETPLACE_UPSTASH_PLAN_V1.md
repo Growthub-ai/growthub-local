@@ -294,6 +294,15 @@ adapter — a second provider is added by registering one more adapter, with **n
 - Kit `next build` (`--webpack`) → green; all new routes registered.
 - `check:version-sync` (bump), `check:worker-kits`, `freeze:check`, kernel, monorepo-boundary, cli-package → pass.
 
+**Review hardening (round 2 — security/correctness)**
+- **Signature is endpoint-bound.** `verifyQstashSignature` now enforces `iss === "Upstash"` and `sub === expectedUrl`, requires the `body` claim for a non-empty body, and the callback/destination routes derive `expectedUrl` from the canonical public URL (not a header). A `/callback` signature cannot be replayed at `/workflows` and vice-versa (unit-tested both directions).
+- **Callbacks require the installed scheduleId.** `evaluateCallbackScheduleMatch` (pure, unit-tested) requires the registry row to own a `scheduleId`, the callback to carry one, and the two to match; any miss appends a **blocked** receipt instead of silently mutating config.
+- **Single canonical secret resolver.** `sandbox-run`, `orchestration-graph-runner`, `test-api-record`, and `env-status` now import `lib/server-secrets.js` and define no local copies — enforced by a regression test that scans the kit for duplicate `readServerSecret`/`envKeyCandidates` definitions.
+- **`QSTASH_URL` optional.** Only `QSTASH_TOKEN` is required; the schedule base URL derives from the selected region (`https://qstash-{region}.upstash.io`) when `QSTASH_URL` is absent, and an explicit `QSTASH_URL` overrides it (unit-tested).
+- **No localhost/non-https callbacks.** `resolveWorkspacePublicUrl` returns `""` for `localhost`/`127.0.0.1`/`0.0.0.0`/non-https origins unless `GROWTHUB_ALLOW_INSECURE_CALLBACK_URL=true` (local tunnel), so a schedule is never installed against an unreachable callback.
+- **Forwarded-header naming fixed.** QStash strips the `Upstash-Forward-` prefix, so the schedule sets canonical `Upstash-Forward-X-Growthub-*` and the destination reads `x-growthub-*`.
+- Plus retry counters (`retried`/`maxRetries`) and `lastScheduleInstalledAt` recorded as non-secret proof.
+
 **Honest residuals (named, not hidden)**
-- The schedule/callback/serverless routes are exercised by `next build` + pure-unit coverage; a live end-to-end run against a real QStash project (one-minute schedule firing a real callback) still needs a manual smoke with real `QSTASH_*` env. The signature path is proven offline with forged-but-valid JWTs.
+- The schedule/callback/serverless routes are exercised by `next build` + pure-unit coverage; a live end-to-end run against a real QStash project (one-minute schedule firing a real callback) still needs a manual smoke with real `QSTASH_*` env + a public `GROWTHUB_WORKSPACE_PUBLIC_URL`. The signature path is proven offline with forged-but-valid JWTs.
 - Step-level Workflow durability via `@upstash/workflow serve()` is intentionally **not** adopted: scheduling/retry come from QStash schedules, step semantics from the existing orchestration graph. Wrapping each node as a `serve()` step is named future work, not required to close the loop.

@@ -21,7 +21,24 @@ import {
   findRegistryRowByIntegrationId,
   withMarketplaceSchedulerMetadata,
 } from "@/lib/workspace-add-ons";
-import { getSchedulerAdapter, isSchedulerProduct } from "@/lib/workspace-add-on-scheduler";
+import {
+  getSchedulerAdapter,
+  isSchedulerProduct,
+  resolveWorkspacePublicUrl,
+  buildSchedulerCallbackUrls,
+  evaluateCallbackScheduleMatch,
+} from "@/lib/workspace-add-on-scheduler";
+
+const SCHEDULE_MATCH_HTTP = {
+  callback_no_installed_schedule: 409,
+  callback_missing_schedule_id: 400,
+  callback_schedule_id_mismatch: 409,
+};
+const SCHEDULE_MATCH_MESSAGE = {
+  callback_no_installed_schedule: "no installed schedule for this product",
+  callback_missing_schedule_id: "callback is missing a scheduleId",
+  callback_schedule_id_mismatch: "callback scheduleId does not match installed schedule",
+};
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 function clean(value) {
@@ -30,6 +47,26 @@ function clean(value) {
 
 function schedulerProductFor(provider) {
   return (provider?.products || []).find((product) => isSchedulerProduct(product)) || null;
+}
+
+function requestOrigin(request) {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return "";
+  }
+}
+
+async function blockedCallbackReceipt(provider, product, kind, summary, code) {
+  await appendOutcomeReceipt({
+    kind: "workspace-add-on-callback",
+    lane: "server-authoritative",
+    outcomeStatus: "blocked",
+    actor: provider.providerId,
+    objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
+    summary,
+    policyVerdict: { ok: false, violationCodes: [code] },
+  });
 }
 
 /**
@@ -50,7 +87,13 @@ async function handleSchedulerCallback({ request, providerId, kind }) {
   const rawBody = await request.text();
   const signature = request.headers.get("upstash-signature") || request.headers.get("Upstash-Signature") || "";
 
-  const verdict = adapter.verifyCallback({ signature, rawBody, env: process.env });
+  // Bind the signature to THIS endpoint (anti-replay). The expected URL is the
+  // canonical callback/failure route derived from the public URL — never a header.
+  const baseUrl = resolveWorkspacePublicUrl(process.env, requestOrigin(request));
+  const callbackUrls = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
+  const expectedUrl = kind === "failure" ? callbackUrls.failureCallbackUrl : callbackUrls.callbackUrl;
+
+  const verdict = adapter.verifyCallback({ signature, rawBody, expectedUrl, env: process.env });
   if (!verdict.ok) {
     await appendOutcomeReceipt({
       kind: "workspace-add-on-callback",
@@ -68,9 +111,13 @@ async function handleSchedulerCallback({ request, providerId, kind }) {
 
   const config = await readWorkspaceConfig();
   const row = findRegistryRowByIntegrationId(config, product.integrationId);
-  // Defensive: confirm the callback maps to the installed schedule.
-  if (parsed.scheduleId && row?.scheduleId && clean(parsed.scheduleId) !== clean(row.scheduleId)) {
-    return { status: 409, body: { error: "callback scheduleId does not match installed schedule" } };
+  // A governed scheduled callback MUST carry the installed schedule identity.
+  // Reject (and record) anything that cannot be tied to a live installed
+  // schedule, so a stray/forged-but-signed callback can never mutate config.
+  const match = evaluateCallbackScheduleMatch({ rowScheduleId: row?.scheduleId, parsedScheduleId: parsed.scheduleId });
+  if (!match.ok) {
+    await blockedCallbackReceipt(provider, product, kind, `${product.label} ${kind} callback ignored (${match.code}): row=${clean(row?.scheduleId) || "none"} callback=${clean(parsed.scheduleId) || "none"}.`, match.code);
+    return { status: SCHEDULE_MATCH_HTTP[match.code] || 409, body: { error: SCHEDULE_MATCH_MESSAGE[match.code] || "callback rejected" } };
   }
 
   const nowIso = new Date().toISOString();
@@ -79,6 +126,10 @@ async function handleSchedulerCallback({ request, providerId, kind }) {
     lastResponseBodyPreview: parsed.bodyPreview,
     lastMessageId: parsed.messageId,
     lastAttemptedAt: nowIso,
+    lastScheduleStates: [
+      parsed.retried != null ? `retried=${parsed.retried}` : "",
+      parsed.maxRetries != null ? `maxRetries=${parsed.maxRetries}` : "",
+    ].filter(Boolean).join(","),
     lastResponse: parsed.succeeded
       ? `Scheduled run ok (HTTP ${parsed.status}).`
       : `Scheduled run failed: ${parsed.failureReason}.`,

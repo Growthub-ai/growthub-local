@@ -14,16 +14,11 @@
 import { describePostgresAdapter } from "./adapters/persistence/postgres.js";
 import { describeQstashKvAdapter } from "./adapters/persistence/qstash-kv.js";
 import { describeProviderManagedAdapter } from "./adapters/persistence/provider-managed.js";
+// Canonical UPPER_SNAKE candidate expansion — single source in server-secrets.js.
+import { envKeyCandidates } from "./server-secrets.js";
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
-}
-
-/** Canonical UPPER_SNAKE candidate expansion for a logical ref. */
-function envKeyCandidates(ref) {
-  const token = clean(ref).replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase();
-  if (!token) return [];
-  return Array.from(new Set([token, `${token}_API_KEY`, `${token}_TOKEN`]));
 }
 
 /**

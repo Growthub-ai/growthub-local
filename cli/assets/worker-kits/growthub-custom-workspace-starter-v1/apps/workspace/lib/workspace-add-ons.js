@@ -25,8 +25,11 @@ const UPSTASH_PRODUCTS = [
     entityTypes: "workflow-run,scheduler",
     capabilities: "scheduler,workflow,queue",
     executionLane: "serverless-scheduler",
-    requiredEnv: ["QSTASH_URL", "QSTASH_TOKEN"],
-    optionalEnv: ["QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY"],
+    // QSTASH_URL is optional: the schedule API is region-based, so the adapter
+    // derives https://qstash-{region}.upstash.io from the selected region when
+    // QSTASH_URL is absent. Only the token is truly required.
+    requiredEnv: ["QSTASH_TOKEN"],
+    optionalEnv: ["QSTASH_URL", "QSTASH_CURRENT_SIGNING_KEY", "QSTASH_NEXT_SIGNING_KEY"],
     consoleUrl: "https://console.upstash.com/qstash",
     probe: {
       baseUrlEnv: "QSTASH_URL",
@@ -188,6 +191,7 @@ function apiRegistryColumns(existing = []) {
     "callbackUrl",
     "failureCallbackUrl",
     "cron",
+    "lastScheduleInstalledAt",
     "lastScheduleTime",
     "nextScheduleTime",
     "lastScheduleStates",
@@ -214,6 +218,7 @@ const SCHEDULER_METADATA_KEYS = new Set([
   "failureCallbackUrl",
   "cron",
   "region",
+  "lastScheduleInstalledAt",
   "lastScheduleTime",
   "nextScheduleTime",
   "lastScheduleStates",

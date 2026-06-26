@@ -194,6 +194,7 @@ async function POST(request, context) {
       syncCheckedAt: nowIso,
       syncProof: syncResult.proof,
       lastTested: nowIso,
+      lastScheduleInstalledAt: nowIso,
       lastScheduleTime: nowIso,
     },
   });

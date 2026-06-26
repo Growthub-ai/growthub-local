@@ -19,7 +19,12 @@
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { getMarketplaceProvider } from "@/lib/workspace-add-ons";
-import { getSchedulerAdapter, isSchedulerProduct } from "@/lib/workspace-add-on-scheduler";
+import {
+  getSchedulerAdapter,
+  isSchedulerProduct,
+  resolveWorkspacePublicUrl,
+  buildSchedulerCallbackUrls,
+} from "@/lib/workspace-add-on-scheduler";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
@@ -32,6 +37,14 @@ function safeJsonParse(text) {
     return JSON.parse(text);
   } catch {
     return null;
+  }
+}
+
+function requestOrigin(request) {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return "";
   }
 }
 
@@ -54,15 +67,20 @@ async function POST(request, context) {
 
   const rawBody = await request.text();
   const signature = request.headers.get("upstash-signature") || request.headers.get("Upstash-Signature") || "";
-  const verdict = adapter.verifyCallback({ signature, rawBody, env: process.env });
+  // Signature must be minted for THIS destination route (anti-replay).
+  const baseUrl = resolveWorkspacePublicUrl(process.env, requestOrigin(request));
+  const expectedUrl = buildSchedulerCallbackUrls(baseUrl, provider.providerId).destinationUrl;
+  const verdict = adapter.verifyCallback({ signature, rawBody, expectedUrl, env: process.env });
   if (!verdict.ok) {
     return NextResponse.json({ ok: false, error: "invalid signature", reason: verdict.reason }, { status: 401 });
   }
 
-  // Run pointer can come from the body or the forwarded headers the scheduler set.
+  // Run pointer: prefer the JSON body, fall back to the canonical forwarded
+  // headers. QStash strips the `Upstash-Forward-` prefix, so these arrive as
+  // `x-growthub-*` (NOT `upstash-forward-*`).
   const payload = safeJsonParse(rawBody) || {};
-  const objectId = clean(payload.objectId || request.headers.get("upstash-forward-objectid"));
-  const rowId = clean(payload.rowId || request.headers.get("upstash-forward-rowid"));
+  const objectId = clean(payload.objectId || request.headers.get("x-growthub-object-id"));
+  const rowId = clean(payload.rowId || request.headers.get("x-growthub-row-id"));
   if (!objectId || !rowId) {
     return NextResponse.json({ ok: false, error: "missing objectId/rowId run pointer" }, { status: 400 });
   }
@@ -73,7 +91,8 @@ async function POST(request, context) {
     return NextResponse.json({ ok: false, error: `no sandbox row ${rowId} in object ${objectId}` }, { status: 404 });
   }
 
-  const runId = clean(payload.scheduleId) ? `sched_${clean(payload.scheduleId)}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
+  const scheduleId = clean(payload.scheduleId || request.headers.get("x-growthub-schedule-id"));
+  const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
   let result;
   try {
     result = await runOrchestrationGraphIfPresent({

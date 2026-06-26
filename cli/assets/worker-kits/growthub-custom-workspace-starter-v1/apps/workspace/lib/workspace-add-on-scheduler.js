@@ -65,10 +65,24 @@ function deriveScheduleId({ providerId, workspaceId, objectId, rowId, version } 
 }
 
 /**
+ * A callback/destination origin a provider could never actually reach (or that
+ * would leak over plaintext). Registering one produces a false "installed
+ * scheduler" that never calls back — exactly what we are trying to avoid.
+ */
+function isUnsafeCallbackUrl(url) {
+  const u = clean(url).toLowerCase();
+  if (!u) return true;
+  if (!u.startsWith("https://")) return true; // QStash callbacks require https
+  return /^https:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)([:/]|$)/.test(u);
+}
+
+/**
  * Resolve the public base URL the provider will call back to. Explicit env
  * override wins (the only reliable value on serverless hosts behind proxies);
- * otherwise fall back to the request origin. Returns "" if neither is usable so
- * callers can fail loudly instead of registering a localhost callback.
+ * otherwise fall back to the request origin. Returns "" for an unsafe origin
+ * (localhost / non-https) unless `GROWTHUB_ALLOW_INSECURE_CALLBACK_URL=true`
+ * is set for a local tunnel test — so callers fail loudly instead of
+ * registering a callback the provider can never deliver to.
  */
 function resolveWorkspacePublicUrl(env = process.env, requestOrigin = "") {
   const source = env && typeof env === "object" ? env : {};
@@ -77,8 +91,11 @@ function resolveWorkspacePublicUrl(env = process.env, requestOrigin = "") {
       source.WORKSPACE_PUBLIC_URL ||
       (source.VERCEL_URL ? `https://${clean(source.VERCEL_URL)}` : ""),
   );
-  const base = explicit || clean(requestOrigin);
-  return base.replace(/\/+$/, "");
+  const allowInsecure = clean(source.GROWTHUB_ALLOW_INSECURE_CALLBACK_URL) === "true";
+  const base = (explicit || clean(requestOrigin)).replace(/\/+$/, "");
+  if (!base) return "";
+  if (allowInsecure) return base;
+  return isUnsafeCallbackUrl(base) ? "" : base;
 }
 
 /** The three governed URLs a scheduled run needs, all under one provider. */
@@ -111,27 +128,36 @@ function safeJsonParse(text) {
   }
 }
 
-function constantTimeEqual(a, b) {
-  const bufA = Buffer.from(String(a), "utf8");
-  const bufB = Buffer.from(String(b), "utf8");
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+/** Normalize a URL for `sub`-claim comparison (trailing slash + case-insensitive host). */
+function normalizeUrlForCompare(value) {
+  const raw = clean(value).replace(/\/+$/, "");
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+  } catch {
+    return raw.toLowerCase();
+  }
 }
 
 /**
  * Verify a QStash-style signed request. The `Upstash-Signature` header is a
- * JWT (HS256) signed with one of the rotating signing keys. We verify:
- *   - HMAC-SHA256 over `${headerB64}.${payloadB64}` matches the signature for
- *     the current OR next signing key (key rotation),
- *   - the `body` claim equals the SHA-256 (base64) of the RAW request body
- *     (so a tampered body is rejected — the raw body must NOT be re-stringified),
- *   - `exp`/`nbf` are within tolerance.
+ * JWT (HS256) signed with one of the rotating signing keys. We verify EVERY
+ * claim Upstash's manual verification + `Receiver.verify()` require:
+ *   - HMAC-SHA256 over `${headerB64}.${payloadB64}` matches for the current OR
+ *     next signing key (key rotation),
+ *   - `iss === "Upstash"`,
+ *   - `sub === expectedUrl` (binds the signature to THIS endpoint — prevents
+ *     replaying a /callback signature against /workflows and vice-versa),
+ *   - the `body` claim is present for a non-empty body and equals SHA-256
+ *     (base64) of the RAW request body (raw body must NOT be re-stringified),
+ *   - `exp`/`nbf` within tolerance.
  *
  * Returns { ok, reason, claims }. Implemented natively (node:crypto) so it is
  * wire-compatible with `@upstash/qstash`'s Receiver without a runtime dep, and
- * fully testable offline.
+ * fully testable offline. `expectedUrl` MUST come from the canonical public
+ * URL / route, never from an attacker-controlled header.
  */
-function verifyQstashSignature({ signature, body, signingKeys, currentTimeS } = {}) {
+function verifyQstashSignature({ signature, body, signingKeys, expectedUrl, expectedIssuer = "Upstash", currentTimeS } = {}) {
   const token = clean(signature);
   if (!token) return { ok: false, reason: "missing-signature" };
   const parts = token.split(".");
@@ -153,11 +179,29 @@ function verifyQstashSignature({ signature, body, signingKeys, currentTimeS } = 
   const claims = safeJsonParse(base64UrlToBuffer(payloadB64).toString("utf8"));
   if (!claims || typeof claims !== "object") return { ok: false, reason: "bad-claims" };
 
+  // Issuer must be Upstash.
+  if (expectedIssuer && clean(claims.iss) !== expectedIssuer) {
+    return { ok: false, reason: "issuer-mismatch", claims };
+  }
+
+  // Subject must equal the endpoint this request actually hit (anti-replay).
+  if (expectedUrl) {
+    if (!clean(claims.sub)) return { ok: false, reason: "missing-subject", claims };
+    if (normalizeUrlForCompare(claims.sub) !== normalizeUrlForCompare(expectedUrl)) {
+      return { ok: false, reason: "subject-mismatch", claims };
+    }
+  }
+
   // The body claim binds the signature to the exact bytes received.
   const rawBody = typeof body === "string" ? body : "";
-  const expectedDigest = normalizeDigestClaim(createHash("sha256").update(rawBody, "utf8").digest("base64"));
-  if (claims.body && normalizeDigestClaim(claims.body) !== expectedDigest) {
-    return { ok: false, reason: "body-mismatch", claims };
+  if (rawBody.length > 0 && !clean(claims.body)) {
+    return { ok: false, reason: "missing-body-claim", claims };
+  }
+  if (clean(claims.body)) {
+    const expectedDigest = normalizeDigestClaim(createHash("sha256").update(rawBody, "utf8").digest("base64"));
+    if (normalizeDigestClaim(claims.body) !== expectedDigest) {
+      return { ok: false, reason: "body-mismatch", claims };
+    }
   }
 
   const now = Number.isFinite(currentTimeS) ? currentTimeS : Math.floor(Date.now() / 1000);
@@ -204,8 +248,18 @@ const upstashQstashAdapter = {
     };
     if (clean(callbackUrl)) headers["upstash-callback"] = clean(callbackUrl);
     if (clean(failureCallbackUrl)) headers["upstash-failure-callback"] = clean(failureCallbackUrl);
-    for (const [key, value] of Object.entries(forward || {})) {
-      if (clean(value)) headers[`upstash-forward-${slugSegment(key)}`] = clean(value);
+    // QStash STRIPS the `Upstash-Forward-` prefix before delivering to the
+    // destination, so we forward canonical `x-growthub-*` names that the
+    // destination route reads back verbatim (e.g. `x-growthub-object-id`).
+    const forwardHeaderMap = {
+      "x-growthub-workspace-id": forward.workspaceId,
+      "x-growthub-object-id": forward.objectId,
+      "x-growthub-row-id": forward.rowId,
+      "x-growthub-version": forward.version,
+      "x-growthub-schedule-id": forward.scheduleId,
+    };
+    for (const [name, value] of Object.entries(forwardHeaderMap)) {
+      if (clean(value)) headers[`upstash-forward-${name}`] = clean(value);
     }
     return {
       url: `${base}/v2/schedules/${encodeURIComponent(clean(destinationUrl))}`,
@@ -249,11 +303,12 @@ const upstashQstashAdapter = {
     const source = env && typeof env === "object" ? env : {};
     return [clean(source.QSTASH_CURRENT_SIGNING_KEY), clean(source.QSTASH_NEXT_SIGNING_KEY)].filter(Boolean);
   },
-  verifyCallback({ signature, rawBody, env = process.env, currentTimeS } = {}) {
+  verifyCallback({ signature, rawBody, expectedUrl, env = process.env, currentTimeS } = {}) {
     return verifyQstashSignature({
       signature,
       body: rawBody,
       signingKeys: this.resolveSigningKeys(env),
+      expectedUrl,
       currentTimeS,
     });
   },
@@ -275,6 +330,8 @@ const upstashQstashAdapter = {
       }
     }
     const succeeded = kind !== "failure" && Number.isFinite(status) && status >= 200 && status < 300;
+    const retried = Number(envelope?.retried);
+    const maxRetries = Number(envelope?.maxRetries);
     return {
       kind,
       succeeded,
@@ -282,6 +339,9 @@ const upstashQstashAdapter = {
       messageId: clean(envelope?.sourceMessageId) || clean(envelope?.messageId),
       scheduleId: clean(envelope?.scheduleId),
       bodyPreview,
+      // Retry counters distinguish "first attempt failed" from "retries exhausted".
+      retried: Number.isFinite(retried) ? retried : null,
+      maxRetries: Number.isFinite(maxRetries) ? maxRetries : null,
       failureReason: succeeded ? "" : clean(envelope?.error) || clean(envelope?.dlqId) || (Number.isFinite(status) ? `HTTP ${status}` : "unknown"),
     };
   },
@@ -300,6 +360,19 @@ function isSchedulerProduct(product) {
   return clean(product?.executionLane) === SERVERLESS_SCHEDULER_LANE && Boolean(getSchedulerAdapter(product));
 }
 
+/**
+ * Pure decision for whether a signed callback may mutate workspace config. A
+ * governed scheduled callback MUST carry the installed schedule identity:
+ * the registry row must own a scheduleId, the callback must carry one, and
+ * they must match. Returns { ok, code } where code maps to a violation/HTTP.
+ */
+function evaluateCallbackScheduleMatch({ rowScheduleId, parsedScheduleId } = {}) {
+  if (!clean(rowScheduleId)) return { ok: false, code: "callback_no_installed_schedule" };
+  if (!clean(parsedScheduleId)) return { ok: false, code: "callback_missing_schedule_id" };
+  if (clean(parsedScheduleId) !== clean(rowScheduleId)) return { ok: false, code: "callback_schedule_id_mismatch" };
+  return { ok: true, code: "" };
+}
+
 export {
   SERVERLESS_SCHEDULER_LANE,
   SIGNATURE_CLOCK_TOLERANCE_S,
@@ -307,7 +380,9 @@ export {
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
   verifyQstashSignature,
+  isUnsafeCallbackUrl,
   getSchedulerAdapter,
   isSchedulerProduct,
+  evaluateCallbackScheduleMatch,
   upstashQstashAdapter,
 };

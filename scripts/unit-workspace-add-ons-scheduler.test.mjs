@@ -16,7 +16,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createHmac, createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -43,6 +43,7 @@ const {
   verifyQstashSignature,
   getSchedulerAdapter,
   isSchedulerProduct,
+  evaluateCallbackScheduleMatch,
   upstashQstashAdapter,
 } = scheduler;
 
@@ -52,17 +53,17 @@ const qstashProduct = addOns.getUpstashProduct("upstash-qstash");
 function b64url(buf) {
   return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
-function makeSignature({ key, url, body, exp, nbf }) {
+function makeSignature({ key, url, body, exp, nbf, iss = "Upstash", sub, omitBody = false }) {
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const claims = {
-    iss: "Upstash",
-    sub: url,
+    iss,
+    sub: sub ?? url,
     iat: 1700000000,
     nbf: nbf ?? 1700000000,
     exp: exp ?? 1700000900,
     jti: "test-jti",
-    body: createHash("sha256").update(body, "utf8").digest("base64"),
   };
+  if (!omitBody) claims.body = createHash("sha256").update(body, "utf8").digest("base64");
   const payload = b64url(JSON.stringify(claims));
   const sig = b64url(createHmac("sha256", key).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;
@@ -122,7 +123,9 @@ test("buildScheduleRequest puts token in Authorization header only, never in bod
   assert.equal(req.headers["upstash-cron"], "0 * * * *");
   assert.equal(req.headers["upstash-schedule-id"], "growthub:upstash:ws:o:r:v1");
   assert.ok(req.headers["upstash-callback"].endsWith("/callback"));
-  assert.ok(req.headers["upstash-forward-objectid"]);
+  // QStash strips `Upstash-Forward-`, so we forward canonical x-growthub-* names.
+  assert.equal(req.headers["upstash-forward-x-growthub-object-id"], "o");
+  assert.equal(req.headers["upstash-forward-x-growthub-row-id"], "r");
   assert.ok(!req.body.includes("SECRET_TOKEN_VALUE"), "schedule body must not contain the token");
 });
 
@@ -172,6 +175,88 @@ test("verifyQstashSignature rejects missing/malformed signatures", () => {
   assert.equal(verifyQstashSignature({ signature: "", body: RAW, signingKeys: [KEY] }).reason, "missing-signature");
   assert.equal(verifyQstashSignature({ signature: "a.b", body: RAW, signingKeys: [KEY] }).reason, "malformed-jwt");
   assert.equal(verifyQstashSignature({ signature: "a.b.c", body: RAW, signingKeys: [] }).reason, "no-signing-keys");
+});
+
+/* ---------- signature: issuer + subject (endpoint) binding ---------- */
+test("verifyQstashSignature accepts a valid signature bound to the expected URL", () => {
+  const sig = makeSignature({ key: KEY, url: URL_SUB, body: RAW });
+  const v = verifyQstashSignature({ signature: sig, body: RAW, signingKeys: [KEY], expectedUrl: URL_SUB, currentTimeS: 1700000100 });
+  assert.equal(v.ok, true, v.reason);
+});
+
+test("verifyQstashSignature rejects a wrong/missing issuer", () => {
+  const wrong = makeSignature({ key: KEY, url: URL_SUB, body: RAW, iss: "Evil" });
+  assert.equal(verifyQstashSignature({ signature: wrong, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).reason, "issuer-mismatch");
+  const missing = makeSignature({ key: KEY, url: URL_SUB, body: RAW, iss: "" });
+  assert.equal(verifyQstashSignature({ signature: missing, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).reason, "issuer-mismatch");
+});
+
+test("verifyQstashSignature rejects a wrong/missing subject when an expected URL is given", () => {
+  const wrongSub = makeSignature({ key: KEY, url: URL_SUB, body: RAW, sub: "https://ws.example.com/api/workspace/workflows/upstash" });
+  assert.equal(verifyQstashSignature({ signature: wrongSub, body: RAW, signingKeys: [KEY], expectedUrl: URL_SUB, currentTimeS: 1700000100 }).reason, "subject-mismatch");
+  const noSub = makeSignature({ key: KEY, url: URL_SUB, body: RAW, sub: "" });
+  assert.equal(verifyQstashSignature({ signature: noSub, body: RAW, signingKeys: [KEY], expectedUrl: URL_SUB, currentTimeS: 1700000100 }).reason, "missing-subject");
+});
+
+test("verifyQstashSignature rejects a missing body claim for a non-empty body", () => {
+  const sig = makeSignature({ key: KEY, url: URL_SUB, body: RAW, omitBody: true });
+  assert.equal(verifyQstashSignature({ signature: sig, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).reason, "missing-body-claim");
+});
+
+test("a /callback signature cannot be replayed against /workflows (and vice-versa)", () => {
+  const DEST = "https://ws.example.com/api/workspace/workflows/upstash";
+  const CB = "https://ws.example.com/api/workspace/add-ons/upstash/callback";
+  const callbackSig = makeSignature({ key: KEY, url: CB, body: RAW });
+  const destSig = makeSignature({ key: KEY, url: DEST, body: RAW });
+  // callback signature replayed at the destination route
+  assert.equal(verifyQstashSignature({ signature: callbackSig, body: RAW, signingKeys: [KEY], expectedUrl: DEST, currentTimeS: 1700000100 }).reason, "subject-mismatch");
+  // destination signature replayed at the callback route
+  assert.equal(verifyQstashSignature({ signature: destSig, body: RAW, signingKeys: [KEY], expectedUrl: CB, currentTimeS: 1700000100 }).reason, "subject-mismatch");
+  // each verifies against its own endpoint
+  assert.equal(verifyQstashSignature({ signature: callbackSig, body: RAW, signingKeys: [KEY], expectedUrl: CB, currentTimeS: 1700000100 }).ok, true);
+  assert.equal(verifyQstashSignature({ signature: destSig, body: RAW, signingKeys: [KEY], expectedUrl: DEST, currentTimeS: 1700000100 }).ok, true);
+});
+
+/* ---------- public callback URL safety ---------- */
+test("resolveWorkspacePublicUrl rejects localhost / non-https origins", () => {
+  assert.equal(resolveWorkspacePublicUrl({}, "http://localhost:3000"), "");
+  assert.equal(resolveWorkspacePublicUrl({}, "https://localhost:3000"), "");
+  assert.equal(resolveWorkspacePublicUrl({}, "https://127.0.0.1"), "");
+  assert.equal(resolveWorkspacePublicUrl({}, "http://app.example.com"), "");
+  assert.equal(resolveWorkspacePublicUrl({}, "https://app.example.com"), "https://app.example.com");
+});
+
+test("resolveWorkspacePublicUrl allows localhost only with the explicit insecure flag", () => {
+  assert.equal(resolveWorkspacePublicUrl({ GROWTHUB_ALLOW_INSECURE_CALLBACK_URL: "true" }, "http://localhost:3000"), "http://localhost:3000");
+});
+
+/* ---------- QSTASH_URL optional / region fallback ---------- */
+test("QStash readiness needs only the token (QSTASH_URL is optional)", () => {
+  const ready = addOns.listUpstashProductReadiness({ QSTASH_TOKEN: "t" }).find((r) => r.productId === "upstash-qstash");
+  assert.equal(ready.configured, true);
+  const notReady = addOns.listUpstashProductReadiness({}).find((r) => r.productId === "upstash-qstash");
+  assert.equal(notReady.configured, false);
+});
+
+test("schedule base URL derives from region when QSTASH_URL absent, explicit URL overrides", () => {
+  const fromRegion = upstashQstashAdapter.buildScheduleRequest({
+    product: qstashProduct, region: "eu-west-1", token: "t", scheduleId: "s", cron: "0 * * * *",
+    destinationUrl: "https://ws.example.com/api/workspace/workflows/upstash", env: {},
+  });
+  assert.ok(fromRegion.url.startsWith("https://qstash-eu-west-1.upstash.io/v2/schedules/"), fromRegion.url);
+  const fromEnv = upstashQstashAdapter.buildScheduleRequest({
+    product: qstashProduct, region: "eu-west-1", token: "t", scheduleId: "s", cron: "0 * * * *",
+    destinationUrl: "https://ws.example.com/api/workspace/workflows/upstash", env: { QSTASH_URL: "https://qstash.custom.example" },
+  });
+  assert.ok(fromEnv.url.startsWith("https://qstash.custom.example/v2/schedules/"), fromEnv.url);
+});
+
+/* ---------- callback scheduleId gating (pure decision) ---------- */
+test("evaluateCallbackScheduleMatch enforces installed + present + matching scheduleId", () => {
+  assert.equal(evaluateCallbackScheduleMatch({ rowScheduleId: "", parsedScheduleId: "s" }).code, "callback_no_installed_schedule");
+  assert.equal(evaluateCallbackScheduleMatch({ rowScheduleId: "s", parsedScheduleId: "" }).code, "callback_missing_schedule_id");
+  assert.equal(evaluateCallbackScheduleMatch({ rowScheduleId: "s", parsedScheduleId: "other" }).code, "callback_schedule_id_mismatch");
+  assert.equal(evaluateCallbackScheduleMatch({ rowScheduleId: "s", parsedScheduleId: "s" }).ok, true);
 });
 
 /* ---------- callback parsing ---------- */
@@ -248,4 +333,29 @@ test("page.jsx emits the exact envSignals key the client consumes", () => {
   assert.ok(page.includes("providerProductReadiness:"), "page must emit providerProductReadiness");
   assert.ok(client.includes("providerProductReadiness"), "client must consume providerProductReadiness");
   assert.ok(!page.includes("upstashProducts:"), "page must not emit the old mismatched key");
+});
+
+/* ---------- canonical secret resolver: no duplicate definitions ---------- */
+function walkJsFiles(dir, acc = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === ".next") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkJsFiles(full, acc);
+    else if (/\.(js|jsx)$/.test(entry.name)) acc.push(full);
+  }
+  return acc;
+}
+
+test("readServerSecret / envKeyCandidates are defined ONLY in lib/server-secrets.js", () => {
+  const kitRoot = path.join(kitLib, "..");
+  const canonical = path.join(kitLib, "server-secrets.js");
+  const offenders = [];
+  for (const file of walkJsFiles(kitRoot)) {
+    if (path.resolve(file) === path.resolve(canonical)) continue;
+    const text = readFileSync(file, "utf8");
+    if (/function\s+readServerSecret\s*\(/.test(text) || /function\s+envKeyCandidates\s*\(/.test(text)) {
+      offenders.push(path.relative(kitRoot, file));
+    }
+  }
+  assert.deepEqual(offenders, [], `duplicate secret-resolver definitions found: ${offenders.join(", ")}`);
 });
