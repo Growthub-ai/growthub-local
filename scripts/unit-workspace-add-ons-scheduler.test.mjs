@@ -53,8 +53,8 @@ const qstashProduct = addOns.getUpstashProduct("upstash-qstash");
 function b64url(buf) {
   return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
-function makeSignature({ key, url, body, exp, nbf, iss = "Upstash", sub, omitBody = false }) {
-  const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+function makeSignature({ key, url, body, exp, nbf, iss = "Upstash", sub, omitBody = false, alg = "HS256" }) {
+  const header = b64url(JSON.stringify({ alg, typ: "JWT" }));
   const claims = {
     iss,
     sub: sub ?? url,
@@ -174,7 +174,17 @@ test("verifyQstashSignature rejects an expired token", () => {
 test("verifyQstashSignature rejects missing/malformed signatures", () => {
   assert.equal(verifyQstashSignature({ signature: "", body: RAW, signingKeys: [KEY] }).reason, "missing-signature");
   assert.equal(verifyQstashSignature({ signature: "a.b", body: RAW, signingKeys: [KEY] }).reason, "malformed-jwt");
-  assert.equal(verifyQstashSignature({ signature: "a.b.c", body: RAW, signingKeys: [] }).reason, "no-signing-keys");
+  const wellFormed = makeSignature({ key: KEY, url: URL_SUB, body: RAW });
+  assert.equal(verifyQstashSignature({ signature: wellFormed, body: RAW, signingKeys: [] }).reason, "no-signing-keys");
+});
+
+test("verifyQstashSignature locks the algorithm to HS256", () => {
+  const none = makeSignature({ key: KEY, url: URL_SUB, body: RAW, alg: "none" });
+  const rs = makeSignature({ key: KEY, url: URL_SUB, body: RAW, alg: "RS256" });
+  assert.equal(verifyQstashSignature({ signature: none, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).reason, "unsupported-alg");
+  assert.equal(verifyQstashSignature({ signature: rs, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).reason, "unsupported-alg");
+  const ok = makeSignature({ key: KEY, url: URL_SUB, body: RAW, alg: "HS256" });
+  assert.equal(verifyQstashSignature({ signature: ok, body: RAW, signingKeys: [KEY], currentTimeS: 1700000100 }).ok, true);
 });
 
 /* ---------- signature: issuer + subject (endpoint) binding ---------- */
@@ -306,52 +316,121 @@ test("withMarketplaceSchedulerMetadata merges allowlisted keys and drops secrets
   assert.equal(row.QSTASH_TOKEN, undefined, "secret-shaped key must never be persisted");
 });
 
-test("deriveWorkspaceAddOnsState exposes hasQstashSchedulerCapability only with a scheduleId", () => {
-  const withCap = {
-    dataModel: { objects: [{ objectType: "api-registry", rows: [
-      { integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t", scheduleId: "scd_1" },
-    ] }] },
-  };
-  const noCap = {
+test("deriveWorkspaceAddOnsState capability = the QStash product is installed/verified", () => {
+  // Capability lets the canvas OFFER a bind; the schedule itself is per-row.
+  const installed = {
     dataModel: { objects: [{ objectType: "api-registry", rows: [
       { integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
     ] }] },
   };
-  assert.equal(addOns.deriveWorkspaceAddOnsState(withCap).hasQstashSchedulerCapability, true);
-  assert.equal(addOns.deriveWorkspaceAddOnsState(noCap).hasQstashSchedulerCapability, false);
+  const notInstalled = {
+    dataModel: { objects: [{ objectType: "api-registry", rows: [
+      { integrationId: "upstash-qstash-workflow", syncStatus: "missing-env" },
+    ] }] },
+  };
+  assert.equal(addOns.deriveWorkspaceAddOnsState(installed).hasQstashSchedulerCapability, true);
+  assert.equal(addOns.deriveWorkspaceAddOnsState(notInstalled).hasQstashSchedulerCapability, false);
 });
 
-/* ---------- atomic schedule + bind (lost-update regression) ---------- */
-test("schedule metadata + serverless bind compose in one config without losing scheduleId", () => {
-  const start = {
+/* ---------- per-row schedule ownership + trigger-node sync (atomic bind) ---------- */
+const GRAPH = JSON.stringify({
+  version: 1,
+  provider: "growthub-native",
+  nodes: [
+    { id: "input", type: "input", config: { inputMode: "manual" } },
+    { id: "api-request", type: "api-registry-call", config: {} },
+    { id: "result", type: "tool-result", config: { writeLastResponse: false } },
+  ],
+  edges: [],
+});
+
+function workspaceWithTwoWorkflows() {
+  return {
     dataModel: { objects: [
-      { objectType: "api-registry", rows: [{ integrationId: "upstash-qstash-workflow", syncStatus: "verified" }] },
-      { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [{ Name: "My Flow", runLocality: "local", adapter: "local-intelligence" }] },
+      { objectType: "api-registry", rows: [{ integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" }] },
+      { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
+        { Name: "Flow A", runLocality: "local", adapter: "local-intelligence", orchestrationConfig: GRAPH },
+        { Name: "Flow B", runLocality: "local", adapter: "local-process", orchestrationConfig: GRAPH },
+      ] },
     ] },
   };
-  // schedule route step 1: write scheduler metadata
-  const withSched = addOns.withMarketplaceSchedulerMetadata(start, {
-    integrationId: "upstash-qstash-workflow",
-    patch: { scheduleId: "scd_1", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+}
+
+function bindFlow(config, rowId, scheduleId) {
+  return addOns.withWorkflowServerlessBind(config, {
+    objectId: "sandbox-workflows", rowId, schedulerRegistryId: "upstash-qstash-workflow",
+    schedulerProviderId: "upstash", schedulerProductId: "upstash-qstash", region: "us-east-1",
+    scheduleId, cron: "0 * * * *",
+    destinationUrl: "https://ws.example.com/api/workspace/workflows/upstash",
+    callbackUrl: "https://ws.example.com/api/workspace/add-ons/upstash/callback",
+    failureCallbackUrl: "https://ws.example.com/api/workspace/add-ons/upstash/failure",
+    installedAt: "2026-01-01T00:00:00.000Z",
   });
-  // schedule route step 2 (SAME config object): bind the workflow row serverless
-  const { config, bound } = addOns.withWorkflowServerlessBind(withSched, {
-    objectId: "sandbox-workflows", rowId: "My Flow", schedulerRegistryId: "upstash-qstash-workflow",
-  });
+}
+
+test("bind writes schedule state to the OWNING row and syncs the trigger node", () => {
+  const { config, bound } = bindFlow(workspaceWithTwoWorkflows(), "Flow A", "growthub:upstash:ws:sandbox-workflows:flow-a:v1");
   assert.equal(bound, true);
-  const reg = config.dataModel.objects.find((o) => o.objectType === "api-registry").rows[0];
-  assert.equal(reg.scheduleId, "scd_1", "bind must NOT clobber the just-written scheduleId");
-  const sb = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  const sb = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows.find((r) => r.Name === "Flow A");
   assert.equal(sb.runLocality, "serverless");
-  assert.equal(sb.schedulerRegistryId, "upstash-qstash-workflow");
-  assert.equal(sb.adapter, "local-process", "local-intelligence normalized to local-process for serverless");
-  assert.equal(addOns.deriveWorkspaceAddOnsState(config).hasQstashSchedulerCapability, true);
+  assert.equal(sb.scheduleId, "growthub:upstash:ws:sandbox-workflows:flow-a:v1");
+  assert.equal(sb.schedulerProviderId, "upstash");
+  assert.equal(sb.schedulerRegion, "us-east-1");
+  assert.equal(sb.adapter, "local-process", "local-intelligence normalized for serverless");
+  // provider capability row is NOT used to store the per-workflow scheduleId
+  const reg = config.dataModel.objects.find((o) => o.objectType === "api-registry").rows[0];
+  assert.equal(reg.scheduleId, undefined);
+  // trigger node synced to match the schedule
+  const graph = JSON.parse(sb.orchestrationConfig);
+  const trigger = graph.nodes.find((n) => n.id === "input");
+  assert.equal(trigger.config.trigger, "serverless-scheduler");
+  assert.equal(trigger.config.schedule.scheduleId, "growthub:upstash:ws:sandbox-workflows:flow-a:v1");
+  assert.equal(trigger.config.schedule.cron, "0 * * * *");
+  // result node keeps writeLastResponse on so the run's last response is recorded
+  assert.equal(graph.nodes.find((n) => n.type === "tool-result").config.writeLastResponse, true);
 });
 
-test("withWorkflowServerlessBind is a no-op when the target row is missing", () => {
-  const { bound, config } = addOns.withWorkflowServerlessBind({ dataModel: { objects: [] } }, { objectId: "x", rowId: "y", schedulerRegistryId: "z" });
-  assert.equal(bound, false);
-  assert.deepEqual(config.dataModel.objects, []);
+test("two workflows each own their own schedule; callback resolves to the right row", () => {
+  let config = workspaceWithTwoWorkflows();
+  config = bindFlow(config, "Flow A", "sched-A").config;
+  config = bindFlow(config, "Flow B", "sched-B").config;
+  const rows = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows;
+  assert.equal(rows.find((r) => r.Name === "Flow A").scheduleId, "sched-A");
+  assert.equal(rows.find((r) => r.Name === "Flow B").scheduleId, "sched-B", "Flow B does not clobber Flow A");
+  assert.equal(addOns.findSandboxRowByScheduleId(config, "sched-A").row.Name, "Flow A");
+  assert.equal(addOns.findSandboxRowByScheduleId(config, "sched-B").row.Name, "Flow B");
+  assert.equal(addOns.findSandboxRowByScheduleId(config, "sched-missing"), null);
+});
+
+test("clear:true reverts the row to local + manual trigger and drops schedule fields", () => {
+  let config = bindFlow(workspaceWithTwoWorkflows(), "Flow A", "sched-A").config;
+  const { config: cleared } = addOns.withWorkflowServerlessBind(config, { objectId: "sandbox-workflows", rowId: "Flow A", clear: true });
+  const sb = cleared.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows.find((r) => r.Name === "Flow A");
+  assert.equal(sb.runLocality, "local");
+  assert.equal(sb.scheduleId, "");
+  assert.equal(JSON.parse(sb.orchestrationConfig).nodes.find((n) => n.id === "input").config.trigger, "manual");
+});
+
+test("findEligibleSandboxRow validates existence + objectType before any remote call", () => {
+  const config = workspaceWithTwoWorkflows();
+  assert.equal(addOns.findEligibleSandboxRow(config, "nope", "Flow A").status, 404);
+  assert.equal(addOns.findEligibleSandboxRow(config, "sandbox-workflows", "Ghost").status, 404);
+  // wrong objectType
+  const withApi = { dataModel: { objects: [{ id: "x", objectType: "api-registry", rows: [{ Name: "r" }] }] } };
+  assert.equal(addOns.findEligibleSandboxRow(withApi, "x", "r").status, 409);
+  assert.equal(addOns.findEligibleSandboxRow(config, "sandbox-workflows", "Flow A").ok, true);
+});
+
+test("withSandboxScheduledRunProof writes last-run proof to the owning row", () => {
+  let config = bindFlow(workspaceWithTwoWorkflows(), "Flow A", "sched-A").config;
+  const { config: next, found } = addOns.withSandboxScheduledRunProof(config, {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    patch: { lastScheduledRunStatus: "200", lastScheduledRunSucceededAt: "t", lastScheduledRunMessageId: "m1" },
+  });
+  assert.equal(found, true);
+  const sb = next.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows.find((r) => r.Name === "Flow A");
+  assert.equal(sb.lastScheduledRunStatus, "200");
+  assert.equal(sb.lastScheduledRunMessageId, "m1");
 });
 
 /* ---------- callback recovers scheduleId nested in base64 destination response ---------- */

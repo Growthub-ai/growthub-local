@@ -91,7 +91,27 @@ async function POST(request, context) {
     return NextResponse.json({ ok: false, error: `no sandbox row ${rowId} in object ${objectId}` }, { status: 404 });
   }
 
+  // A valid signature proves QStash sent this; it does NOT prove the row is
+  // STILL bound to this schedule. Validate current workspace truth so a stale
+  // signed delivery cannot execute an unbound/rebound row.
   const scheduleId = clean(payload.scheduleId || request.headers.get("x-growthub-schedule-id"));
+  const bindingOk =
+    clean(row.runLocality) === "serverless" &&
+    clean(row.schedulerRegistryId) === product.integrationId &&
+    (!scheduleId || clean(row.scheduleId) === scheduleId);
+  if (!bindingOk) {
+    await appendOutcomeReceipt({
+      kind: "workspace-scheduled-run",
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: provider.providerId,
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: ["scheduled_run_row_unbound"] },
+      summary: `Rejected scheduled run of ${rowId}: row no longer bound to ${product.integrationId} schedule ${scheduleId || "?"} (locality=${clean(row.runLocality)}, scheduleId=${clean(row.scheduleId) || "none"}).`,
+    });
+    return NextResponse.json({ ok: false, error: "row is not currently bound to this schedule", scheduleId }, { status: 409 });
+  }
+
   const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
   let result;
   try {

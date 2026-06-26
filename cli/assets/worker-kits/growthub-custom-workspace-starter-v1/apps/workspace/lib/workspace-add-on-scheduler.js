@@ -163,6 +163,11 @@ function verifyQstashSignature({ signature, body, signingKeys, expectedUrl, expe
   const parts = token.split(".");
   if (parts.length !== 3) return { ok: false, reason: "malformed-jwt" };
   const [headerB64, payloadB64, signatureB64] = parts;
+  // Lock the algorithm: only HS256 is valid for QStash. Reject `none`/`RS256`/etc
+  // explicitly so a future refactor can't treat arbitrary JWT-like material as ok.
+  const header = safeJsonParse(base64UrlToBuffer(headerB64).toString("utf8"));
+  if (!header || typeof header !== "object") return { ok: false, reason: "malformed-header" };
+  if (clean(header.alg) !== "HS256") return { ok: false, reason: "unsupported-alg" };
   const keys = (Array.isArray(signingKeys) ? signingKeys : [signingKeys])
     .map((k) => clean(k))
     .filter(Boolean);

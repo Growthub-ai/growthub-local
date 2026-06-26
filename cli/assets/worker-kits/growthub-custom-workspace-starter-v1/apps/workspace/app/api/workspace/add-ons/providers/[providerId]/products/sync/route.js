@@ -8,6 +8,7 @@ import {
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readEnvVar } from "@/lib/server-secrets";
+import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const PROBE_TIMEOUT_MS = 8000;
 
@@ -119,6 +120,9 @@ async function POST(request, context) {
   const providerId = clean(params?.providerId);
   const provider = getMarketplaceProvider(providerId);
   if (!provider) return jsonError("unknown marketplace provider", 404, { providerId });
+
+  const auth = requireWorkspaceOperator(request);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
 
   let body = {};
   try {

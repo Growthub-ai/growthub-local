@@ -279,17 +279,93 @@ function withMarketplaceSchedulerMetadata(workspaceConfig, { integrationId, patc
 
 const SERVERLESS_LOCAL_ADAPTERS = ["local-agent-host", "local-intelligence"];
 
+function parseGraphValue(value) {
+  if (value && typeof value === "object") return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 /**
- * Bind a sandbox/workflow row to serverless in a config object (pure). Used by
- * the schedule route so schedule-metadata write + workflow bind happen in ONE
- * server-authoritative write — no second client PATCH over stale config that
- * could clobber the just-written scheduleId. Returns { config, bound }.
+ * Sync the orchestration config's TRIGGER node (and result node) to the
+ * serverless-scheduler binding so the graph's own logic matches the schedule
+ * that drives it. The trigger node (a `data-trigger`, else the entry `input`
+ * node) records who invokes the run; the `tool-result` node keeps
+ * `writeLastResponse` on so the scheduled run's last response is recorded on
+ * the row. Preserves the stored value's shape (string vs object). `clear:true`
+ * reverts the trigger to manual on uninstall.
  */
-function withWorkflowServerlessBind(workspaceConfig, { objectId, rowId, schedulerRegistryId } = {}) {
+function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
+  const graph = parseGraphValue(value);
+  if (!graph || !Array.isArray(graph.nodes) || !graph.nodes.length) return value;
+  const triggerIndex = (() => {
+    const byType = graph.nodes.findIndex((n) => n?.type === "data-trigger");
+    if (byType >= 0) return byType;
+    const byInput = graph.nodes.findIndex((n) => n?.type === "input" || n?.id === "input");
+    return byInput >= 0 ? byInput : 0;
+  })();
+  const nextNodes = graph.nodes.map((node, index) => {
+    if (index === triggerIndex) {
+      const config = { ...(node.config || {}) };
+      if (clear) {
+        config.trigger = "manual";
+        delete config.schedule;
+      } else {
+        config.trigger = "serverless-scheduler";
+        config.schedule = {
+          schedulerRegistryId: meta.schedulerRegistryId || "",
+          scheduleId: meta.scheduleId || "",
+          cron: meta.cron || "",
+          providerId: meta.schedulerProviderId || "",
+          productId: meta.schedulerProductId || "",
+          destinationUrl: meta.destinationUrl || "",
+          callbackUrl: meta.callbackUrl || "",
+        };
+      }
+      return { ...node, config };
+    }
+    if (node?.type === "tool-result") {
+      return { ...node, config: { ...(node.config || {}), writeLastResponse: true } };
+    }
+    return node;
+  });
+  const nextGraph = { ...graph, nodes: nextNodes };
+  return typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph;
+}
+
+const SANDBOX_SCHEDULE_CLEAR_PATCH = {
+  scheduleId: "",
+  schedulerProviderId: "",
+  schedulerProductId: "",
+  schedulerRegion: "",
+  schedulerCron: "",
+  schedulerDestination: "",
+  schedulerCallbackUrl: "",
+  schedulerFailureCallbackUrl: "",
+  schedulerInstalledAt: "",
+};
+
+/**
+ * Bind a sandbox/workflow ROW to a serverless schedule in a config object
+ * (pure). Schedule state lives on the OWNING ROW (not the global provider row),
+ * so multiple workflows can each own their own schedule. In ONE write it:
+ *   - flips runLocality=serverless + schedulerRegistryId (+ adapter normalize),
+ *   - records the row-level schedule proof (scheduleId, cron, destination, …),
+ *   - syncs the orchestration trigger node so the graph logic matches.
+ * `clear:true` reverts the row to local + manual trigger (uninstall path).
+ * Returns { config, bound }.
+ */
+function withWorkflowServerlessBind(workspaceConfig, params = {}) {
+  const { objectId, rowId, schedulerRegistryId, clear = false } = params;
   const targetObject = String(objectId || "").trim();
   const targetRow = String(rowId || "").trim();
-  const registryId = String(schedulerRegistryId || "").trim();
-  if (!targetObject || !targetRow || !registryId) return { config: workspaceConfig, bound: false };
+  if (!targetObject || !targetRow) return { config: workspaceConfig, bound: false };
+  if (!clear && !String(schedulerRegistryId || "").trim()) return { config: workspaceConfig, bound: false };
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
   let bound = false;
@@ -300,17 +376,95 @@ function withWorkflowServerlessBind(workspaceConfig, { objectId, rowId, schedule
       if (String(row?.Name || "").trim() !== targetRow) return row;
       bound = true;
       const adapterId = String(row?.adapter || "").trim();
-      return {
+      const triggerMeta = {
+        schedulerRegistryId: String(schedulerRegistryId || "").trim(),
+        scheduleId: params.scheduleId || "",
+        cron: params.cron || "",
+        schedulerProviderId: params.schedulerProviderId || "",
+        schedulerProductId: params.schedulerProductId || "",
+        destinationUrl: params.destinationUrl || "",
+        callbackUrl: params.callbackUrl || "",
+      };
+      const base = {
         ...row,
+        orchestrationGraph: syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear }),
+        orchestrationConfig: syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear }),
+      };
+      if (clear) {
+        return { ...base, runLocality: "local", ...SANDBOX_SCHEDULE_CLEAR_PATCH };
+      }
+      return {
+        ...base,
         runLocality: "serverless",
-        schedulerRegistryId: registryId,
+        schedulerRegistryId: triggerMeta.schedulerRegistryId,
         adapter: SERVERLESS_LOCAL_ADAPTERS.includes(adapterId) ? "local-process" : (adapterId || "local-process"),
+        schedulerProviderId: triggerMeta.schedulerProviderId,
+        schedulerProductId: triggerMeta.schedulerProductId,
+        schedulerRegion: params.region || "",
+        scheduleId: triggerMeta.scheduleId,
+        schedulerCron: triggerMeta.cron,
+        schedulerDestination: triggerMeta.destinationUrl,
+        schedulerCallbackUrl: triggerMeta.callbackUrl,
+        schedulerFailureCallbackUrl: params.failureCallbackUrl || "",
+        schedulerInstalledAt: params.installedAt || "",
       };
     });
     return { ...object, rows: nextRows };
   });
   if (!bound) return { config: workspaceConfig, bound: false };
   return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, bound: true };
+}
+
+/**
+ * Resolve a sandbox/workflow row eligible for serverless scheduling. Used by
+ * the schedule route to validate BEFORE any remote provider call so we never
+ * create remote infrastructure for a row the workspace cannot bind.
+ */
+function findEligibleSandboxRow(workspaceConfig, objectId, rowId) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const object = objects.find((o) => o?.id === String(objectId || "").trim());
+  if (!object) return { ok: false, status: 404, error: `no object with id ${objectId}` };
+  if (object.objectType !== "sandbox-environment") return { ok: false, status: 409, error: `object ${objectId} is not a sandbox-environment` };
+  const row = (Array.isArray(object.rows) ? object.rows : []).find((r) => String(r?.Name || "").trim() === String(rowId || "").trim());
+  if (!row) return { ok: false, status: 404, error: `no workflow row ${rowId} in object ${objectId}` };
+  return { ok: true, object, row };
+}
+
+/** Find the sandbox row that owns a given scheduleId (callback → owning row). */
+function findSandboxRowByScheduleId(workspaceConfig, scheduleId) {
+  const target = String(scheduleId || "").trim();
+  if (!target) return null;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "sandbox-environment") continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      if (String(row?.scheduleId || "").trim() === target) return { objectId: object.id, object, row };
+    }
+  }
+  return null;
+}
+
+/** Merge scheduled-run proof onto the owning sandbox row (callback sync). */
+function withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch } = {}) {
+  const targetObject = String(objectId || "").trim();
+  const targetRow = String(rowId || "").trim();
+  if (!targetObject || !targetRow) return { config: workspaceConfig, found: false };
+  const safe = patch && typeof patch === "object" ? patch : {};
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (object?.id !== targetObject || object?.objectType !== "sandbox-environment") return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.Name || "").trim() !== targetRow) return row;
+      found = true;
+      return { ...row, ...safe };
+    });
+    return { ...object, rows: nextRows };
+  });
+  if (!found) return { config: workspaceConfig, found: false };
+  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, found: true };
 }
 
 /** A row is a usable serverless scheduler only when verified AND it carries a
@@ -627,9 +781,10 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
   const qstashWorkflow = installed.find((row) => row.productId === "upstash-qstash") || null;
-  // A scheduler the canvas can actually bind: installed (verified) AND it owns
-  // a real provider schedule id, not just a passing read-probe.
-  const qstashScheduler = hasSchedulerCapability(qstashWorkflow) ? qstashWorkflow : null;
+  // Capability = the QStash product is installed + verified (read-probe). That
+  // is what lets the canvas OFFER a bind; the per-workflow schedule itself is
+  // created on bind and stored on the owning sandbox row, not here.
+  const qstashScheduler = qstashWorkflow;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -638,7 +793,7 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     hasQstashWorkflow: Boolean(qstashWorkflow),
     qstashWorkflow,
     qstashScheduler,
-    hasQstashSchedulerCapability: Boolean(qstashScheduler),
+    hasQstashSchedulerCapability: Boolean(qstashWorkflow),
   };
 }
 
@@ -659,6 +814,10 @@ export {
   getUpstashProduct,
   hasSchedulerCapability,
   findRegistryRowByIntegrationId,
+  findEligibleSandboxRow,
+  findSandboxRowByScheduleId,
+  withSandboxScheduledRunProof,
+  syncTriggerNodeForSchedule,
   listAllProviderProductReadiness,
   listMarketplaceProducts,
   listProviderProductReadiness,

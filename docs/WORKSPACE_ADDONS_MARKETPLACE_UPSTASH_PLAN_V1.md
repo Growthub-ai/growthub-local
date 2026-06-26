@@ -1,10 +1,13 @@
 # Workspace Add-ons Marketplace + Upstash Provider — Completion Plan (V1)
 
-> **Status: IMPLEMENTED in this PR.** The plan below is the design; the live
-> loop (provider probe → deterministic schedule install → serverless thin-adapter
-> endpoint → signed callback sync → canvas capability gate) is built, and the kit
-> `next build` + the unit suite are green. See **§8 Delivery** for the file map and
-> validation evidence. Foundation originally from PR
+> **Status: production-shaped, offline-verified; live external smoke is the
+> remaining merge gate.** The full loop is built — provider probe → deterministic
+> per-workflow schedule install → serverless thin-adapter endpoint → signed
+> callback sync to the owning row → canvas capability gate — with schedule state
+> owned by the workflow row and the orchestration trigger node synced in the same
+> atomic write. Kit `next build` + the unit suite are green. The loop is **not**
+> considered fully closed until a live one-minute QStash run is captured (see
+> **§9 Live smoke — merge gate**). Foundation originally from PR
 > [#257](https://github.com/Growthub-ai/growthub-local/pull/257)
 > (`codex/workspace-marketplace-upstash`).
 > **Scope:** `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`
@@ -303,6 +306,30 @@ adapter — a second provider is added by registering one more adapter, with **n
 - **Forwarded-header naming fixed.** QStash strips the `Upstash-Forward-` prefix, so the schedule sets canonical `Upstash-Forward-X-Growthub-*` and the destination reads `x-growthub-*`.
 - Plus retry counters (`retried`/`maxRetries`) and `lastScheduleInstalledAt` recorded as non-secret proof.
 
+**Review hardening (round 3 — runtime truth alignment / multi-workflow)**
+- **Schedule state is owned by the workflow ROW, not the global provider row.** `withWorkflowServerlessBind` writes `scheduleId`, `schedulerProviderId/ProductId`, `schedulerRegion`, `schedulerCron`, destination + callback URLs, and `schedulerInstalledAt` onto the owning sandbox row. The API Registry row stays a pure **capability** (verified token/probe). Two workflows can each own their own schedule without fighting over one id (unit-tested A+B).
+- **Trigger node synced in the same atomic write.** The orchestration config's trigger node (`data-trigger`, else the entry `input` node) is set to `trigger: "serverless-scheduler"` with the schedule metadata, and the `tool-result` node keeps `writeLastResponse` on — so the graph logic tells the same story as the row and the run's last response is recorded. Only the **live** graph fields (`orchestrationGraph`/`orchestrationConfig`) are touched, never the draft; the bind binds to the published graph (stated in the receipt).
+- **Callback syncs to the OWNING row.** The callback bridge resolves `scheduleId → owning sandbox row` (`findSandboxRowByScheduleId`), verifies the row is still bound to this provider, and writes `lastScheduledRun{Status,MessageId,AttemptedAt,SucceededAt,FailedAt,FailureReason,BodyPreview,Retries}` to that row; the receipt's `objectRefs` point at the workflow row. Provider row is no longer the per-run truth.
+- **Validate-before-remote + replace semantics.** The schedule route resolves and validates the target row (exists + `sandbox-environment` + eligible) **before** any QStash call (`findEligibleSandboxRow`), and if the row already owns a different `scheduleId` it deletes the old remote schedule first (no orphans on version/name change).
+- **Destination validates current binding.** `/api/workspace/workflows/[providerId]` rejects (409 + blocked receipt) a signed-but-stale delivery whose row is no longer `serverless` / bound to this scheduler / matching `scheduleId`.
+- **Algorithm lock.** The signature verifier now rejects any JWT whose header `alg !== "HS256"` (`alg=none`/`RS256` rejected; tested).
+- **Mutation access boundary.** `requireWorkspaceOperator()` (no-op in the starter, `GROWTHUB_REQUIRE_OPERATOR_AUTH=true` hard-blocks; the single wire-point for hosted auth) guards the schedule/sync mutation routes.
+
 **Honest residuals (named, not hidden)**
-- The schedule/callback/serverless routes are exercised by `next build` + pure-unit coverage; a live end-to-end run against a real QStash project (one-minute schedule firing a real callback) still needs a manual smoke with real `QSTASH_*` env + a public `GROWTHUB_WORKSPACE_PUBLIC_URL`. The signature path is proven offline with forged-but-valid JWTs.
 - Step-level Workflow durability via `@upstash/workflow serve()` is intentionally **not** adopted: scheduling/retry come from QStash schedules, step semantics from the existing orchestration graph. Wrapping each node as a `serve()` step is named future work, not required to close the loop.
+- Per-run `last*` proof is written to the workflow row (the canonical runtime truth); mirroring it onto the trigger node's `config.last*` is a follow-up (the trigger node already carries the schedule binding).
+
+---
+
+## 9. Live smoke — merge gate
+
+This feature is external-scheduler synchronization, so the live run is a **merge gate**, not an optional residual. Before ready-for-review/merge, capture an operator receipt showing the full loop against a real Upstash project:
+
+- [ ] real `QSTASH_TOKEN` + `QSTASH_CURRENT_SIGNING_KEY`/`QSTASH_NEXT_SIGNING_KEY` configured, public `GROWTHUB_WORKSPACE_PUBLIC_URL` set
+- [ ] product sync → API Registry row `verified`
+- [ ] schedule route → real `scheduleId`; workflow row persisted serverless + schedule proof + trigger node synced
+- [ ] QStash fires the destination → `workspace-scheduled-run` receipt appended
+- [ ] signed callback/failure hits the workspace, signature verified live, last response written back to the **owning row**
+- [ ] uninstall deletes the real remote schedule and reverts the row to local + manual trigger
+
+Until that is captured, frame this PR as *“production-shaped scheduler implementation with offline verification; live external smoke pending,”* not *“end-to-end loop closed.”*
