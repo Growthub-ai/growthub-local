@@ -62,6 +62,7 @@ import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/worksp
 import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistryCreationCockpit.jsx";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
+import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState } from "@/lib/workspace-add-ons";
 
 // Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
 // same transform the rail/lens one-time dismisses use).
@@ -160,6 +161,52 @@ function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
     }
   }
   return firstRegistryRow ? { object: firstRegistryObject, row: firstRegistryRow } : null;
+}
+
+function WorkflowAddOnChooser({ addOn, disabled, onUseQstash, onSetupQstash, onSetupCustom }) {
+  return (
+    <div className="dm-workflow-addon-choice-list">
+      <section className="dm-api-action-card dm-workflow-installed-addon">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">{addOn ? "Verified workflow add-on" : "Workflow add-on"}</p>
+          <h3>Upstash QStash/Workflow</h3>
+          <p>
+            {addOn
+              ? "Bind the verified workspace QStash scheduler to this workflow and switch it to serverless."
+              : "Install and sync QStash in Workspace Add-ons first; the canvas only binds verified scheduler rows."}
+          </p>
+          <div className="dm-cockpit-fields">
+            <span className="dm-cockpit-field"><b>registry</b>{addOn?.integrationId || UPSTASH_QSTASH_INTEGRATION_ID}</span>
+            <span className="dm-cockpit-field"><b>status</b>{addOn?.syncStatus || "setup required"}</span>
+            <span className="dm-cockpit-field"><b>region</b>{addOn?.region || "pending"}</span>
+          </div>
+        </div>
+        <div className="dm-api-action-card-actions">
+          {addOn ? (
+            <button type="button" className="dm-btn-primary-sm dm-api-action-card-cta" disabled={disabled} onClick={onUseQstash}>
+              Use for this workflow
+            </button>
+          ) : (
+            <button type="button" className="dm-btn-outline dm-api-action-card-cta" disabled={disabled} onClick={onSetupQstash}>
+              Set up QStash
+            </button>
+          )}
+        </div>
+      </section>
+      <section className="dm-api-action-card dm-workflow-installed-addon">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">Custom</p>
+          <h3>Custom scheduler plugin</h3>
+          <p>Use a governed API Registry scheduler row and bind it through this sandbox row's schedulerRegistryId field.</p>
+        </div>
+        <div className="dm-api-action-card-actions">
+          <button type="button" className="dm-btn-outline dm-api-action-card-cta" disabled={disabled} onClick={onSetupCustom}>
+            Configure custom
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 const WORKFLOW_ACTION_GROUPS = [
@@ -830,6 +877,7 @@ export default function WorkflowSurface() {
         persistenceAdapters: serverlessSignals.persistenceAdapters,
       })
     : null;
+  const addOnsState = deriveWorkspaceAddOnsState(workspaceConfig || {});
   const isServerlessWorkflow = Boolean(serverlessState?.isServerless);
   const showServerlessUpgrade = String(sandboxRow?.adapter || "").trim() !== "local-intelligence";
 
@@ -855,13 +903,7 @@ export default function WorkflowSurface() {
         await patchSandboxAndPersist({ runLocality: "local" });
         return;
       }
-      const registryRow = resolveRegistryRowForSandbox(workspaceConfig, sandboxRow);
-      const adapterId = String(sandboxRow?.adapter || "").trim();
-      await patchSandboxAndPersist({
-        runLocality: "serverless",
-        schedulerRegistryId: String(registryRow?.integrationId || "").trim(),
-        adapter: ["local-agent-host", "local-intelligence"].includes(adapterId) ? "local-process" : adapterId,
-      });
+      setUpgradeOpen(true);
     } else if (action.id === "open-settings") {
       router.push(action.href || "/settings");
     } else if (action.id === "link-scheduler") {
@@ -875,6 +917,24 @@ export default function WorkflowSurface() {
       // Full scheduler/adapter config lives on the sandbox object's drawer.
       router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
     }
+  }
+
+  async function useInstalledQstashWorkflowAddOn() {
+    if (resolved.rowIndex < 0 || !objectId || !workspaceConfig || !addOnsState.qstashWorkflow) return;
+    const adapterId = String(sandboxRow?.adapter || "").trim();
+    await patchSandboxAndPersist({
+      runLocality: "serverless",
+      schedulerRegistryId: UPSTASH_QSTASH_INTEGRATION_ID,
+      adapter: ["local-agent-host", "local-intelligence"].includes(adapterId) ? "local-process" : (adapterId || "local-process"),
+    });
+  }
+
+  function openQstashSetup() {
+    router.push("/settings/add-ons");
+  }
+
+  function openCustomSchedulerSetup() {
+    router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent("schedulerRegistryId")}`);
   }
 
   async function dismissUpgradeOnboarding() {
@@ -937,8 +997,8 @@ export default function WorkflowSurface() {
               <button
                 type="button"
                 className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
-                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
-                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
+                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Choose workflow add-on"}
+                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Choose QStash or custom scheduler"}
                 aria-pressed={upgradeOpen}
                 onClick={() => setUpgradeOpen((open) => !open)}
               >
@@ -1026,31 +1086,46 @@ export default function WorkflowSurface() {
               <span style={{ display: "block", marginTop: 2 }}>{upgradeState.subheadline}</span>
             </div>
             <div className="dm-workflow-upgrade-nudge-actions">
-              <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
-                <ArrowUpCircle size={13} /> Upgrade this workflow
-              </button>
+              {addOnsState.hasQstashWorkflow ? (
+                <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
+                  Review installed add-on
+                </button>
+              ) : (
+                <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
+                  Choose workflow add-on
+                </button>
+              )}
               <button type="button" className="dm-btn-ghost" onClick={dismissUpgradeOnboarding}>Not now</button>
             </div>
           </div>
         ) : null}
 
-        {/* Serverless cockpit — same derivation + cockpit interface as the API
-            Registry and sandbox lanes. Toggles patch the sandbox row; deep config
-            (scheduler/adapter) routes to the object's Data Model drawer. */}
+        {/* Workflow Canvas consumes installed add-ons only. Marketplace browsing
+            and custom install start in Workspace Settings -> Add-ons. */}
         {sandboxRow && showServerlessUpgrade && upgradeOpen && serverlessState ? (
           <div className="dm-workflow-upgrade-panel">
             <div className="dm-workflow-upgrade-panel-head">
-              <span className="dm-api-action-card-eyebrow">Persistence &amp; scheduling</span>
+              <span className="dm-api-action-card-eyebrow">{isServerlessWorkflow ? "Persistence & scheduling" : "Installed add-on"}</span>
               <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => { setUpgradeOpen(false); dismissUpgradeOnboarding(); }}>
                 <X size={14} />
               </button>
             </div>
-            <ApiRegistryCreationCockpit
-              state={serverlessState}
-              onAction={handleUpgradeAction}
-              disabled={saving || publishing || running}
-              eyebrow={isServerlessWorkflow ? "Serverless workflow" : "Upgrade to serverless"}
-            />
+            {isServerlessWorkflow ? (
+              <ApiRegistryCreationCockpit
+                state={serverlessState}
+                onAction={handleUpgradeAction}
+                disabled={saving || publishing || running}
+                eyebrow="Serverless workflow"
+              />
+            ) : (
+              <WorkflowAddOnChooser
+                addOn={addOnsState.qstashWorkflow}
+                disabled={saving || publishing || running}
+                onUseQstash={useInstalledQstashWorkflowAddOn}
+                onSetupQstash={openQstashSetup}
+                onSetupCustom={openCustomSchedulerSetup}
+              />
+            )}
           </div>
         ) : null}
 
