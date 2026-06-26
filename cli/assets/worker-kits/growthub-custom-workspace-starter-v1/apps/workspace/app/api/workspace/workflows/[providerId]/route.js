@@ -105,7 +105,9 @@ async function POST(request, context) {
     triggerBinding?.triggerKind === "serverless-scheduler" &&
     triggerBinding?.enabled === true &&
     triggerBinding?.scheduleId === scheduleId &&
-    triggerBinding?.schedulerRegistryId === product.integrationId;
+    triggerBinding?.schedulerRegistryId === product.integrationId &&
+    (!triggerBinding?.providerId || triggerBinding.providerId === provider.providerId) &&
+    (!triggerBinding?.productId || triggerBinding.productId === product.productId);
   if (!bindingOk) {
     await appendOutcomeReceipt({
       kind: "workspace-scheduled-run",

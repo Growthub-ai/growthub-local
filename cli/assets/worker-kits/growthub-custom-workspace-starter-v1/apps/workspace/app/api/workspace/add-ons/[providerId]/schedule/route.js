@@ -37,9 +37,18 @@ import {
 } from "@/lib/workspace-add-on-scheduler";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
+import { runScheduleInstall } from "@/lib/scheduler-orchestration";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 const SCHEDULE_TIMEOUT_MS = 10000;
+
+const SCHEDULER_DEPS = {
+  fetchImpl: fetch,
+  readConfig: readWorkspaceConfig,
+  writeConfig: writeWorkspaceConfig,
+  appendReceipt: appendOutcomeReceipt,
+  env: process.env,
+};
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -74,267 +83,21 @@ async function fetchWithTimeout(url, init = {}) {
 
 async function POST(request, context) {
   const params = await context?.params;
-  const providerId = clean(params?.providerId);
-  const provider = getMarketplaceProvider(providerId);
-  if (!provider) return jsonError("unknown marketplace provider", 404, { providerId });
-
   const auth = requireWorkspaceOperator(request);
   if (!auth.ok) return jsonError(auth.error, auth.status);
-
   let body = {};
   try {
     body = await request.json();
   } catch {
     return jsonError("invalid json body", 400);
   }
-
-  const product = resolveSchedulerProduct(provider, clean(body.productId));
-  if (!product || !isSchedulerProduct(product)) {
-    return jsonError("provider has no serverless scheduler product", 400, { providerId: provider.providerId });
-  }
-  const adapter = getSchedulerAdapter(product);
-
-  // The product must already be installed + verified (read-probe) before it can
-  // be promoted to a schedule capability.
-  const config = await readWorkspaceConfig();
-  const installedRow = findRegistryRowByIntegrationId(config, product.integrationId);
-  if (!installedRow || clean(installedRow.syncStatus) !== "verified") {
-    return jsonError(`${product.label} must be installed and verified before scheduling`, 409, {
-      providerId: provider.providerId,
-      productId: product.productId,
-      nextActions: [`Sync ${product.label} from Workspace Add-ons, then create the schedule.`],
-    });
-  }
-
-  // Concrete-key resolution — same env-key contract as product readiness
-  // (readiness and schedule runtime must not disagree). The token is the
-  // product's declared probe token env (e.g. QSTASH_TOKEN).
-  const requiredEnv = resolveRequiredEnv(product.requiredEnv, process.env);
-  const tokenEnv = product.probe?.tokenEnv || (product.requiredEnv || [])[0];
-  const token = readEnvVar(tokenEnv, process.env)?.value || "";
-  if (!requiredEnv.ok || !token) {
-    return jsonError(`${product.label} runtime credentials are not connected`, 422, {
-      providerId: provider.providerId,
-      productId: product.productId,
-      missingEnv: requiredEnv.missing,
-    });
-  }
-
-  const objectId = clean(body.objectId);
-  const rowId = clean(body.rowId || body.name);
-  if (!objectId || !rowId) return jsonError("objectId and rowId (workflow row) are required", 400);
-
-  // Validate the target workflow row BEFORE any remote provider call — never
-  // create remote infrastructure for a row the workspace cannot bind.
-  const eligible = findEligibleSandboxRow(config, objectId, rowId);
-  if (!eligible.ok) {
-    return jsonError(eligible.error, eligible.status, { providerId: provider.providerId, productId: product.productId });
-  }
-  const targetRow = eligible.row;
-
-  const region = clean(body.region || installedRow.region || "us-east-1");
-  const cron = clean(body.cron || "0 * * * *");
-  const version = clean(body.version || targetRow.version || "v1");
-  const workspaceId = clean(body.workspaceId || config?.id || "workspace");
-
-  const baseUrl = resolveWorkspacePublicUrl(process.env, requestOrigin(request));
-  if (!baseUrl) {
-    return jsonError("could not resolve a public workspace URL for callbacks", 422, {
-      nextActions: ["Set GROWTHUB_WORKSPACE_PUBLIC_URL to the deployed workspace origin, then retry."],
-    });
-  }
-  const { destinationUrl, callbackUrl, failureCallbackUrl } = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
-  const scheduleId = deriveScheduleId({ providerId: provider.providerId, workspaceId, objectId, rowId, version });
-  const forward = { workspaceId, objectId, rowId, version, scheduleId };
-
-  // Replace semantics: if this row already owns a DIFFERENT remote schedule
-  // (e.g. version/name changed), delete the old one before creating the new one
-  // so we never leave an orphaned schedule firing. Same id is an idempotent upsert.
-  const priorScheduleId = clean(targetRow.scheduleId);
-  if (priorScheduleId && priorScheduleId !== scheduleId) {
-    let oldDeleted = false;
-    let detail = "";
-    try {
-      const del = adapter.buildDeleteRequest({ product, region, token, scheduleId: priorScheduleId, env: process.env });
-      const delResp = await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
-      oldDeleted = delResp.ok || delResp.status === 404;
-      detail = `HTTP ${delResp.status}`;
-    } catch (err) {
-      detail = err?.message || "network error";
-    }
-    if (!oldDeleted) {
-      await appendOutcomeReceipt({
-        kind: "workspace-add-on-schedule",
-        lane: "server-authoritative",
-        outcomeStatus: "failed",
-        actor: "workspace-marketplace",
-        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-        policyVerdict: { ok: false, violationCodes: ["scheduler_replace_old_delete_failed"] },
-        summary: `Could not delete prior ${product.label} schedule ${priorScheduleId} (${detail}); refusing to create ${scheduleId} to avoid an orphaned schedule.`,
-        nextActions: [`Delete schedule ${priorScheduleId} in the ${product.label} console, then retry.`],
-      });
-      return jsonError(`could not replace prior schedule ${priorScheduleId} (${detail})`, 409, {
-        providerId: provider.providerId, productId: product.productId, priorScheduleId,
-      });
-    }
-  }
-
-  let scheduleRequest;
-  try {
-    scheduleRequest = adapter.buildScheduleRequest({
-      product,
-      region,
-      token,
-      scheduleId,
-      cron,
-      destinationUrl,
-      callbackUrl,
-      failureCallbackUrl,
-      forward,
-      env: process.env,
-    });
-  } catch (err) {
-    return jsonError(err?.message || "could not build schedule request", 400, { providerId: provider.providerId });
-  }
-
-  let syncResult;
-  try {
-    const response = await fetchWithTimeout(scheduleRequest.url, {
-      method: scheduleRequest.method,
-      headers: scheduleRequest.headers,
-      body: scheduleRequest.body,
-    });
-    const text = await response.text();
-    syncResult = adapter.parseScheduleResponse({ status: response.status, body: text, scheduleId });
-  } catch (err) {
-    syncResult = { ok: false, scheduleId, proof: `schedule request failed: ${err?.message || "network error"}` };
-  }
-
-  if (!syncResult.ok) {
-    await appendOutcomeReceipt({
-      kind: "workspace-add-on-schedule",
-      lane: "server-authoritative",
-      outcomeStatus: "blocked",
-      actor: "workspace-marketplace",
-      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
-      summary: syncResult.proof || `${product.label} schedule create failed`,
-      policyVerdict: { ok: false, violationCodes: ["scheduler_create_failed"] },
-      nextActions: [`Open the ${product.label} console and confirm the schedule/token, then retry.`],
-    });
-    return jsonError(syncResult.proof || "schedule create failed", 502, {
-      providerId: provider.providerId,
-      productId: product.productId,
-    });
-  }
-
-  const nowIso = new Date().toISOString();
-  // ONE server-authoritative write. Schedule state is OWNED BY THE WORKFLOW ROW
-  // (not the global provider row): runLocality flip + row-level schedule proof +
-  // the orchestration TRIGGER NODE synced to match — so the graph tells the same
-  // story as the row. The provider API Registry row stays a pure capability row
-  // (verified token/probe), set by product sync — we do not write per-schedule
-  // state there, so multiple workflows never fight over one scheduleId.
-  const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(config, {
-    objectId,
-    rowId,
-    schedulerRegistryId: product.integrationId,
-    schedulerProviderId: provider.providerId,
-    schedulerProductId: product.productId,
-    region,
-    scheduleId: syncResult.scheduleId,
-    cron,
-    destinationUrl,
-    callbackUrl,
-    failureCallbackUrl,
-    installedAt: nowIso,
+  // Thin wrapper over the dependency-injected install core (testable offline).
+  const { status, body: out } = await runScheduleInstall(SCHEDULER_DEPS, {
+    providerId: params?.providerId,
+    body,
+    requestOrigin: requestOrigin(request),
   });
-
-  // We validated the row exists/eligible before the remote call, so a failed
-  // bind here means an unexpected state change between read and write — treat it
-  // like a persist failure and roll back the remote schedule.
-  if (!bound) {
-    try {
-      const del = adapter.buildDeleteRequest({ product, region, token, scheduleId: syncResult.scheduleId, env: process.env });
-      await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
-    } catch { /* best effort */ }
-    await appendOutcomeReceipt({
-      kind: "workspace-add-on-schedule",
-      lane: "server-authoritative",
-      outcomeStatus: "failed",
-      actor: "workspace-marketplace",
-      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-      policyVerdict: { ok: false, violationCodes: ["scheduler_bind_failed"] },
-      summary: `${product.label} schedule ${syncResult.scheduleId} created remotely but workflow row ${rowId} could not be bound; remote schedule rolled back.`,
-    });
-    return jsonError(`could not bind workflow row ${rowId}; remote schedule rolled back`, 409, {
-      providerId: provider.providerId, productId: product.productId,
-    });
-  }
-
-  // Persist exactly once. If the local write fails AFTER the remote schedule was
-  // created, the workspace and the provider have diverged — clean up the remote
-  // schedule and FAIL (do not return ok:true and do not let the canvas bind).
-  let persisted;
-  try {
-    persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
-  } catch (writeErr) {
-    let cleanedUp = false;
-    try {
-      const del = adapter.buildDeleteRequest({ product, region, token, scheduleId: syncResult.scheduleId, env: process.env });
-      const delResp = await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
-      cleanedUp = delResp.ok;
-    } catch {
-      cleanedUp = false;
-    }
-    await appendOutcomeReceipt({
-      kind: "workspace-add-on-schedule",
-      lane: "server-authoritative",
-      outcomeStatus: cleanedUp ? "failed" : "blocked",
-      actor: "workspace-marketplace",
-      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-      policyVerdict: { ok: false, violationCodes: [cleanedUp ? "schedule_rolled_back_persist_failed" : "schedule_orphaned"] },
-      summary: cleanedUp
-        ? `${product.label} schedule create rolled back: workspace persistence failed (${clean(writeErr?.code) || "write error"}).`
-        : `${product.label} schedule ${syncResult.scheduleId} is ORPHANED: created remotely but workspace persistence AND cleanup failed.`,
-      nextActions: cleanedUp
-        ? ["Persistence is read-only here. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true or use a writable runtime, then retry."]
-        : [`Manually delete schedule ${syncResult.scheduleId} in the ${product.label} console, then retry.`],
-    });
-    return jsonError(
-      cleanedUp ? "schedule rolled back: workspace could not persist the install" : `schedule ${syncResult.scheduleId} orphaned (persist + cleanup failed)`,
-      424,
-      { providerId: provider.providerId, productId: product.productId, persisted: false, scheduleId: syncResult.scheduleId, orphaned: !cleanedUp },
-    );
-  }
-
-  const { receipt } = await appendOutcomeReceipt({
-    kind: "workspace-add-on-schedule",
-    lane: "server-authoritative",
-    outcomeStatus: "published",
-    actor: "workspace-marketplace",
-    objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-    // The bind mutates the LIVE executable graph trigger node (not the draft).
-    // Record the ACTUAL live field + trigger node id that changed.
-    changedFields: (changedFields || []).map((f) => `dataModel.${f}`),
-    policyVerdict: { ok: true },
-    schemaVerdict: { ok: true },
-    summary: `${product.label} schedule ${syncResult.scheduleId} bound to ${rowId}: row serverless + ${liveField} trigger node "${triggerNodeId}" synced (bound to the published graph).`,
-    nextActions: [],
-  });
-
-  return NextResponse.json({
-    ok: true,
-    providerId: provider.providerId,
-    productId: product.productId,
-    scheduleId: syncResult.scheduleId,
-    bound,
-    destinationUrl,
-    cron,
-    region,
-    persisted: true,
-    workspaceConfig: persisted,
-    receiptId: receipt.receiptId,
-  });
+  return NextResponse.json(out, { status });
 }
 
 async function DELETE(request, context) {

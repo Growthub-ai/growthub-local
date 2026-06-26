@@ -317,6 +317,8 @@ function readTriggerScheduleBinding(value) {
     triggerKind: String(node.config.triggerKind || node.config.trigger || "").trim(),
     scheduleId: String(schedule.scheduleId || "").trim(),
     schedulerRegistryId: String(schedule.schedulerRegistryId || "").trim(),
+    providerId: String(schedule.providerId || "").trim(),
+    productId: String(schedule.productId || "").trim(),
     enabled: node.config.enabled !== false,
   };
 }
