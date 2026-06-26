@@ -102,8 +102,8 @@ describe("registerKitForkCommands — top-level fork-sync alias", () => {
 
     const forkSync = program.commands.find((c) => c.name() === "fork-sync");
     expect(forkSync).toBeDefined();
-    // Commander stores the action — it will not be null
-    expect(forkSync!._actionHandler).not.toBeNull();
+    // Commander stores the action on a private runtime field.
+    expect((forkSync! as unknown as { _actionHandler?: unknown })._actionHandler).not.toBeNull();
   });
 });
 

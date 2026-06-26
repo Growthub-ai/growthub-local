@@ -41,6 +41,9 @@ const KIT_ROOT = path.resolve(
 
 const APP_ROOT = path.join(KIT_ROOT, "apps/workspace");
 
+type WorkspaceConfigError = Error & { code?: string; details?: string[] };
+type OrchestrationGraph = { nodes: Array<{ id: string }> };
+
 function readText(relative: string): string {
   return fs.readFileSync(path.join(KIT_ROOT, relative), "utf8");
 }
@@ -113,7 +116,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("off-grid widget (x + w > 12) → error detail mentions x/w", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -132,7 +135,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("widget overlap → error detail mentions grid cell coordinates", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -149,7 +152,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("duplicate widget ID → error detail mentions duplicates", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -166,7 +169,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("invalid activeTabId (no matching tab) → error detail mentions activeTabId", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         canvas: {
@@ -181,7 +184,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sourceStorage with invalid value → must be workspace-source-records", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -197,7 +200,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sourceStorage set without sourceId → sourceId is required", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -213,7 +216,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("duplicate dataModel object ID → error detail mentions duplicate", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -229,7 +232,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sandbox row with forbidden auth secret field (e.g. accessToken) → rejected", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -259,7 +262,7 @@ describe("workspace-schema — negative governance (invalid configs must throw)"
   });
 
   it("sandbox row with invalid agentAuthStatus → rejected", () => {
-    let err: Error & { details?: string[] } | null = null;
+    let err: WorkspaceConfigError | null = null;
     try {
       validateWorkspaceConfig({
         dataModel: {
@@ -824,7 +827,7 @@ describe("workspace-schema — chart config validates Twenty-style nested keys",
     try {
       validateWorkspaceConfig(chartConfig({ yAxis: { field: "x", operation: "bogus-op" } }));
     } catch (e) { err = e as typeof err; }
-    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect((err as WorkspaceConfigError | null)?.code).toBe("INVALID_WORKSPACE_CONFIG");
   });
 
   it("rejects unknown date granularities", () => {
@@ -832,7 +835,7 @@ describe("workspace-schema — chart config validates Twenty-style nested keys",
     try {
       validateWorkspaceConfig(chartConfig({ xAxis: { field: "createdAt", dateGranularity: "century" } }));
     } catch (e) { err = e as typeof err; }
-    expect(err?.code).toBe("INVALID_WORKSPACE_CONFIG");
+    expect((err as WorkspaceConfigError | null)?.code).toBe("INVALID_WORKSPACE_CONFIG");
   });
 });
 
@@ -998,7 +1001,7 @@ describe("orchestration-graph — contract and kit presence", () => {
       baseUrl: "https://api.example.com",
       status: "connected",
     };
-    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow);
+    const graph = mod.buildDefaultOrchestrationGraphFromRegistry(registryRow) as OrchestrationGraph;
     expect(mod.validateOrchestrationGraph(graph).ok).toBe(true);
     expect(graph.nodes).toHaveLength(4);
     expect(graph.nodes.map((n: { id: string }) => n.id)).toEqual([
