@@ -144,6 +144,7 @@ solver (was a heuristic, not exact) and a connector-discovery overlay (discovery
 half not built) — both removed; the doc above lists connector-discovery as a
 thing MCP must not pretend to be until it is real.
 
-**Status:** Phase-A **source-only**. `cli/dist/**` rebuild is the Phase-B step
-required before release. No PATCH allowlist change, no contract-version bump, no
-token storage, no third mutation path.
+**Status:** developed Phase-A **source-first**; the Phase-B `cli/dist/**` rebuild
+is performed via the guarded super-admin lane before release (completed for this
+release snapshot — see the PR's S15 export-proof). No PATCH allowlist change, no
+contract-version bump, no token storage, no third mutation path.

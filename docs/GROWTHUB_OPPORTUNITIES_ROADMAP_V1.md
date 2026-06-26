@@ -233,8 +233,9 @@ Zero-dependency MCP-over-stdio (no new package). Canonical contract:
   impact model, incl. removals). *Honesty:* two roadmap candidates were
   intentionally **not** shipped — a "minimal change set" solver (heuristic, not
   exact) and a connector-discovery overlay (discovery half not built); both
-  removed rather than shipped half-done. Phase-A source-only; `cli/dist/**`
-  rebuild is the Phase-B release step.
+  removed rather than shipped half-done. Developed Phase-A source-first; the
+  Phase-B `cli/dist/**` rebuild runs via the guarded super-admin lane before
+  release (completed for this snapshot).
 
 ---
 
