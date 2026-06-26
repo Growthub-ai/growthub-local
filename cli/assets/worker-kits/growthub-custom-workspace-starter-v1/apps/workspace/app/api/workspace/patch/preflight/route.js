@@ -38,7 +38,7 @@ import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readWorkspaceSourceRecords } from "@/lib/workspace-config";
 import { buildWorkspaceMetadataStore } from "@/lib/workspace-metadata-store";
 import { buildWorkspaceMetadataGraph } from "@/lib/workspace-metadata-graph";
-import { deriveStaleSurfaces } from "@/lib/workspace-stale-surfaces";
+import { derivePatchImpact } from "@/lib/workspace-patch-impact";
 
 /**
  * Report the blast radius of a proposed patch BEFORE the write — the S1
@@ -54,45 +54,15 @@ async function computePatchImpact(currentConfig, mergedConfig, patch) {
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) return null;
     let sourceRecords = {};
     try { sourceRecords = (await readWorkspaceSourceRecords()) || {}; } catch { sourceRecords = {}; }
-    const store = buildWorkspaceMetadataStore({ workspaceConfig: mergedConfig || {}, workspaceSourceRecords: sourceRecords });
-    const graph = buildWorkspaceMetadataGraph(store);
-
-    // A dataModel/dashboards PATCH REPLACES the whole array, so the patch body
-    // alone is not "what changed". Diff each patched object/dashboard against the
-    // CURRENT config and seed only the ones that are new or actually modified —
-    // otherwise a normal full-array body would report whole-workspace impact.
-    const curObjects = new Map((currentConfig?.dataModel?.objects || []).map((o) => [o && o.id, JSON.stringify(o)]));
-    const changedObjectIds = new Set();
-    for (const o of (patch.dataModel?.objects || [])) {
-      if (!o || !o.id) continue;
-      if (curObjects.get(o.id) !== JSON.stringify(o)) changedObjectIds.add(o.id); // added or modified
-    }
-    const curDashboards = new Map((currentConfig?.dashboards || []).map((d) => [d && (d.id || d.name), JSON.stringify(d)]));
-    const changedDashboardIds = new Set();
-    for (const d of (patch.dashboards || [])) {
-      const key = d && (d.id || d.name);
-      if (!key) continue;
-      if (curDashboards.get(key) !== JSON.stringify(d)) changedDashboardIds.add(key);
-    }
-
-    const seedIds = [];
-    for (const node of graph.nodes) {
-      if (node.type === "dataModelObject" && (changedObjectIds.has(node.summary?.objectId) || changedObjectIds.has(node.metadataId))) {
-        seedIds.push(node.id);
-      } else if (node.type === "dashboard" && (changedDashboardIds.has(node.metadataId) || changedDashboardIds.has(node.label))) {
-        seedIds.push(node.id);
-      }
-    }
-    if (!seedIds.length) return null;
-    const staleSurfaces = deriveStaleSurfaces(graph, { seedIds });
-    return {
-      scope: "changed-only",
-      seeds: staleSurfaces.seeds,
-      total: staleSurfaces.total,
-      byType: staleSurfaces.byType,
-      staleSurfaces: staleSurfaces.staleSurfaces,
-      summary: staleSurfaces.summary
-    };
+    // Build BOTH graphs so the impact deriver can report not just added/modified
+    // (on the merged graph) but also REMOVED objects/dashboards (whose downstream
+    // lived in the current graph). One shared, unit-tested deriver does the diff.
+    const buildGraph = (cfg) => buildWorkspaceMetadataGraph(buildWorkspaceMetadataStore({ workspaceConfig: cfg || {}, workspaceSourceRecords: sourceRecords }));
+    const currentGraph = buildGraph(currentConfig);
+    const mergedGraph = buildGraph(mergedConfig);
+    const impact = derivePatchImpact(currentGraph, mergedGraph, currentConfig || {}, mergedConfig || {});
+    if (!impact.total && !impact.removed.length) return null;
+    return impact;
   } catch {
     return null;
   }

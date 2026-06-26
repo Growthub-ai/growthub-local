@@ -143,22 +143,24 @@ const ALLOWED_PATCH_FIELDS = ["dashboards", "widgetTypes", "canvas", "dataModel"
 type DeriverSet = Awaited<ReturnType<typeof loadDerivers>>;
 
 /**
- * Shared offline patch preview — the SINGLE place that turns a proposed graph +
- * changed fields into { impact, contract compliance, allowlist }. Used by both
- * `growthub patch` and the MCP `preflight_patch` tool so the dry-run is computed
- * one way, not two.
+ * Shared offline patch preview — the SINGLE place that turns current+merged
+ * configs into { impact, contract compliance, allowlist }. Used by both
+ * `growthub patch` and the MCP `preflight_patch` tool. Delegates the impact diff
+ * (added / modified / REMOVED objects + dashboards) to the same `derivePatchImpact`
+ * deriver the server preflight route uses — one impact model, not two.
  */
-function previewPatchImpact(
+async function previewPatchImpact(
   d: DeriverSet,
-  graph: { nodes: GraphNode[] },
-  opts: { changedFields: string[]; seedIds?: string[]; touchesLiveWorkflow?: boolean },
-): { impactMode: string; impact: Record<string, unknown>; contractCompliance: Record<string, unknown>; allowlist: { ok: boolean; disallowed: string[]; allowed: string[] } } {
+  opts: { currentConfig: Record<string, unknown>; mergedConfig: Record<string, unknown>; sourceRecords?: Record<string, unknown>; changedFields: string[]; touchesLiveWorkflow?: boolean },
+): Promise<{ impact: Record<string, unknown>; contractCompliance: Record<string, unknown>; allowlist: { ok: boolean; disallowed: string[]; allowed: string[] } }> {
   const disallowed = opts.changedFields.filter((f) => !ALLOWED_PATCH_FIELDS.includes(f));
-  const scoped = opts.seedIds && opts.seedIds.length ? opts.seedIds : null;
-  const seedIds = scoped ?? graph.nodes.filter((n) => n.type === "dataModelObject" || n.type === "dashboard").map((n) => n.id);
+  const records = opts.sourceRecords ?? {};
+  const [{ graph: currentGraph }, { graph: mergedGraph }] = await Promise.all([
+    buildGraphFromConfig(opts.currentConfig, records),
+    buildGraphFromConfig(opts.mergedConfig, records),
+  ]);
   return {
-    impactMode: scoped ? "scoped" : "broad-fallback",
-    impact: d.deriveStaleSurfaces(graph, { seedIds }),
+    impact: d.derivePatchImpact(currentGraph, mergedGraph, opts.currentConfig, opts.mergedConfig),
     contractCompliance: d.deriveContractCompliance({ changedFields: opts.changedFields, touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow) }, undefined, { hasPreflightReceipt: false }),
     allowlist: { ok: disallowed.length === 0, disallowed, allowed: ALLOWED_PATCH_FIELDS },
   };
@@ -201,42 +203,24 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     setPath(proposed, dottedPath, value);
   }
 
-  // Re-derive the graph from the PROPOSED config IN MEMORY (no temp file) so the
-  // blast radius reflects the change. Reuse the same source-record sidecar.
+  // Diff the PROPOSED config against the current one (in memory, no temp file)
+  // via the shared patch-impact deriver — same model the server route uses, so
+  // added / modified / REMOVED objects + dashboards are all reported. Reuse the
+  // source-record sidecar so live-backed nodes keep their freshness.
   const d = await loadDerivers();
   let sourceRecords: Record<string, unknown> = {};
   const sidecar = path.join(path.dirname(configPath), "growthub.source-records.json");
   if (fs.existsSync(sidecar)) {
     try { sourceRecords = JSON.parse(fs.readFileSync(sidecar, "utf8")) as Record<string, unknown>; } catch { sourceRecords = {}; }
   }
-  const { graph } = await buildGraphFromConfig(proposed, sourceRecords);
-
-  // Scope impact to the object(s)/dashboard(s) the --set paths actually touched,
-  // resolved from the proposed config — not the whole workspace (review E).
-  const changedObjectIds = new Set<string>();
-  const changedDashboardIds = new Set<string>();
-  for (const assignment of sets) {
-    const dottedPath = assignment.slice(0, assignment.indexOf("=")).trim();
-    const parts = dottedPath.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
-    if (parts[0] === "dataModel" && parts[1] === "objects" && /^\d+$/.test(parts[2] ?? "")) {
-      const obj = (proposed.dataModel as { objects?: Array<{ id?: string }> } | undefined)?.objects?.[Number(parts[2])];
-      if (obj?.id) changedObjectIds.add(obj.id);
-    } else if (parts[0] === "dashboards" && /^\d+$/.test(parts[1] ?? "")) {
-      const dash = (proposed.dashboards as Array<{ id?: string; name?: string }> | undefined)?.[Number(parts[1])];
-      if (dash?.id || dash?.name) changedDashboardIds.add(dash.id ?? dash.name ?? "");
-    }
-  }
-  const scopedSeeds = graph.nodes
-    .filter((n) =>
-      (n.type === "dataModelObject" && changedObjectIds.has(String(n.summary?.objectId ?? "")))
-      || (n.type === "dashboard" && (changedDashboardIds.has(n.label) || changedDashboardIds.has(n.metadataId))))
-    .map((n) => n.id);
-  const preview = previewPatchImpact(d, graph, {
+  const preview = await previewPatchImpact(d, {
+    currentConfig: workspaceConfig,
+    mergedConfig: proposed,
+    sourceRecords,
     changedFields: Array.from(changedFields),
-    seedIds: scopedSeeds,
     touchesLiveWorkflow: Boolean(opts.touchesLiveWorkflow),
   });
-  const { impactMode, impact } = preview;
+  const impact = preview.impact;
   const compliance = preview.contractCompliance;
   const disallowed = preview.allowlist.disallowed;
   let wrote = false;
@@ -250,7 +234,6 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     config: configPath,
     changedFields: Array.from(changedFields),
     disallowed,
-    impactMode,
     impact,
     compliance,
     wrote,
@@ -265,7 +248,9 @@ async function patchCommand(opts: PatchOpts): Promise<void> {
     console.log(pc.bold("growthub patch") + pc.dim(` — ${configPath}`));
     console.log(`  changed: ${payload.changedFields.join(", ") || "(none)"}`);
     if (disallowed.length) console.log(`  ${pc.red("disallowed:")} ${disallowed.join(", ")}`);
-    console.log(`  ${pc.cyan("impact:")} [${impactMode}] ${(impact as { summary?: string }).summary}`);
+    const im = impact as { summary?: string; removed?: unknown[] };
+    console.log(`  ${pc.cyan("impact:")} ${im.summary}`);
+    if (im.removed && im.removed.length) console.log(`  ${pc.red("removals:")} ${im.removed.length} (see impact.removed)`);
     console.log(`  ${pc.cyan("compliance:")} ${compliance.summary}`);
     console.log(`  ${wrote ? pc.green("written") : pc.yellow("dry-run")} — ${payload.nextStep}`);
   });
@@ -555,10 +540,15 @@ async function offlinePatchPreview(ctx: McpContext, patch: Record<string, unknow
   const proposed = { ...ctx.workspaceConfig } as Record<string, unknown>;
   for (const f of changedFields) if (ALLOWED_PATCH_FIELDS.includes(f)) proposed[f] = patch[f];
   try {
-    // R4: pass the source-record sidecar so live-backed objects keep their
-    // source nodes/edges/freshness in the preview graph.
-    const { graph } = await buildGraphFromConfig(proposed, ctx.workspaceSourceRecords);
-    const { impact, contractCompliance, allowlist } = previewPatchImpact(ctx.d, graph, { changedFields });
+    // Same shared deriver as the route + CLI — diffs current vs merged (incl
+    // removals), with the source-record sidecar so live-backed nodes keep their
+    // freshness (R4).
+    const { impact, contractCompliance, allowlist } = await previewPatchImpact(ctx.d, {
+      currentConfig: ctx.workspaceConfig,
+      mergedConfig: proposed,
+      sourceRecords: ctx.workspaceSourceRecords,
+      changedFields,
+    });
     return { allowlist, contractCompliance, impact };
   } catch {
     // Graph build failed — still return the allowlist verdict (pure, no graph).

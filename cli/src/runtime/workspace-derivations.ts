@@ -175,14 +175,16 @@ export async function loadDerivers(): Promise<{
   deriveProvenanceLineage: (graph: unknown, id: string, opts?: unknown) => Record<string, unknown>;
   deriveAppReadiness: (graph: unknown, opts?: unknown) => Record<string, unknown>;
   deriveContractCompliance: (mutation: unknown, contract?: unknown, evidence?: unknown) => Record<string, unknown>;
+  derivePatchImpact: (currentGraph: unknown, mergedGraph: unknown, currentConfig: unknown, mergedConfig: unknown) => Record<string, unknown>;
 }> {
-  const [impact, stale, workflow, lineage, readiness, compliance] = await Promise.all([
+  const [impact, stale, workflow, lineage, readiness, compliance, patchImpact] = await Promise.all([
     importKitLib<{ deriveBlastRadius: never }>("workspace-metadata-impact.js"),
     importKitLib<{ deriveStaleSurfaces: never }>("workspace-stale-surfaces.js"),
     importKitLib<{ deriveWorkflowImpact: never }>("workspace-workflow-impact.js"),
     importKitLib<{ deriveProvenanceLineage: never }>("workspace-provenance-lineage.js"),
     importKitLib<{ deriveAppReadiness: never }>("workspace-app-readiness.js"),
     importKitLib<{ deriveContractCompliance: never }>("workspace-contract-compliance.js"),
+    importKitLib<{ derivePatchImpact: never }>("workspace-patch-impact.js"),
   ]);
   return {
     deriveBlastRadius: (impact as Record<string, never>).deriveBlastRadius,
@@ -191,6 +193,7 @@ export async function loadDerivers(): Promise<{
     deriveProvenanceLineage: (lineage as Record<string, never>).deriveProvenanceLineage,
     deriveAppReadiness: (readiness as Record<string, never>).deriveAppReadiness,
     deriveContractCompliance: (compliance as Record<string, never>).deriveContractCompliance,
+    derivePatchImpact: (patchImpact as Record<string, never>).derivePatchImpact,
   };
 }
 
