@@ -132,6 +132,13 @@ const MARKETPLACE_PROVIDERS = [
     baseUrl: "https://api.upstash.com",
     endpoint: "/v2",
     method: "GET",
+    // Provider/account-management lane (Developer API): HTTP Basic EMAIL:API_KEY.
+    // Available to native Upstash accounts only; absence ⇒ account-linked, not verified.
+    accountProbe: {
+      emailEnv: "UPSTASH_EMAIL",
+      keyEnv: "UPSTASH_API_KEY",
+      paths: ["/v2/redis/databases", "/v2/teams"],
+    },
     consoleUrl: "https://console.upstash.com/",
     supportUrl: "https://upstash.com/support",
     websiteUrl: "https://upstash.com",
@@ -173,8 +180,131 @@ function apiRegistryColumns(existing = []) {
     "syncCheckedAt",
     "syncProof",
     "missingEnv",
+    // Serverless scheduler capability proof (set by the schedule route after a
+    // real provider upsert). A verified read-probe is NOT a scheduler — the
+    // canvas only treats a row as a scheduler once `scheduleId` is present.
+    "scheduleId",
+    "scheduleDestination",
+    "callbackUrl",
+    "failureCallbackUrl",
+    "cron",
+    "lastScheduleTime",
+    "nextScheduleTime",
+    "lastScheduleStates",
+    // Last synchronized scheduled-run response (set by the signed callback
+    // route). Non-secret proof only — a short body preview, never the payload.
+    "lastResponseStatus",
+    "lastResponseBodyPreview",
+    "lastMessageId",
+    "lastAttemptedAt",
+    "lastSucceededAt",
+    "lastFailedAt",
+    "lastFailureReason",
     ...existing,
   ]));
+}
+
+// Non-secret keys the scheduler/callback routes are allowed to merge onto a
+// product registry row. Any key NOT in this set is dropped before persistence,
+// so a token/signing key can never be written into the row by accident.
+const SCHEDULER_METADATA_KEYS = new Set([
+  "scheduleId",
+  "scheduleDestination",
+  "callbackUrl",
+  "failureCallbackUrl",
+  "cron",
+  "region",
+  "lastScheduleTime",
+  "nextScheduleTime",
+  "lastScheduleStates",
+  "lastResponseStatus",
+  "lastResponseBodyPreview",
+  "lastMessageId",
+  "lastAttemptedAt",
+  "lastSucceededAt",
+  "lastFailedAt",
+  "lastFailureReason",
+  "status",
+  "syncStatus",
+  "syncCheckedAt",
+  "syncProof",
+  "lastTested",
+  "lastResponse",
+]);
+
+function sanitizeSchedulerPatch(patch) {
+  const out = {};
+  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
+    if (SCHEDULER_METADATA_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * Merge a NON-SECRET scheduler/callback patch onto the api-registry row whose
+ * integrationId matches. Generic across providers — the schedule and callback
+ * routes both use this so secrets can never reach workspace config. Returns the
+ * config unchanged when no matching row exists.
+ */
+function withMarketplaceSchedulerMetadata(workspaceConfig, { integrationId, patch } = {}) {
+  const targetId = String(integrationId || "").trim();
+  if (!targetId) return workspaceConfig;
+  const safePatch = sanitizeSchedulerPatch(patch);
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let changed = false;
+  const nextObjects = objects.map((object) => {
+    if (object?.objectType !== "api-registry") return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    let rowChanged = false;
+    const nextRows = rows.map((row) => {
+      if (String(row?.integrationId || "").trim() !== targetId) return row;
+      rowChanged = true;
+      return { ...row, ...safePatch };
+    });
+    if (!rowChanged) return object;
+    changed = true;
+    return { ...object, columns: apiRegistryColumns(object.columns), rows: nextRows };
+  });
+  if (!changed) return workspaceConfig;
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
+/** A row is a usable serverless scheduler only when verified AND it carries a
+ * real provider schedule id — a verified read-probe alone is not enough. */
+function hasSchedulerCapability(row) {
+  return Boolean(
+    row &&
+      String(row.syncStatus || "").trim() === "verified" &&
+      String(row.scheduleId || "").trim(),
+  );
+}
+
+function findRegistryRowByIntegrationId(workspaceConfig, integrationId) {
+  const targetId = String(integrationId || "").trim();
+  if (!targetId) return null;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const object of objects) {
+    if (object?.objectType !== "api-registry") continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      if (String(row?.integrationId || "").trim() === targetId) return row;
+    }
+  }
+  return null;
+}
+
+/**
+ * Per-provider product readiness keyed by providerId — the exact `envSignals`
+ * shape the Add-ons settings client consumes (`providerProductReadiness`).
+ * Centralizing it here keeps the server page and the client contract in lockstep
+ * (regression-tested) so per-product install state actually renders.
+ */
+function listAllProviderProductReadiness(env = process.env) {
+  const out = {};
+  for (const provider of MARKETPLACE_PROVIDERS) {
+    out[provider.providerId] = listProviderProductReadiness(provider.providerId, env);
+  }
+  return out;
 }
 
 function getMarketplaceProvider(providerId) {
@@ -196,6 +326,11 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
   if (!provider) return null;
   const testedAt = syncResult?.testedAt || "";
   const isConnected = syncResult?.ok === true;
+  // A live account probe yields `verified`; a configured-but-unprovable account
+  // (e.g. third-party Upstash account with no Developer API) is `account-linked`,
+  // a distinct weaker state that must NOT be reported as verified.
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "setup-required");
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
   return {
     Name: provider.label,
     integrationId: provider.integrationId,
@@ -203,7 +338,7 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     baseUrl: provider.baseUrl,
     endpoint: provider.endpoint,
     method: provider.method,
-    status: isConnected ? "connected" : "draft",
+    status,
     lastTested: testedAt,
     lastResponse: syncResult?.summary || `Connect a ${provider.label} provider account before installing workspace products.`,
     entityTypes: provider.entityTypes,
@@ -216,7 +351,7 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     region: "",
     productId: "",
     plan: "",
-    syncStatus: isConnected ? "verified" : "setup-required",
+    syncStatus,
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
@@ -447,6 +582,9 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
   const qstashWorkflow = installed.find((row) => row.productId === "upstash-qstash") || null;
+  // A scheduler the canvas can actually bind: installed (verified) AND it owns
+  // a real provider schedule id, not just a passing read-probe.
+  const qstashScheduler = hasSchedulerCapability(qstashWorkflow) ? qstashWorkflow : null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -454,6 +592,8 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     installed,
     hasQstashWorkflow: Boolean(qstashWorkflow),
     qstashWorkflow,
+    qstashScheduler,
+    hasQstashSchedulerCapability: Boolean(qstashScheduler),
   };
 }
 
@@ -472,9 +612,13 @@ export {
   getMarketplaceProvider,
   getMarketplaceProduct,
   getUpstashProduct,
+  hasSchedulerCapability,
+  findRegistryRowByIntegrationId,
+  listAllProviderProductReadiness,
   listMarketplaceProducts,
   listProviderProductReadiness,
   listUpstashProductReadiness,
+  withMarketplaceSchedulerMetadata,
   makeMarketplaceProviderRow,
   makeUpstashProductRow,
   makeUpstashProviderRow,

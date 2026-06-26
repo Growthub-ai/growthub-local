@@ -1,7 +1,12 @@
 # Workspace Add-ons Marketplace + Upstash Provider — Completion Plan (V1)
 
-> **Status:** Implementation plan to close PR [#257](https://github.com/Growthub-ai/growthub-local/pull/257)
-> (`codex/workspace-marketplace-upstash`) to production standards.
+> **Status: IMPLEMENTED in this PR.** The plan below is the design; the live
+> loop (provider probe → deterministic schedule install → serverless thin-adapter
+> endpoint → signed callback sync → canvas capability gate) is built, and the kit
+> `next build` + the unit suite are green. See **§8 Delivery** for the file map and
+> validation evidence. Foundation originally from PR
+> [#257](https://github.com/Growthub-ai/growthub-local/pull/257)
+> (`codex/workspace-marketplace-upstash`).
 > **Scope:** `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`
 > **Principle (non-negotiable):** Add-ons are **governed capability installation inside the existing
 > workspace universe** — no separate plugin DB, marketplace runtime, workflow engine, scheduler
@@ -263,3 +268,32 @@ adapter only.
 sandbox/workflow rows, workspace config, and outcome receipts. The marketplace surface and canonical
 entry are already a strong foundation; the next patch focuses almost entirely on proving the live
 install → schedule → callback → sync loop and the QA that backs it.*
+
+---
+
+## 8. Delivery (what this PR actually ships)
+
+Built as a **provider-agnostic scheduler-capability layer** with Upstash QStash as the first
+adapter — a second provider is added by registering one more adapter, with **no route changes**.
+
+**New (provider-agnostic core)**
+- `lib/server-secrets.js` — the single canonical env resolver (`readServerSecret`/`resolveRequiredEnv`); add-on routes resolve tokens through the same entry the sandbox run loop uses.
+- `lib/workspace-add-on-scheduler.js` — `deriveScheduleId` (deterministic upsert key), public-URL + callback-URL derivation, **native QStash JWT signature verification** (`node:crypto`, wire-compatible with `@upstash/qstash` Receiver, zero runtime dep), and the `upstash-qstash` SchedulerAdapter (build schedule/delete requests, parse callback envelope).
+- `lib/workspace-add-on-callback.js` — the synchronization bridge: verify signature → parse → write non-secret last-response proof into workspace config + receipt.
+- `app/api/workspace/add-ons/[providerId]/schedule/route.js` (POST upsert / DELETE), `…/callback/route.js`, `…/failure/route.js`, `app/api/workspace/workflows/[providerId]/route.js` (signed serverless destination; thin adapter over `runOrchestrationGraphIfPresent`).
+
+**Changed**
+- `lib/workspace-add-ons.js` — scheduler/callback columns, `withMarketplaceSchedulerMetadata` (allowlisted, secret-dropping merge), `hasSchedulerCapability`, `deriveWorkspaceAddOnsState.hasQstashSchedulerCapability`, `listAllProviderProductReadiness`, provider rows can be `account-linked` vs `verified`.
+- `app/api/workspace/add-ons/providers/[providerId]/sync/route.js` — **live** account-management probe (Basic auth); only writes `verified` on a real success, else `account-linked`.
+- `app/settings/add-ons/page.jsx` — emits `providerProductReadiness` (fixes the prop-mismatch bug; regression-tested).
+- `app/workflows/WorkflowSurface.jsx` — "Use for this workflow" **creates this row's schedule first and only flips to serverless if the provider confirms it** (stronger than a static gate).
+
+**Validation (all green)**
+- `node --test scripts/unit-workspace-add-ons-scheduler.test.mjs` → 20/20 (schedule-id idempotency; signature valid/tampered/wrong-key/rotated/expired/missing; callback parse; capability gating; secret-never-persisted; env-signals key contract).
+- Existing suites (`unit-sandbox-serverless-flow`, `unit-resolver-registry`) → 40/40, no regression.
+- Kit `next build` (`--webpack`) → green; all new routes registered.
+- `check:version-sync` (bump), `check:worker-kits`, `freeze:check`, kernel, monorepo-boundary, cli-package → pass.
+
+**Honest residuals (named, not hidden)**
+- The schedule/callback/serverless routes are exercised by `next build` + pure-unit coverage; a live end-to-end run against a real QStash project (one-minute schedule firing a real callback) still needs a manual smoke with real `QSTASH_*` env. The signature path is proven offline with forged-but-valid JWTs.
+- Step-level Workflow durability via `@upstash/workflow serve()` is intentionally **not** adopted: scheduling/retry come from QStash schedules, step semantics from the existing orchestration graph. Wrapping each node as a `serve()` step is named future work, not required to close the loop.

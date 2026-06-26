@@ -920,7 +920,36 @@ export default function WorkflowSurface() {
   }
 
   async function useInstalledQstashWorkflowAddOn() {
-    if (resolved.rowIndex < 0 || !objectId || !workspaceConfig || !addOnsState.qstashWorkflow) return;
+    // Bind requires an installed+verified QStash product. The bind itself
+    // CREATES this workflow row's serverless schedule first; we only flip the
+    // row to serverless if the provider confirmed the schedule. This is a
+    // stronger guarantee than a static capability check: serverless is never
+    // claimed without a live schedule whose destination runs THIS row.
+    if (resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig || !addOnsState.qstashWorkflow) return;
+    let scheduled = false;
+    try {
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          region: addOnsState.qstashWorkflow.region || "us-east-1",
+          version: String(sandboxRow?.version || "v1"),
+          workspaceId: workspaceConfig?.id || "workspace",
+        }),
+      });
+      scheduled = response.ok;
+    } catch (error) {
+      console.warn(error);
+    }
+    if (!scheduled) {
+      // Could not install a schedule (missing token / read-only / provider) —
+      // keep the workflow local and send the operator to Add-ons to finish setup.
+      router.push("/settings/add-ons");
+      return;
+    }
     const adapterId = String(sandboxRow?.adapter || "").trim();
     await patchSandboxAndPersist({
       runLocality: "serverless",

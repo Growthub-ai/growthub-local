@@ -1,6 +1,6 @@
 {
   "name": "@growthub/cli",
-  "version": "0.14.10",
+  "version": "0.14.11",
   "description": "CLI control plane for Growthub Local and Agent Workspace as Code: export, fork, inspect, operate, sync, and optionally activate governed AI workspaces.",
   "type": "module",
   "bin": {
