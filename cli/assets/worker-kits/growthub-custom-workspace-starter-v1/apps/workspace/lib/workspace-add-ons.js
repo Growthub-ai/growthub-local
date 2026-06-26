@@ -1,3 +1,5 @@
+import { readEnvVar } from "./server-secrets.js";
+
 const UPSTASH_QSTASH_INTEGRATION_ID = "upstash-qstash-workflow";
 const UPSTASH_AUTH_REF = "QSTASH";
 const UPSTASH_PROVIDER_INTEGRATION_ID = "upstash-provider";
@@ -275,6 +277,42 @@ function withMarketplaceSchedulerMetadata(workspaceConfig, { integrationId, patc
   return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
 }
 
+const SERVERLESS_LOCAL_ADAPTERS = ["local-agent-host", "local-intelligence"];
+
+/**
+ * Bind a sandbox/workflow row to serverless in a config object (pure). Used by
+ * the schedule route so schedule-metadata write + workflow bind happen in ONE
+ * server-authoritative write — no second client PATCH over stale config that
+ * could clobber the just-written scheduleId. Returns { config, bound }.
+ */
+function withWorkflowServerlessBind(workspaceConfig, { objectId, rowId, schedulerRegistryId } = {}) {
+  const targetObject = String(objectId || "").trim();
+  const targetRow = String(rowId || "").trim();
+  const registryId = String(schedulerRegistryId || "").trim();
+  if (!targetObject || !targetRow || !registryId) return { config: workspaceConfig, bound: false };
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let bound = false;
+  const nextObjects = objects.map((object) => {
+    if (object?.id !== targetObject || object?.objectType !== "sandbox-environment") return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.Name || "").trim() !== targetRow) return row;
+      bound = true;
+      const adapterId = String(row?.adapter || "").trim();
+      return {
+        ...row,
+        runLocality: "serverless",
+        schedulerRegistryId: registryId,
+        adapter: SERVERLESS_LOCAL_ADAPTERS.includes(adapterId) ? "local-process" : (adapterId || "local-process"),
+      };
+    });
+    return { ...object, rows: nextRows };
+  });
+  if (!bound) return { config: workspaceConfig, bound: false };
+  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, bound: true };
+}
+
 /** A row is a usable serverless scheduler only when verified AND it carries a
  * real provider schedule id — a verified read-probe alone is not enough. */
 function hasSchedulerCapability(row) {
@@ -376,8 +414,10 @@ function listProviderProductReadiness(providerId, env = process.env) {
   if (!provider) return [];
   const source = env && typeof env === "object" ? env : {};
   return provider.products.map((product) => {
-    const missingEnv = product.requiredEnv.filter((key) => !source[key]);
-    const configuredOptionalEnv = product.optionalEnv.filter((key) => Boolean(source[key]));
+    // Use the canonical readEnvVar so product readiness and schedule-runtime
+    // resolution share one env-key contract (concrete UPPER_SNAKE keys).
+    const missingEnv = product.requiredEnv.filter((key) => !readEnvVar(key, source));
+    const configuredOptionalEnv = product.optionalEnv.filter((key) => Boolean(readEnvVar(key, source)));
     return {
       productId: product.productId,
       integrationId: product.integrationId,
@@ -624,6 +664,7 @@ export {
   listProviderProductReadiness,
   listUpstashProductReadiness,
   withMarketplaceSchedulerMetadata,
+  withWorkflowServerlessBind,
   makeMarketplaceProviderRow,
   makeUpstashProductRow,
   makeUpstashProviderRow,

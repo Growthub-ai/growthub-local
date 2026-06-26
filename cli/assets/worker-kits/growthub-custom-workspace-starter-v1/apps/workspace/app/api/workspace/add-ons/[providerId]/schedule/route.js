@@ -25,6 +25,7 @@ import {
   findRegistryRowByIntegrationId,
   listProviderProductReadiness,
   withMarketplaceSchedulerMetadata,
+  withWorkflowServerlessBind,
 } from "@/lib/workspace-add-ons";
 import {
   getSchedulerAdapter,
@@ -33,7 +34,7 @@ import {
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
 } from "@/lib/workspace-add-on-scheduler";
-import { readServerSecret } from "@/lib/server-secrets";
+import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 const SCHEDULE_TIMEOUT_MS = 10000;
@@ -100,16 +101,17 @@ async function POST(request, context) {
     });
   }
 
-  // Required runtime token resolves through the canonical run entry.
-  const tokenEnv = product.probe?.tokenEnv || (product.requiredEnv || [])[1];
-  const tokenSecret = readServerSecret(product.authRef);
-  const token = tokenSecret?.value || (tokenEnv ? clean(process.env[tokenEnv]) : "");
-  const readiness = listProviderProductReadiness(provider.providerId, process.env).find((item) => item.productId === product.productId);
-  if (!token || !readiness?.configured) {
+  // Concrete-key resolution — same env-key contract as product readiness
+  // (readiness and schedule runtime must not disagree). The token is the
+  // product's declared probe token env (e.g. QSTASH_TOKEN).
+  const requiredEnv = resolveRequiredEnv(product.requiredEnv, process.env);
+  const tokenEnv = product.probe?.tokenEnv || (product.requiredEnv || [])[0];
+  const token = readEnvVar(tokenEnv, process.env)?.value || "";
+  if (!requiredEnv.ok || !token) {
     return jsonError(`${product.label} runtime credentials are not connected`, 422, {
       providerId: provider.providerId,
       productId: product.productId,
-      missingEnv: readiness?.missingEnv || product.requiredEnv,
+      missingEnv: requiredEnv.missing,
     });
   }
 
@@ -180,7 +182,10 @@ async function POST(request, context) {
   }
 
   const nowIso = new Date().toISOString();
-  const nextConfig = withMarketplaceSchedulerMetadata(config, {
+  // ONE server-authoritative write: scheduler metadata on the registry row AND
+  // the workflow row flipped to serverless. The client adopts the returned
+  // config verbatim — no second PATCH over stale state that could drop scheduleId.
+  const withSchedule = withMarketplaceSchedulerMetadata(config, {
     integrationId: product.integrationId,
     patch: {
       scheduleId: syncResult.scheduleId,
@@ -198,23 +203,64 @@ async function POST(request, context) {
       lastScheduleTime: nowIso,
     },
   });
-  let persisted = nextConfig;
+  const { config: nextConfig, bound } = withWorkflowServerlessBind(withSchedule, {
+    objectId,
+    rowId,
+    schedulerRegistryId: product.integrationId,
+  });
+
+  // Persist exactly once. If the local write fails AFTER the remote schedule was
+  // created, the workspace and the provider have diverged — clean up the remote
+  // schedule and FAIL (do not return ok:true and do not let the canvas bind).
+  let persisted;
   try {
     persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
-  } catch {
-    // read-only runtimes: capability proof still returned, receipt notes it.
+  } catch (writeErr) {
+    let cleanedUp = false;
+    try {
+      const del = adapter.buildDeleteRequest({ product, region, token, scheduleId: syncResult.scheduleId, env: process.env });
+      const delResp = await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
+      cleanedUp = delResp.ok;
+    } catch {
+      cleanedUp = false;
+    }
+    await appendOutcomeReceipt({
+      kind: "workspace-add-on-schedule",
+      lane: "server-authoritative",
+      outcomeStatus: cleanedUp ? "failed" : "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
+      policyVerdict: { ok: false, violationCodes: [cleanedUp ? "schedule_rolled_back_persist_failed" : "schedule_orphaned"] },
+      summary: cleanedUp
+        ? `${product.label} schedule create rolled back: workspace persistence failed (${clean(writeErr?.code) || "write error"}).`
+        : `${product.label} schedule ${syncResult.scheduleId} is ORPHANED: created remotely but workspace persistence AND cleanup failed.`,
+      nextActions: cleanedUp
+        ? ["Persistence is read-only here. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true or use a writable runtime, then retry."]
+        : [`Manually delete schedule ${syncResult.scheduleId} in the ${product.label} console, then retry.`],
+    });
+    return jsonError(
+      cleanedUp ? "schedule rolled back: workspace could not persist the install" : `schedule ${syncResult.scheduleId} orphaned (persist + cleanup failed)`,
+      424,
+      { providerId: provider.providerId, productId: product.productId, persisted: false, scheduleId: syncResult.scheduleId, orphaned: !cleanedUp },
+    );
   }
+
   const { receipt } = await appendOutcomeReceipt({
     kind: "workspace-add-on-schedule",
     lane: "server-authoritative",
     outcomeStatus: "published",
     actor: "workspace-marketplace",
-    objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
-    changedFields: ["dataModel.api-registry"],
+    objectRefs: [
+      { objectId: "api-registry", objectType: "api-registry", rowName: product.label },
+      ...(bound ? [{ objectId, objectType: "sandbox-environment", rowName: rowId }] : []),
+    ],
+    changedFields: bound ? ["dataModel.api-registry", `dataModel.${objectId}`] : ["dataModel.api-registry"],
     policyVerdict: { ok: true },
     schemaVerdict: { ok: true },
-    summary: `${product.label} scheduler installed (${syncResult.scheduleId}); workflow rows can now bind serverless.`,
-    nextActions: ["Bind this scheduler to a workflow from the Workflow Canvas add-on chooser."],
+    summary: bound
+      ? `${product.label} scheduler installed (${syncResult.scheduleId}) and bound to ${rowId} (serverless).`
+      : `${product.label} scheduler installed (${syncResult.scheduleId}).`,
+    nextActions: bound ? [] : ["Bind this scheduler to a workflow from the Workflow Canvas add-on chooser."],
   });
 
   return NextResponse.json({
@@ -222,9 +268,11 @@ async function POST(request, context) {
     providerId: provider.providerId,
     productId: product.productId,
     scheduleId: syncResult.scheduleId,
+    bound,
     destinationUrl,
     cron,
     region,
+    persisted: true,
     workspaceConfig: persisted,
     receiptId: receipt.receiptId,
   });
@@ -253,15 +301,52 @@ async function DELETE(request, context) {
   const scheduleId = clean(body.scheduleId || row?.scheduleId);
   if (!scheduleId) return jsonError("no installed schedule to remove", 404, { providerId: provider.providerId });
 
-  const tokenSecret = readServerSecret(product.authRef);
-  const token = tokenSecret?.value || clean(process.env[product.probe?.tokenEnv || ""]);
-  if (token) {
-    try {
-      const del = adapter.buildDeleteRequest({ product, region: clean(row?.region || "us-east-1"), token, scheduleId, env: process.env });
-      await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
-    } catch {
-      // best-effort delete; we still clear local capability proof below.
-    }
+  // Never clear local capability proof unless the remote schedule is actually
+  // gone — otherwise a real schedule keeps firing while the workspace claims
+  // it is removed (cost/noise, and callbacks rejected with no live row).
+  const token = readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "";
+  if (!token) {
+    await appendOutcomeReceipt({
+      kind: "workspace-add-on-schedule",
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
+      summary: `${product.label} schedule ${scheduleId} NOT removed: no runtime token to delete it remotely.`,
+      policyVerdict: { ok: false, violationCodes: ["scheduler_delete_no_token"] },
+      nextActions: [`Provide ${product.probe?.tokenEnv || "the runtime token"} so the remote schedule can be deleted, then retry.`],
+    });
+    return jsonError(`cannot delete ${product.label} schedule without a runtime token`, 422, {
+      providerId: provider.providerId, productId: product.productId, scheduleId,
+    });
+  }
+
+  let deleted = false;
+  let deleteDetail = "";
+  try {
+    const del = adapter.buildDeleteRequest({ product, region: clean(row?.region || "us-east-1"), token, scheduleId, env: process.env });
+    const delResp = await fetchWithTimeout(del.url, { method: del.method, headers: del.headers });
+    // QStash returns 404 if the schedule is already gone — treat as deleted.
+    deleted = delResp.ok || delResp.status === 404;
+    deleteDetail = `HTTP ${delResp.status}`;
+  } catch (err) {
+    deleteDetail = err?.message || "network error";
+  }
+
+  if (!deleted) {
+    await appendOutcomeReceipt({
+      kind: "workspace-add-on-schedule",
+      lane: "server-authoritative",
+      outcomeStatus: "failed",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
+      policyVerdict: { ok: false, violationCodes: ["scheduler_delete_failed"] },
+      summary: `${product.label} remote schedule ${scheduleId} delete failed (${deleteDetail}); local proof kept to avoid a stale-but-firing schedule.`,
+      nextActions: [`Confirm schedule ${scheduleId} in the ${product.label} console, then retry uninstall.`],
+    });
+    return jsonError(`remote schedule delete failed (${deleteDetail})`, 502, {
+      providerId: provider.providerId, productId: product.productId, scheduleId, deleted: false,
+    });
   }
 
   const nextConfig = withMarketplaceSchedulerMetadata(config, {
@@ -274,15 +359,15 @@ async function DELETE(request, context) {
       cron: "",
       status: "draft",
       syncStatus: "missing-env",
-      syncProof: `${product.label} schedule ${scheduleId} removed.`,
+      syncProof: `${product.label} schedule ${scheduleId} removed (${deleteDetail}).`,
       lastTested: new Date().toISOString(),
     },
   });
-  let persisted = nextConfig;
+  let persisted = true;
   try {
-    persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+    await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
   } catch {
-    // read-only runtime; nothing else to do.
+    persisted = false;
   }
   const { receipt } = await appendOutcomeReceipt({
     kind: "workspace-add-on-schedule",
@@ -292,10 +377,10 @@ async function DELETE(request, context) {
     objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
     changedFields: ["dataModel.api-registry"],
     policyVerdict: { ok: true },
-    summary: `${product.label} scheduler ${scheduleId} uninstalled.`,
+    summary: `${product.label} scheduler ${scheduleId} uninstalled (${deleteDetail}).`,
   });
 
-  return NextResponse.json({ ok: true, providerId: provider.providerId, productId: product.productId, scheduleId, workspaceConfig: persisted, receiptId: receipt.receiptId });
+  return NextResponse.json({ ok: true, providerId: provider.providerId, productId: product.productId, scheduleId, deleted: true, persisted, workspaceConfig: nextConfig, receiptId: receipt.receiptId });
 }
 
 export { POST, DELETE };

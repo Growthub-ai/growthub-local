@@ -321,14 +321,21 @@ const upstashQstashAdapter = {
   parseCallback({ rawBody, kind = "callback" } = {}) {
     const envelope = typeof rawBody === "string" ? safeJsonParse(rawBody) : rawBody;
     const status = Number(envelope?.status);
-    let bodyPreview = "";
+    // QStash wraps the destination's response in `body` (base64). Decode it once
+    // so we can both preview it AND recover the scheduleId the destination echoed
+    // — QStash does not guarantee a top-level scheduleId on the callback.
+    let decodedBody = "";
     if (clean(envelope?.body)) {
       try {
-        bodyPreview = base64UrlToBuffer(envelope.body).toString("utf8").slice(0, MAX_BODY_PREVIEW_CHARS);
+        decodedBody = base64UrlToBuffer(envelope.body).toString("utf8");
       } catch {
-        bodyPreview = clean(envelope.body).slice(0, MAX_BODY_PREVIEW_CHARS);
+        decodedBody = clean(envelope.body);
       }
     }
+    const innerResponse = safeJsonParse(decodedBody);
+    const bodyPreview = clean(decodedBody).slice(0, MAX_BODY_PREVIEW_CHARS);
+    // scheduleId: top-level envelope → nested destination response → forwarded header echo.
+    const scheduleId = clean(envelope?.scheduleId) || clean(innerResponse?.scheduleId) || clean(envelope?.["x-growthub-schedule-id"]);
     const succeeded = kind !== "failure" && Number.isFinite(status) && status >= 200 && status < 300;
     const retried = Number(envelope?.retried);
     const maxRetries = Number(envelope?.maxRetries);
@@ -337,7 +344,7 @@ const upstashQstashAdapter = {
       succeeded,
       status: Number.isFinite(status) ? status : null,
       messageId: clean(envelope?.sourceMessageId) || clean(envelope?.messageId),
-      scheduleId: clean(envelope?.scheduleId),
+      scheduleId,
       bodyPreview,
       // Retry counters distinguish "first attempt failed" from "retries exhausted".
       retried: Number.isFinite(retried) ? retried : null,

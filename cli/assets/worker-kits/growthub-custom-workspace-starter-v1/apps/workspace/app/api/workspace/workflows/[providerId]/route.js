@@ -120,11 +120,14 @@ async function POST(request, context) {
       : `Scheduled serverless run of ${rowId} failed: ${clean(result?.error) || "unknown"}.`,
   });
 
-  // Compact result — the provider forwards this to the callback URL.
+  // Compact result — the provider forwards this (base64) to the callback URL.
+  // scheduleId is echoed so the callback can recover schedule identity even when
+  // QStash omits a top-level scheduleId on the callback envelope.
   return NextResponse.json(
     {
       ok,
       runId,
+      scheduleId,
       objectId,
       rowId,
       exitCode: result?.exitCode ?? (ok ? 0 : 1),

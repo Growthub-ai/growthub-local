@@ -920,13 +920,13 @@ export default function WorkflowSurface() {
   }
 
   async function useInstalledQstashWorkflowAddOn() {
-    // Bind requires an installed+verified QStash product. The bind itself
-    // CREATES this workflow row's serverless schedule first; we only flip the
-    // row to serverless if the provider confirmed the schedule. This is a
-    // stronger guarantee than a static capability check: serverless is never
-    // claimed without a live schedule whose destination runs THIS row.
+    // Bind requires an installed+verified QStash product. The schedule route
+    // installs THIS row's schedule AND flips it to serverless in ONE
+    // server-authoritative write, then returns the persisted config — we adopt
+    // it verbatim. No second PATCH over stale state (which could clobber the
+    // just-written scheduleId), and serverless is never claimed unless the
+    // server confirmed both the remote schedule and the local persist.
     if (resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig || !addOnsState.qstashWorkflow) return;
-    let scheduled = false;
     try {
       const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
         method: "POST",
@@ -940,22 +940,20 @@ export default function WorkflowSurface() {
           workspaceId: workspaceConfig?.id || "workspace",
         }),
       });
-      scheduled = response.ok;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.bound || !payload.workspaceConfig) {
+        // No schedule installed (missing token / read-only / provider / persist
+        // failure). Keep the workflow local; route the operator to finish setup.
+        setSaveMessage(payload.error ? `Could not bind QStash: ${payload.error}` : "Could not bind QStash. Finish setup in Add-ons.");
+        router.push("/settings/add-ons");
+        return;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage(`Bound to QStash scheduler ${payload.scheduleId}. Serverless run loop is live.`);
     } catch (error) {
       console.warn(error);
-    }
-    if (!scheduled) {
-      // Could not install a schedule (missing token / read-only / provider) —
-      // keep the workflow local and send the operator to Add-ons to finish setup.
       router.push("/settings/add-ons");
-      return;
     }
-    const adapterId = String(sandboxRow?.adapter || "").trim();
-    await patchSandboxAndPersist({
-      runLocality: "serverless",
-      schedulerRegistryId: UPSTASH_QSTASH_INTEGRATION_ID,
-      adapter: ["local-agent-host", "local-intelligence"].includes(adapterId) ? "local-process" : (adapterId || "local-process"),
-    });
   }
 
   function openQstashSetup() {

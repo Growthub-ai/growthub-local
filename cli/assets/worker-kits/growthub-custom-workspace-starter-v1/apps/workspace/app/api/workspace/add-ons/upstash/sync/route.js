@@ -7,6 +7,7 @@ import {
   withUpstashProductRegistry
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { readEnvVar } from "@/lib/server-secrets";
 
 const PROBE_TIMEOUT_MS = 8000;
 
@@ -18,8 +19,9 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
+// Canonical concrete-key read — same contract as readiness + schedule runtime.
 function envValue(key) {
-  return clean(process.env[key]);
+  return clean(readEnvVar(key, process.env)?.value || "");
 }
 
 function selectedQstashRegion(region) {

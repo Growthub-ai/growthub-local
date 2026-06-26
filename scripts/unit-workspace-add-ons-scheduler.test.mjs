@@ -321,6 +321,50 @@ test("deriveWorkspaceAddOnsState exposes hasQstashSchedulerCapability only with 
   assert.equal(addOns.deriveWorkspaceAddOnsState(noCap).hasQstashSchedulerCapability, false);
 });
 
+/* ---------- atomic schedule + bind (lost-update regression) ---------- */
+test("schedule metadata + serverless bind compose in one config without losing scheduleId", () => {
+  const start = {
+    dataModel: { objects: [
+      { objectType: "api-registry", rows: [{ integrationId: "upstash-qstash-workflow", syncStatus: "verified" }] },
+      { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [{ Name: "My Flow", runLocality: "local", adapter: "local-intelligence" }] },
+    ] },
+  };
+  // schedule route step 1: write scheduler metadata
+  const withSched = addOns.withMarketplaceSchedulerMetadata(start, {
+    integrationId: "upstash-qstash-workflow",
+    patch: { scheduleId: "scd_1", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+  });
+  // schedule route step 2 (SAME config object): bind the workflow row serverless
+  const { config, bound } = addOns.withWorkflowServerlessBind(withSched, {
+    objectId: "sandbox-workflows", rowId: "My Flow", schedulerRegistryId: "upstash-qstash-workflow",
+  });
+  assert.equal(bound, true);
+  const reg = config.dataModel.objects.find((o) => o.objectType === "api-registry").rows[0];
+  assert.equal(reg.scheduleId, "scd_1", "bind must NOT clobber the just-written scheduleId");
+  const sb = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  assert.equal(sb.runLocality, "serverless");
+  assert.equal(sb.schedulerRegistryId, "upstash-qstash-workflow");
+  assert.equal(sb.adapter, "local-process", "local-intelligence normalized to local-process for serverless");
+  assert.equal(addOns.deriveWorkspaceAddOnsState(config).hasQstashSchedulerCapability, true);
+});
+
+test("withWorkflowServerlessBind is a no-op when the target row is missing", () => {
+  const { bound, config } = addOns.withWorkflowServerlessBind({ dataModel: { objects: [] } }, { objectId: "x", rowId: "y", schedulerRegistryId: "z" });
+  assert.equal(bound, false);
+  assert.deepEqual(config.dataModel.objects, []);
+});
+
+/* ---------- callback recovers scheduleId nested in base64 destination response ---------- */
+test("parseCallback recovers scheduleId from the nested base64 body when absent at top level", () => {
+  const inner = JSON.stringify({ ok: true, scheduleId: "growthub:upstash:ws:o:r:v1", runId: "sched_x" });
+  const envelope = JSON.stringify({ status: 200, sourceMessageId: "m", body: Buffer.from(inner).toString("base64"), retried: 0, maxRetries: 3 });
+  const parsed = upstashQstashAdapter.parseCallback({ rawBody: envelope, kind: "callback" });
+  assert.equal(parsed.scheduleId, "growthub:upstash:ws:o:r:v1");
+  assert.equal(parsed.succeeded, true);
+  assert.equal(parsed.retried, 0);
+  assert.equal(parsed.maxRetries, 3);
+});
+
 /* ---------- env-signals contract (the page.jsx → client bug) ---------- */
 test("listAllProviderProductReadiness is keyed by providerId", () => {
   const signals = addOns.listAllProviderProductReadiness({});
