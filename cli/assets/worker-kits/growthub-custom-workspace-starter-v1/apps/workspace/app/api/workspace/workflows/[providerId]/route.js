@@ -18,7 +18,7 @@
 
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { getMarketplaceProvider } from "@/lib/workspace-add-ons";
+import { getMarketplaceProvider, readTriggerScheduleBinding, liveGraphField } from "@/lib/workspace-add-ons";
 import {
   getSchedulerAdapter,
   isSchedulerProduct,
@@ -92,13 +92,20 @@ async function POST(request, context) {
   }
 
   // A valid signature proves QStash sent this; it does NOT prove the row is
-  // STILL bound to this schedule. Validate current workspace truth so a stale
-  // signed delivery cannot execute an unbound/rebound row.
+  // STILL bound to this schedule. The inbound scheduleId is REQUIRED (missing
+  // identity blocks, never runs), and we validate BOTH the row-level fields AND
+  // the live graph trigger node so a stale/rebound delivery cannot execute.
   const scheduleId = clean(payload.scheduleId || request.headers.get("x-growthub-schedule-id"));
+  const triggerBinding = readTriggerScheduleBinding(row[liveGraphField(row)]);
   const bindingOk =
+    Boolean(scheduleId) &&
     clean(row.runLocality) === "serverless" &&
     clean(row.schedulerRegistryId) === product.integrationId &&
-    (!scheduleId || clean(row.scheduleId) === scheduleId);
+    clean(row.scheduleId) === scheduleId &&
+    triggerBinding?.triggerKind === "serverless-scheduler" &&
+    triggerBinding?.enabled === true &&
+    triggerBinding?.scheduleId === scheduleId &&
+    triggerBinding?.schedulerRegistryId === product.integrationId;
   if (!bindingOk) {
     await appendOutcomeReceipt({
       kind: "workspace-scheduled-run",
@@ -106,10 +113,10 @@ async function POST(request, context) {
       outcomeStatus: "blocked",
       actor: provider.providerId,
       objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-      policyVerdict: { ok: false, violationCodes: ["scheduled_run_row_unbound"] },
-      summary: `Rejected scheduled run of ${rowId}: row no longer bound to ${product.integrationId} schedule ${scheduleId || "?"} (locality=${clean(row.runLocality)}, scheduleId=${clean(row.scheduleId) || "none"}).`,
+      policyVerdict: { ok: false, violationCodes: [scheduleId ? "scheduled_run_row_unbound" : "scheduled_run_missing_schedule_id"] },
+      summary: `Rejected scheduled run of ${rowId}: ${scheduleId ? `row/trigger not bound to ${product.integrationId} schedule ${scheduleId}` : "missing inbound scheduleId"} (locality=${clean(row.runLocality)}, row.scheduleId=${clean(row.scheduleId) || "none"}, trigger.scheduleId=${triggerBinding?.scheduleId || "none"}).`,
     });
-    return NextResponse.json({ ok: false, error: "row is not currently bound to this schedule", scheduleId }, { status: 409 });
+    return NextResponse.json({ ok: false, error: scheduleId ? "row/trigger is not currently bound to this schedule" : "missing inbound scheduleId", scheduleId }, { status: scheduleId ? 409 : 400 });
   }
 
   const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;

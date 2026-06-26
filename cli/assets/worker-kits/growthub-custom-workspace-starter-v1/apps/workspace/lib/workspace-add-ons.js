@@ -185,97 +185,16 @@ function apiRegistryColumns(existing = []) {
     "syncCheckedAt",
     "syncProof",
     "missingEnv",
-    // Serverless scheduler capability proof (set by the schedule route after a
-    // real provider upsert). A verified read-probe is NOT a scheduler — the
-    // canvas only treats a row as a scheduler once `scheduleId` is present.
-    "scheduleId",
-    "scheduleDestination",
-    "callbackUrl",
-    "failureCallbackUrl",
-    "cron",
-    "lastScheduleInstalledAt",
-    "lastScheduleTime",
-    "nextScheduleTime",
-    "lastScheduleStates",
-    // Last synchronized scheduled-run response (set by the signed callback
-    // route). Non-secret proof only — a short body preview, never the payload.
-    "lastResponseStatus",
-    "lastResponseBodyPreview",
-    "lastMessageId",
-    "lastAttemptedAt",
-    "lastSucceededAt",
-    "lastFailedAt",
-    "lastFailureReason",
     ...existing,
   ]));
 }
 
-// Non-secret keys the scheduler/callback routes are allowed to merge onto a
-// product registry row. Any key NOT in this set is dropped before persistence,
-// so a token/signing key can never be written into the row by accident.
-const SCHEDULER_METADATA_KEYS = new Set([
-  "scheduleId",
-  "scheduleDestination",
-  "callbackUrl",
-  "failureCallbackUrl",
-  "cron",
-  "region",
-  "lastScheduleInstalledAt",
-  "lastScheduleTime",
-  "nextScheduleTime",
-  "lastScheduleStates",
-  "lastResponseStatus",
-  "lastResponseBodyPreview",
-  "lastMessageId",
-  "lastAttemptedAt",
-  "lastSucceededAt",
-  "lastFailedAt",
-  "lastFailureReason",
-  "status",
-  "syncStatus",
-  "syncCheckedAt",
-  "syncProof",
-  "lastTested",
-  "lastResponse",
-]);
-
-function sanitizeSchedulerPatch(patch) {
-  const out = {};
-  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
-    if (SCHEDULER_METADATA_KEYS.has(key)) out[key] = value;
-  }
-  return out;
-}
-
-/**
- * Merge a NON-SECRET scheduler/callback patch onto the api-registry row whose
- * integrationId matches. Generic across providers — the schedule and callback
- * routes both use this so secrets can never reach workspace config. Returns the
- * config unchanged when no matching row exists.
- */
-function withMarketplaceSchedulerMetadata(workspaceConfig, { integrationId, patch } = {}) {
-  const targetId = String(integrationId || "").trim();
-  if (!targetId) return workspaceConfig;
-  const safePatch = sanitizeSchedulerPatch(patch);
-  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
-  const objects = Array.isArray(dm.objects) ? dm.objects : [];
-  let changed = false;
-  const nextObjects = objects.map((object) => {
-    if (object?.objectType !== "api-registry") return object;
-    const rows = Array.isArray(object.rows) ? object.rows : [];
-    let rowChanged = false;
-    const nextRows = rows.map((row) => {
-      if (String(row?.integrationId || "").trim() !== targetId) return row;
-      rowChanged = true;
-      return { ...row, ...safePatch };
-    });
-    if (!rowChanged) return object;
-    changed = true;
-    return { ...object, columns: apiRegistryColumns(object.columns), rows: nextRows };
-  });
-  if (!changed) return workspaceConfig;
-  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
-}
+// NOTE: per-workflow schedule state (scheduleId, cron, callback URLs, last
+// scheduled-run proof) is OWNED BY THE WORKFLOW ROW (sandbox-environment), NOT
+// this provider capability row — see `withWorkflowServerlessBind`. The API
+// Registry row is a pure capability row: verified provider/product, token/probe
+// proof (syncStatus / syncProof / syncCheckedAt). It intentionally carries no
+// per-schedule columns so two scheduled workflows never collide on one row.
 
 const SERVERLESS_LOCAL_ADAPTERS = ["local-agent-host", "local-intelligence"];
 
@@ -300,32 +219,69 @@ function parseGraphValue(value) {
  * the row. Preserves the stored value's shape (string vs object). `clear:true`
  * reverts the trigger to manual on uninstall.
  */
+const CANONICAL_TRIGGER_NODE_ID = "schedule-trigger";
+
+function scheduleTriggerConfig(meta) {
+  return {
+    trigger: "serverless-scheduler",
+    triggerKind: "serverless-scheduler",
+    schedule: {
+      schedulerRegistryId: meta.schedulerRegistryId || "",
+      scheduleId: meta.scheduleId || "",
+      cron: meta.cron || "",
+      providerId: meta.schedulerProviderId || "",
+      productId: meta.schedulerProductId || "",
+      destinationUrl: meta.destinationUrl || "",
+      callbackUrl: meta.callbackUrl || "",
+    },
+    enabled: true,
+  };
+}
+
 function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
   const graph = parseGraphValue(value);
-  if (!graph || !Array.isArray(graph.nodes) || !graph.nodes.length) return value;
-  const triggerIndex = (() => {
-    const byType = graph.nodes.findIndex((n) => n?.type === "data-trigger");
-    if (byType >= 0) return byType;
-    const byInput = graph.nodes.findIndex((n) => n?.type === "input" || n?.id === "input");
-    return byInput >= 0 ? byInput : 0;
-  })();
+  if (!graph || !Array.isArray(graph.nodes) || !graph.nodes.length) {
+    return { value, triggerNodeId: null, changed: false };
+  }
+  // Pick the trigger node deterministically: a `data-trigger`, else the entry
+  // `input` node. NEVER fall back to mutating an arbitrary node — if neither
+  // exists, create a canonical `data-trigger` node instead.
+  const byType = graph.nodes.findIndex((n) => n?.type === "data-trigger");
+  const byInput = byType >= 0 ? -1 : graph.nodes.findIndex((n) => n?.type === "input" || n?.id === "input");
+  const triggerIndex = byType >= 0 ? byType : byInput;
+
+  if (triggerIndex < 0) {
+    // No canonical trigger/input node — create one rather than mutate node 0.
+    if (clear) return { value, triggerNodeId: null, changed: false };
+    const triggerNode = {
+      id: CANONICAL_TRIGGER_NODE_ID,
+      type: "data-trigger",
+      label: "Schedule trigger",
+      subtitle: "Serverless scheduler",
+      config: { action: "schedule-fired", ...scheduleTriggerConfig(meta) },
+    };
+    const nextNodes = graph.nodes.map((node) =>
+      node?.type === "tool-result" ? { ...node, config: { ...(node.config || {}), writeLastResponse: true } } : node,
+    );
+    const nextGraph = { ...graph, nodes: [triggerNode, ...nextNodes] };
+    return {
+      value: typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph,
+      triggerNodeId: CANONICAL_TRIGGER_NODE_ID,
+      changed: true,
+    };
+  }
+
+  const triggerNodeId = String(graph.nodes[triggerIndex]?.id || "").trim() || `node-${triggerIndex}`;
   const nextNodes = graph.nodes.map((node, index) => {
     if (index === triggerIndex) {
       const config = { ...(node.config || {}) };
       if (clear) {
         config.trigger = "manual";
+        config.triggerKind = "manual";
         delete config.schedule;
+        delete config.enabled;
       } else {
-        config.trigger = "serverless-scheduler";
-        config.schedule = {
-          schedulerRegistryId: meta.schedulerRegistryId || "",
-          scheduleId: meta.scheduleId || "",
-          cron: meta.cron || "",
-          providerId: meta.schedulerProviderId || "",
-          productId: meta.schedulerProductId || "",
-          destinationUrl: meta.destinationUrl || "",
-          callbackUrl: meta.callbackUrl || "",
-        };
+        Object.assign(config, scheduleTriggerConfig(meta));
       }
       return { ...node, config };
     }
@@ -335,7 +291,34 @@ function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
     return node;
   });
   const nextGraph = { ...graph, nodes: nextNodes };
-  return typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph;
+  return {
+    value: typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph,
+    triggerNodeId,
+    changed: true,
+  };
+}
+
+/** Resolve the runtime-live graph field (precedence matches the runner). */
+function liveGraphField(row) {
+  return parseGraphValue(row?.orchestrationGraph) ? "orchestrationGraph" : "orchestrationConfig";
+}
+
+/** Read the schedule binding recorded on a graph's trigger node (or null). */
+function readTriggerScheduleBinding(value) {
+  const graph = parseGraphValue(value);
+  if (!graph || !Array.isArray(graph.nodes)) return null;
+  const node =
+    graph.nodes.find((n) => n?.type === "data-trigger") ||
+    graph.nodes.find((n) => n?.type === "input" || n?.id === "input");
+  const schedule = node?.config?.schedule;
+  if (!schedule || node?.config?.trigger !== "serverless-scheduler") return null;
+  return {
+    triggerNodeId: String(node.id || "").trim(),
+    triggerKind: String(node.config.triggerKind || node.config.trigger || "").trim(),
+    scheduleId: String(schedule.scheduleId || "").trim(),
+    schedulerRegistryId: String(schedule.schedulerRegistryId || "").trim(),
+    enabled: node.config.enabled !== false,
+  };
 }
 
 const SANDBOX_SCHEDULE_CLEAR_PATCH = {
@@ -369,6 +352,8 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
   let bound = false;
+  let liveField = "orchestrationConfig";
+  let triggerNodeId = null;
   const nextObjects = objects.map((object) => {
     if (object?.id !== targetObject || object?.objectType !== "sandbox-environment") return object;
     const rows = Array.isArray(object.rows) ? object.rows : [];
@@ -376,6 +361,10 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
       if (String(row?.Name || "").trim() !== targetRow) return row;
       bound = true;
       const adapterId = String(row?.adapter || "").trim();
+      // Mutate the RUNTIME-LIVE graph field (precedence matches the runner:
+      // orchestrationGraph, else orchestrationConfig) — never the draft. We keep
+      // both live fields consistent when both are present.
+      liveField = liveGraphField(row);
       const triggerMeta = {
         schedulerRegistryId: String(schedulerRegistryId || "").trim(),
         scheduleId: params.scheduleId || "",
@@ -385,11 +374,11 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
         destinationUrl: params.destinationUrl || "",
         callbackUrl: params.callbackUrl || "",
       };
-      const base = {
-        ...row,
-        orchestrationGraph: syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear }),
-        orchestrationConfig: syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear }),
-      };
+      const graphSync = syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear });
+      const configSync = syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear });
+      triggerNodeId = (liveField === "orchestrationGraph" ? graphSync.triggerNodeId : configSync.triggerNodeId)
+        || configSync.triggerNodeId || graphSync.triggerNodeId;
+      const base = { ...row, orchestrationGraph: graphSync.value, orchestrationConfig: configSync.value };
       if (clear) {
         return { ...base, runLocality: "local", ...SANDBOX_SCHEDULE_CLEAR_PATCH };
       }
@@ -412,7 +401,10 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
     return { ...object, rows: nextRows };
   });
   if (!bound) return { config: workspaceConfig, bound: false };
-  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, bound: true };
+  const changedFields = clear
+    ? [`${targetObject}.${targetRow}.runLocality`, `${targetObject}.${targetRow}.scheduleId`, `${targetObject}.${targetRow}.${liveField}.${triggerNodeId || "trigger"}`]
+    : [`${targetObject}.${targetRow}.runLocality`, `${targetObject}.${targetRow}.scheduleId`, `${targetObject}.${targetRow}.${liveField}.${triggerNodeId || "trigger"}`];
+  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, bound: true, liveField, triggerNodeId, changedFields };
 }
 
 /**
@@ -465,16 +457,6 @@ function withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch 
   });
   if (!found) return { config: workspaceConfig, found: false };
   return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, found: true };
-}
-
-/** A row is a usable serverless scheduler only when verified AND it carries a
- * real provider schedule id — a verified read-probe alone is not enough. */
-function hasSchedulerCapability(row) {
-  return Boolean(
-    row &&
-      String(row.syncStatus || "").trim() === "verified" &&
-      String(row.scheduleId || "").trim(),
-  );
 }
 
 function findRegistryRowByIntegrationId(workspaceConfig, integrationId) {
@@ -812,17 +794,17 @@ export {
   getMarketplaceProvider,
   getMarketplaceProduct,
   getUpstashProduct,
-  hasSchedulerCapability,
   findRegistryRowByIntegrationId,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
   withSandboxScheduledRunProof,
   syncTriggerNodeForSchedule,
+  readTriggerScheduleBinding,
+  liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,
   listProviderProductReadiness,
   listUpstashProductReadiness,
-  withMarketplaceSchedulerMetadata,
   withWorkflowServerlessBind,
   makeMarketplaceProviderRow,
   makeUpstashProductRow,

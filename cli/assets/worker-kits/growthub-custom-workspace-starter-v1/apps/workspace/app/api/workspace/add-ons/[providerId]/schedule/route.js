@@ -26,6 +26,7 @@ import {
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
   withWorkflowServerlessBind,
+  liveGraphField,
 } from "@/lib/workspace-add-ons";
 import {
   getSchedulerAdapter,
@@ -233,7 +234,7 @@ async function POST(request, context) {
   // story as the row. The provider API Registry row stays a pure capability row
   // (verified token/probe), set by product sync — we do not write per-schedule
   // state there, so multiple workflows never fight over one scheduleId.
-  const { config: nextConfig, bound } = withWorkflowServerlessBind(config, {
+  const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(config, {
     objectId,
     rowId,
     schedulerRegistryId: product.integrationId,
@@ -312,12 +313,12 @@ async function POST(request, context) {
     outcomeStatus: "published",
     actor: "workspace-marketplace",
     objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-    // The bind mutates the LIVE executable graph trigger node (not the draft) —
-    // recorded explicitly so the runtime-trigger change is in the ledger.
-    changedFields: [`dataModel.${objectId}.${rowId}.runLocality`, `dataModel.${objectId}.${rowId}.scheduleId`, `dataModel.${objectId}.${rowId}.orchestrationConfig.trigger`],
+    // The bind mutates the LIVE executable graph trigger node (not the draft).
+    // Record the ACTUAL live field + trigger node id that changed.
+    changedFields: (changedFields || []).map((f) => `dataModel.${f}`),
     policyVerdict: { ok: true },
     schemaVerdict: { ok: true },
-    summary: `${product.label} schedule ${syncResult.scheduleId} bound to ${rowId}: row serverless + live trigger node synced. Schedule is bound to the published graph.`,
+    summary: `${product.label} schedule ${syncResult.scheduleId} bound to ${rowId}: row serverless + ${liveField} trigger node "${triggerNodeId}" synced (bound to the published graph).`,
     nextActions: [],
   });
 
@@ -432,16 +433,30 @@ async function DELETE(request, context) {
   } catch {
     persisted = false;
   }
+  const liveField = liveGraphField(owner.row);
   const { receipt } = await appendOutcomeReceipt({
     kind: "workspace-add-on-schedule",
     lane: "server-authoritative",
-    outcomeStatus: "published",
+    // Remote schedule is gone. If the local revert did NOT persist, this is a
+    // divergence (workspace still shows the row bound) — record it as failed.
+    outcomeStatus: persisted ? "published" : "failed",
     actor: "workspace-marketplace",
     objectRefs: [{ objectId: owner.objectId, objectType: "sandbox-environment", rowName: owner.row.Name }],
-    changedFields: [`dataModel.${owner.objectId}.${owner.row.Name}.scheduleId`, `dataModel.${owner.objectId}.${owner.row.Name}.orchestrationConfig.trigger`],
-    policyVerdict: { ok: true },
-    summary: `${product.label} scheduler ${scheduleId} uninstalled from ${owner.row.Name} (${deleteDetail}); row reverted to local + manual trigger.`,
+    changedFields: [`dataModel.${owner.objectId}.${owner.row.Name}.scheduleId`, `dataModel.${owner.objectId}.${owner.row.Name}.${liveField}.trigger`],
+    policyVerdict: { ok: persisted, ...(persisted ? {} : { violationCodes: ["scheduler_delete_persist_failed"] }) },
+    summary: persisted
+      ? `${product.label} scheduler ${scheduleId} uninstalled from ${owner.row.Name} (${deleteDetail}); row reverted to local + manual trigger.`
+      : `${product.label} remote schedule ${scheduleId} deleted (${deleteDetail}) but workspace revert did NOT persist — row still shows bound. Re-run uninstall on a writable runtime.`,
+    nextActions: persisted ? [] : ["Persistence is read-only here. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true or use a writable runtime, then re-run uninstall to clear the row."],
   });
+
+  // Remote delete succeeded but local persistence failed → do NOT report clean
+  // success; the workspace row is now stale relative to provider reality.
+  if (!persisted) {
+    return jsonError(`remote schedule ${scheduleId} deleted but workspace revert did not persist`, 424, {
+      providerId: provider.providerId, productId: product.productId, scheduleId, deleted: true, persisted: false, receiptId: receipt.receiptId,
+    });
+  }
 
   return NextResponse.json({ ok: true, providerId: provider.providerId, productId: product.productId, scheduleId, deleted: true, persisted, workspaceConfig: nextConfig, receiptId: receipt.receiptId });
 }

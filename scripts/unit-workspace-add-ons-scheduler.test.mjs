@@ -288,34 +288,6 @@ test("parseCallback on failure kind records a reason and is not successful", () 
 });
 
 /* ---------- capability gating ---------- */
-test("hasSchedulerCapability requires verified AND a scheduleId", () => {
-  assert.equal(addOns.hasSchedulerCapability({ syncStatus: "verified", scheduleId: "scd_1" }), true);
-  assert.equal(addOns.hasSchedulerCapability({ syncStatus: "verified", scheduleId: "" }), false);
-  assert.equal(addOns.hasSchedulerCapability({ syncStatus: "missing-env", scheduleId: "scd_1" }), false);
-});
-
-/* ---------- metadata merge: no secret can be written ---------- */
-test("withMarketplaceSchedulerMetadata merges allowlisted keys and drops secrets", () => {
-  const config = {
-    dataModel: {
-      objects: [
-        {
-          objectType: "api-registry",
-          rows: [{ integrationId: "upstash-qstash-workflow", syncStatus: "verified" }],
-        },
-      ],
-    },
-  };
-  const next = addOns.withMarketplaceSchedulerMetadata(config, {
-    integrationId: "upstash-qstash-workflow",
-    patch: { scheduleId: "scd_1", QSTASH_TOKEN: "leak", lastResponseBodyPreview: "ok" },
-  });
-  const row = next.dataModel.objects[0].rows[0];
-  assert.equal(row.scheduleId, "scd_1");
-  assert.equal(row.lastResponseBodyPreview, "ok");
-  assert.equal(row.QSTASH_TOKEN, undefined, "secret-shaped key must never be persisted");
-});
-
 test("deriveWorkspaceAddOnsState capability = the QStash product is installed/verified", () => {
   // Capability lets the canvas OFFER a bind; the schedule itself is per-row.
   const installed = {
@@ -419,6 +391,56 @@ test("findEligibleSandboxRow validates existence + objectType before any remote 
   const withApi = { dataModel: { objects: [{ id: "x", objectType: "api-registry", rows: [{ Name: "r" }] }] } };
   assert.equal(addOns.findEligibleSandboxRow(withApi, "x", "r").status, 409);
   assert.equal(addOns.findEligibleSandboxRow(config, "sandbox-workflows", "Flow A").ok, true);
+});
+
+test("bind reports the live graph field + trigger node id it changed", () => {
+  // orchestrationGraph present → runtime-live field is orchestrationGraph.
+  const cfg = {
+    dataModel: { objects: [
+      { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
+        { Name: "Flow A", runLocality: "local", adapter: "local-process", orchestrationGraph: GRAPH, orchestrationConfig: GRAPH },
+      ] },
+    ] },
+  };
+  const res = bindFlow(cfg, "Flow A", "sched-A");
+  assert.equal(res.liveField, "orchestrationGraph");
+  assert.equal(res.triggerNodeId, "input");
+  assert.ok(res.changedFields.some((f) => f.includes("orchestrationGraph.input")));
+});
+
+test("trigger sync creates a canonical data-trigger node when none exists (never mutates node 0)", () => {
+  const graphNoTrigger = JSON.stringify({
+    version: 1, provider: "growthub-native",
+    nodes: [{ id: "api-request", type: "api-registry-call", config: {} }, { id: "result", type: "tool-result", config: {} }],
+    edges: [],
+  });
+  const cfg = {
+    dataModel: { objects: [
+      { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
+        { Name: "Flow A", runLocality: "local", adapter: "local-process", orchestrationConfig: graphNoTrigger },
+      ] },
+    ] },
+  };
+  const { config, triggerNodeId } = bindFlow(cfg, "Flow A", "sched-A");
+  assert.equal(triggerNodeId, "schedule-trigger");
+  const graph = JSON.parse(config.dataModel.objects[0].rows[0].orchestrationConfig);
+  const trig = graph.nodes.find((n) => n.id === "schedule-trigger");
+  assert.equal(trig.type, "data-trigger");
+  assert.equal(trig.config.schedule.scheduleId, "sched-A");
+  // the original api-request node is untouched (no arbitrary node-0 mutation)
+  assert.equal(graph.nodes.find((n) => n.id === "api-request").config.trigger, undefined);
+});
+
+test("readTriggerScheduleBinding reflects the synced trigger (and null for manual)", () => {
+  const { config } = bindFlow(workspaceWithTwoWorkflows(), "Flow A", "sched-A");
+  const row = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows.find((r) => r.Name === "Flow A");
+  const binding = addOns.readTriggerScheduleBinding(row[addOns.liveGraphField(row)]);
+  assert.equal(binding.triggerKind, "serverless-scheduler");
+  assert.equal(binding.scheduleId, "sched-A");
+  assert.equal(binding.schedulerRegistryId, "upstash-qstash-workflow");
+  assert.equal(binding.enabled, true);
+  // a manual/unsynced graph yields null
+  assert.equal(addOns.readTriggerScheduleBinding(GRAPH), null);
 });
 
 test("withSandboxScheduledRunProof writes last-run proof to the owning row", () => {
