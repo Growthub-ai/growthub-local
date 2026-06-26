@@ -49,7 +49,7 @@ import { deriveStaleSurfaces } from "@/lib/workspace-stale-surfaces";
  * throws — on any failure the preflight verdict is unaffected and `impact`
  * is simply omitted.
  */
-async function computePatchImpact(mergedConfig, patch) {
+async function computePatchImpact(currentConfig, mergedConfig, patch) {
   try {
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) return null;
     let sourceRecords = {};
@@ -57,9 +57,24 @@ async function computePatchImpact(mergedConfig, patch) {
     const store = buildWorkspaceMetadataStore({ workspaceConfig: mergedConfig || {}, workspaceSourceRecords: sourceRecords });
     const graph = buildWorkspaceMetadataGraph(store);
 
-    // Map the patched config slices to the graph node ids they touch.
-    const changedObjectIds = new Set((patch.dataModel?.objects || []).map((o) => o && o.id).filter(Boolean));
-    const changedDashboardIds = new Set((patch.dashboards || []).map((d) => d && (d.id || d.name)).filter(Boolean));
+    // A dataModel/dashboards PATCH REPLACES the whole array, so the patch body
+    // alone is not "what changed". Diff each patched object/dashboard against the
+    // CURRENT config and seed only the ones that are new or actually modified —
+    // otherwise a normal full-array body would report whole-workspace impact.
+    const curObjects = new Map((currentConfig?.dataModel?.objects || []).map((o) => [o && o.id, JSON.stringify(o)]));
+    const changedObjectIds = new Set();
+    for (const o of (patch.dataModel?.objects || [])) {
+      if (!o || !o.id) continue;
+      if (curObjects.get(o.id) !== JSON.stringify(o)) changedObjectIds.add(o.id); // added or modified
+    }
+    const curDashboards = new Map((currentConfig?.dashboards || []).map((d) => [d && (d.id || d.name), JSON.stringify(d)]));
+    const changedDashboardIds = new Set();
+    for (const d of (patch.dashboards || [])) {
+      const key = d && (d.id || d.name);
+      if (!key) continue;
+      if (curDashboards.get(key) !== JSON.stringify(d)) changedDashboardIds.add(key);
+    }
+
     const seedIds = [];
     for (const node of graph.nodes) {
       if (node.type === "dataModelObject" && (changedObjectIds.has(node.summary?.objectId) || changedObjectIds.has(node.metadataId))) {
@@ -71,6 +86,7 @@ async function computePatchImpact(mergedConfig, patch) {
     if (!seedIds.length) return null;
     const staleSurfaces = deriveStaleSurfaces(graph, { seedIds });
     return {
+      scope: "changed-only",
       seeds: staleSurfaces.seeds,
       total: staleSurfaces.total,
       byType: staleSurfaces.byType,
@@ -152,7 +168,7 @@ async function POST(request) {
   }
 
   // Blast radius of this patch BEFORE the write (additive; never blocks).
-  const impact = await computePatchImpact(mergedConfig, patch);
+  const impact = await computePatchImpact(currentConfig, mergedConfig, patch);
 
   const persistence = describePersistenceMode();
   const ok = policy.ok && schema.ok && (appScopeVerdict ? appScopeVerdict.allowed : true);

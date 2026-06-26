@@ -348,6 +348,7 @@ interface ServeOpts { fork?: string; mcp?: boolean; live?: string }
 
 interface McpContext {
   workspaceConfig: Record<string, unknown>;
+  workspaceSourceRecords: Record<string, unknown>;
   store: Record<string, unknown> & { [k: string]: unknown };
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
   d: Awaited<ReturnType<typeof loadDerivers>>;
@@ -355,6 +356,9 @@ interface McpContext {
   liveUrl: string | null;
   // Truthful provenance of what the Intelligence tools are reading.
   source: string;
+  // When this context was hydrated (ISO). In --live mode the server re-hydrates
+  // per tool call, so this advances; offline it is fixed at startup.
+  snapshotAt: string;
 }
 
 interface McpTool {
@@ -387,6 +391,7 @@ export function buildMcpTools(): McpTool[] {
         graph: { nodes: ctx.graph.nodes.length, edges: ctx.graph.edges.length },
         provenance: storeArr(ctx, "provenance")[0] ?? null,
         source: ctx.source,
+        snapshotAt: ctx.snapshotAt,
       }),
     },
     {
@@ -493,49 +498,27 @@ export function buildMcpTools(): McpTool[] {
       inputSchema: { type: "object", properties: { appId: { type: "string" } } },
       handler: (ctx, args) => ctx.d.deriveAppReadiness(ctx.graph, args?.appId ? { appId: String(args.appId) } : {}),
     },
-    {
-      name: "minimal_change_set", layer: ANALYTICS_LAYER.intelligence,
-      description: "Inverse of blast radius: smallest upstream change set to refresh a target (heuristic).",
-      inputSchema: NODE_ARG,
-      handler: (ctx, args) => ctx.d.deriveMinimalChangeSet(ctx.graph, String(args?.nodeId ?? "")),
-    },
-    {
-      name: "agent_connector_bindings", layer: ANALYTICS_LAYER.intelligence,
-      description: "Causation-based, agent-AGNOSTIC view of which connectors bind to which agent host (local agent CLI or AI-agent account) — visible + configurable into governed steps. Reads SHAPE only (provider/tools/scopes); auth stays in the agent account, nothing stored. Pass the connectors the calling agent sees as `reports` (run-time self-report); `serveTime` optional.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          reports: { type: "array", description: "raw connector listing the agent sees now (run-time self-report)", items: { type: "object" } },
-          serveTime: { type: "array", description: "optional serve-time introspection listing", items: { type: "object" } },
-          surface: { type: "string", enum: ["local-agent", "ai-agent"], description: "which agent surface these came from" },
-          host: { type: "string", description: "agent host slug (claude, codex, cursor, …)" },
-        },
-      },
-      handler: (ctx, args) => {
-        const surface = String(args?.surface ?? "local-agent");
-        const host = String(args?.host ?? "unknown");
-        const runtime = ctx.d.normalizeConnectorReport(args?.reports, { surface, host });
-        const serveTime = ctx.d.normalizeConnectorReport(args?.serveTime, { surface, host });
-        return ctx.d.deriveConnectorBindings(ctx.graph, { serveTime, runtime });
-      },
-    },
     // ── Layer 2 — Law (dry-run only) ─────────────────────────────────────────
     {
       name: "preflight_patch", layer: ANALYTICS_LAYER.law,
-      description: "DRY-RUN a proposed PATCH: allowlist + blast radius + contract compliance. With a live runtime it proxies the AUTHORITATIVE preflight route. Never writes workspace config and never applies a mutation; a live preflight may record governance receipts (e.g. blocked-attempt telemetry) per that route.",
-      inputSchema: { type: "object", properties: { patch: { type: "object", description: "the exact PATCH body you intend to send" } }, required: ["patch"] },
+      description: "DRY-RUN a proposed PATCH: allowlist + blast radius + contract compliance. With a live runtime it proxies the AUTHORITATIVE preflight route (forwarding `appScope` as x-growthub-app-scope so scoped validation matches the real PATCH). Never writes workspace config and never applies a mutation; a live preflight may record governance receipts (e.g. blocked-attempt telemetry) per that route.",
+      inputSchema: { type: "object", properties: { patch: { type: "object", description: "the exact PATCH body you intend to send" }, appScope: { type: "string", description: "app id to scope validation to (forwarded as x-growthub-app-scope, matching the real PATCH)" } }, required: ["patch"] },
       handler: async (ctx, args) => {
         const patch = (args?.patch && typeof args.patch === "object" ? args.patch : {}) as Record<string, unknown>;
+        const appScope = args?.appScope ? String(args.appScope) : "";
 
-        // Authoritative path: proxy the live preflight route when available.
+        // Authoritative path: proxy the live preflight route when available,
+        // forwarding app-scope so a scoped dry-run equals the scoped real PATCH.
         if (ctx.liveUrl) {
           try {
+            const headers: Record<string, string> = { "content-type": "application/json" };
+            if (appScope) headers["x-growthub-app-scope"] = appScope;
             const res = await fetch(`${ctx.liveUrl}/api/workspace/patch/preflight`, {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch),
+              method: "POST", headers, body: JSON.stringify(patch),
               signal: AbortSignal.timeout(8000),
             });
             const authoritative = await res.json();
-            return { mode: "live-authoritative", authoritative };
+            return { mode: "live-authoritative", appScope: appScope || null, authoritative };
           } catch (error) {
             return { mode: "offline-fallback", reason: `live preflight unreachable: ${(error as Error)?.message}`, ...(await offlinePatchPreview(ctx, patch)) };
           }
@@ -572,7 +555,9 @@ async function offlinePatchPreview(ctx: McpContext, patch: Record<string, unknow
   const proposed = { ...ctx.workspaceConfig } as Record<string, unknown>;
   for (const f of changedFields) if (ALLOWED_PATCH_FIELDS.includes(f)) proposed[f] = patch[f];
   try {
-    const { graph } = await buildGraphFromConfig(proposed);
+    // R4: pass the source-record sidecar so live-backed objects keep their
+    // source nodes/edges/freshness in the preview graph.
+    const { graph } = await buildGraphFromConfig(proposed, ctx.workspaceSourceRecords);
     const { impact, contractCompliance, allowlist } = previewPatchImpact(ctx.d, graph, { changedFields });
     return { allowlist, contractCompliance, impact };
   } catch {
@@ -609,24 +594,24 @@ async function hydrateContext(
       const ws = (await wsRes.json()) as Record<string, unknown>;
       return {
         workspaceConfig: (ws.workspaceConfig ?? ws.config ?? {}) as Record<string, unknown>,
+        workspaceSourceRecords: (ws.workspaceSourceRecords ?? {}) as Record<string, unknown>,
         store: (mg.metadata ?? {}) as McpContext["store"],
         graph: mg.graph ?? { nodes: [], edges: [] },
-        d, h, liveUrl, source: `live:${liveUrl}`,
+        d, h, liveUrl, source: `live:${liveUrl}`, snapshotAt: new Date().toISOString(),
       };
     } catch (error) {
       const off = await buildGraphFromFork(root);
-      return { workspaceConfig: off.workspaceConfig, store: off.store, graph: off.graph, d, h, liveUrl, source: `offline-fallback (${liveUrl} unreachable: ${(error as Error)?.message})` };
+      return { workspaceConfig: off.workspaceConfig, workspaceSourceRecords: off.workspaceSourceRecords, store: off.store, graph: off.graph, d, h, liveUrl, source: `offline-fallback (${liveUrl} unreachable: ${(error as Error)?.message})`, snapshotAt: new Date().toISOString() };
     }
   }
   const off = await buildGraphFromFork(root);
-  return { workspaceConfig: off.workspaceConfig, store: off.store, graph: off.graph, d, h, liveUrl: null, source: "offline-config" };
+  return { workspaceConfig: off.workspaceConfig, workspaceSourceRecords: off.workspaceSourceRecords, store: off.store, graph: off.graph, d, h, liveUrl: null, source: "offline-config", snapshotAt: new Date().toISOString() };
 }
 
 async function serveMcp(root: string, liveUrl: string | null): Promise<void> {
   const d = await loadDerivers();
   const h = await loadGraphHelpers();
-  const ctx = await hydrateContext(root, liveUrl, d, h);
-  const graph = ctx.graph;
+  let ctx = await hydrateContext(root, liveUrl, d, h);
   const tools = buildMcpTools();
   const byName = new Map(tools.map((t) => [t.name, t]));
   const rl = readline.createInterface({ input: process.stdin });
@@ -649,6 +634,10 @@ async function serveMcp(root: string, liveUrl: string | null): Promise<void> {
         } else if (msg.method === "tools/call") {
           const tool = byName.get(String(msg.params?.name ?? ""));
           if (!tool) { fail(msg.id, `unknown tool: ${msg.params?.name}`); return; }
+          // R1: in --live mode re-hydrate before each call so reads reflect the
+          // CURRENT control plane (after a governed change lands), never a stale
+          // startup snapshot. Offline forks are static, so reuse the snapshot.
+          if (ctx.liveUrl) ctx = await hydrateContext(root, liveUrl, d, h);
           const out = await tool.handler(ctx, (msg.params?.arguments as Record<string, unknown>) ?? {});
           reply(msg.id, { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] });
         } else if (msg.id !== undefined) {
@@ -659,7 +648,7 @@ async function serveMcp(root: string, liveUrl: string | null): Promise<void> {
       }
     })();
   });
-  process.stderr.write(`growthub serve --mcp ready (${graph.nodes.length} nodes, ${tools.length} tools, source=${ctx.source}). Layers: Intelligence(read) + Law(dry-run) + governed hand-off.\n`);
+  process.stderr.write(`growthub serve --mcp ready (${ctx.graph.nodes.length} nodes, ${tools.length} tools, source=${ctx.source}${ctx.liveUrl ? ", re-hydrates per call" : ""}). Layers: Intelligence(read) + Law(dry-run) + governed hand-off.\n`);
 }
 
 async function serveCommand(opts: ServeOpts): Promise<void> {

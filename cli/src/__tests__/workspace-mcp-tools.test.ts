@@ -17,9 +17,10 @@ async function offlineCtx() {
   const h = await loadGraphHelpers();
   return {
     workspaceConfig: { id: "test-ws", name: "Test" },
+    workspaceSourceRecords: {},
     store: { objects: [], fields: [], widgets: [], dashboards: [], workflows: [], workflowNodes: [], sandboxes: [], integrations: [], runs: [], pipelineHealth: [], provenance: [], outputArtifacts: [] },
     graph: { nodes: [node("obj", "dataModelObject"), node("src", "sourceRecord")], edges: [{ id: "obj::backedBySourceRecord::src", from: "obj", to: "src", relation: "backedBySourceRecord" }] },
-    d, h, liveUrl: null, source: "offline-config",
+    d, h, liveUrl: null, source: "offline-config", snapshotAt: "2026-01-01T00:00:00.000Z",
   };
 }
 
@@ -31,8 +32,8 @@ describe("MCP tool registry — contract & boundary", () => {
     for (const expected of [
       "describe_workspace", "list_data_model", "list_dashboards", "list_workflows", "list_integrations",
       "outcome_ledger", "describe_node", "get_workspace_topology", "find_downstream_dependencies",
-      "simulate_causal_impact", "trace_lineage", "app_readiness", "minimal_change_set",
-      "agent_connector_bindings", "preflight_patch", "next_actions",
+      "simulate_causal_impact", "trace_lineage", "app_readiness",
+      "preflight_patch", "next_actions",
     ]) {
       expect(names).toContain(expected);
     }
@@ -96,16 +97,4 @@ describe("MCP handlers — truthful source & dry-run mode", () => {
     expect(Array.isArray(out.actions)).toBe(true);
   });
 
-  it("agent_connector_bindings derives an agnostic, secret-free, configurable view", async () => {
-    const ctx = await offlineCtx();
-    const out = (await find("agent_connector_bindings")!.handler(ctx as never, {
-      surface: "local-agent", host: "claude",
-      reports: [{ name: "slack", tools: ["post_message", "auth_token"], token: "xoxb-SECRET" }],
-    })) as { total: number; bindings: Array<{ id: string; authLocation: string; configurable: boolean }> };
-    expect(out.total).toBe(1);
-    expect(out.bindings[0].id).toBe("local-agent:slack");
-    expect(out.bindings[0].authLocation).toBe("agent-account");
-    expect(out.bindings[0].configurable).toBe(true);
-    expect(JSON.stringify(out)).not.toContain("token"); // no secret in the payload
-  });
 });

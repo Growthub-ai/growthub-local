@@ -3,7 +3,6 @@
  *
  *   - deriveAppReadiness       (workspace-app-readiness.js)
  *   - deriveContractCompliance (workspace-contract-compliance.js)
- *   - deriveMinimalChangeSet   (workspace-minimal-changeset.js)
  *
  * All pure derivers over the read-only substrate (graph / contract / evidence).
  * Run with:  node --test scripts/unit-workspace-derivations-governance.test.mjs
@@ -22,7 +21,6 @@ const kitLib = path.join(
 const load = (file) => import(pathToFileURL(path.join(kitLib, file)).href);
 const { deriveAppReadiness } = await load("workspace-app-readiness.js");
 const { deriveContractCompliance } = await load("workspace-contract-compliance.js");
-const { deriveMinimalChangeSet } = await load("workspace-minimal-changeset.js");
 
 const node = (id, type, label, summary = {}) => ({ id, type, label, summary: { label, ...summary }, metadataId: id });
 const edge = (from, to, relation) => ({ id: `${from}::${relation}::${to}`, from, to, relation });
@@ -123,44 +121,3 @@ test("deriveContractCompliance: live workflow change requires the publish proof 
   assert.equal(met.compliant, true);
 });
 
-// ── deriveMinimalChangeSet ─────────────────────────────────────────────────
-
-function lineageGraph() {
-  // dashboard -> widget -> object -> source(root)
-  return {
-    kind: "growthub-workspace-metadata-graph-v1",
-    version: 1,
-    warnings: [],
-    nodes: [
-      node("src", "sourceRecord", "Stripe"),
-      node("obj", "dataModelObject", "Customers"),
-      node("wgt", "widget", "MRR"),
-      node("dsh", "dashboard", "Overview"),
-    ],
-    edges: [
-      edge("obj", "src", "backedBySourceRecord"),
-      edge("wgt", "obj", "bindsToObject"),
-      edge("dsh", "wgt", "containsWidget"),
-    ],
-  };
-}
-
-test("deriveMinimalChangeSet: refreshing a dashboard points to the root source", () => {
-  const out = deriveMinimalChangeSet(lineageGraph(), "dsh");
-  assert.equal(out.optimal, false); // honest: heuristic, not provably minimal
-  assert.ok(out.changeSet.some((c) => c.id === "src"));
-  // the source genuinely reaches the dashboard downstream (soundness).
-  assert.ok(out.changeSet.every((c) => typeof c.collateral === "number"));
-});
-
-test("deriveMinimalChangeSet: a root target depends on nothing → change it directly", () => {
-  const out = deriveMinimalChangeSet(lineageGraph(), "src");
-  assert.equal(out.total, 1);
-  assert.equal(out.changeSet[0].id, "src");
-});
-
-test("deriveMinimalChangeSet: unknown target never throws", () => {
-  const out = deriveMinimalChangeSet(lineageGraph(), "nope");
-  assert.equal(out.total, 0);
-  assert.equal(out.warnings.length, 1);
-});

@@ -57,6 +57,7 @@ async function importKitLib<T = Record<string, unknown>>(file: string): Promise<
 export interface WorkspaceGraphBundle {
   configPath: string;
   workspaceConfig: Record<string, unknown>;
+  workspaceSourceRecords: Record<string, unknown>;
   store: { nodes?: unknown[]; warnings?: string[] } & Record<string, unknown>;
   graph: { nodes: GraphNode[]; edges: GraphEdge[]; warnings?: string[] };
   warnings: string[];
@@ -140,7 +141,7 @@ export async function buildGraphFromFork(forkPath: string): Promise<WorkspaceGra
 
   const built = await buildGraphFromConfig(workspaceConfig, workspaceSourceRecords);
   warnings.push(...built.warnings);
-  return { configPath, workspaceConfig, store: built.store, graph: built.graph, warnings };
+  return { configPath, workspaceConfig, workspaceSourceRecords, store: built.store, graph: built.graph, warnings };
 }
 
 /**
@@ -174,19 +175,14 @@ export async function loadDerivers(): Promise<{
   deriveProvenanceLineage: (graph: unknown, id: string, opts?: unknown) => Record<string, unknown>;
   deriveAppReadiness: (graph: unknown, opts?: unknown) => Record<string, unknown>;
   deriveContractCompliance: (mutation: unknown, contract?: unknown, evidence?: unknown) => Record<string, unknown>;
-  deriveMinimalChangeSet: (graph: unknown, id: string, opts?: unknown) => Record<string, unknown>;
-  deriveConnectorBindings: (graph: unknown, sources?: unknown) => Record<string, unknown>;
-  normalizeConnectorReport: (rawList: unknown, ctx?: unknown) => unknown[];
 }> {
-  const [impact, stale, workflow, lineage, readiness, compliance, changeset, connectors] = await Promise.all([
+  const [impact, stale, workflow, lineage, readiness, compliance] = await Promise.all([
     importKitLib<{ deriveBlastRadius: never }>("workspace-metadata-impact.js"),
     importKitLib<{ deriveStaleSurfaces: never }>("workspace-stale-surfaces.js"),
     importKitLib<{ deriveWorkflowImpact: never }>("workspace-workflow-impact.js"),
     importKitLib<{ deriveProvenanceLineage: never }>("workspace-provenance-lineage.js"),
     importKitLib<{ deriveAppReadiness: never }>("workspace-app-readiness.js"),
     importKitLib<{ deriveContractCompliance: never }>("workspace-contract-compliance.js"),
-    importKitLib<{ deriveMinimalChangeSet: never }>("workspace-minimal-changeset.js"),
-    importKitLib<{ deriveConnectorBindings: never }>("workspace-connector-bindings.js"),
   ]);
   return {
     deriveBlastRadius: (impact as Record<string, never>).deriveBlastRadius,
@@ -195,9 +191,6 @@ export async function loadDerivers(): Promise<{
     deriveProvenanceLineage: (lineage as Record<string, never>).deriveProvenanceLineage,
     deriveAppReadiness: (readiness as Record<string, never>).deriveAppReadiness,
     deriveContractCompliance: (compliance as Record<string, never>).deriveContractCompliance,
-    deriveMinimalChangeSet: (changeset as Record<string, never>).deriveMinimalChangeSet,
-    deriveConnectorBindings: (connectors as Record<string, never>).deriveConnectorBindings,
-    normalizeConnectorReport: (connectors as Record<string, never>).normalizeConnectorReport,
   };
 }
 

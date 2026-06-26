@@ -2577,8 +2577,6 @@ describe("workspace-metadata-graph-v1 — kit.json frozen paths", () => {
     "apps/workspace/lib/workspace-provenance-lineage.js",
     "apps/workspace/lib/workspace-app-readiness.js",
     "apps/workspace/lib/workspace-contract-compliance.js",
-    "apps/workspace/lib/workspace-minimal-changeset.js",
-    "apps/workspace/lib/workspace-connector-bindings.js",
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",
   ];
@@ -2596,8 +2594,6 @@ describe("workspace-derivation-twins-v1 — stale surfaces / workflow impact / l
     "lib/workspace-provenance-lineage.js",
     "lib/workspace-app-readiness.js",
     "lib/workspace-contract-compliance.js",
-    "lib/workspace-minimal-changeset.js",
-    "lib/workspace-connector-bindings.js",
   ];
   for (const rel of derivers) {
     it(`${rel} ships and is frozen`, () => {

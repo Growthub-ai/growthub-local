@@ -113,8 +113,6 @@
     "apps/workspace/lib/workspace-provenance-lineage.js",
     "apps/workspace/lib/workspace-app-readiness.js",
     "apps/workspace/lib/workspace-contract-compliance.js",
-    "apps/workspace/lib/workspace-minimal-changeset.js",
-    "apps/workspace/lib/workspace-connector-bindings.js",
     "apps/workspace/app/api/workspace/metadata-graph/route.js",
     "apps/workspace/app/api/workspace/swarm-condition/route.js",
     "apps/workspace/app/data-model/components/WorkspaceGraphInspectorPanel.jsx",

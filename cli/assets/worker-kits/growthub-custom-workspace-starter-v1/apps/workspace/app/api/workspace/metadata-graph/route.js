@@ -40,7 +40,6 @@ import { deriveStaleSurfaces } from "@/lib/workspace-stale-surfaces";
 import { deriveWorkflowImpact } from "@/lib/workspace-workflow-impact";
 import { deriveProvenanceLineage } from "@/lib/workspace-provenance-lineage";
 import { deriveAppReadiness } from "@/lib/workspace-app-readiness";
-import { deriveMinimalChangeSet } from "@/lib/workspace-minimal-changeset";
 
 const ENVELOPE_KIND = "growthub-workspace-metadata-graph-v1";
 const ENVELOPE_VERSION = 1;
@@ -151,8 +150,7 @@ async function GET(request) {
     if (impactId) {
       impact = {
         blastRadius: deriveBlastRadius(graph, impactId),
-        workflowImpact: deriveWorkflowImpact(graph, impactId),
-        minimalChangeSet: deriveMinimalChangeSet(graph, impactId)
+        workflowImpact: deriveWorkflowImpact(graph, impactId)
       };
     }
     if (lineageId) {
@@ -219,8 +217,7 @@ async function GET(request) {
         "deriveBlastRadius",
         "deriveWorkflowImpact",
         "deriveProvenanceLineage",
-        "deriveAppReadiness",
-        "deriveMinimalChangeSet"
+        "deriveAppReadiness"
       ],
       helperOnly: [
         "selectWidgetRequiredFields",
