@@ -664,6 +664,7 @@ export function OrchestrationNodeConfigPanel({
               <option value="manual">manual</option>
               <option value="record">record</option>
               <option value="source-record">source-record</option>
+              <option value="serverless-schedule">serverless schedule</option>
             </select>
           </label>
           <PayloadKeyRows
