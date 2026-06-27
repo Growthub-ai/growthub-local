@@ -58,6 +58,14 @@ export const HELPER_COMMANDS = [
     view: "ceo"
   },
   {
+    name: "/schedule",
+    label: "Schedule",
+    description: "Manage serverless scheduled workflows and upgrade eligible local workflows",
+    scope: "workspace",
+    mutates: false,
+    view: "schedule"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",

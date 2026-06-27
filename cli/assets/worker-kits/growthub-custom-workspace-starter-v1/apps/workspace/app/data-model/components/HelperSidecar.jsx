@@ -49,6 +49,7 @@ import {
 } from "../../components/WorkspaceHelperSetupModal.jsx";
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import { CeoCockpit } from "./CeoCockpit.jsx";
+import { ScheduleCockpit } from "./ScheduleCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -380,6 +381,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const [activeView, setActiveView] = useState("chat");
   // Focused workflow row when opened from an apply receipt's Open button.
   const [swarmFocus, setSwarmFocus] = useState(null);
+  // Optional focus handed into the schedule cockpit (e.g. CEO → /schedule for a
+  // selected workflow record). Read-only filter/focus hint, never a mutation.
+  const [scheduleFocus, setScheduleFocus] = useState(null);
   // Expanded transcript agent (tool-output view) + full-width takeover flag.
   const [expandedAgent, setExpandedAgent] = useState(null);
   const [expandActive, setExpandActive] = useState(false);
@@ -904,6 +908,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
     if (cmd.view) {
       setPrompt("");
       setSwarmFocus(null);
+      if (cmd.view === "schedule") setScheduleFocus(null);
       setActiveView(cmd.view);
       return;
     }
@@ -980,6 +985,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // oversight surface). Kept separate from inSwarmView so the swarm cockpit's
   // run machinery and header affordances are untouched.
   const inCeoView = activeView === "ceo";
+  // Schedule cockpit shares the same sidecar shell (read-only operations surface
+  // over the existing schedule routes). Same precedent as the CEO view.
+  const inScheduleView = activeView === "schedule";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1014,7 +1022,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {(inSwarmView || inCeoView) && (
+            {(inSwarmView || inCeoView || inScheduleView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1035,9 +1043,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 ? "Background tasks"
                 : inCeoView
                   ? "CEO Cockpit"
-                  : threadActive
-                    ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                    : "Workspace Helper"}
+                  : inScheduleView
+                    ? "Schedule Cockpit"
+                    : threadActive
+                      ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                      : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -1113,6 +1123,33 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                 );
               }}
               onOpenSetup={() => setActiveTab("setup")}
+              onOpenSchedule={(focus) => { setScheduleFocus(focus || null); setActiveView("schedule"); }}
+            />
+          </div>
+        )}
+
+        {/* Schedule cockpit view — the daily operations surface for scheduled
+            workflows. Same sidecar shell, read-only with respect to mutation:
+            every action hands off to an EXISTING governed schedule route
+            (install/pause/resume/readiness/uninstall) or the Add-ons marketplace
+            setup path. No new route, no client-side PATCH, no second runtime. */}
+        {activeTab === "assistant" && inScheduleView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-schedule-view={activeView}>
+            <ScheduleCockpit
+              workspaceConfig={workspaceConfig}
+              focus={scheduleFocus}
+              onConfigRefresh={refreshWorkspaceConfig}
+              onOpenArtifact={(artifact) => { if (artifact) handleOpenArtifact(artifact); }}
+              onSeedSwarm={(seedPrompt) => {
+                setActiveView("chat");
+                onPickIntent("swarm");
+                setPrompt(
+                  typeof seedPrompt === "string" && seedPrompt.trim()
+                    ? `${seedPrompt.trim()} `
+                    : "Propose a governed agent swarm: "
+                );
+              }}
+              onOpenSetup={() => setActiveTab("setup")}
             />
           </div>
         )}
@@ -1121,7 +1158,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && !inCeoView && (
+        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inScheduleView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble
