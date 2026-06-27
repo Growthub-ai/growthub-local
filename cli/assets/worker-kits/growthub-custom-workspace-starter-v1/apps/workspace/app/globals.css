@@ -9601,3 +9601,20 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-db-empty-state strong { font-size: 15px; color: var(--dm-ink); font-weight: 650; }
 .dm-db-empty-state span { font-size: 12.5px; color: var(--dm-muted); max-width: 360px; }
 .dm-db-empty-actions { display: inline-flex; gap: 8px; margin-top: 8px; }
+
+/* Trigger node sidecar — collapsible schedule accordion (closes after a
+   successful bind). Clean white surface, 1px border, matches the node sidecar. */
+.dm-trigger-schedule-config { display: flex; flex-direction: column; gap: 8px; }
+.dm-trigger-schedule-accordion__header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+  padding: 10px 12px; cursor: pointer; text-align: left;
+}
+.dm-trigger-schedule-accordion__header:hover { border-color: #d1d5db; }
+.dm-trigger-schedule-accordion__summary {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; color: #6b7280; min-width: 0;
+}
+.dm-trigger-schedule-accordion__chevron { flex: 0 0 auto; transition: transform 120ms ease; }
+.dm-trigger-schedule-config[data-open="true"] .dm-trigger-schedule-accordion__chevron { transform: rotate(180deg); }
+.dm-trigger-schedule-accordion__body { display: flex; flex-direction: column; gap: 10px; padding: 12px 2px 4px; }
