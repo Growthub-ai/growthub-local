@@ -107,7 +107,7 @@ Use profile selection to choose the governed workspace export path before deeper
 npm install -g @growthub/cli
 ```
 
-Growthub Local currently ships `@growthub/cli@0.14.8` and the guided installer `@growthub/create-growthub-local@0.14.8`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
+Growthub Local currently ships `@growthub/cli@0.14.11` and the guided installer `@growthub/create-growthub-local@0.14.11`, with the installer pin aligned to the CLI version. The `@growthub/api-contract` SDK is at `1.5.2`.
 
 > Always read versions from `cli/package.json` / `packages/create-growthub-local/package.json` / `packages/api-contract/package.json` on your branch — see [docs/ARTIFACT_VERSIONS.md](./docs/ARTIFACT_VERSIONS.md).
 
@@ -181,6 +181,8 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 - [**Agentic Workspace as Code Operating Framework**](./docs/AGENTIC_WORKSPACE_AS_CODE_OPERATING_FRAMEWORK.md)
 - [**Operating the Governed Universe V1**](./docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md) — the three-layer control plane (Mutation → Law → Intelligence)
 - [**Governed MCP Console V1**](./docs/GOVERNED_MCP_CONSOLE_V1.md) — the agent-facing operating console (read → reason → dry-run → governed mutate → re-read)
+- [**Official Marketplace Plugins V1**](./docs/OFFICIAL_MARKETPLACE_PLUGINS_V1.md)
+- [**Serverless Scheduler Command Guide V1**](./docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md)
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md)
 - [**Workspace Helper V1**](./docs/WORKSPACE_HELPER_V1.md)
