@@ -961,7 +961,18 @@ export default function WorkflowSurface() {
   }
 
   function openCustomSchedulerSetup() {
-    router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent("schedulerRegistryId")}`);
+    // Custom schedulers are provider-AGNOSTIC: any governed API Registry row can
+    // be bound via this sandbox row's schedulerRegistryId and is executed by the
+    // generic sandbox-run serverless delegation — no marketplace adapter or
+    // Upstash coupling. Route to the row drawer (where schedulerRegistryId is
+    // editable) when we have a workflow row; otherwise send the operator to
+    // API/Webhooks to register the custom scheduler row first. Never navigate
+    // with empty object/row params.
+    if (objectId && rowId) {
+      router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent("schedulerRegistryId")}`);
+    } else {
+      router.push("/settings/apis-webhooks");
+    }
   }
 
   async function dismissUpgradeOnboarding() {

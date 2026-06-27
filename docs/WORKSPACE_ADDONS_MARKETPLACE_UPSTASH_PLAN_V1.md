@@ -321,6 +321,25 @@ adapter — a second provider is added by registering one more adapter, with **n
 
 ---
 
+## 8b. Custom plugins — the provider-agnostic lane (no gaps)
+
+Add-ons have **two governed serverless lanes, both backed by the API Registry**; nothing is
+Upstash-special-cased:
+
+| | Adapter lane (e.g. Upstash QStash) | Custom lane (any owned worker/fn/API/cron) |
+|---|---|---|
+| Governed as | API Registry capability row + per-workflow row schedule | plain API Registry row referenced by `schedulerRegistryId` |
+| Install UI | Settings → Add-ons → provider product sync | Settings → Add-ons → **Custom Plugin** → API/Webhooks registration |
+| Bind UI | Canvas chooser → "Use for this workflow" (creates the schedule) | Canvas chooser → "Configure custom" → set `schedulerRegistryId` on the row |
+| Execution | deterministic QStash schedule → signed destination → signed callback (durable, async) | `sandbox-run` serverless delegation: signed-server POST to the row's URL (synchronous) |
+| Last-response sync | async callback writes `lastScheduledRun*` to the owning row | captured **inline** by `sandbox-run` (`lastResponse`/`status`) — no callback needed |
+| Provider coupling | a registered `connectorKind` adapter | **none** — works for any row |
+
+Guarantees that keep the custom lane gap-free and agnostic:
+- A custom/owned row has **no scheduler adapter** (`getSchedulerAdapter` → null, `isSchedulerProduct` → false), so the adapter-specific QStash schedule/callback/destination routes never claim it (unit-tested). Custom rows run through the generic `schedulerRegistryId` delegation.
+- Per-workflow schedule state lives on the **workflow row**, not the API Registry row, so the API Registry object stays a generic governed capability surface (no Upstash/per-schedule columns leak onto it — unit-tested).
+- The canvas custom handler never navigates with empty `object`/`row` params — with a row it opens the row drawer at `schedulerRegistryId`; without one it routes to API/Webhooks to register the row first.
+
 ## 9. Live smoke — merge gate (external truth proof)
 
 Offline tests + `next build` prove the implementation **shape**. The live run proves the

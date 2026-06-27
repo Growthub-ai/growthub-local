@@ -104,6 +104,26 @@ test("QStash product resolves a scheduler adapter; non-scheduler does not", () =
   assert.equal(isSchedulerProduct(addOns.getUpstashProduct("upstash-redis")), false);
 });
 
+/* ---------- custom plugins stay generic / API-Registry-governed ---------- */
+test("custom (non-marketplace) providers are governed generically — no scheduler-adapter hijack", () => {
+  // An owned/custom row with an arbitrary connectorKind has NO adapter, so it is
+  // NOT a marketplace scheduler product: the QStash schedule/callback routes will
+  // never treat it as theirs. Custom rows run via the generic schedulerRegistryId
+  // serverless-delegation lane instead — provider-agnostic, no Upstash coupling.
+  assert.equal(getSchedulerAdapter({ connectorKind: "acme-cron", executionLane: "serverless-scheduler" }), null);
+  assert.equal(isSchedulerProduct({ connectorKind: "acme-cron", executionLane: "serverless-scheduler" }), false);
+  // No connectorKind at all → also not a scheduler product.
+  assert.equal(isSchedulerProduct({ executionLane: "serverless-scheduler" }), false);
+  assert.equal(getSchedulerAdapter({}), null);
+});
+
+test("provider/registry row is capability-only — no per-workflow schedule fields leak onto it", () => {
+  const row = addOns.makeUpstashProviderRow();
+  assert.ok("syncStatus" in row && "syncProof" in row, "capability proof present");
+  assert.equal(row.scheduleId, undefined, "provider/registry row must not own a scheduleId");
+  assert.equal(row.callbackUrl, undefined, "per-workflow callback url must not live on the registry row");
+});
+
 /* ---------- buildScheduleRequest: secret only in Authorization ---------- */
 test("buildScheduleRequest puts token in Authorization header only, never in body", () => {
   const req = upstashQstashAdapter.buildScheduleRequest({
