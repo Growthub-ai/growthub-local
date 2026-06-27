@@ -103,10 +103,14 @@ function deriveSandboxServerlessState(input = {}) {
   steps.push({
     id: "adapter",
     label: "Pick an execution adapter",
-    status: adapterChosen ? "complete" : "active",
-    description: adapterChosen
-      ? `Adapter "${adapterId}".`
-      : "Select the execution adapter for this workflow.",
+    status: isServerless ? (schedulerLinked ? "complete" : "active") : (adapterChosen ? "complete" : "active"),
+    description: isServerless
+      ? (schedulerLinked
+          ? `Execution delegates through scheduler "${schedulerId}".`
+          : "Link a scheduler before serverless execution can run.")
+      : (adapterChosen
+          ? `Adapter "${adapterId}".`
+          : "Select the execution adapter for this workflow."),
     action: adapterChosen ? null : inline({ id: "edit-adapter", label: "Choose adapter" }),
   });
 

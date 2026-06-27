@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Database, FileInput, ListTree } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -316,7 +316,7 @@ function FieldMapRows({ fieldMap, onChange, disabled, fieldOptions = [] }) {
   );
 }
 
-function PayloadKeyRows({ payload, onChange, disabled }) {
+function PayloadKeyRows({ payload, onChange, disabled, flagClassName = "" }) {
   const entries = Object.entries(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {});
 
   function setEntries(nextEntries) {
@@ -324,7 +324,7 @@ function PayloadKeyRows({ payload, onChange, disabled }) {
   }
 
   return (
-    <div className="dm-orchestration-config__payload">
+    <div className={`dm-orchestration-config__payload${flagClassName}`}>
       <span className="dm-orchestration-config__field-label">Test payload fields</span>
       {entries.map(([key, value], index) => (
         <div key={index} className="dm-orchestration-config__payload-row">
@@ -370,7 +370,8 @@ function PayloadKeyRows({ payload, onChange, disabled }) {
   );
 }
 
-function VersionDeltaControls({ node, config, sandboxRow, onChange, disabled }) {
+function VersionDeltaControls({ node, config, sandboxRow, onChange, disabled, flaggedTags, flagSeverity = "warning" }) {
+  const flagged = flaggedTags instanceof Set ? flaggedTags : new Set(Array.isArray(flaggedTags) ? flaggedTags : []);
   const explicitTags = normalizeTags(config?.deltaTags);
   const inferredTags = inferDeltaTagsForNode(node, config);
   const selectedTags = explicitTags.length > 0 ? explicitTags : inferredTags;
@@ -409,7 +410,7 @@ function VersionDeltaControls({ node, config, sandboxRow, onChange, disabled }) 
       {selectedTags.length > 0 && (
         <div className="dm-version-delta__tag-fields">
           {selectedTags.map((tag) => (
-            <label key={tag} className="dm-orchestration-config__field">
+            <label key={tag} className={`dm-orchestration-config__field${flagged.has(tag) ? ` dm-field--readiness is-${flagSeverity}` : ""}`}>
               <span>{tag} value</span>
               <input
                 value={deltaValues[tag] ?? getDeltaTagDefaultValue(tag, node, config, sandboxRow)}
@@ -430,7 +431,9 @@ function LocalAgentHostControls({
   objectId,
   rowName,
   disabled,
-  onSandboxRowPatch
+  onSandboxRowPatch,
+  adapterFlagClass = "",
+  hostFlagClass = ""
 }) {
   const row = sandboxRow && typeof sandboxRow === "object" ? sandboxRow : {};
   const adapter = String(row.adapter || "local-process").trim() || "local-process";
@@ -453,7 +456,7 @@ function LocalAgentHostControls({
       <p className="dm-orchestration-config__hint">
         Same runtime fields as the Data Model sandbox sidecar. Local agent host uses the Paperclip thin adapter on this machine.
       </p>
-      <label className="dm-orchestration-config__field">
+      <label className={`dm-orchestration-config__field${adapterFlagClass}`}>
         <span>Execution adapter</span>
         <select
           value={adapter}
@@ -473,7 +476,7 @@ function LocalAgentHostControls({
         </select>
       </label>
       {adapter === "local-agent-host" && (
-        <label className="dm-orchestration-config__field">
+        <label className={`dm-orchestration-config__field${hostFlagClass}`}>
           <span>Agent host (Paperclip)</span>
           <select
             value={agentHost}
@@ -568,10 +571,15 @@ export function OrchestrationNodeConfigPanel({
   objectId,
   rowName,
   onSandboxRowPatch,
+  inputScheduleControls,
+  serverlessScheduleOptionAvailable = false,
+  serverlessScheduleAvailable = false,
+  readinessFlag,
   activeTab: controlledTab,
   onTabChange
 }) {
   const [internalTab, setInternalTab] = useState("node");
+  const [inputModeOpen, setInputModeOpen] = useState(false);
   const rawActiveTab = controlledTab ?? internalTab;
 
   function setActiveTab(tab) {
@@ -594,6 +602,14 @@ export function OrchestrationNodeConfigPanel({
 
   const config = node.config || {};
   const type = String(node.type || "");
+  const schedulerAvailable = Boolean(serverlessScheduleOptionAvailable || serverlessScheduleAvailable);
+  const inputModeOptions = [
+    { value: "manual", label: "Manual", Icon: FileInput },
+    { value: "record", label: "Record", Icon: Database },
+    { value: "source-record", label: "Source Record", Icon: ListTree },
+    ...(schedulerAvailable ? [{ value: "serverless-schedule", label: "Serverless Schedule", Icon: CalendarClock }] : []),
+  ];
+  const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
   const meta = config.requestHeadersMetadata || {};
   const workspaceObjects = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.id && object?.objectType !== "sandbox-environment" && object?.objectType !== "api-registry");
@@ -603,6 +619,21 @@ export function OrchestrationNodeConfigPanel({
 
   function patchConfig(patch) {
     onConfigChange?.({ ...config, ...patch });
+  }
+
+  // Serverless-readiness atomic field flag. The scan maps each alert to the exact
+  // config / sandbox-row field(s) that must change; we fill ONLY those fields
+  // light-orange (the color is the guidance — no extra copy). `row:`-prefixed
+  // hints (e.g. the execution adapter) match without the prefix here too.
+  const readinessSeverity = readinessFlag?.severity === "blocked" ? "blocked" : "warning";
+  const readinessFieldSet = new Set([
+    ...(Array.isArray(readinessFlag?.configFields) ? readinessFlag.configFields : []),
+    ...(Array.isArray(readinessFlag?.rowFields) ? readinessFlag.rowFields : []),
+    ...(Array.isArray(readinessFlag?.fields) ? readinessFlag.fields.map((f) => String(f).replace(/^row:/, "")) : []),
+  ]);
+  const readinessTagSet = new Set(Array.isArray(readinessFlag?.deltaTags) ? readinessFlag.deltaTags : []);
+  function flagFieldClass(...keys) {
+    return keys.some((k) => readinessFieldSet.has(k)) ? ` dm-field--readiness is-${readinessSeverity}` : "";
   }
 
   const tabsForType = type === "api-registry-call" || type === "core-action"
@@ -658,22 +689,55 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "configuration" && type === "input" && (
         <div className="dm-orchestration-config__pane">
-          <label className="dm-orchestration-config__field">
+          <div className="dm-orchestration-config__field">
             <span>Input mode</span>
-            <select value={config.inputMode || "manual"} disabled={disabled} onChange={(e) => patchConfig({ inputMode: e.target.value })}>
-              <option value="manual">manual</option>
-              <option value="record">record</option>
-              <option value="source-record">source-record</option>
-            </select>
-          </label>
+            <div className={`dm-select dm-input-mode-select${inputModeOpen ? " open" : ""}${disabled ? " disabled" : ""}`}>
+              <button
+                type="button"
+                className="dm-select-trigger"
+                disabled={disabled}
+                aria-haspopup="listbox"
+                aria-expanded={inputModeOpen}
+                onClick={() => setInputModeOpen((open) => !open)}
+              >
+                <span>{selectedInputMode.label}</span>
+                <ChevronDown size={15} aria-hidden="true" />
+              </button>
+              {inputModeOpen ? (
+                <div className="dm-select-popover">
+                  <div className="dm-select-list" role="listbox" aria-label="Input mode">
+                    {inputModeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={option.value === selectedInputMode.value}
+                        className={`dm-select-option${option.value === selectedInputMode.value ? " selected" : ""}`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          patchConfig({ inputMode: option.value });
+                          setInputModeOpen(false);
+                        }}
+                      >
+                        <option.Icon size={14} aria-hidden="true" />
+                        <span>{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
           <PayloadKeyRows
             payload={config.samplePayload}
             disabled={disabled}
             onChange={(samplePayload) => patchConfig({ samplePayload })}
+            flagClassName={flagFieldClass("samplePayload", "triggerInput")}
           />
           <p className="dm-orchestration-config__hint">
             Bind values with {"{{input.key}}"} in the API endpoint or body template.
           </p>
+          {inputScheduleControls || null}
         </div>
       )}
 
@@ -694,15 +758,15 @@ export function OrchestrationNodeConfigPanel({
               ))}
             </select>
           </label>
-          <label className="dm-orchestration-config__field">
+          <label className={`dm-orchestration-config__field${flagFieldClass("endpoint")}`}>
             <span>Endpoint</span>
             <input value={config.endpoint || ""} disabled={disabled} onChange={(e) => patchConfig({ endpoint: e.target.value })} />
           </label>
-          <label className="dm-orchestration-config__field">
+          <label className={`dm-orchestration-config__field${flagFieldClass("bodyTemplate")}`}>
             <span>Body template</span>
             <textarea rows={3} value={config.bodyTemplate || ""} disabled={disabled} onChange={(e) => patchConfig({ bodyTemplate: e.target.value })} />
           </label>
-          <label className="dm-orchestration-config__field">
+          <label className={`dm-orchestration-config__field${flagFieldClass("authRef", "registryId", "integrationId")}`}>
             <span>Auth reference</span>
             <input value={config.authRef || ""} disabled={disabled} onChange={(e) => patchConfig({ authRef: e.target.value })} />
           </label>
@@ -865,7 +929,7 @@ export function OrchestrationNodeConfigPanel({
             </label>
           </div>
 
-          <VersionDeltaControls node={node} config={config} sandboxRow={sandboxRow} disabled={disabled} onChange={onConfigChange} />
+          <VersionDeltaControls node={node} config={config} sandboxRow={sandboxRow} disabled={disabled} onChange={onConfigChange} flaggedTags={readinessTagSet} flagSeverity={readinessSeverity} />
 
           <details className="dm-orchestration-config__advanced-json dm-orchestration-config__node-json">
             <summary>Node JSON</summary>
@@ -1075,6 +1139,8 @@ export function OrchestrationNodeConfigPanel({
               rowName={rowName}
               disabled={disabled}
               onSandboxRowPatch={onSandboxRowPatch}
+              adapterFlagClass={flagFieldClass("adapter")}
+              hostFlagClass={flagFieldClass("agentHost")}
             />
           )}
           <label className="dm-orchestration-config__field">
@@ -1473,7 +1539,7 @@ export function OrchestrationNodeConfigPanel({
       )}
 
       {activeTab === "configuration" && type !== "thinAdapter" && (
-        <VersionDeltaControls node={node} config={config} sandboxRow={sandboxRow} disabled={disabled} onChange={onConfigChange} />
+        <VersionDeltaControls node={node} config={config} sandboxRow={sandboxRow} disabled={disabled} onChange={onConfigChange} flaggedTags={readinessTagSet} flagSeverity={readinessSeverity} />
       )}
       <div className="dm-workflow-node-config-foot">
         <button type="button" className="dm-workflow-node-options" disabled={disabled}>

@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpCircle,
   Bot,
   Code,
   Filter,
@@ -62,6 +61,8 @@ import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/worksp
 import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistryCreationCockpit.jsx";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
+import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState } from "@/lib/workspace-add-ons";
+import { scanServerlessReadiness, readinessFieldFlags } from "@/lib/serverless-readiness";
 
 // Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
 // same transform the rail/lens one-time dismisses use).
@@ -136,6 +137,20 @@ function resolveRegistryRowForSandbox(workspaceConfig, sandboxRow) {
   return resolveRegistryRefForSandbox(workspaceConfig, sandboxRow)?.row || null;
 }
 
+function resolveSchedulerRegistryRows(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const rows = [];
+  for (const objectItem of objects) {
+    if (objectItem?.objectType !== "api-registry") continue;
+    for (const row of Array.isArray(objectItem.rows) ? objectItem.rows : []) {
+      if (String(row?.executionLane || "").trim() !== "serverless-scheduler") continue;
+      const integrationId = String(row?.integrationId || "").trim();
+      if (integrationId) rows.push({ object: objectItem, row, integrationId });
+    }
+  }
+  return rows;
+}
+
 function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
   const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
@@ -160,6 +175,235 @@ function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
     }
   }
   return firstRegistryRow ? { object: firstRegistryObject, row: firstRegistryRow } : null;
+}
+
+function WorkflowAddOnChooser({ addOn, disabled, onUseQstash, onSetupQstash, onSetupCustom }) {
+  return (
+    <div className="dm-workflow-addon-choice-list">
+      <section className="dm-api-action-card dm-workflow-installed-addon">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">{addOn ? "Verified workflow add-on" : "Workflow add-on"}</p>
+          <h3>Upstash QStash/Workflow</h3>
+          <p>
+            {addOn
+              ? "Bind the verified workspace QStash scheduler to this workflow and switch it to serverless."
+              : "Install and sync QStash in Workspace Add-ons first; the canvas only binds verified scheduler rows."}
+          </p>
+          <div className="dm-cockpit-fields">
+            <span className="dm-cockpit-field"><b>registry</b>{addOn?.integrationId || UPSTASH_QSTASH_INTEGRATION_ID}</span>
+            <span className="dm-cockpit-field"><b>status</b>{addOn?.syncStatus || "setup required"}</span>
+            <span className="dm-cockpit-field"><b>region</b>{addOn?.region || "pending"}</span>
+          </div>
+        </div>
+        <div className="dm-api-action-card-actions">
+          {addOn ? (
+            <button type="button" className="dm-btn-primary-sm dm-api-action-card-cta" disabled={disabled} onClick={onUseQstash}>
+              Use for this workflow
+            </button>
+          ) : (
+            <button type="button" className="dm-btn-outline dm-api-action-card-cta" disabled={disabled} onClick={onSetupQstash}>
+              Set up QStash
+            </button>
+          )}
+        </div>
+      </section>
+      <section className="dm-api-action-card dm-workflow-installed-addon">
+        <div className="dm-api-action-card-body">
+          <p className="dm-api-action-card-eyebrow">Custom</p>
+          <h3>Custom scheduler plugin</h3>
+          <p>Use a governed API Registry scheduler row and bind it through this sandbox row's schedulerRegistryId field.</p>
+        </div>
+        <div className="dm-api-action-card-actions">
+          <button type="button" className="dm-btn-outline dm-api-action-card-cta" disabled={disabled} onClick={onSetupCustom}>
+            Configure custom
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+const SCHEDULE_CADENCE_OPTIONS = [
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+];
+
+const SCHEDULE_WEEKDAY_OPTIONS = [
+  { id: "1", label: "Monday" },
+  { id: "2", label: "Tuesday" },
+  { id: "3", label: "Wednesday" },
+  { id: "4", label: "Thursday" },
+  { id: "5", label: "Friday" },
+  { id: "6", label: "Saturday" },
+  { id: "0", label: "Sunday" },
+];
+
+const SCHEDULE_HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => {
+  const id = String(hour).padStart(2, "0");
+  return { id, label: id };
+});
+
+const SCHEDULE_MINUTE_OPTIONS = Array.from({ length: 12 }, (_, index) => {
+  const minute = String(index * 5).padStart(2, "0");
+  return { id: minute, label: minute };
+});
+
+const SCHEDULE_MONTH_DAY_OPTIONS = Array.from({ length: 28 }, (_, index) => {
+  const day = String(index + 1);
+  return { id: day, label: day };
+});
+
+function splitScheduleTime(value) {
+  const [rawHour, rawMinute] = String(value || "09:00").split(":");
+  const hour = Math.min(23, Math.max(0, Number(rawHour) || 0));
+  const minute = Math.min(59, Math.max(0, Number(rawMinute) || 0));
+  return {
+    hour: String(hour).padStart(2, "0"),
+    minute: String(Math.round(minute / 5) * 5).padStart(2, "0"),
+  };
+}
+
+function joinScheduleTime(hour, minute) {
+  const safeHour = Math.min(23, Math.max(0, Number(hour) || 0));
+  const safeMinute = Math.min(59, Math.max(0, Number(minute) || 0));
+  return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+}
+
+function ScheduleTimeControls({ value, onChange }) {
+  const { hour, minute } = splitScheduleTime(value);
+  return (
+    <div className="dm-workflow-schedule-time-grid">
+      <label className="dm-orchestration-config__field">
+        <span>Hour (UTC)</span>
+        <select value={hour} onChange={(event) => onChange(joinScheduleTime(event.target.value, minute))}>
+          {SCHEDULE_HOUR_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="dm-orchestration-config__field">
+        <span>Minute</span>
+        <select value={minute} onChange={(event) => onChange(joinScheduleTime(hour, event.target.value))}>
+          {SCHEDULE_MINUTE_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function deriveCronFromSchedule({ cadence, time, weekday, monthDay }) {
+  const [hourText, minuteText] = String(time || "09:00").split(":");
+  const hour = Math.min(23, Math.max(0, Number(hourText) || 0));
+  const minute = Math.min(59, Math.max(0, Number(minuteText) || 0));
+  if (cadence === "weekly") return `${minute} ${hour} * * ${String(weekday || "1")}`;
+  if (cadence === "monthly") return `${minute} ${hour} ${Math.min(28, Math.max(1, Number(monthDay) || 1))} * *`;
+  return `${minute} ${hour} * * *`;
+}
+
+function describeSchedule({ cadence, time, weekday, monthDay }) {
+  const selectedWeekday = SCHEDULE_WEEKDAY_OPTIONS.find((option) => option.id === String(weekday))?.label || "Monday";
+  if (cadence === "weekly") return `Runs every ${selectedWeekday} at ${time || "09:00"} UTC.`;
+  if (cadence === "monthly") return `Runs on day ${Math.min(28, Math.max(1, Number(monthDay) || 1))} of each month at ${time || "09:00"} UTC.`;
+  return `Runs every day at ${time || "09:00"} UTC.`;
+}
+
+function buildServerlessScheduleRunInputs({ workflow, cadence, time, weekday, monthDay }) {
+  return {
+    kind: "growthub-workflow-run-inputs-v1",
+    source: "serverless-scheduler",
+    values: {
+      trigger: "scheduled",
+      source: "serverless-scheduler",
+      workflow: String(workflow || ""),
+      cadence: String(cadence || ""),
+      runTimeUtc: String(time || ""),
+      weekday: String(weekday || ""),
+      monthDay: String(monthDay || "")
+    }
+  };
+}
+
+function WorkflowScheduleModal({
+  open,
+  addOn,
+  workflowName,
+  cadence,
+  scheduleTime,
+  scheduleWeekday,
+  scheduleMonthDay,
+  errorMessage,
+  disabled,
+  onCadenceChange,
+  onScheduleTimeChange,
+  onScheduleWeekdayChange,
+  onScheduleMonthDayChange,
+  onSubmit,
+  onClose,
+}) {
+  if (!open) return null;
+  return (
+    <div className="dm-workflow-schedule-backdrop" role="presentation">
+      <section className="dm-workflow-schedule-modal" role="dialog" aria-modal="true" aria-label="Configure QStash schedule">
+        <header>
+          <div>
+            <p className="dm-api-action-card-eyebrow">Serverless schedule</p>
+            <h3>Use QStash for {workflowName || "this workflow"}</h3>
+          </div>
+          <button type="button" className="dm-workflow-icon-btn" aria-label="Close schedule modal" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </header>
+        <div className="dm-workflow-schedule-body">
+          <div className="dm-marketplace-config-summary">
+            <div><span>Registry</span><code>{addOn?.integrationId || UPSTASH_QSTASH_INTEGRATION_ID}</code></div>
+            <div><span>Region</span><code>{addOn?.region || "pending"}</code></div>
+            <div><span>Status</span><code>{addOn?.syncStatus || "setup required"}</code></div>
+          </div>
+          <label className="dm-marketplace-field">
+            <span>Cadence</span>
+            <select value={cadence} onChange={(event) => onCadenceChange(event.target.value)}>
+              {SCHEDULE_CADENCE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <ScheduleTimeControls value={scheduleTime} onChange={onScheduleTimeChange} />
+          {cadence === "weekly" ? (
+            <label className="dm-marketplace-field">
+              <span>Run day</span>
+              <select value={scheduleWeekday} onChange={(event) => onScheduleWeekdayChange(event.target.value)}>
+                {SCHEDULE_WEEKDAY_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {cadence === "monthly" ? (
+            <label className="dm-marketplace-field">
+              <span>Day of month</span>
+              <select value={scheduleMonthDay} onChange={(event) => onScheduleMonthDayChange(event.target.value)}>
+                {SCHEDULE_MONTH_DAY_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <p className="dm-cockpit-step-hint">{describeSchedule({ cadence, time: scheduleTime, weekday: scheduleWeekday, monthDay: scheduleMonthDay })}</p>
+          {errorMessage ? <p className="dm-workflow-schedule-error" role="alert">{errorMessage}</p> : null}
+          <p className="dm-cockpit-step-hint">This writes the sandbox row to serverless, stores the cadence and trigger input on the workflow trigger, and submits the QStash schedule through the server-owned workspace origin.</p>
+        </div>
+        <footer>
+          <button type="button" className="dm-btn-outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="dm-btn-primary-sm" disabled={disabled || !String(scheduleTime || "").trim()} onClick={onSubmit}>
+            {disabled ? "Scheduling..." : "Create schedule"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
 }
 
 const WORKFLOW_ACTION_GROUPS = [
@@ -192,7 +436,6 @@ const WORKFLOW_ACTION_GROUPS = [
       { id: "http-request", label: "HTTP Request", type: "core-action", Icon: Globe2, destructive: false },
     ],
   },
-  { label: "Human Input", items: [{ id: "form", label: "Form", type: "human-input", Icon: FormInput, destructive: false }] },
 ];
 
 function getWorkspaceObjectOptions(workspaceConfig) {
@@ -214,7 +457,7 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
     id = `${baseId}-${index}`;
     index += 1;
   }
-  const isData = action.type === "data-action" || action.type === "data-trigger";
+  const isData = action.type === "data-action";
   return {
     id,
     type: action.type,
@@ -333,6 +576,13 @@ export default function WorkflowSurface() {
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleCadence, setScheduleCadence] = useState("daily");
+  const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [scheduleWeekday, setScheduleWeekday] = useState("1");
+  const [scheduleMonthDay, setScheduleMonthDay] = useState("1");
+  const [scheduleError, setScheduleError] = useState("");
+  const [remoteScheduleState, setRemoteScheduleState] = useState({ status: "idle", verified: false, scheduleId: "", proof: "" });
   const [serverlessSignals, setServerlessSignals] = useState({ configuredEnvRefs: [], persistenceAdapters: [] });
 
   useEffect(() => {
@@ -379,6 +629,43 @@ export default function WorkflowSurface() {
   );
 
   const sandboxRow = resolved.row;
+
+  useEffect(() => {
+    const scheduleId = String(sandboxRow?.scheduleId || "").trim();
+    const rowScheduler = String(sandboxRow?.schedulerRegistryId || "").trim();
+    const rowLocality = String(sandboxRow?.runLocality || "").trim();
+    if (!objectId || !rowId || rowLocality !== "serverless" || !scheduleId || rowScheduler !== UPSTASH_QSTASH_INTEGRATION_ID) {
+      setRemoteScheduleState({ status: "idle", verified: false, scheduleId: "", proof: "" });
+      return;
+    }
+    let cancelled = false;
+    const params = new URLSearchParams({
+      productId: "upstash-qstash",
+      objectId,
+      rowId,
+      scheduleId,
+      region: String(sandboxRow?.schedulerRegion || "us-east-1").trim(),
+    });
+    setRemoteScheduleState({ status: "checking", verified: false, scheduleId, proof: "" });
+    fetch(`/api/workspace/add-ons/upstash/schedule?${params.toString()}`, { cache: "no-store" })
+      .then(async (res) => {
+        const payload = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setRemoteScheduleState({
+          status: res.ok && payload.verified ? "verified" : "missing",
+          verified: res.ok && payload.verified === true && String(payload.remoteScheduleId || payload.scheduleId || "").trim() === scheduleId,
+          scheduleId,
+          proof: payload.proof || payload.error || "",
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRemoteScheduleState({ status: "error", verified: false, scheduleId, proof: error?.message || "remote schedule verification failed" });
+      });
+    return () => { cancelled = true; };
+  }, [objectId, rowId, sandboxRow?.runLocality, sandboxRow?.schedulerRegistryId, sandboxRow?.scheduleId, sandboxRow?.schedulerRegion]);
+
+  const remoteScheduleVerified = remoteScheduleState.verified === true;
 
   // Per-node Workflow Canvas pill status — GENERAL orchestration (not swarm).
   // Live from the streamed orchestration.node.* deltas while a run is in
@@ -461,10 +748,11 @@ export default function WorkflowSurface() {
     if (!orchestrationGraph?.nodes || !selectedNodeId) return null;
     const node = orchestrationGraph.nodes.find((n) => String(n.id) === selectedNodeId) || null;
     if (!node) return null;
+    const baseConfig = node.config || {};
     return {
       ...node,
       config: {
-        ...(node.config || {}),
+        ...baseConfig,
         sandboxRecordRef: nodeSandboxRecordRef(objectId, rowId, node.id)
       }
     };
@@ -667,6 +955,82 @@ export default function WorkflowSurface() {
     }
   }
 
+  function findWorkflowRowInConfig(config) {
+    return findSandboxRowByWorkflowRef(config, objectId, rowId)?.row || null;
+  }
+
+  async function fetchWorkspaceConfigOnce() {
+    const res = await fetch("/api/workspace", { cache: "no-store" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
+    if (payload.workspaceConfig) setWorkspaceConfig(payload.workspaceConfig);
+    return payload.workspaceConfig || null;
+  }
+
+  async function waitForScheduledRunProof(messageId) {
+    const wanted = String(messageId || "").trim();
+    const maxAttempts = 20;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const latestConfig = await fetchWorkspaceConfigOnce();
+      const latestRow = findWorkflowRowInConfig(latestConfig);
+      const latestMessageId = String(latestRow?.lastScheduledRunMessageId || "").trim();
+      const latestStatus = String(latestRow?.lastScheduledRunStatus || "").trim();
+      if ((wanted && latestMessageId === wanted) || (!wanted && latestStatus)) return latestRow;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return findWorkflowRowInConfig(workspaceConfig);
+  }
+
+  async function runInstalledSchedulerNow() {
+    if (!objectId || !rowId || !workspaceConfig || !sandboxRow?.scheduleId || !remoteScheduleVerified) return runSandbox();
+    setRunning(true);
+    setRunMessage("");
+    setLiveRunEvents([]);
+    try {
+      const triggerInput = JSON.stringify(buildServerlessScheduleRunInputs({
+        workflow: rowId,
+        cadence: scheduleCadence,
+        time: scheduleTime,
+        weekday: scheduleWeekday,
+        monthDay: scheduleMonthDay,
+      }));
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "run",
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          region: sandboxRow.schedulerRegion || addOnsState.qstashWorkflow?.region || "us-east-1",
+          scheduleId: sandboxRow.scheduleId,
+          version: String(sandboxRow?.version || "v1"),
+          workspaceId: workspaceConfig?.id || "workspace",
+          triggerInput,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Scheduler run could not be published.");
+      }
+      setRunMessage(payload.messageId ? `Scheduler run published (${payload.messageId}). Waiting for callback proof...` : "Scheduler run published. Waiting for callback proof...");
+      const proofRow = await waitForScheduledRunProof(payload.messageId);
+      const status = String(proofRow?.lastScheduledRunStatus || "").trim();
+      const succeeded = status && Number(status) >= 200 && Number(status) < 300;
+      if (succeeded) {
+        setRunMessage(`Scheduler run succeeded with HTTP ${status}.`);
+      } else if (status) {
+        setRunMessage(redactSecretsFromText(`Scheduler run returned HTTP ${status}: ${proofRow?.lastScheduledRunFailureReason || proofRow?.lastScheduledRunBodyPreview || "see run proof"}`));
+      } else {
+        setRunMessage("Scheduler run was published, but callback proof did not land before the UI timeout.");
+      }
+    } catch (err) {
+      setRunMessage(redactSecretsFromText(err.message || "Scheduler run failed"));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   function openTraceMode() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("run");
@@ -807,7 +1171,29 @@ export default function WorkflowSurface() {
   const orderedNodes = orchestrationGraph?.nodes || [];
   const currentGraphSerialized = graphUnset ? "" : serializeOrchestrationGraph(orchestrationGraph);
   const draftPassed = sandboxRow?.orchestrationDraftTestPassed === true || String(sandboxRow?.orchestrationDraftTestPassed || "") === "true";
-  const publishReady = draftPassed && String(sandboxRow?.orchestrationDraftTestedConfig || "") === currentGraphSerialized && !dirty;
+  const liveScheduleBinding = (() => {
+    const graph = parseOrchestrationGraph(sandboxRow?.orchestrationGraph || sandboxRow?.orchestrationConfig);
+    const node = (Array.isArray(graph?.nodes) ? graph.nodes : []).find((entry) => entry?.type === "input" || entry?.id === "input");
+    const schedule = node?.config?.schedule && typeof node.config.schedule === "object" ? node.config.schedule : {};
+    return {
+      enabled: node?.config?.enabled !== false,
+      scheduleId: String(schedule.scheduleId || "").trim(),
+      schedulerRegistryId: String(schedule.schedulerRegistryId || "").trim()
+    };
+  })();
+  const serverlessInstalledAndBound =
+    String(sandboxRow?.runLocality || "").trim() === "serverless" &&
+    Boolean(String(sandboxRow?.scheduleId || "").trim()) &&
+    remoteScheduleVerified &&
+    Boolean(String(sandboxRow?.schedulerRegistryId || "").trim()) &&
+    liveScheduleBinding.enabled === true &&
+    liveScheduleBinding.scheduleId === String(sandboxRow?.scheduleId || "").trim() &&
+    liveScheduleBinding.schedulerRegistryId === String(sandboxRow?.schedulerRegistryId || "").trim() &&
+    String(sandboxRow?.orchestrationDraftConfig || sandboxRow?.orchestrationDraftGraph || "").trim() === currentGraphSerialized;
+  const publishReady = !dirty && (
+    (draftPassed && String(sandboxRow?.orchestrationDraftTestedConfig || "") === currentGraphSerialized) ||
+    serverlessInstalledAndBound
+  );
   const savedDraftValue = String(sandboxRow?.[draftFieldName] || "").trim();
   const draftStatus = String(sandboxRow?.orchestrationDraftStatus || "").trim();
   const hasSavedDraft = Boolean(savedDraftValue) && draftStatus !== "published" && graphHasNodes(parseOrchestrationGraph(savedDraftValue));
@@ -830,7 +1216,32 @@ export default function WorkflowSurface() {
         persistenceAdapters: serverlessSignals.persistenceAdapters,
       })
     : null;
+  const addOnsState = deriveWorkspaceAddOnsState(workspaceConfig || {});
+  const schedulerRegistryRows = resolveSchedulerRegistryRows(workspaceConfig || {});
+  const selectedSchedulerRegistryId = String(sandboxRow?.schedulerRegistryId || addOnsState.qstashWorkflow?.integrationId || schedulerRegistryRows[0]?.integrationId || "").trim();
+  const selectedSchedulerRow = schedulerRegistryRows.find((entry) => entry.integrationId === selectedSchedulerRegistryId)?.row || addOnsState.qstashWorkflow || null;
   const isServerlessWorkflow = Boolean(serverlessState?.isServerless);
+
+  // Serverless-readiness — a PURE causation driver, the same shape/inputs as
+  // deriveSandboxServerlessState above (no fetch, no effect): the credential
+  // signal is the already-resolved `serverlessSignals.configuredEnvRefs` (slugs,
+  // never values). It runs once the input trigger is in (or moving into)
+  // Serverless Schedule, and feeds the ultrathin orange node border + the
+  // light-orange field/delta-tag fills (the color is the only guidance added).
+  const inputServerlessSelected = String(
+    (Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes : [])
+      .find((n) => n?.type === "input" || n?.id === "input" || n?.type === "data-trigger")?.config?.inputMode || "",
+  ).trim() === "serverless-schedule";
+  const serverlessReadiness = sandboxRow && (isServerlessWorkflow || inputServerlessSelected)
+    ? scanServerlessReadiness({
+        row: sandboxRow,
+        workspaceConfig: workspaceConfig || {},
+        configuredEnvRefs: serverlessSignals.configuredEnvRefs,
+        phase: isServerlessWorkflow && String(sandboxRow?.scheduleId || "").trim() ? "bound" : "pre-bind",
+        expected: { schedulerRegistryId: selectedSchedulerRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
+      })
+    : null;
+  const readinessFlags = serverlessReadiness ? readinessFieldFlags(serverlessReadiness) : {};
   const showServerlessUpgrade = String(sandboxRow?.adapter || "").trim() !== "local-intelligence";
 
   async function patchSandboxAndPersist(fields) {
@@ -855,13 +1266,7 @@ export default function WorkflowSurface() {
         await patchSandboxAndPersist({ runLocality: "local" });
         return;
       }
-      const registryRow = resolveRegistryRowForSandbox(workspaceConfig, sandboxRow);
-      const adapterId = String(sandboxRow?.adapter || "").trim();
-      await patchSandboxAndPersist({
-        runLocality: "serverless",
-        schedulerRegistryId: String(registryRow?.integrationId || "").trim(),
-        adapter: ["local-agent-host", "local-intelligence"].includes(adapterId) ? "local-process" : adapterId,
-      });
+      setUpgradeOpen(true);
     } else if (action.id === "open-settings") {
       router.push(action.href || "/settings");
     } else if (action.id === "link-scheduler") {
@@ -874,6 +1279,175 @@ export default function WorkflowSurface() {
     } else if (action.id === "edit-adapter") {
       // Full scheduler/adapter config lives on the sandbox object's drawer.
       router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
+    } else if (action.id === "run-sandbox") {
+      if (
+        isServerlessWorkflow &&
+        sandboxRow?.schedulerRegistryId === UPSTASH_QSTASH_INTEGRATION_ID &&
+        sandboxRow?.scheduleId &&
+        remoteScheduleVerified
+      ) {
+        await runInstalledSchedulerNow();
+      } else {
+        await runSandbox();
+      }
+    }
+  }
+
+  async function useInstalledQstashWorkflowAddOn() {
+    setScheduleModalOpen(true);
+  }
+
+  function updateScheduleCadence(cadence) {
+    const next = SCHEDULE_CADENCE_OPTIONS.find((option) => option.id === cadence) || SCHEDULE_CADENCE_OPTIONS[0];
+    setScheduleCadence(next.id);
+  }
+
+  async function submitQstashSchedule() {
+    // Bind requires an installed+verified QStash product. The schedule route
+    // installs THIS row's schedule AND flips it to serverless in ONE
+    // server-authoritative write, then returns the persisted config — we adopt
+    // it verbatim. No second PATCH over stale state (which could clobber the
+    // just-written scheduleId), and serverless is never claimed unless the
+    // server confirmed both the remote schedule and the local persist.
+    if (resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig || !addOnsState.qstashWorkflow) return false;
+    if (!String(scheduleTime || "").trim()) {
+      setScheduleError("Choose a run time.");
+      return false;
+    }
+    const scheduleCron = deriveCronFromSchedule({
+      cadence: scheduleCadence,
+      time: scheduleTime,
+      weekday: scheduleWeekday,
+      monthDay: scheduleMonthDay,
+    });
+    const triggerInput = JSON.stringify(buildServerlessScheduleRunInputs({
+      workflow: rowId,
+      cadence: scheduleCadence,
+      time: scheduleTime,
+      weekday: scheduleWeekday,
+      monthDay: scheduleMonthDay,
+    }));
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          region: addOnsState.qstashWorkflow.region || "us-east-1",
+          cron: scheduleCron,
+          cadence: scheduleCadence,
+          triggerInput,
+          version: String(sandboxRow?.version || "v1"),
+          workspaceId: workspaceConfig?.id || "workspace",
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.bound || !payload.workspaceConfig) {
+        // No schedule installed (missing token / read-only / provider / persist
+        // failure). Keep the workflow local; route the operator to finish setup.
+        setScheduleError(payload.error ? `Could not create schedule: ${payload.error}` : "Could not create the QStash schedule.");
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setScheduleModalOpen(false);
+      setSaveMessage("Schedule updated.");
+      return true;
+    } catch (error) {
+      console.warn(error);
+      setSaveMessage(error?.message || "Could not create QStash schedule.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function revertServerlessScheduleToLocal() {
+    if (!objectId || !rowId || !sandboxRow?.scheduleId) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          scheduleId: sandboxRow.scheduleId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.workspaceConfig) {
+        setScheduleError(payload.error || "Could not remove the remote schedule.");
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage("Schedule removed.");
+      return true;
+    } catch (error) {
+      setScheduleError(error?.message || "Could not remove the remote schedule.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function controlInstalledScheduler(action) {
+    if (!objectId || !rowId || !sandboxRow?.scheduleId || !["pause", "resume"].includes(action)) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          region: sandboxRow.schedulerRegion || addOnsState.qstashWorkflow?.region || "us-east-1",
+          scheduleId: sandboxRow.scheduleId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.workspaceConfig) {
+        setScheduleError(payload.error || `Could not ${action} the remote schedule.`);
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage(action === "pause" ? "Schedule paused." : "Schedule resumed.");
+      return true;
+    } catch (error) {
+      setScheduleError(error?.message || `Could not ${action} the remote schedule.`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openQstashSetup() {
+    router.push("/settings/add-ons");
+  }
+
+  function openCustomSchedulerSetup() {
+    // Custom schedulers are provider-AGNOSTIC: any governed API Registry row can
+    // be bound via this sandbox row's schedulerRegistryId and is executed by the
+    // generic sandbox-run serverless delegation — no marketplace adapter or
+    // Upstash coupling. Route to the row drawer (where schedulerRegistryId is
+    // editable) when we have a workflow row; otherwise send the operator to
+    // API/Webhooks to register the custom scheduler row first. Never navigate
+    // with empty object/row params.
+    if (objectId && rowId) {
+      router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}&field=${encodeURIComponent("schedulerRegistryId")}`);
+    } else {
+      router.push("/settings/apis-webhooks");
     }
   }
 
@@ -933,18 +1507,6 @@ export default function WorkflowSurface() {
             >
               <ArrowUp size={13} />
             </button>
-            {sandboxRow && showServerlessUpgrade && (
-              <button
-                type="button"
-                className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
-                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
-                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Upgrade to serverless environment to ensure persistence"}
-                aria-pressed={upgradeOpen}
-                onClick={() => setUpgradeOpen((open) => !open)}
-              >
-                <ArrowUpCircle size={14} />
-              </button>
-            )}
             {showDiscardDraft && (
               <button
                 type="button"
@@ -1017,42 +1579,23 @@ export default function WorkflowSurface() {
           </div>
         ) : null}
 
-        {/* One-time serverless upgrade onboarding — shows only when the operator
-            has workflows but none are serverless, and hasn't dismissed it. */}
-        {sandboxRow && showServerlessUpgrade && !upgradeOpen && upgradeState.showOnboarding ? (
-          <div className="workspace-template-context-banner dm-workflow-upgrade-nudge" role="note">
-            <div>
-              <strong>{upgradeState.headline}</strong>
-              <span style={{ display: "block", marginTop: 2 }}>{upgradeState.subheadline}</span>
-            </div>
-            <div className="dm-workflow-upgrade-nudge-actions">
-              <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
-                <ArrowUpCircle size={13} /> Upgrade this workflow
-              </button>
-              <button type="button" className="dm-btn-ghost" onClick={dismissUpgradeOnboarding}>Not now</button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Serverless cockpit — same derivation + cockpit interface as the API
-            Registry and sandbox lanes. Toggles patch the sandbox row; deep config
-            (scheduler/adapter) routes to the object's Data Model drawer. */}
-        {sandboxRow && showServerlessUpgrade && upgradeOpen && serverlessState ? (
-          <div className="dm-workflow-upgrade-panel">
-            <div className="dm-workflow-upgrade-panel-head">
-              <span className="dm-api-action-card-eyebrow">Persistence &amp; scheduling</span>
-              <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => { setUpgradeOpen(false); dismissUpgradeOnboarding(); }}>
-                <X size={14} />
-              </button>
-            </div>
-            <ApiRegistryCreationCockpit
-              state={serverlessState}
-              onAction={handleUpgradeAction}
-              disabled={saving || publishing || running}
-              eyebrow={isServerlessWorkflow ? "Serverless workflow" : "Upgrade to serverless"}
-            />
-          </div>
-        ) : null}
+        <WorkflowScheduleModal
+          open={scheduleModalOpen}
+          addOn={addOnsState.qstashWorkflow}
+          workflowName={rowId}
+          cadence={scheduleCadence}
+          scheduleTime={scheduleTime}
+          scheduleWeekday={scheduleWeekday}
+          scheduleMonthDay={scheduleMonthDay}
+          errorMessage={scheduleError}
+          disabled={saving || publishing || running}
+          onCadenceChange={updateScheduleCadence}
+          onScheduleTimeChange={setScheduleTime}
+          onScheduleWeekdayChange={setScheduleWeekday}
+          onScheduleMonthDayChange={setScheduleMonthDay}
+          onSubmit={submitQstashSchedule}
+          onClose={() => setScheduleModalOpen(false)}
+        />
 
         {loading ? (
           <p className="dm-workflow-empty">Loading workflow…</p>
@@ -1107,6 +1650,7 @@ export default function WorkflowSurface() {
                       nodeStatuses={runNodeStatuses}
                       onNodeStatusClick={(node) => { setSelectedNodeId(String(node?.id || "")); openTraceMode(); }}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
+                      readinessFlags={readinessFlags}
                     />
                     {nextNodeId && (
                       <button type="button" className="dm-btn-outline dm-orchestration-canvas__add-node" onClick={addNextNode}>
@@ -1194,6 +1738,135 @@ export default function WorkflowSurface() {
                     activeTab={configTab}
                     onTabChange={setConfigTab}
                     onConfigChange={handleNodeConfigChange}
+                    readinessFlag={selectedNodeId ? readinessFlags[selectedNodeId] : null}
+                    serverlessScheduleOptionAvailable={Boolean(addOnsState.qstashWorkflow || selectedSchedulerRegistryId || schedulerRegistryRows.length)}
+                    serverlessScheduleAvailable={remoteScheduleVerified}
+                    inputScheduleControls={selectedNode?.type === "input" && selectedNode?.config?.inputMode === "serverless-schedule" ? (
+                      <div className="dm-trigger-schedule-config">
+                        <span className="dm-field-label">Serverless schedule</span>
+                        <dl className="dm-workflow-schedule-state">
+                          <div>
+                            <dt>Scheduler</dt>
+                            <dd>{selectedSchedulerRegistryId || "Install scheduler first"}</dd>
+                          </div>
+                          <div>
+                            <dt>Status</dt>
+                            <dd>{remoteScheduleVerified ? (sandboxRow?.schedulerPaused ? "paused" : "bound") : "not bound"}</dd>
+                          </div>
+                          <div>
+                            <dt>Region</dt>
+                            <dd>{sandboxRow?.schedulerRegion || selectedSchedulerRow?.region || "pending"}</dd>
+                          </div>
+                          {remoteScheduleVerified && sandboxRow?.scheduleId ? (
+                            <div>
+                              <dt>Schedule</dt>
+                              <dd>{sandboxRow.scheduleId}</dd>
+                            </div>
+                          ) : null}
+                          {remoteScheduleVerified && sandboxRow?.schedulerCron ? (
+                            <div>
+                              <dt>Cron</dt>
+                              <dd>{sandboxRow.schedulerCron}</dd>
+                            </div>
+                          ) : null}
+                          {remoteScheduleVerified && sandboxRow?.schedulerInstalledAt ? (
+                            <div>
+                              <dt>Last sync</dt>
+                              <dd>{sandboxRow.schedulerInstalledAt}</dd>
+                            </div>
+                          ) : null}
+                          {sandboxRow?.schedulerPausedAt ? (
+                            <div>
+                              <dt>Paused</dt>
+                              <dd>{sandboxRow.schedulerPausedAt}</dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                        {schedulerRegistryRows.length > 1 ? (
+                          <label className="dm-orchestration-config__field">
+                            <span>Scheduler registry</span>
+                            <select
+                              value={selectedSchedulerRegistryId}
+                              disabled={Boolean(sandboxRow?.scheduleId) || saving}
+                              onChange={(e) => patchSandboxRuntimeFields({ schedulerRegistryId: e.target.value })}
+                            >
+                              {schedulerRegistryRows.map((entry) => (
+                                <option key={entry.integrationId} value={entry.integrationId}>
+                                  {entry.integrationId}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        <label className="dm-orchestration-config__field">
+                          <span>Cadence</span>
+                          <select value={scheduleCadence} onChange={(e) => updateScheduleCadence(e.target.value)}>
+                            {SCHEDULE_CADENCE_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <ScheduleTimeControls value={scheduleTime} onChange={setScheduleTime} />
+                        {scheduleCadence === "weekly" ? (
+                          <label className="dm-orchestration-config__field">
+                            <span>Run day</span>
+                            <select value={scheduleWeekday} onChange={(e) => setScheduleWeekday(e.target.value)}>
+                              {SCHEDULE_WEEKDAY_OPTIONS.map((option) => (
+                                <option key={option.id} value={option.id}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        {scheduleCadence === "monthly" ? (
+                          <label className="dm-orchestration-config__field">
+                            <span>Day of month</span>
+                            <select value={scheduleMonthDay} onChange={(e) => setScheduleMonthDay(e.target.value)}>
+                              {SCHEDULE_MONTH_DAY_OPTIONS.map((option) => (
+                                <option key={option.id} value={option.id}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        {sandboxRow?.lastScheduledRunResponse || sandboxRow?.lastScheduledRunBodyPreview || sandboxRow?.lastScheduledRunStatus ? (
+                          <div className="dm-workflow-schedule-last-run">
+                            <span>Last run</span>
+                            <strong>{sandboxRow?.lastScheduledRunStatus || "pending"}</strong>
+                          </div>
+                        ) : null}
+                        {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
+                        <button
+                          type="button"
+                          className="dm-btn-outline dm-workflow-schedule-submit"
+                          disabled={saving || !addOnsState.qstashWorkflow || !String(scheduleTime || "").trim()}
+                          onClick={submitQstashSchedule}
+                        >
+                          {saving ? "Saving schedule..." : sandboxRow?.scheduleId ? "Update schedule" : "Save schedule"}
+                        </button>
+                        {!addOnsState.qstashWorkflow ? (
+                          <p className="dm-cockpit-step-hint">Install + sync QStash in Workspace Add-ons first, then save the schedule here.</p>
+                        ) : null}
+                        {sandboxRow?.scheduleId ? (
+                          <div className="dm-workflow-schedule-actions">
+                            <button
+                              type="button"
+                              className="dm-btn-outline"
+                              disabled={saving}
+                              onClick={() => controlInstalledScheduler(sandboxRow?.schedulerPaused ? "resume" : "pause")}
+                            >
+                              {sandboxRow?.schedulerPaused ? "Resume" : "Pause"}
+                            </button>
+                            <button
+                              type="button"
+                              className="dm-btn-outline is-danger"
+                              disabled={saving}
+                              onClick={revertServerlessScheduleToLocal}
+                            >
+                              Revert to local
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   />
                   {graphError && <p className="dm-orchestration-config__error">{graphError}</p>}
                 </div>
@@ -1202,7 +1875,7 @@ export default function WorkflowSurface() {
           </div>
         )}
 
-        {(saveMessage || runMessage) && (
+        {runMessage && (
           <p className="dm-workflow-status-msg">{saveMessage || runMessage}</p>
         )}
       </section>

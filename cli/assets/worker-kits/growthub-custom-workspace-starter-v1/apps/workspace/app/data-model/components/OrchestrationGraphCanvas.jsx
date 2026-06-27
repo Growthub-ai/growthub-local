@@ -130,6 +130,7 @@ export function OrchestrationGraphCanvas({
   nodeStatuses,
   onNodeStatusClick,
   statusLabel = "Draft",
+  readinessFlags,
 }) {
   const parsed = useMemo(() => parseOrchestrationGraph(graph) || graph, [graph]);
   const nodes = useMemo(() => orderedGraphNodes(parsed), [parsed]);
@@ -242,6 +243,9 @@ export function OrchestrationGraphCanvas({
           const nodeStatusChip = nodeStatuses
             ? NODE_STATUS_CHIP[String(nodeStatuses[id] || "").toLowerCase()] || null
             : null;
+          // Serverless-readiness flag — ultrathin orange border ONLY. The color
+          // is the guidance; no badge, no text. Driven by the readiness scan.
+          const readinessFlag = readinessFlags ? readinessFlags[id] || null : null;
 
           return (
             <div key={id || index} className="dm-orchestration-canvas__step">
@@ -292,7 +296,7 @@ export function OrchestrationGraphCanvas({
               <div
                 role="button"
                 tabIndex={0}
-                className={`dm-orchestration-node${isSelected ? " dm-orchestration-node--selected" : ""}`}
+                className={`dm-orchestration-node${isSelected ? " dm-orchestration-node--selected" : ""}${readinessFlag ? ` dm-orchestration-node--readiness is-${readinessFlag.severity || "warning"}` : ""}`}
                 title={hoverHint(node)}
                 onClick={() => {
                   setInternalSelected(id);

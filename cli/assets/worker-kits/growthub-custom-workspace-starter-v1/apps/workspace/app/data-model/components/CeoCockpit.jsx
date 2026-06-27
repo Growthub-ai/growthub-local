@@ -120,7 +120,7 @@ function CeoReportCard({ report, onOpen, emphasis }) {
 // cap is purely by count and disclosed.
 const CEO_FLEET_VISIBLE_CAP = 50;
 
-function CeoFleetView({ model, onOpenArtifact }) {
+function CeoFleetView({ model, onOpenArtifact, onOpenSchedule }) {
   const { fleet, attention, reports, governance } = model;
   // Filter by stable reportId, not name — duplicate Names must never drop or
   // merge a record from the fleet.
@@ -137,6 +137,18 @@ function CeoFleetView({ model, onOpenArtifact }) {
           <span className="dm-run-console__hint" title="Blocked governance attempts in the outcome stream">
             {`${governance.blockedAttempts} blocked attempt${governance.blockedAttempts === 1 ? "" : "s"}`}
           </span>
+        )}
+        {typeof onOpenSchedule === "function" && (
+          <button
+            type="button"
+            className="dm-btn-ghost dm-swarm-card-action"
+            onClick={() => onOpenSchedule(null)}
+            title="Open the schedule cockpit (/schedule)"
+            aria-label="Open schedule cockpit"
+          >
+            Schedule
+            <ArrowUpRight size={12} aria-hidden="true" />
+          </button>
         )}
       </div>
 
@@ -335,7 +347,7 @@ function CeoBootstrapView({ model, onAction, actionBusy, error }) {
 // Container — derives the mode and wires actions to governed surfaces
 // ---------------------------------------------------------------------------
 
-export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, onSeedSwarm, onOpenSetup }) {
+export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, onSeedSwarm, onOpenSetup, onOpenSchedule }) {
   // Optional governance rollup — read-only, graceful fallback to config-only.
   const [receipts, setReceipts] = useState([]);
   const [activeOperationalTab, setActiveOperationalTab] = useState("history");
@@ -513,7 +525,7 @@ export function CeoCockpit({ workspaceConfig, onOpenArtifact, onConfigRefresh, o
             </button>
           </div>
           {activeOperationalTab === "history" ? (
-            <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} />
+            <CeoFleetView model={fleetModel} onOpenArtifact={handleOpenArtifact} onOpenSchedule={onOpenSchedule} />
           ) : (
             <CeoAgentTeamsSection
               teams={teamsModel}

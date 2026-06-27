@@ -88,26 +88,9 @@ import {
   validateRunInputsEnvelope,
   summarizeRunInputs
 } from "@/lib/orchestration-run-inputs";
-
-function envKeyCandidates(ref) {
-  const token = String(ref || "")
-    .trim()
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return Array.from(new Set([
-    token,
-    token ? `${token}_API_KEY` : "",
-    token ? `${token}_TOKEN` : ""
-  ].filter(Boolean)));
-}
-
-function readServerSecret(authRef) {
-  for (const key of envKeyCandidates(authRef)) {
-    if (process.env[key]) return { key, value: process.env[key] };
-  }
-  return null;
-}
+// Single canonical secret resolver — shared with the serverless add-on lane so
+// both run lanes resolve stored env tokens identically (no copy-pasted logic).
+import { readServerSecret } from "@/lib/server-secrets";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;

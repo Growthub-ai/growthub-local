@@ -5125,6 +5125,160 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-workflow-upgrade-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px 0; }
 .dm-workflow-upgrade-panel-head .dm-api-action-card-eyebrow { margin: 0; }
 .dm-workflow-upgrade-panel .dm-api-action-card { margin: 8px; box-shadow: none; }
+.dm-workflow-schedule-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; background: rgba(15, 23, 42, .28); }
+.dm-workflow-schedule-modal { width: min(560px, 100%); max-height: min(760px, calc(100vh - 48px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #d1d5db; border-radius: 8px; background: #fff; box-shadow: 0 24px 80px rgba(15,23,42,.22); }
+.dm-workflow-schedule-modal header,
+.dm-workflow-schedule-modal footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #edf0f3; }
+.dm-workflow-schedule-modal footer { justify-content: flex-end; border-top: 1px solid #edf0f3; border-bottom: 0; background: #fafafa; }
+.dm-workflow-schedule-modal h3 { margin: 2px 0 0; font-size: 16px; color: #111827; }
+.dm-workflow-schedule-body { display: grid; gap: 12px; padding: 16px; overflow: auto; }
+.dm-marketplace-field textarea { width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; background: #fff; color: #111827; font: inherit; resize: vertical; box-sizing: border-box; }
+.dm-marketplace-field textarea:focus { outline: none; border-color: #9ca3af; box-shadow: 0 0 0 3px rgba(17,24,39,.06); }
+.dm-workflow-schedule-error { margin: 0; border: 1px solid #fecaca; border-radius: 6px; background: #fef2f2; color: #991b1b; padding: 10px; font-size: 12px; line-height: 1.4; }
+.dm-marketplace-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px; background: rgba(15,23,42,.28); }
+.dm-marketplace-modal { position: relative; width: min(1040px, calc(100vw - 48px)); max-height: min(820px, calc(100vh - 48px)); overflow: hidden; display: flex; flex-direction: column; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 24px 80px rgba(15,23,42,.24); }
+.dm-marketplace-page { position: relative; min-height: 680px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.06); }
+.dm-marketplace-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px 18px; border-bottom: 1px solid #edf0f3; }
+.dm-marketplace-header h2 { margin: 2px 0 0; font-size: 24px; line-height: 1.15; color: #111827; }
+.dm-marketplace-breadcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; color: #4b5563; font-size: 12px; }
+.dm-marketplace-breadcrumbs svg { transform: rotate(-90deg); color: #9ca3af; }
+.dm-marketplace-breadcrumbs strong { color: #111827; font-weight: 500; }
+.dm-marketplace-breadcrumbs button { border: 0; padding: 0; background: transparent; color: #2563eb; font: inherit; cursor: pointer; }
+.dm-marketplace-provider-title { display: flex; align-items: center; gap: 12px; }
+.dm-marketplace-provider-title p { margin: 5px 0 0; color: #4b5563; font-size: 13px; }
+.dm-marketplace-subtitle { margin: 5px 0 0; color: #4b5563; font-size: 13px; }
+.dm-marketplace-provider-mark { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #030712; color: #34d399; font-weight: 800; box-shadow: inset 0 0 0 2px #34d399; }
+.dm-marketplace-provider-actions { display: flex; align-items: center; gap: 8px; }
+.dm-marketplace-provider-actions a,
+.dm-marketplace-provider-actions button { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; white-space: nowrap; }
+.dm-marketplace-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 0; flex: 1; }
+.dm-marketplace-sidebar { padding: 16px 12px; border-right: 1px solid #edf0f3; display: grid; gap: 6px; align-content: start; background: #fafafa; }
+.dm-marketplace-sidebar button { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; border-radius: 6px; padding: 10px 12px; background: transparent; color: #374151; font-size: 14px; font-weight: 650; cursor: pointer; text-align: left; }
+.dm-marketplace-sidebar button:hover,
+.dm-marketplace-sidebar button.is-active { background: #ecebea; color: #111827; }
+.dm-marketplace-setup-nav { margin-top: 14px; padding: 12px; border-top: 1px solid #e5e7eb; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.dm-marketplace-setup-nav ol { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.dm-marketplace-setup-nav li { display: flex; align-items: center; gap: 8px; color: #64748b; }
+.dm-marketplace-setup-nav li::before { content: ""; width: 8px; height: 8px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; }
+.dm-marketplace-setup-nav li.is-active { color: #111827; font-weight: 700; }
+.dm-marketplace-setup-nav li.is-active::before { border-color: #111827; background: #111827; }
+.dm-marketplace-content { min-width: 0; overflow-y: auto; padding: 18px 22px 24px; display: grid; gap: 14px; align-content: start; }
+.dm-marketplace-error { border: 1px solid #fecaca; border-radius: 7px; padding: 10px 12px; background: #fef2f2; color: #991b1b; font-size: 13px; line-height: 1.35; }
+.dm-marketplace-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
+.dm-marketplace-search { min-width: 0; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid #bfdbfe; border-radius: 7px; color: #111827; box-shadow: 0 0 0 2px rgba(59,130,246,.12); }
+.dm-marketplace-filter { height: 38px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #e5e7eb; border-radius: 7px; padding: 0 12px; background: #fff; color: #6b7280; cursor: pointer; }
+.dm-marketplace-install-card { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(15,23,42,.06); overflow: hidden; }
+.dm-marketplace-provider-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; align-items: start; }
+.dm-marketplace-provider-main { display: grid; gap: 24px; }
+.dm-marketplace-details { display: grid; gap: 0; }
+.dm-marketplace-details h3,
+.dm-marketplace-overview h3 { margin: 0 0 10px; font-size: 16px; color: #111827; }
+.dm-marketplace-details div { min-height: 42px; display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1fr); gap: 12px; align-items: center; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+.dm-marketplace-details span { color: #111827; }
+.dm-marketplace-details strong { color: #111827; font-weight: 500; text-align: right; }
+.dm-marketplace-details a { display: inline-flex; justify-content: flex-end; align-items: center; gap: 4px; color: #2563eb; text-decoration: none; text-align: right; }
+.dm-marketplace-overview { display: grid; gap: 6px; }
+.dm-marketplace-overview p { margin: 0; color: #4b5563; font-size: 13px; line-height: 1.5; }
+.dm-marketplace-products { display: grid; gap: 10px; }
+.dm-marketplace-products h3 { margin: 8px 0 0; font-size: 16px; color: #111827; }
+.dm-marketplace-product-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.dm-marketplace-provider-grid { display: grid; grid-template-columns: minmax(0, 520px); gap: 12px; }
+.dm-marketplace-provider-card { min-height: 124px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 18px; cursor: pointer; text-align: left; }
+.dm-marketplace-provider-card:hover { border-color: #cbd5e1; box-shadow: 0 8px 24px rgba(15,23,42,.08); }
+.dm-marketplace-provider-card strong { display: block; color: #111827; font-size: 15px; }
+.dm-marketplace-provider-card p { margin: 4px 0 0; color: #4b5563; font-size: 13px; }
+.dm-marketplace-provider-card small { display: block; margin-top: 12px; color: #64748b; font-size: 12px; }
+.dm-marketplace-product-card { min-height: 116px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: start; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; padding: 14px; }
+.dm-marketplace-product-card.is-muted { background: #fcfcfc; }
+.dm-marketplace-product-card strong { display: block; font-size: 13px; color: #111827; }
+.dm-marketplace-product-card p { margin: 3px 0 0; font-size: 12px; color: #4b5563; }
+.dm-marketplace-product-card small { display: block; margin-top: 22px; color: #4b5563; font-size: 12px; }
+.dm-marketplace-card-actions { display: grid; justify-items: end; gap: 8px; }
+.dm-marketplace-gear { opacity: 0; transform: translateY(-2px); transition: opacity .14s ease, transform .14s ease; }
+.dm-marketplace-product-card:hover .dm-marketplace-gear,
+.dm-marketplace-gear:focus-visible { opacity: 1; transform: translateY(0); }
+.dm-marketplace-product-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 16px; border-bottom: 1px solid #edf0f3; }
+.dm-marketplace-product-head h3 { margin: 0; font-size: 15px; color: #111827; }
+.dm-marketplace-product-head p { margin: 3px 0 0; font-size: 12px; line-height: 1.35; color: #4b5563; }
+.dm-marketplace-product-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; overflow: hidden; font-weight: 800; color: #fff; }
+.dm-marketplace-product-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dm-marketplace-product-icon.is-upstash { background: #7c3aed; }
+.dm-marketplace-product-icon.is-provider { border-radius: 999px; background: #030712; }
+.dm-marketplace-product-icon.is-custom { background: #111827; }
+.dm-marketplace-product-icon.is-redis { background: #dc2626; }
+.dm-marketplace-product-icon.is-search { background: #eab308; }
+.dm-marketplace-product-icon.is-vector { background: #ea580c; }
+.dm-marketplace-config { padding: 16px; display: grid; gap: 12px; }
+.dm-marketplace-section-title { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #111827; }
+.dm-marketplace-field { display: grid; gap: 7px; font-size: 12px; color: #4b5563; }
+.dm-marketplace-field select,
+.dm-marketplace-field input { height: 38px; width: 100%; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0 10px; background: #fff; color: #111827; font: inherit; box-sizing: border-box; }
+.dm-marketplace-field input:focus,
+.dm-marketplace-field select:focus { outline: none; border-color: #9ca3af; box-shadow: 0 0 0 3px rgba(17,24,39,.06); }
+.dm-marketplace-credential-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .dm-marketplace-credential-grid { grid-template-columns: 1fr; } }
+.dm-marketplace-install-choice { display: grid; gap: 10px; border: 1px solid #e5e7eb; border-radius: 7px; padding: 12px; background: #fff; }
+.dm-marketplace-install-choice strong { display: block; color: #111827; font-size: 13px; }
+.dm-marketplace-install-choice span { display: block; margin-top: 3px; color: #64748b; font-size: 12px; line-height: 1.4; }
+.dm-marketplace-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #4b5563; }
+.dm-marketplace-toggle input { width: 34px; height: 20px; }
+.dm-marketplace-resource-divider { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 12px; font-weight: 650; }
+.dm-marketplace-resource-divider::before,
+.dm-marketplace-resource-divider::after { content: ""; height: 1px; flex: 1 1 auto; background: #e5e7eb; }
+.dm-marketplace-resource-divider span { white-space: nowrap; }
+.dm-marketplace-plan-list { display: grid; gap: 8px; padding-top: 6px; }
+.dm-marketplace-plan { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; padding: 10px; color: #374151; cursor: pointer; text-align: left; }
+.dm-marketplace-plan.is-selected { border-color: #c7d2fe; background: #f8fafc; color: #111827; }
+.dm-marketplace-plan:disabled { color: #9ca3af; cursor: not-allowed; }
+.dm-marketplace-plan b { color: #111827; }
+.dm-marketplace-radio { width: 13px; height: 13px; flex: 0 0 auto; border: 1px solid #9ca3af; border-radius: 999px; }
+.dm-marketplace-env { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f8fafc; color: #334155; padding: 10px; font-size: 12px; }
+.dm-marketplace-env.is-ready { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.dm-marketplace-env code { color: inherit; word-break: break-all; }
+.dm-marketplace-config-summary { display: grid; gap: 6px; border: 1px solid #e5e7eb; border-radius: 7px; padding: 10px; background: #fafafa; }
+.dm-marketplace-config-summary div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 12px; }
+.dm-marketplace-config-summary span { color: #64748b; }
+.dm-marketplace-config-summary code { color: #111827; white-space: normal; word-break: break-word; }
+.dm-marketplace-install-drawer { position: absolute; inset: 0 0 0 auto; z-index: 2; width: min(430px, 100%); padding: 14px; background: rgba(255,255,255,.84); box-shadow: -16px 0 50px rgba(15,23,42,.16); backdrop-filter: blur(2px); overflow-y: auto; }
+.dm-marketplace-modal .dm-marketplace-install-drawer { position: absolute; }
+.dm-marketplace-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #edf0f3; }
+.dm-marketplace-drawer-head h3 { margin: 0; font-size: 16px; color: #111827; }
+.dm-marketplace-provision-steps { display: grid; gap: 10px; padding: 12px 16px; border-top: 1px solid #edf0f3; }
+.dm-marketplace-provision-steps div { border: 1px solid #e5e7eb; border-radius: 7px; padding: 12px; color: #9ca3af; font-size: 13px; font-weight: 650; }
+.dm-marketplace-provision-steps div.is-active { color: #111827; border-color: #d1d5db; background: #fafafa; }
+.dm-marketplace-provision-steps div.is-complete { color: #374151; border-color: #d1d5db; background: #f8fafc; }
+.dm-marketplace-provision-steps .dm-marketplace-step-action-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 12px; }
+.dm-marketplace-step-action-row .dm-btn-primary-sm { min-height: 34px; white-space: nowrap; }
+.dm-marketplace-adapters { padding: 16px; display: grid; gap: 8px; }
+.dm-marketplace-adapter { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; background: #fff; }
+.dm-marketplace-adapter.is-ready { border-color: #bbf7d0; background: #f8fffb; }
+.dm-marketplace-adapter div { display: grid; gap: 2px; }
+.dm-marketplace-adapter strong { font-size: 13px; color: #111827; }
+.dm-marketplace-adapter span,
+.dm-marketplace-adapter code { font-size: 11px; color: #64748b; }
+.dm-marketplace-adapter code { text-align: right; white-space: normal; word-break: break-word; }
+.dm-marketplace-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid #edf0f3; background: #fafafa; }
+.dm-marketplace-console-link { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.dm-marketplace-create-new-btn { justify-content: center; }
+.dm-marketplace-primary-link { text-decoration: none; justify-content: center; }
+@media (min-width: 761px) {
+  .dm-marketplace-page { min-height: min(760px, calc(100vh - 112px)); height: min(920px, calc(100vh - 112px)); }
+}
+@media (max-width: 760px) {
+  .dm-marketplace-backdrop { padding: 10px; align-items: stretch; }
+  .dm-marketplace-modal { width: 100%; max-height: calc(100vh - 20px); }
+  .dm-marketplace-layout { grid-template-columns: 1fr; }
+  .dm-marketplace-sidebar { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-right: 0; border-bottom: 1px solid #edf0f3; }
+  .dm-marketplace-setup-nav { grid-column: 1 / -1; }
+  .dm-marketplace-provider-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .dm-marketplace-provider-layout { grid-template-columns: 1fr; }
+  .dm-marketplace-search-row { grid-template-columns: 1fr; }
+  .dm-marketplace-product-grid { grid-template-columns: 1fr; }
+  .dm-marketplace-adapter,
+  .dm-marketplace-product-head { grid-template-columns: auto minmax(0, 1fr); }
+  .dm-marketplace-product-head .dm-db-status { grid-column: 1 / -1; justify-self: start; }
+  .dm-marketplace-adapter code { text-align: left; }
+}
 
 .dm-api-review-banner {
   display: grid;
@@ -5201,7 +5355,31 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-orchestration-config__fieldmap,
 .dm-orchestration-config__payload { display: grid; gap: 8px; }
 .dm-orchestration-config__fieldmap-row,
-.dm-orchestration-config__payload-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
+.dm-orchestration-config__payload-row { display: grid; grid-template-columns: minmax(112px, .72fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; min-width: 0; }
+.dm-orchestration-config__payload-row > input {
+  min-width: 0;
+  width: 100%;
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+.dm-orchestration-config__payload-row > input:focus {
+  outline: none;
+  border-color: #64748b;
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, .12);
+}
+.dm-orchestration-config__payload-row > .dm-btn-ghost {
+  height: 34px;
+  min-width: 70px;
+  justify-content: center;
+  white-space: nowrap;
+}
 .dm-orchestration-config__advanced-json summary { cursor: pointer; font-size: 11px; font-weight: 650; color: #374151; }
 .dm-orchestration-preview { margin: 0; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 10px; overflow: auto; max-height: 160px; white-space: pre-wrap; word-break: break-word; }
 .dm-orchestration-preview > span { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; }
@@ -5807,6 +5985,24 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   outline: none;
   border-color: #64748b;
   box-shadow: 0 0 0 3px rgba(100, 116, 139, .12);
+}
+
+.dm-workflow-orchestration .dm-input-mode-select .dm-select-option.selected {
+  background: #f5f5f5;
+  color: #111827;
+}
+
+.dm-workflow-orchestration .dm-input-mode-select {
+  z-index: 130;
+}
+
+.dm-workflow-orchestration .dm-input-mode-select .dm-select-option {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+}
+
+.dm-workflow-orchestration .dm-input-mode-select .dm-select-option svg {
+  color: #64748b;
 }
 .dm-workflow-orchestration .dm-orchestration-config__field input:disabled,
 .dm-workflow-orchestration .dm-orchestration-config__field textarea:disabled,
@@ -9447,3 +9643,128 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-db-empty-state strong { font-size: 15px; color: var(--dm-ink); font-weight: 650; }
 .dm-db-empty-state span { font-size: 12.5px; color: var(--dm-muted); max-width: 360px; }
 .dm-db-empty-actions { display: inline-flex; gap: 8px; margin-top: 8px; }
+
+/* Input-node serverless schedule fields — shown below the config panel only
+   when Input mode = serverless schedule. Inherits the sidecar field styles. */
+.dm-trigger-schedule-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-height: 0;
+}
+.dm-workflow-schedule-state {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+}
+.dm-workflow-schedule-state div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.dm-workflow-schedule-state dt {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+  text-transform: uppercase;
+}
+.dm-workflow-schedule-state dd {
+  min-width: 0;
+  margin: 0;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.dm-workflow-schedule-last-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0;
+  color: #475569;
+}
+.dm-workflow-schedule-last-run span { font-size: 11px; font-weight: 650; color: #475569; }
+.dm-workflow-schedule-last-run strong { color: #111827; font-size: 12px; font-weight: 650; }
+.dm-workflow-schedule-submit {
+  width: 100%;
+  justify-content: center;
+}
+.dm-workflow-schedule-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.dm-workflow-schedule-actions .dm-btn-outline {
+  justify-content: center;
+  min-width: 0;
+}
+.dm-btn-outline.is-danger {
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.dm-btn-outline.is-danger:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.dm-workflow-orchestration .dm-orchestration-config__field select {
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #111827;
+  box-shadow: none;
+}
+
+.dm-workflow-orchestration .dm-orchestration-config__field select:focus {
+  outline: none;
+  border-color: #64748b;
+  box-shadow: 0 0 0 3px rgba(100, 116, 139, .12);
+}
+
+/* ------------------------------------------------------------------ *
+ * Serverless-readiness flagging — ultrathin orange only.             *
+ * The color IS the guidance: a flagged node gets an ultrathin orange  *
+ * border (nothing else added), and ONLY the exact main field(s) /     *
+ * delta-tag shield(s) the readiness scan mapped get a light-orange    *
+ * fill. No badges, no copy — handled atomically under the hood.       *
+ * ------------------------------------------------------------------ */
+.dm-orchestration-node--readiness { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.55); }
+.dm-orchestration-node--readiness.is-warning { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.42); }
+.dm-orchestration-node--readiness:hover { border-color: #f59e0b; }
+.dm-orchestration-node--readiness.dm-orchestration-node--selected { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b, 0 2px 8px rgba(245, 158, 11, 0.16); }
+
+.dm-orchestration-config__field.dm-field--readiness input,
+.dm-orchestration-config__field.dm-field--readiness textarea,
+.dm-orchestration-config__field.dm-field--readiness select { border-color: #f59e0b; background: #fffbeb; }
+.dm-orchestration-config__field.dm-field--readiness.is-warning input,
+.dm-orchestration-config__field.dm-field--readiness.is-warning textarea,
+.dm-orchestration-config__field.dm-field--readiness.is-warning select { border-color: #fcd34d; background: #fffdf5; }
+
+.dm-orchestration-config__payload.dm-field--readiness { border-radius: 6px; padding: 6px; background: #fffbeb; box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.4); }
+.dm-orchestration-config__payload.dm-field--readiness.is-warning { background: #fffdf5; box-shadow: inset 0 0 0 1px rgba(252, 211, 77, 0.45); }
+
+/* ------------------------------------------------------------------ *
+ * Schedule cockpit (/schedule) — sidecar operations surface. Reuses    *
+ * the swarm/CEO card grammar; only the search/filter/tag chrome is new.*
+ * ------------------------------------------------------------------ */
+.dm-schedule-search { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; color: #6b7280; margin-bottom: 8px; }
+.dm-schedule-search input { flex: 1; min-width: 0; border: 0; outline: none; font-size: 12px; color: #111827; background: transparent; }
+.dm-schedule-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.dm-schedule-filter { border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; color: #475569; background: #fff; cursor: pointer; }
+.dm-schedule-filter:hover { border-color: #cbd5e1; }
+.dm-schedule-filter.is-active { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+.dm-schedule-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.dm-schedule-tag { font-size: 10px; font-weight: 600; line-height: 1.4; padding: 1px 7px; border-radius: 999px; border: 1px solid #e5e7eb; color: #475569; background: #f8fafc; }
+.dm-schedule-tag[data-tag-tone="alert"] { border-color: #fde68a; color: #92400e; background: #fffbeb; }
+.dm-schedule-tag[data-tag-tone="ok"] { border-color: #bbf7d0; color: #166534; background: #f0fdf4; }
+.dm-schedule-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
