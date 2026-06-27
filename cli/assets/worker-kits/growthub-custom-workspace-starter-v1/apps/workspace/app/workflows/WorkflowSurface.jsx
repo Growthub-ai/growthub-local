@@ -6,8 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpCircle,
   Bot,
+  Clock,
   Code,
   Filter,
   FormInput,
@@ -322,6 +322,13 @@ function WorkflowScheduleModal({
 
 const WORKFLOW_ACTION_GROUPS = [
   {
+    label: "Trigger",
+    items: [
+      { id: "form", label: "Form", type: "human-input", Icon: FormInput, destructive: false },
+      { id: "scheduled-trigger", label: "Scheduled", type: "data-trigger", Icon: Clock, destructive: false },
+    ],
+  },
+  {
     label: "Data",
     items: [
       { id: "create-record", label: "Create Record", type: "data-action", Icon: Plus, destructive: false },
@@ -350,7 +357,6 @@ const WORKFLOW_ACTION_GROUPS = [
       { id: "http-request", label: "HTTP Request", type: "core-action", Icon: Globe2, destructive: false },
     ],
   },
-  { label: "Human Input", items: [{ id: "form", label: "Form", type: "human-input", Icon: FormInput, destructive: false }] },
 ];
 
 function getWorkspaceObjectOptions(workspaceConfig) {
@@ -372,7 +378,33 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
     id = `${baseId}-${index}`;
     index += 1;
   }
-  const isData = action.type === "data-action" || action.type === "data-trigger";
+  // Scheduled trigger node — the dedicated serverless start node. It carries the
+  // serverless-scheduler trigger binding to the installed QStash product so the
+  // SAME sandbox-run path executes on the QStash invocation (no side path). The
+  // concrete scheduleId is stamped when the schedule is bound; cadence/time are
+  // configured in the node config panel + schedule flow.
+  if (action.type === "data-trigger") {
+    return {
+      id,
+      type: "data-trigger",
+      label: action.label,
+      subtitle: "Scheduled serverless invocation",
+      config: {
+        action: action.id,
+        trigger: "serverless-scheduler",
+        triggerKind: "serverless-scheduler",
+        enabled: true,
+        schedule: {
+          schedulerRegistryId: UPSTASH_QSTASH_INTEGRATION_ID,
+          providerId: "upstash",
+          productId: "upstash-qstash",
+          scheduleId: "",
+        },
+        mode: "draft"
+      }
+    };
+  }
+  const isData = action.type === "data-action";
   return {
     id,
     type: action.type,
@@ -1266,18 +1298,6 @@ export default function WorkflowSurface() {
             >
               <ArrowUp size={13} />
             </button>
-            {sandboxRow && showServerlessUpgrade && (
-              <button
-                type="button"
-                className={"dm-workflow-icon-btn dm-workflow-upgrade-btn" + (isServerlessWorkflow ? " is-serverless" : (upgradeState.showOnboarding ? " is-pulse" : ""))}
-                aria-label={isServerlessWorkflow ? "Serverless workflow — review persistence & scheduling" : "Choose workflow add-on"}
-                data-tooltip={isServerlessWorkflow ? "Serverless — review persistence & scheduling" : "Choose QStash or custom scheduler"}
-                aria-pressed={upgradeOpen}
-                onClick={() => setUpgradeOpen((open) => !open)}
-              >
-                <ArrowUpCircle size={14} />
-              </button>
-            )}
             {showDiscardDraft && (
               <button
                 type="button"
@@ -1347,58 +1367,6 @@ export default function WorkflowSurface() {
             <Link href={templateBanner.backHref} className="workspace-template-context-link">
               <span>{templateBanner.ready ? "Manage connection" : "Open Nango panel"}</span>
             </Link>
-          </div>
-        ) : null}
-
-        {/* One-time serverless upgrade onboarding — shows only when the operator
-            has workflows but none are serverless, and hasn't dismissed it. */}
-        {sandboxRow && showServerlessUpgrade && !upgradeOpen && upgradeState.showOnboarding ? (
-          <div className="workspace-template-context-banner dm-workflow-upgrade-nudge" role="note">
-            <div>
-              <strong>{upgradeState.headline}</strong>
-              <span style={{ display: "block", marginTop: 2 }}>{upgradeState.subheadline}</span>
-            </div>
-            <div className="dm-workflow-upgrade-nudge-actions">
-              {addOnsState.hasQstashWorkflow ? (
-                <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
-                  Review installed add-on
-                </button>
-              ) : (
-                <button type="button" className="dm-btn-primary-sm" onClick={() => setUpgradeOpen(true)}>
-                  Choose workflow add-on
-                </button>
-              )}
-              <button type="button" className="dm-btn-ghost" onClick={dismissUpgradeOnboarding}>Not now</button>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Workflow Canvas consumes installed add-ons only. Marketplace browsing
-            and custom install start in Workspace Settings -> Add-ons. */}
-        {sandboxRow && showServerlessUpgrade && upgradeOpen && serverlessState ? (
-          <div className="dm-workflow-upgrade-panel">
-            <div className="dm-workflow-upgrade-panel-head">
-              <span className="dm-api-action-card-eyebrow">{isServerlessWorkflow ? "Persistence & scheduling" : "Installed add-on"}</span>
-              <button type="button" className="dm-workflow-icon-btn" aria-label="Close upgrade panel" onClick={() => { setUpgradeOpen(false); dismissUpgradeOnboarding(); }}>
-                <X size={14} />
-              </button>
-            </div>
-            {isServerlessWorkflow ? (
-              <ApiRegistryCreationCockpit
-                state={serverlessState}
-                onAction={handleUpgradeAction}
-                disabled={saving || publishing || running}
-                eyebrow="Serverless workflow"
-              />
-            ) : (
-              <WorkflowAddOnChooser
-                addOn={addOnsState.qstashWorkflow}
-                disabled={saving || publishing || running}
-                onUseQstash={useInstalledQstashWorkflowAddOn}
-                onSetupQstash={openQstashSetup}
-                onSetupCustom={openCustomSchedulerSetup}
-              />
-            )}
           </div>
         ) : null}
 
