@@ -1515,6 +1515,60 @@ export default function WorkflowSurface() {
                     <span>{selectedNode?.label || selectedNode?.id}</span>
                     <em>{selectedNode?.type}</em>
                   </div>
+                  {selectedNode?.type === "data-trigger" ? (
+                    <div className="dm-orchestration-config dm-trigger-schedule-config">
+                      <span className="dm-field-label">Schedule</span>
+                      <p className="dm-cockpit-step-hint">
+                        Recurring serverless invocation via the installed scheduler
+                        ({sandboxRow?.schedulerRegistryId || UPSTASH_QSTASH_INTEGRATION_ID}). Saving binds the
+                        schedule and runs this same workflow through sandbox-run on the cron.
+                      </p>
+                      <label className="dm-marketplace-field">
+                        <span>Cadence</span>
+                        <select value={scheduleCadence} onChange={(e) => updateScheduleCadence(e.target.value)}>
+                          {SCHEDULE_CADENCE_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="dm-marketplace-field">
+                        <span>Run time (UTC)</span>
+                        <input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} />
+                      </label>
+                      {scheduleCadence === "weekly" ? (
+                        <label className="dm-marketplace-field">
+                          <span>Run day</span>
+                          <select value={scheduleWeekday} onChange={(e) => setScheduleWeekday(e.target.value)}>
+                            {SCHEDULE_WEEKDAY_OPTIONS.map((option) => (
+                              <option key={option.id} value={option.id}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                      {scheduleCadence === "monthly" ? (
+                        <label className="dm-marketplace-field">
+                          <span>Day of month</span>
+                          <input type="number" min="1" max="28" value={scheduleMonthDay} onChange={(e) => setScheduleMonthDay(e.target.value)} />
+                        </label>
+                      ) : null}
+                      <p className="dm-cockpit-step-hint">{describeSchedule({ cadence: scheduleCadence, time: scheduleTime, weekday: scheduleWeekday, monthDay: scheduleMonthDay })}</p>
+                      {sandboxRow?.scheduleId ? (
+                        <p className="dm-cockpit-step-hint">Bound schedule <code>{sandboxRow.scheduleId}</code>{sandboxRow?.schedulerCron ? ` · ${sandboxRow.schedulerCron}` : ""}.</p>
+                      ) : null}
+                      {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
+                      <button
+                        type="button"
+                        className="dm-btn-primary-sm"
+                        disabled={saving || !addOnsState.qstashWorkflow || !String(scheduleTime || "").trim()}
+                        onClick={submitQstashSchedule}
+                      >
+                        {saving ? "Saving schedule..." : sandboxRow?.scheduleId ? "Update schedule" : "Save schedule"}
+                      </button>
+                      {!addOnsState.qstashWorkflow ? (
+                        <p className="dm-cockpit-step-hint">Install + sync QStash in Workspace Add-ons first, then save the schedule here.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <OrchestrationNodeConfigPanel
                     node={selectedNode}
                     registryRow={registryRow}
