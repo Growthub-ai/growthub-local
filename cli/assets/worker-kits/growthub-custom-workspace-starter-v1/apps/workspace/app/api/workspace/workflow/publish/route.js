@@ -5,6 +5,7 @@ import { sandboxRunSourceId } from "@/lib/workspace-data-model";
 import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
 import { readTriggerScheduleBinding } from "@/lib/workspace-add-ons";
+import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
@@ -197,6 +198,42 @@ async function POST(request) {
     }
     const draftPassed = row.orchestrationDraftTestPassed === true || String(row.orchestrationDraftTestPassed ?? "") === "true";
     const serverlessSchedulerProofPassed = rowHasSuccessfulServerlessSchedulerProof(row, draft);
+    // Causality gate: a serverless-bound row may only publish when its WHOLE
+    // downstream graph is still serverless-ready (binding valid ≠ graph runnable).
+    // The graph can drift after install — a downstream node, API Registry row,
+    // credential ref, or input template may have changed. Block publish until the
+    // compatibility proof is clean; keep the published graph unchanged.
+    if (serverlessSchedulerProofPassed) {
+        const readiness = scanServerlessReadiness({
+            row,
+            workspaceConfig,
+            env: process.env,
+            phase: "bound",
+            expected: {
+                scheduleId: String(row?.scheduleId || "").trim(),
+                schedulerRegistryId: String(row?.schedulerRegistryId || "").trim(),
+                providerId: String(row?.schedulerProviderId || "").trim(),
+                productId: String(row?.schedulerProductId || "").trim(),
+            },
+        });
+        if (!readiness.ok) {
+            await appendOutcomeReceipt({
+                kind: READINESS_KIND,
+                lane: "server-authoritative",
+                outcomeStatus: "blocked",
+                objectRefs: [{ objectId, rowName: name, objectType: "sandbox-environment" }],
+                policyVerdict: { ok: false, violationCodes: readiness.deltaTags },
+                summary: `publish blocked: ${name} is no longer serverless-ready (${readiness.blockingNodes.length} blocking node(s)).`,
+                nextActions: readiness.blockingNodes.map((nbl) => nbl.helperAction).filter(Boolean),
+            });
+            return NextResponse.json({
+                ok: false,
+                code: "serverless_not_ready",
+                error: "publish blocked — the serverless-bound graph is not compatible; resolve the flagged nodes before publishing",
+                readiness,
+            }, { status: 409 });
+        }
+    }
     if (!draftPassed && !serverlessSchedulerProofPassed) {
         return publishBlocked(409, {
             ok: false,

@@ -62,6 +62,7 @@ import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistry
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
 import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState } from "@/lib/workspace-add-ons";
+import { scanServerlessReadiness, readinessFieldFlags } from "@/lib/serverless-readiness";
 
 // Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
 // same transform the rail/lens one-time dismisses use).
@@ -1220,6 +1221,27 @@ export default function WorkflowSurface() {
   const selectedSchedulerRegistryId = String(sandboxRow?.schedulerRegistryId || addOnsState.qstashWorkflow?.integrationId || schedulerRegistryRows[0]?.integrationId || "").trim();
   const selectedSchedulerRow = schedulerRegistryRows.find((entry) => entry.integrationId === selectedSchedulerRegistryId)?.row || addOnsState.qstashWorkflow || null;
   const isServerlessWorkflow = Boolean(serverlessState?.isServerless);
+
+  // Serverless-readiness — a PURE causation driver, the same shape/inputs as
+  // deriveSandboxServerlessState above (no fetch, no effect): the credential
+  // signal is the already-resolved `serverlessSignals.configuredEnvRefs` (slugs,
+  // never values). It runs once the input trigger is in (or moving into)
+  // Serverless Schedule, and feeds the ultrathin orange node border + the
+  // light-orange field/delta-tag fills (the color is the only guidance added).
+  const inputServerlessSelected = String(
+    (Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes : [])
+      .find((n) => n?.type === "input" || n?.id === "input" || n?.type === "data-trigger")?.config?.inputMode || "",
+  ).trim() === "serverless-schedule";
+  const serverlessReadiness = sandboxRow && (isServerlessWorkflow || inputServerlessSelected)
+    ? scanServerlessReadiness({
+        row: sandboxRow,
+        workspaceConfig: workspaceConfig || {},
+        configuredEnvRefs: serverlessSignals.configuredEnvRefs,
+        phase: isServerlessWorkflow && String(sandboxRow?.scheduleId || "").trim() ? "bound" : "pre-bind",
+        expected: { schedulerRegistryId: selectedSchedulerRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
+      })
+    : null;
+  const readinessFlags = serverlessReadiness ? readinessFieldFlags(serverlessReadiness) : {};
   const showServerlessUpgrade = String(sandboxRow?.adapter || "").trim() !== "local-intelligence";
 
   async function patchSandboxAndPersist(fields) {
@@ -1628,6 +1650,7 @@ export default function WorkflowSurface() {
                       nodeStatuses={runNodeStatuses}
                       onNodeStatusClick={(node) => { setSelectedNodeId(String(node?.id || "")); openTraceMode(); }}
                       statusLabel={isDraftMode ? "Draft" : "Live"}
+                      readinessFlags={readinessFlags}
                     />
                     {nextNodeId && (
                       <button type="button" className="dm-btn-outline dm-orchestration-canvas__add-node" onClick={addNextNode}>
@@ -1715,6 +1738,7 @@ export default function WorkflowSurface() {
                     activeTab={configTab}
                     onTabChange={setConfigTab}
                     onConfigChange={handleNodeConfigChange}
+                    readinessFlag={selectedNodeId ? readinessFlags[selectedNodeId] : null}
                     serverlessScheduleOptionAvailable={Boolean(addOnsState.qstashWorkflow || selectedSchedulerRegistryId || schedulerRegistryRows.length)}
                     serverlessScheduleAvailable={remoteScheduleVerified}
                     inputScheduleControls={selectedNode?.type === "input" && selectedNode?.config?.inputMode === "serverless-schedule" ? (

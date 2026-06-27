@@ -132,9 +132,11 @@ only non-secret evidence: `status`, `syncStatus`, `syncProof`, `lastTested`, `mi
 
 ### Phase 2 — QStash schedule as an installed capability (review §3) — **NEW**
 
-**2.1 Deterministic schedule identity.** Derive a stable id for idempotent create/update:
+**2.1 Deterministic schedule identity.** Derive a stable id for idempotent create/update.
+Canonical format is hyphen-delimited and slug-safe (`/^[A-Za-z0-9_-]+$/`) — QStash custom schedule
+ids reject `:`; this one format is shared across code/tests/docs/live:
 ```txt
-growthub:{workspaceId}:{sandboxObjectId}:{sandboxRowId}:{workflowVersion}
+growthub-{providerId}-{workspaceId}-{sandboxObjectId}-{sandboxRowId}-{workflowVersion}
 ```
 Add a pure helper `deriveQstashScheduleId(...)` to `lib/workspace-add-ons.js` (unit-tested for
 idempotency — same inputs → same id).
@@ -213,6 +215,55 @@ workspace config for that run.
 
 ---
 
+### Phase 6 — Serverless-readiness causality gate (downstream graph compatibility) — **NEW, closure layer**
+
+A scheduler install succeeding proves the **binding** (remote schedule exists, row owns
+`scheduleId`, trigger node is `serverless-scheduler`, signed destination/callback validate). It does
+**not** prove the **downstream graph** can run with no human/local agent state. `lib/serverless-readiness.js`
+produces that missing compatibility proof and is the causality gate before bind/publish/resume.
+
+**6.1 The scan (`scanServerlessReadiness`).** Pure + dependency-injected (graph + workspace config +
+`env` in, a structured verdict out). It scans the **runtime-live** graph field (runner precedence:
+`orchestrationGraph` else `orchestrationConfig`) and inspects every node reachable from the trigger:
+
+- **Input / trigger** — `bound` phase: `trigger==="serverless-scheduler"`, `config.schedule.scheduleId`
+  agrees with the row + expected schedule, `schedulerRegistryId`/provider/product match, enabled.
+- **API Registry call** — resolve the referenced row; require a concrete `integrationId`; require the
+  declared `authRef` to resolve through `server-secrets` (`readServerSecret`/`resolveRequiredEnv`),
+  never browser/client/local state; refuse any secret **value** persisted into config/graph/receipts;
+  bind endpoint/body `{{input.*}}` from the scheduled input contract.
+- **Transform / filter** — every referenced input field must exist under scheduled execution; a
+  manual-only field becomes a `scheduled-input-unmapped` warning (draft delta), not a silent schedule.
+- **Agent / local-process** — local-only adapters (`local-agent-host`, `local-intelligence`), local
+  filesystem/browser/desktop assumptions, and non-API-backed `ai-agent` nodes are **blocked** with a
+  `local-agent-upgrade-required` helper action (migrate to a Claude/OpenAI/API-Registry runtime).
+- **Tool-result** — must keep `writeLastResponse` so scheduled-run proof syncs back to the owning row.
+
+**6.2 The delta/helper contract.** A not-ready graph never fails vaguely: the verdict carries
+`status` (`ready`/`warning`/`blocked`), `blockingNodes[]` + `warnings[]` (each with canonical
+`deltaTags` and a `helperAction`), and a `deltaTags` union. Canonical tags: `serverless-schedule`,
+`runtime-locality`, `input-contract`, `api-registry-env`, `local-agent-upgrade-required`,
+`downstream-node-incompatible`, `missing-server-secret`, `scheduled-input-unmapped`,
+`published-graph-required`.
+
+**6.3 Gate wiring (block/pause until clean; published graph unchanged).**
+- **Install** (`runScheduleInstall`) runs the scan after row eligibility and **before any remote
+  QStash call** — a blocked verdict emits a `serverless-schedule-readiness` blocked receipt and
+  returns 422 (no remote schedule created, no row bound).
+- **Publish** (`workflow/publish`) re-scans a serverless-bound row in `bound` phase; a blocked verdict
+  returns `409 serverless_not_ready` and the live graph is left unchanged.
+- **Resume** (`schedule` route `action:"resume"`) re-runs the scan before re-enabling — a continuing
+  runtime contract, so drift (a changed node/row/cred/template) re-blocks.
+- **Read-only scan** (`action:"readiness"` → `runReadinessScan`) performs no remote call and no
+  mutation; the canvas calls it when the input trigger flips to Serverless Schedule.
+
+**6.4 Atomic UI flagging (`readinessFieldFlags`).** The verdict maps each alert to the **exact**
+config/sandbox-row field(s) to change. The canvas renders an **ultrathin orange border** on a flagged
+node and a **light-orange fill** on only those fields + the matching delta-tag shields — the color is
+the guidance, nothing else added.
+
+---
+
 ## 5. QA bar before merge (concretizes review §7 + PR checkboxes)
 
 **Unit**
@@ -223,6 +274,7 @@ workspace config for that run.
 - [ ] Callback route updates the correct schedule/workflow row and appends a receipt.
 - [ ] `page.jsx` emits the exact `envSignals` key the client consumes (`providerProductReadiness`) — regression test for the §0.1 bug.
 - [ ] Canvas bind is blocked unless the row has `verified` **and** `scheduleId`.
+- [ ] `scanServerlessReadiness` blocks install/publish/resume when a downstream node is not serverless-ready (missing server secret, unresolved API Registry row, local-only adapter/agent) and emits the canonical delta tags + helper actions; warnings (unmapped input) do not hard-block. Canonical `scheduleId` format is hyphen-delimited and slug-safe (`/^[A-Za-z0-9_-]+$/`).
 
 **Smoke**
 - [ ] Install/sync QStash product → API Registry row appears `verified`.
@@ -350,7 +402,7 @@ before flipping out of draft. Each item maps to an enforced invariant.
 
 1. [ ] real `QSTASH_TOKEN` + `QSTASH_CURRENT_SIGNING_KEY`/`QSTASH_NEXT_SIGNING_KEY` configured in the runtime
 2. [ ] product readiness sync verifies QStash **without leaking secrets** (response/row/receipt carry slugs + proof, never the token)
-3. [ ] schedule route creates a real deterministic `scheduleId` (`growthub:upstash:{ws}:{obj}:{row}:{ver}`)
+3. [ ] schedule route creates a real deterministic `scheduleId` (`growthub-upstash-{ws}-{obj}-{row}-{ver}`)
 4. [ ] owning workflow row persists `runLocality=serverless`, `scheduleId`, `schedulerProviderId/ProductId`, `schedulerCron`, destination/callback URLs
 5. [ ] live graph trigger node contains matching `schedule` metadata (`trigger=serverless-scheduler`)
 6. [ ] QStash fires the destination route on the cron
@@ -379,7 +431,7 @@ curl -sS -X POST "$BASE/api/workspace/add-ons/providers/upstash/products/sync" \
 curl -sS -X POST "$BASE/api/workspace/add-ons/upstash/schedule" \
   -H 'content-type: application/json' \
   -d "{\"productId\":\"upstash-qstash\",\"objectId\":\"$OBJ\",\"rowId\":\"$ROW\",\"cron\":\"* * * * *\"}" | jq
-#   → expect { ok:true, bound:true, scheduleId:"growthub:upstash:...", liveField, triggerNodeId }
+#   → expect { ok:true, bound:true, scheduleId:"growthub-upstash-...", liveField, triggerNodeId }
 
 # (4,5) confirm row + trigger truth
 curl -sS "$BASE/api/workspace" | jq '.dataModel.objects[] | select(.id=="'"$OBJ"'") .rows[] | select(.Name=="'"$ROW"'") | {runLocality,scheduleId,schedulerProviderId,schedulerCron,orchestrationConfig}'
@@ -413,3 +465,20 @@ runtime / public URL:
 ```
 
 Until this block is filled, this PR is *“production-shaped, offline-verified; live external smoke pending,”* not *“end-to-end loop closed.”*
+
+### Readiness causality gate — real-localhost probe (captured)
+
+`npm run smoke:serverless-readiness` stands up a real `127.0.0.1` HTTP server over a real
+file-backed `growthub.config.json` (real read/write) and drives the actual install/readiness route
+cores with positive **and** negative probes (the external QStash create is stubbed — that is the §9
+live gate above, which needs real `QSTASH_*` + public ingress):
+
+```txt
+PASS  POS readiness: clean graph -> ok/ready                       (status=200 readiness.status=ready)
+PASS  NEG readiness: local-agent node -> blocked                   (tags=["runtime-locality","local-agent-upgrade-required"])
+PASS  NEG install:   local-agent graph -> 422, NO remote QStash    (status=422, qcalls+=0  ← gate fires before any side-effect)
+PASS  POS install:   ready graph -> 200 bound + row persisted      (locality=serverless, scheduleId=growthub-upstash-ws-sandbox-workflows-ready-flow-v1)
+PASS  NEG readiness: missing server secret -> blocked              (tags=["api-registry-env","missing-server-secret"])
+PASS  scheduleId is canonical hyphen/slug-safe format              (/^[A-Za-z0-9_-]+$/)
+ALL PROBES PASSED (6/6)
+```

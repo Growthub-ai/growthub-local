@@ -75,7 +75,11 @@ test("deriveScheduleId is deterministic and idempotent", () => {
   const a = deriveScheduleId(args);
   const b = deriveScheduleId({ ...args });
   assert.equal(a, b);
-  assert.equal(a, "growthub:upstash:ws1:sandbox-workflows:my-flow:v2");
+  // Canonical scheduleId format is hyphen-delimited and slug-safe: QStash custom
+  // schedule ids only allow [A-Za-z0-9-_], so colons are invalid. One format
+  // across code/tests/docs/live (the live id in the canvas is hyphenated too).
+  assert.equal(a, "growthub-upstash-ws1-sandbox-workflows-my-flow-v2");
+  assert.match(a, /^[A-Za-z0-9_-]+$/);
 });
 
 test("deriveScheduleId differs when row identity differs", () => {
@@ -130,7 +134,7 @@ test("buildScheduleRequest puts token in Authorization header only, never in bod
     product: qstashProduct,
     region: "us-east-1",
     token: "SECRET_TOKEN_VALUE",
-    scheduleId: "growthub:upstash:ws:o:r:v1",
+    scheduleId: "growthub-upstash-ws-o-r-v1",
     cron: "0 * * * *",
     destinationUrl: "https://ws.example.com/api/workspace/workflows/upstash",
     callbackUrl: "https://ws.example.com/api/workspace/add-ons/upstash/callback",
@@ -141,8 +145,11 @@ test("buildScheduleRequest puts token in Authorization header only, never in bod
   assert.match(req.url, /\/v2\/schedules\//);
   assert.equal(req.headers.authorization, "Bearer SECRET_TOKEN_VALUE");
   assert.equal(req.headers["upstash-cron"], "0 * * * *");
-  assert.equal(req.headers["upstash-schedule-id"], "growthub:upstash:ws:o:r:v1");
-  assert.ok(req.headers["upstash-callback"].endsWith("/callback"));
+  assert.equal(req.headers["upstash-schedule-id"], "growthub-upstash-ws-o-r-v1");
+  // The callback carries the installed scheduleId as a query param so the signed
+  // callback can be matched to its owning row even if QStash omits it elsewhere.
+  assert.ok(req.headers["upstash-callback"].includes("/callback"));
+  assert.match(req.headers["upstash-callback"], /[?&]scheduleId=/);
   // QStash strips `Upstash-Forward-`, so we forward canonical x-growthub-* names.
   assert.equal(req.headers["upstash-forward-x-growthub-object-id"], "o");
   assert.equal(req.headers["upstash-forward-x-growthub-row-id"], "r");

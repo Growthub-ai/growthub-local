@@ -39,7 +39,8 @@ import {
 } from "@/lib/workspace-add-on-scheduler";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
-import { runScheduleInstall, runScheduleNow } from "@/lib/scheduler-orchestration";
+import { runScheduleInstall, runScheduleNow, runReadinessScan } from "@/lib/scheduler-orchestration";
+import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 const SCHEDULE_TIMEOUT_MS = 10000;
@@ -93,6 +94,15 @@ async function POST(request, context) {
   } catch {
     return jsonError("invalid json body", 400);
   }
+  if (clean(body.action) === "readiness") {
+    // Read-only causality scan — no remote call, no mutation. The canvas calls
+    // this when the input trigger flips to Serverless Schedule.
+    const { status, body: out } = await runReadinessScan(SCHEDULER_DEPS, {
+      providerId: params?.providerId,
+      body,
+    });
+    return NextResponse.json(out, { status });
+  }
   if (clean(body.action) === "run") {
     const { status, body: out } = await runScheduleNow(SCHEDULER_DEPS, {
       providerId: params?.providerId,
@@ -136,6 +146,33 @@ async function controlSchedule(request, providerIdParam, body = {}) {
   }
   const token = readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "";
   if (!token) return jsonError(`${product.label} runtime credentials are not connected`, 422, { productId: product.productId });
+
+  // Resume is a re-activation of a continuing runtime contract — re-run the
+  // readiness scan before re-enabling. A workflow compatible at install time can
+  // drift (a downstream node, API Registry row, credential ref, or template
+  // changed). Pause needs no scan; uninstall is the explicit downgrade path.
+  if (action === "resume") {
+    const readiness = scanServerlessReadiness({
+      row,
+      workspaceConfig: config,
+      env: process.env,
+      phase: "bound",
+      expected: { schedulerRegistryId: product.integrationId, providerId: provider.providerId, productId: product.productId, scheduleId },
+    });
+    if (!readiness.ok) {
+      await appendOutcomeReceipt({
+        kind: READINESS_KIND,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: "workspace-marketplace",
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: readiness.deltaTags },
+        summary: `${product.label} schedule ${scheduleId} resume blocked: graph drifted out of serverless readiness (${readiness.blockingNodes.length} blocking node(s)).`,
+        nextActions: readiness.blockingNodes.map((n) => n.helperAction).filter(Boolean),
+      });
+      return jsonError("workflow graph is not serverless-ready; resume blocked", 422, { providerId: provider.providerId, productId: product.productId, scheduleId, readiness });
+    }
+  }
 
   const region = clean(body.region || row.schedulerRegion || "us-east-1");
   let controlResult;

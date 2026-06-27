@@ -33,6 +33,7 @@ import {
   buildSchedulerCallbackUrls,
 } from "./workspace-add-on-scheduler.js";
 import { readEnvVar, resolveRequiredEnv } from "./server-secrets.js";
+import { scanServerlessReadiness, READINESS_KIND } from "./serverless-readiness.js";
 
 const SCHEDULE_TIMEOUT_MS = 10000;
 
@@ -101,6 +102,40 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
   const eligible = findEligibleSandboxRow(config, objectId, rowId);
   if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
   const targetRow = eligible.row;
+
+  // Causality gate: prove the WHOLE downstream graph is serverless-ready BEFORE
+  // any remote schedule is created or the row is bound. A scheduler install
+  // succeeding only proves the binding; it does not prove every downstream node
+  // can run with no human/local agent state and that all API Registry deps
+  // resolve through server-side env refs. If not clean, emit a draft readiness
+  // delta (blocked receipt) and refuse — the published graph stays unchanged and
+  // no remote infrastructure is created. (Caller may pass `force:true` only when
+  // an operator has acknowledged warnings; blocking nodes are never forceable.)
+  const readiness = scanServerlessReadiness({
+    row: targetRow,
+    workspaceConfig: config,
+    env,
+    phase: "pre-bind",
+    expected: {
+      schedulerRegistryId: product.integrationId,
+      providerId: provider.providerId,
+      productId: product.productId,
+      triggerInput: clean(body.triggerInput),
+    },
+  });
+  if (!readiness.ok) {
+    await appendReceipt({
+      kind: READINESS_KIND,
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: readiness.deltaTags },
+      summary: `${product.label} schedule bind blocked: ${readiness.blockingNodes.length} downstream node(s) are not serverless-ready (${readiness.blockingNodes.map((n) => n.nodeId || n.nodeType).join(", ")}).`,
+      nextActions: readiness.blockingNodes.map((n) => n.helperAction).filter(Boolean),
+    });
+    return err(422, "workflow graph is not serverless-ready", { providerId: provider.providerId, productId: product.productId, readiness });
+  }
 
   const region = clean(body.region || installedRow.region || "us-east-1");
   const cron = clean(body.cron || "0 * * * *");
@@ -374,4 +409,41 @@ async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBo
   return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, objectId: owner.objectId, rowId: owner.row.Name, synced: parsed.succeeded, persisted: true, receiptId: receipt?.receiptId } };
 }
 
-export { runScheduleInstall, runScheduleNow, runSchedulerCallback };
+/* ------------------------------------------------------------------ *
+ * Read-only readiness scan for a workflow row (no remote/no mutation).*
+ * Wired to the canvas: when the input trigger is switched to Serverless*
+ * Schedule, the UI calls this to surface compatibility deltas BEFORE   *
+ * the operator attempts a bind.                                        *
+ * ------------------------------------------------------------------ */
+async function runReadinessScan(deps, { providerId, body = {} } = {}) {
+  const { readConfig, env } = deps;
+  const provider = getMarketplaceProvider(clean(providerId));
+  if (!provider) return err(404, "unknown marketplace provider", { providerId });
+  const product = resolveSchedulerProduct(provider, clean(body.productId));
+  if (!product || !isSchedulerProduct(product)) return err(400, "provider has no serverless scheduler product", { providerId: provider.providerId });
+
+  const config = await readConfig();
+  const objectId = clean(body.objectId);
+  const rowId = clean(body.rowId || body.name);
+  if (!objectId || !rowId) return err(400, "objectId and rowId (workflow row) are required");
+  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
+
+  const phase = clean(eligible.row.runLocality) === "serverless" && clean(eligible.row.scheduleId) ? "bound" : "pre-bind";
+  const readiness = scanServerlessReadiness({
+    row: eligible.row,
+    workspaceConfig: config,
+    env,
+    phase,
+    expected: {
+      schedulerRegistryId: product.integrationId,
+      providerId: provider.providerId,
+      productId: product.productId,
+      scheduleId: clean(eligible.row.scheduleId),
+      triggerInput: clean(body.triggerInput || eligible.row.schedulerTriggerInput),
+    },
+  });
+  return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, objectId, rowId, phase, readiness } };
+}
+
+export { runScheduleInstall, runScheduleNow, runSchedulerCallback, runReadinessScan };

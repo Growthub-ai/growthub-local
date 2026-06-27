@@ -27,10 +27,10 @@ const GRAPH = JSON.stringify({
   version: 1, provider: "growthub-native",
   nodes: [
     { id: "input", type: "input", config: { inputMode: "manual" } },
-    { id: "api-request", type: "api-registry-call", config: {} },
+    { id: "api-request", type: "api-registry-call", config: { registryId: "demo-data-api", authRef: "DEMO_DATA", endpoint: "/v1/items" } },
     { id: "result", type: "tool-result", config: { writeLastResponse: false } },
   ],
-  edges: [],
+  edges: [{ from: "input", to: "api-request" }, { from: "api-request", to: "result" }],
 });
 
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -39,7 +39,10 @@ function baseConfig() {
   return {
     id: "ws",
     dataModel: { objects: [
-      { objectType: "api-registry", rows: [{ integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" }] },
+      { objectType: "api-registry", rows: [
+        { integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+        { integrationId: "demo-data-api", authRef: "DEMO_DATA", syncStatus: "verified", baseUrl: "https://api.demo.test" },
+      ] },
       { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
         { Name: "Flow A", runLocality: "local", adapter: "local-process", orchestrationConfig: GRAPH },
       ] },
@@ -51,7 +54,7 @@ function makeHarness(opts = {}) {
   let store = baseConfig();
   const calls = [];
   const receipts = [];
-  const env = { QSTASH_TOKEN: "tok", QSTASH_CURRENT_SIGNING_KEY: SIGNING_KEY, GROWTHUB_WORKSPACE_PUBLIC_URL: PUBLIC_URL };
+  const env = { QSTASH_TOKEN: "tok", QSTASH_CURRENT_SIGNING_KEY: SIGNING_KEY, GROWTHUB_WORKSPACE_PUBLIC_URL: PUBLIC_URL, DEMO_DATA_TOKEN: "dtok" };
   const resp = (status, text) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => "application/json" }, text: async () => text, json: async () => JSON.parse(text || "{}") });
   const deps = {
     fetchImpl: async (url, init = {}) => {
