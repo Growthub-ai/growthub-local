@@ -321,15 +321,76 @@ adapter — a second provider is added by registering one more adapter, with **n
 
 ---
 
-## 9. Live smoke — merge gate
+## 9. Live smoke — merge gate (external truth proof)
 
-This feature is external-scheduler synchronization, so the live run is a **merge gate**, not an optional residual. Before ready-for-review/merge, capture an operator receipt showing the full loop against a real Upstash project:
+Offline tests + `next build` prove the implementation **shape**. The live run proves the
+**real-world loop**, and is a hard merge gate. Capture this evidence and link it here / in the PR
+before flipping out of draft. Each item maps to an enforced invariant.
 
-- [ ] real `QSTASH_TOKEN` + `QSTASH_CURRENT_SIGNING_KEY`/`QSTASH_NEXT_SIGNING_KEY` configured, public `GROWTHUB_WORKSPACE_PUBLIC_URL` set
-- [ ] product sync → API Registry row `verified`
-- [ ] schedule route → real `scheduleId`; workflow row persisted serverless + schedule proof + trigger node synced
-- [ ] QStash fires the destination → `workspace-scheduled-run` receipt appended
-- [ ] signed callback/failure hits the workspace, signature verified live, last response written back to the **owning row**
-- [ ] uninstall deletes the real remote schedule and reverts the row to local + manual trigger
+### Acceptance checklist (all must pass)
 
-Until that is captured, frame this PR as *“production-shaped scheduler implementation with offline verification; live external smoke pending,”* not *“end-to-end loop closed.”*
+1. [ ] real `QSTASH_TOKEN` + `QSTASH_CURRENT_SIGNING_KEY`/`QSTASH_NEXT_SIGNING_KEY` configured in the runtime
+2. [ ] product readiness sync verifies QStash **without leaking secrets** (response/row/receipt carry slugs + proof, never the token)
+3. [ ] schedule route creates a real deterministic `scheduleId` (`growthub:upstash:{ws}:{obj}:{row}:{ver}`)
+4. [ ] owning workflow row persists `runLocality=serverless`, `scheduleId`, `schedulerProviderId/ProductId`, `schedulerCron`, destination/callback URLs
+5. [ ] live graph trigger node contains matching `schedule` metadata (`trigger=serverless-scheduler`)
+6. [ ] QStash fires the destination route on the cron
+7. [ ] destination **rejects** stale/missing schedule identities (401/400/409) and **accepts** the valid one (200)
+8. [ ] orchestration runner executes through the existing graph (`runOrchestrationGraphIfPresent`), not a second engine
+9. [ ] callback/failure callback verifies the signature against the correct endpoint (`sub` = that route)
+10. [ ] callback persists `lastScheduledRun*` proof to the **owning workflow row**
+11. [ ] receipt ledger shows: schedule install → scheduled run → callback sync → uninstall
+12. [ ] uninstall deletes the remote schedule **and** clears local row/trigger state, returning non-success if either side fails
+
+### Runbook
+
+> Prereq: deploy the kit to a runtime QStash can reach (or expose local via a tunnel) and set
+> `GROWTHUB_WORKSPACE_PUBLIC_URL` to that public origin; set the three `QSTASH_*` env vars;
+> `WORKSPACE_CONFIG_ALLOW_FS_WRITE=true` (or a writable persistence runtime).
+
+```bash
+BASE="$GROWTHUB_WORKSPACE_PUBLIC_URL"      # public origin QStash will call back to
+OBJ="sandbox-workflows"; ROW="Flow A"      # an existing workflow row with a growthub-native graph
+
+# (2) verify the product (live REST probe; secrets stay server-side)
+curl -sS -X POST "$BASE/api/workspace/add-ons/providers/upstash/products/sync" \
+  -H 'content-type: application/json' -d '{"productId":"upstash-qstash","region":"us-east-1"}' | jq
+
+# (3,4,5) install a per-workflow schedule + bind the row + sync the trigger node (ONE write)
+curl -sS -X POST "$BASE/api/workspace/add-ons/upstash/schedule" \
+  -H 'content-type: application/json' \
+  -d "{\"productId\":\"upstash-qstash\",\"objectId\":\"$OBJ\",\"rowId\":\"$ROW\",\"cron\":\"* * * * *\"}" | jq
+#   → expect { ok:true, bound:true, scheduleId:"growthub:upstash:...", liveField, triggerNodeId }
+
+# (4,5) confirm row + trigger truth
+curl -sS "$BASE/api/workspace" | jq '.dataModel.objects[] | select(.id=="'"$OBJ"'") .rows[] | select(.Name=="'"$ROW"'") | {runLocality,scheduleId,schedulerProviderId,schedulerCron,orchestrationConfig}'
+
+# (6,7,8,9,10) wait ~1 min for QStash to fire the destination + post the callback, then read proof
+curl -sS "$BASE/api/workspace" | jq '.dataModel.objects[] | select(.id=="'"$OBJ"'") .rows[] | select(.Name=="'"$ROW"'") | {lastScheduledRunStatus,lastScheduledRunSucceededAt,lastScheduledRunMessageId,lastScheduledRunBodyPreview}'
+
+# (7) negative: replay a stale/forged delivery to the destination → expect 401/409 (never 200)
+
+# (11) receipt ledger shows install → scheduled-run → callback sync
+curl -sS "$BASE/api/workspace/agent-outcomes" | jq '.receipts[] | select(.kind|test("schedule|scheduled-run")) | {kind,outcomeStatus,summary}'
+
+# (12) uninstall: deletes the remote schedule AND reverts the row; non-success if either fails
+curl -sS -X DELETE "$BASE/api/workspace/add-ons/upstash/schedule" \
+  -H 'content-type: application/json' -d "{\"productId\":\"upstash-qstash\",\"objectId\":\"$OBJ\",\"rowId\":\"$ROW\"}" | jq
+```
+
+### Evidence (paste captured output here before ready-for-review)
+
+```txt
+runtime / public URL:
+(2)  product sync verified — proof / no-secret:
+(3)  scheduleId:
+(4)  row runLocality/scheduleId/provider/product/cron:
+(5)  trigger node schedule metadata:
+(6)  QStash console: schedule fired at:
+(7)  destination: stale rejected (status) / valid accepted (200):
+(10) callback: lastScheduledRun* on owning row:
+(11) receipt ids: install / scheduled-run / callback / uninstall:
+(12) uninstall: remote deleted (HTTP) + row reverted + persisted:
+```
+
+Until this block is filled, this PR is *“production-shaped, offline-verified; live external smoke pending,”* not *“end-to-end loop closed.”*
