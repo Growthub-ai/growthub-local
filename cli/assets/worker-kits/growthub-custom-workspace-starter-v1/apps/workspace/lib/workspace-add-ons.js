@@ -6,6 +6,7 @@ const UPSTASH_PROVIDER_INTEGRATION_ID = "upstash-provider";
 const UPSTASH_REGION_OPTIONS = [
   { id: "us-east-1", label: "Washington, D.C., USA (East)", baseUrl: "https://qstash-us-east-1.upstash.io" },
   { id: "us-west-1", label: "San Francisco, USA (West)", baseUrl: "https://qstash-us-west-1.upstash.io" },
+  { id: "eu-central-1", label: "Frankfurt, EU (Central)", baseUrl: "https://qstash-eu-central-1.upstash.io" },
   { id: "eu-west-1", label: "Frankfurt, EU (Central)", baseUrl: "https://qstash-eu-west-1.upstash.io" },
 ];
 const UPSTASH_PRODUCTS = [
@@ -39,6 +40,15 @@ const UPSTASH_PRODUCTS = [
       paths: ["/v2/schedules", "/v2/dlq"],
       fallbackRegionBaseUrl: true,
     },
+    resourceDiscovery: {
+      auth: "provider-basic",
+      paths: ["/v2/qstash/users", "/v2/qstash/user"],
+      emptyLabel: "No QStash workflow resources returned for this account.",
+      createDividerLabel: "Or create a new QStash resource",
+      envFromResource: [
+        { envRef: "QSTASH_TOKEN", field: "token" },
+      ],
+    },
     regionOptions: UPSTASH_REGION_OPTIONS,
   },
   {
@@ -62,6 +72,16 @@ const UPSTASH_PRODUCTS = [
     requiredEnv: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
     optionalEnv: [],
     consoleUrl: "https://console.upstash.com/redis",
+    resourceDiscovery: {
+      auth: "provider-basic",
+      paths: ["/v2/redis/databases"],
+      emptyLabel: "No Redis databases returned for this account.",
+      createDividerLabel: "Or create a new Redis database",
+      envFromResource: [
+        { envRef: "UPSTASH_REDIS_REST_URL", fieldCandidates: ["rest_url", "restUrl", "endpoint", "url"], ensureHttps: true },
+        { envRef: "UPSTASH_REDIS_REST_TOKEN", fieldCandidates: ["rest_token", "restToken", "token"] },
+      ],
+    },
     probe: {
       baseUrlEnv: "UPSTASH_REDIS_REST_URL",
       tokenEnv: "UPSTASH_REDIS_REST_TOKEN",
@@ -90,6 +110,16 @@ const UPSTASH_PRODUCTS = [
     requiredEnv: ["UPSTASH_SEARCH_REST_URL", "UPSTASH_SEARCH_REST_TOKEN"],
     optionalEnv: [],
     consoleUrl: "https://console.upstash.com/search",
+    resourceDiscovery: {
+      auth: "provider-basic",
+      paths: ["/v2/search"],
+      emptyLabel: "No Search indexes returned for this account.",
+      createDividerLabel: "Or create a new Search index",
+      envFromResource: [
+        { envRef: "UPSTASH_SEARCH_REST_URL", fieldCandidates: ["rest_url", "restUrl", "endpoint", "url"], ensureHttps: true },
+        { envRef: "UPSTASH_SEARCH_REST_TOKEN", fieldCandidates: ["rest_token", "restToken", "token"] },
+      ],
+    },
     probe: {
       baseUrlEnv: "UPSTASH_SEARCH_REST_URL",
       tokenEnv: "UPSTASH_SEARCH_REST_TOKEN",
@@ -118,6 +148,16 @@ const UPSTASH_PRODUCTS = [
     requiredEnv: ["UPSTASH_VECTOR_REST_URL", "UPSTASH_VECTOR_REST_TOKEN"],
     optionalEnv: [],
     consoleUrl: "https://console.upstash.com/vector",
+    resourceDiscovery: {
+      auth: "provider-basic",
+      paths: ["/v2/vector/index"],
+      emptyLabel: "No Vector indexes returned for this account.",
+      createDividerLabel: "Or create a new Vector index",
+      envFromResource: [
+        { envRef: "UPSTASH_VECTOR_REST_URL", fieldCandidates: ["rest_url", "restUrl", "endpoint", "url"], ensureHttps: true },
+        { envRef: "UPSTASH_VECTOR_REST_TOKEN", fieldCandidates: ["rest_token", "restToken", "token"] },
+      ],
+    },
     probe: {
       baseUrlEnv: "UPSTASH_VECTOR_REST_URL",
       tokenEnv: "UPSTASH_VECTOR_REST_TOKEN",
@@ -144,7 +184,28 @@ const MARKETPLACE_PROVIDERS = [
       keyEnv: "UPSTASH_API_KEY",
       paths: ["/v2/redis/databases", "/v2/teams"],
     },
+    accountSetupFields: [
+      {
+        id: "email",
+        label: "Upstash account email",
+        type: "email",
+        autocomplete: "email",
+        required: true,
+        envRef: "UPSTASH_EMAIL",
+        credentialRole: "basicAuthUsername",
+      },
+      {
+        id: "apiKey",
+        label: "Management API key",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "UPSTASH_API_KEY",
+        credentialRole: "basicAuthPassword",
+      },
+    ],
     consoleUrl: "https://console.upstash.com/",
+    accountSetupUrl: "https://console.upstash.com/account/api",
     supportUrl: "https://upstash.com/support",
     websiteUrl: "https://upstash.com",
     docsUrl: "https://upstash.com/docs",
@@ -165,6 +226,12 @@ function apiRegistryColumns(existing = []) {
     "Name",
     "integrationId",
     "authRef",
+    "requiredEnv",
+    "optionalEnv",
+    "resolvedEnv",
+    "selectedResourceId",
+    "selectedResourceLabel",
+    "selectedResourceSource",
     "baseUrl",
     "endpoint",
     "method",
@@ -185,6 +252,11 @@ function apiRegistryColumns(existing = []) {
     "syncCheckedAt",
     "syncProof",
     "missingEnv",
+    "providerAccountRequiredEnv",
+    "providerAccountOptions",
+    "selectedProviderAccountId",
+    "selectedProviderAccountLabel",
+    "providerAccountSource",
     ...existing,
   ]));
 }
@@ -233,6 +305,7 @@ function scheduleTriggerConfig(meta) {
       productId: meta.schedulerProductId || "",
       destinationUrl: meta.destinationUrl || "",
       callbackUrl: meta.callbackUrl || "",
+      triggerInput: meta.triggerInput || "",
     },
     enabled: true,
   };
@@ -329,6 +402,7 @@ const SANDBOX_SCHEDULE_CLEAR_PATCH = {
   schedulerProductId: "",
   schedulerRegion: "",
   schedulerCron: "",
+  schedulerTriggerInput: "",
   schedulerDestination: "",
   schedulerCallbackUrl: "",
   schedulerFailureCallbackUrl: "",
@@ -375,6 +449,7 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
         schedulerProductId: params.schedulerProductId || "",
         destinationUrl: params.destinationUrl || "",
         callbackUrl: params.callbackUrl || "",
+        triggerInput: params.triggerInput || "",
       };
       const graphSync = syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear });
       const configSync = syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear });
@@ -394,6 +469,7 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
         schedulerRegion: params.region || "",
         scheduleId: triggerMeta.scheduleId,
         schedulerCron: triggerMeta.cron,
+        schedulerTriggerInput: triggerMeta.triggerInput,
         schedulerDestination: triggerMeta.destinationUrl,
         schedulerCallbackUrl: triggerMeta.callbackUrl,
         schedulerFailureCallbackUrl: params.failureCallbackUrl || "",
@@ -466,12 +542,18 @@ function findRegistryRowByIntegrationId(workspaceConfig, integrationId) {
   if (!targetId) return null;
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   for (const object of objects) {
-    if (object?.objectType !== "api-registry") continue;
+    if (!isApiRegistryObject(object)) continue;
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       if (String(row?.integrationId || "").trim() === targetId) return row;
     }
   }
   return null;
+}
+
+function isApiRegistryObject(object) {
+  const objectType = String(object?.objectType || "").trim();
+  const id = String(object?.id || object?.objectId || "").trim();
+  return objectType === "api-registry" || id === "api-registry";
 }
 
 /**
@@ -507,15 +589,20 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
   if (!provider) return null;
   const testedAt = syncResult?.testedAt || "";
   const isConnected = syncResult?.ok === true;
-  // A live account probe yields `verified`; a configured-but-unprovable account
-  // (e.g. third-party Upstash account with no Developer API) is `account-linked`,
-  // a distinct weaker state that must NOT be reported as verified.
+  // A live account probe yields `verified`. Do not treat a console-open event
+  // as a connected account; the UI must only show Manage after real provider
+  // account metadata or a verified probe is persisted.
   const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "setup-required");
   const status = syncResult?.status || (isConnected ? "connected" : "draft");
   return {
     Name: provider.label,
     integrationId: provider.integrationId,
     authRef: provider.authRef,
+    requiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
+      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
+      : "",
+    optionalEnv: "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
     baseUrl: provider.baseUrl,
     endpoint: provider.endpoint,
     method: provider.method,
@@ -536,6 +623,13 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+    providerAccountRequiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
+      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
+      : "",
+    providerAccountOptions: Array.isArray(syncResult?.providerAccountOptions) ? JSON.stringify(syncResult.providerAccountOptions) : "",
+    selectedProviderAccountId: syncResult?.selectedProviderAccountId || "",
+    selectedProviderAccountLabel: syncResult?.selectedProviderAccountLabel || "",
+    providerAccountSource: syncResult?.providerAccountSource || "",
   };
 }
 
@@ -580,14 +674,22 @@ function makeUpstashProductRow({ productId, region, plan = "free", syncResult = 
   const baseUrl = product.productId === "upstash-qstash" ? selectedRegion.baseUrl : syncResult?.baseUrl || "";
   const testedAt = syncResult?.testedAt || "";
   const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
   return {
     Name: product.label,
     integrationId: product.integrationId,
     authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || "",
+    selectedResourceSource: syncResult?.selectedResourceSource || "",
     baseUrl,
     endpoint: product.endpoint,
     method: product.method,
-    status: isConnected ? "connected" : "draft",
+    status,
     lastTested: testedAt || (authReady ? "env-ready" : ""),
     lastResponse: syncResult?.summary || (authReady
       ? `${product.label} env ref resolves in this runtime.`
@@ -602,7 +704,7 @@ function makeUpstashProductRow({ productId, region, plan = "free", syncResult = 
     region: product.productId === "upstash-qstash" ? selectedRegion.id : "",
     productId: product.productId,
     plan,
-    syncStatus: isConnected ? "verified" : "missing-env",
+    syncStatus,
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
@@ -620,7 +722,7 @@ function withUpstashProductRegistry(workspaceConfig, { productId = "upstash-qsta
   const productRow = makeUpstashProductRow({ productId: product.productId, region, plan, syncResult, authReady });
   let found = false;
   const nextObjects = objects.map((object) => {
-    if (object?.objectType !== "api-registry" || found) return object;
+    if (!isApiRegistryObject(object) || found) return object;
     found = true;
     const rows = Array.isArray(object.rows) ? object.rows : [];
     const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === product.integrationId);
@@ -664,7 +766,7 @@ function withMarketplaceProviderRegistry(workspaceConfig, { providerId, syncResu
   if (!provider || !providerRow) return workspaceConfig;
   let found = false;
   const nextObjects = objects.map((object) => {
-    if (object?.objectType !== "api-registry" || found) return object;
+    if (!isApiRegistryObject(object) || found) return object;
     found = true;
     const rows = Array.isArray(object.rows) ? object.rows : [];
     const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === provider.integrationId);
@@ -706,13 +808,33 @@ function findMarketplaceProviderRow(workspaceConfig, providerId) {
   if (!provider) return null;
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   for (const object of objects) {
-    if (object?.objectType !== "api-registry") continue;
+    if (!isApiRegistryObject(object)) continue;
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       if (String(row?.integrationId || "").trim() === provider.integrationId) {
-        const verified = String(row?.syncStatus || "").trim() === "verified"
+        const syncStatus = String(row?.syncStatus || "").trim();
+        const status = String(row?.status || "").trim();
+        const verified = syncStatus === "verified"
           && String(row?.syncProof || "").trim()
           && String(row?.syncCheckedAt || "").trim();
-        return { ...row, isVerifiedProvider: verified };
+        let accountOptions = [];
+        if (typeof row?.providerAccountOptions === "string" && row.providerAccountOptions.trim()) {
+          try {
+            const parsed = JSON.parse(row.providerAccountOptions);
+            if (Array.isArray(parsed)) accountOptions = parsed;
+          } catch {
+            accountOptions = [];
+          }
+        } else if (Array.isArray(row?.providerAccountOptions)) {
+          accountOptions = row.providerAccountOptions;
+        }
+        const linked = verified || accountOptions.length > 0;
+        const setupPending = syncStatus === "setup-pending" || status === "setup-pending";
+        return {
+          ...row,
+          isConnectedProvider: linked,
+          isSetupPendingProvider: setupPending,
+          isVerifiedProvider: verified,
+        };
       }
     }
   }
@@ -728,7 +850,7 @@ function findInstalledWorkspaceAddOns(workspaceConfig) {
   const products = listMarketplaceProducts();
   const rows = [];
   for (const object of objects) {
-    if (object?.objectType !== "api-registry") continue;
+    if (!isApiRegistryObject(object)) continue;
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       const product = products.find((item) => item.integrationId === String(row?.integrationId || "").trim());
       if (product) {
@@ -747,7 +869,7 @@ function findWorkspaceAddOnRows(workspaceConfig) {
   const products = listMarketplaceProducts();
   const rows = [];
   for (const object of objects) {
-    if (object?.objectType !== "api-registry") continue;
+    if (!isApiRegistryObject(object)) continue;
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       const product = products.find((item) => item.integrationId === String(row?.integrationId || "").trim());
       if (product) {
@@ -772,7 +894,7 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
-    hasUpstashProvider: Boolean(upstashProvider?.isVerifiedProvider),
+    hasUpstashProvider: Boolean(upstashProvider?.isConnectedProvider),
     installed,
     hasQstashWorkflow: Boolean(qstashWorkflow),
     qstashWorkflow,

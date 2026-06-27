@@ -7,7 +7,7 @@ import {
   withUpstashProductRegistry
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
-import { readEnvVar } from "@/lib/server-secrets";
+import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 
 const PROBE_TIMEOUT_MS = 8000;
 
@@ -88,12 +88,14 @@ async function probeUpstashProduct(productId, region) {
     return { ok: false, status: 400, error: "unknown Upstash product" };
   }
   const readiness = listUpstashProductReadiness(process.env).find((item) => item.productId === product.productId);
-  if (!readiness?.configured) {
+  const requiredEnv = resolveRequiredEnv(product.requiredEnv, process.env);
+  if (!readiness?.configured || !requiredEnv.ok) {
     return {
       ok: false,
       status: 422,
       error: `${product.label} provider credentials are not connected`,
-      missingEnv: readiness?.missingEnv || product.requiredEnv,
+      missingEnv: requiredEnv.missing.length ? requiredEnv.missing : (readiness?.missingEnv || product.requiredEnv),
+      resolvedEnv: requiredEnv.resolvedKeys,
       summary: `${product.label} provider credentials are not connected. Complete provider setup, then sync again.`,
     };
   }
@@ -104,12 +106,16 @@ async function probeUpstashProduct(productId, region) {
   }
   const regionOption = selectedQstashRegion(region);
   const configuredUrl = envValue(probe.baseUrlEnv) || (probe.fallbackRegionBaseUrl ? regionOption.baseUrl : "");
-  return probeJsonPaths({
+  const result = await probeJsonPaths({
     baseUrl: configuredUrl,
     token: envValue(probe.tokenEnv),
     paths: probe.paths,
     label: product.label,
   });
+  return {
+    ...result,
+    resolvedEnv: requiredEnv.resolvedKeys,
+  };
 }
 
 async function POST(request) {

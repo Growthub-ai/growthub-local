@@ -49,6 +49,12 @@ function resolveSchedulerProduct(provider, productId) {
   return (provider.products || []).find((p) => isSchedulerProduct(p)) || null;
 }
 
+function isApiRegistryObject(object) {
+  const objectType = String(object?.objectType || "").trim();
+  const id = String(object?.id || object?.objectId || "").trim();
+  return objectType === "api-registry" || id === "api-registry";
+}
+
 async function fetchWithTimeout(fetchImpl, url, init = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SCHEDULE_TIMEOUT_MS);
@@ -75,7 +81,7 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
   const config = await readConfig();
   // Capability gate: product must be installed + verified (read-probe) first.
   const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
-  const installedRow = objects.flatMap((o) => (o?.objectType === "api-registry" ? (o.rows || []) : [])).find((r) => clean(r?.integrationId) === product.integrationId);
+  const installedRow = objects.flatMap((o) => (isApiRegistryObject(o) ? (o.rows || []) : [])).find((r) => clean(r?.integrationId) === product.integrationId);
   if (!installedRow || clean(installedRow.syncStatus) !== "verified") {
     return err(409, `${product.label} must be installed and verified before scheduling`, { productId: product.productId, nextActions: [`Sync ${product.label} from Workspace Add-ons, then create the schedule.`] });
   }
@@ -101,7 +107,8 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
   const version = clean(body.version || targetRow.version || "v1");
   const workspaceId = clean(body.workspaceId || config?.id || "workspace");
 
-  const baseUrl = resolveWorkspacePublicUrl(env, requestOrigin);
+  const explicitPublicBaseUrl = clean(body.publicBaseUrl).replace(/\/+$/, "");
+  const baseUrl = explicitPublicBaseUrl || resolveWorkspacePublicUrl(env, requestOrigin);
   if (!baseUrl) return err(422, "could not resolve a public workspace URL for callbacks", { nextActions: ["Set GROWTHUB_WORKSPACE_PUBLIC_URL to the deployed workspace origin, then retry."] });
   const { destinationUrl, callbackUrl, failureCallbackUrl } = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
   const scheduleId = deriveScheduleId({ providerId: provider.providerId, workspaceId, objectId, rowId, version });
@@ -126,7 +133,7 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
   // Create the remote schedule.
   let scheduleRequest;
   try {
-    scheduleRequest = adapter.buildScheduleRequest({ product, region, token, scheduleId, cron, destinationUrl, callbackUrl, failureCallbackUrl, forward: { workspaceId, objectId, rowId, version, scheduleId }, env });
+    scheduleRequest = adapter.buildScheduleRequest({ product, region, token, scheduleId, cron, destinationUrl, callbackUrl, failureCallbackUrl, forward: { workspaceId, objectId, rowId, version, scheduleId, triggerInput: clean(body.triggerInput) }, env });
   } catch (e) {
     return err(400, e?.message || "could not build schedule request", { providerId: provider.providerId });
   }
@@ -145,7 +152,7 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
   // ONE write: bind the owning row + sync its live trigger node.
   const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(config, {
     objectId, rowId, schedulerRegistryId: product.integrationId, schedulerProviderId: provider.providerId, schedulerProductId: product.productId,
-    region, scheduleId: syncResult.scheduleId, cron, destinationUrl, callbackUrl, failureCallbackUrl, installedAt: now,
+    region, scheduleId: syncResult.scheduleId, cron, triggerInput: clean(body.triggerInput), destinationUrl, callbackUrl, failureCallbackUrl, installedAt: now,
   });
 
   const rollbackRemote = async () => {
@@ -177,9 +184,108 @@ async function runScheduleInstall(deps, { providerId, body = {}, requestOrigin =
 }
 
 /* ------------------------------------------------------------------ *
+ * Publish one manual scheduler run through the installed scheduler.  *
+ * ------------------------------------------------------------------ */
+async function runScheduleNow(deps, { providerId, body = {}, requestOrigin = "" } = {}) {
+  const { fetchImpl, readConfig, appendReceipt, env } = deps;
+
+  const provider = getMarketplaceProvider(clean(providerId));
+  if (!provider) return err(404, "unknown marketplace provider", { providerId });
+  const product = resolveSchedulerProduct(provider, clean(body.productId));
+  if (!product || !isSchedulerProduct(product)) return err(400, "provider has no serverless scheduler product", { providerId: provider.providerId });
+  const adapter = getSchedulerAdapter(product);
+
+  const config = await readConfig();
+  const objectId = clean(body.objectId);
+  const rowId = clean(body.rowId || body.name);
+  if (!objectId || !rowId) return err(400, "objectId and rowId (workflow row) are required");
+
+  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
+  const targetRow = eligible.row;
+  const scheduleId = clean(body.scheduleId || targetRow.scheduleId);
+  if (!scheduleId) return err(409, "workflow row has no installed scheduler", { providerId: provider.providerId, productId: product.productId, objectId, rowId });
+  if (clean(targetRow.runLocality) !== "serverless" || clean(targetRow.schedulerRegistryId) !== product.integrationId) {
+    return err(409, "workflow row is not bound to this scheduler", { providerId: provider.providerId, productId: product.productId, objectId, rowId, scheduleId });
+  }
+
+  const tokenEnv = product.probe?.tokenEnv || (product.requiredEnv || [])[0];
+  const token = readEnvVar(tokenEnv, env)?.value || "";
+  if (!token) return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: [tokenEnv].filter(Boolean) });
+
+  const region = clean(body.region || targetRow.schedulerRegion || "us-east-1");
+  const workspaceId = clean(body.workspaceId || config?.id || "workspace");
+  const version = clean(body.version || targetRow.version || "v1");
+  const baseUrl = resolveWorkspacePublicUrl(env, requestOrigin);
+  if (!baseUrl) return err(422, "could not resolve a public workspace URL for scheduler run", { nextActions: ["Set GROWTHUB_WORKSPACE_PUBLIC_URL to the deployed workspace origin, then retry."] });
+  const urls = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
+  const destinationUrl = clean(targetRow.schedulerDestination) || urls.destinationUrl;
+  const callbackUrl = clean(targetRow.schedulerCallbackUrl) || urls.callbackUrl;
+  const failureCallbackUrl = clean(targetRow.schedulerFailureCallbackUrl) || urls.failureCallbackUrl;
+
+  let runRequest;
+  try {
+    runRequest = adapter.buildRunRequest({
+      product,
+      region,
+      token,
+      scheduleId,
+      destinationUrl,
+      callbackUrl,
+      failureCallbackUrl,
+      forward: {
+        workspaceId,
+        objectId,
+        rowId,
+        version,
+        scheduleId,
+        triggerInput: clean(body.triggerInput || targetRow.schedulerTriggerInput),
+        runInputs: body.runInputs && typeof body.runInputs === "object" ? body.runInputs : undefined,
+      },
+      env,
+    });
+  } catch (e) {
+    return err(400, e?.message || "could not build scheduler run request", { providerId: provider.providerId });
+  }
+
+  let runResult;
+  try {
+    const response = await fetchWithTimeout(fetchImpl, runRequest.url, { method: runRequest.method, headers: runRequest.headers, body: runRequest.body });
+    runResult = adapter.parseRunResponse({ status: response.status, body: await response.text() });
+  } catch (e) {
+    runResult = { ok: false, messageId: "", proof: `scheduler run publish failed: ${e?.message || "network error"}` };
+  }
+  if (!runResult.ok) {
+    await appendReceipt({
+      kind: "workspace-add-on-schedule-run",
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: ["scheduler_run_publish_failed"] },
+      summary: runResult.proof || `${product.label} manual scheduler run failed to publish`,
+    });
+    return err(502, runResult.proof || "scheduler run publish failed", { providerId: provider.providerId, productId: product.productId, scheduleId });
+  }
+
+  const { receipt } = await appendReceipt({
+    kind: "workspace-add-on-schedule-run",
+    lane: "server-authoritative",
+    outcomeStatus: "published",
+    actor: "workspace-marketplace",
+    objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+    policyVerdict: { ok: true },
+    summary: `${product.label} manual scheduler run published for ${rowId}${runResult.messageId ? ` (msg ${runResult.messageId})` : ""}.`,
+    runId: runResult.messageId || undefined,
+  });
+
+  return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, objectId, rowId, scheduleId, messageId: runResult.messageId, receiptId: receipt?.receiptId } };
+}
+
+/* ------------------------------------------------------------------ *
  * Synchronize a signed scheduled-run callback to the OWNING row.     *
  * ------------------------------------------------------------------ */
-async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBody = "", signature = "", requestOrigin = "" } = {}) {
+async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBody = "", signature = "", requestOrigin = "", requestUrl = "", scheduleId = "" } = {}) {
   const { readConfig, writeConfig, appendReceipt, env } = deps;
   const now = (deps.now || (() => new Date().toISOString()))();
 
@@ -195,7 +301,7 @@ async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBo
 
   const baseUrl = resolveWorkspacePublicUrl(env, requestOrigin);
   const urls = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
-  const expectedUrl = kind === "failure" ? urls.failureCallbackUrl : urls.callbackUrl;
+  const expectedUrl = clean(requestUrl) || (kind === "failure" ? urls.failureCallbackUrl : urls.callbackUrl);
   const verdict = adapter.verifyCallback({ signature, rawBody, expectedUrl, env });
   if (!verdict.ok) {
     await block(`Rejected ${kind} callback for ${product.label}: ${verdict.reason}.`, `callback_signature_${verdict.reason}`);
@@ -203,6 +309,7 @@ async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBo
   }
 
   const parsed = adapter.parseCallback({ rawBody, kind });
+  if (!clean(parsed.scheduleId) && clean(scheduleId)) parsed.scheduleId = clean(scheduleId);
   if (!clean(parsed.scheduleId)) {
     await block(`${product.label} ${kind} callback ignored: no scheduleId.`, "callback_missing_schedule_id");
     return err(400, "callback is missing a scheduleId");
@@ -264,4 +371,4 @@ async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBo
   return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, objectId: owner.objectId, rowId: owner.row.Name, synced: parsed.succeeded, persisted: true, receiptId: receipt?.receiptId } };
 }
 
-export { runScheduleInstall, runSchedulerCallback };
+export { runScheduleInstall, runScheduleNow, runSchedulerCallback };

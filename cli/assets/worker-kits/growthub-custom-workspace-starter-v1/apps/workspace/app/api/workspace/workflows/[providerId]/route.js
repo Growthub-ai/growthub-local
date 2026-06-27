@@ -41,6 +41,9 @@ function safeJsonParse(text) {
 }
 
 function requestOrigin(request) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`;
   try {
     return new URL(request.url).origin;
   } catch {

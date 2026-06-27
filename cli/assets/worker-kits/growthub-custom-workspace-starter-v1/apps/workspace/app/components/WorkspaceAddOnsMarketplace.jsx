@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -24,9 +24,13 @@ import {
 function AddOnsSurface({
   onConnectProvider,
   onSyncProvider,
+  onSaveProviderCredentials,
   onSyncProduct,
   onCustomSetup,
   installing = false,
+  activeAction = "",
+  errorMessage = "",
+  setupMessage = "",
   envSignals = {},
   workspaceConfig = {},
   onClose,
@@ -35,23 +39,66 @@ function AddOnsSurface({
   const [activePath, setActivePath] = useState("plugins");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [installDrawer, setInstallDrawer] = useState("");
+  const [manageDrawer, setManageDrawer] = useState("");
   const [region, setRegion] = useState("us-east-1");
   const [plan, setPlan] = useState("free");
+  const [resourceOptions, setResourceOptions] = useState([]);
+  const [selectedResourceId, setSelectedResourceId] = useState("");
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceMessage, setResourceMessage] = useState("");
+  const [installMode, setInstallMode] = useState("existing");
+  const [providerCredentialValues, setProviderCredentialValues] = useState({});
   const persistenceAdapters = Array.isArray(envSignals.persistenceAdapters) ? envSignals.persistenceAdapters : [];
   const installed = useMemo(() => findInstalledWorkspaceAddOns(workspaceConfig), [workspaceConfig]);
   const selectedMarketplaceProvider = MARKETPLACE_PROVIDERS.find((provider) => provider.providerId === selectedProvider) || null;
+  const providerProductReadiness = envSignals.providerProductReadiness || {};
   const productReadiness = selectedMarketplaceProvider && envSignals.providerProductReadiness?.[selectedMarketplaceProvider.providerId]
     ? envSignals.providerProductReadiness[selectedMarketplaceProvider.providerId]
     : [];
   const providerRows = useMemo(() => Object.fromEntries(MARKETPLACE_PROVIDERS.map((provider) => [provider.providerId, findMarketplaceProviderRow(workspaceConfig, provider.providerId)])), [workspaceConfig]);
   const providerRow = selectedMarketplaceProvider ? providerRows[selectedMarketplaceProvider.providerId] : null;
-  const providerConnected = Boolean(providerRow?.isVerifiedProvider);
+  const providerConnected = Boolean(providerRow?.isConnectedProvider);
+  const providerVerified = Boolean(providerRow?.isVerifiedProvider);
+  const providerSetupOpen = Boolean(setupMessage);
+  const providerSetupFields = Array.isArray(selectedMarketplaceProvider?.accountSetupFields)
+    ? selectedMarketplaceProvider.accountSetupFields
+    : [];
+  const providerSetupNeedsCredentials = providerSetupOpen && providerSetupFields.length > 0;
+  const providerSetupReady = providerSetupFields.every((field) => {
+    if (!field?.required) return true;
+    return Boolean(String(providerCredentialValues[field.id] || "").trim());
+  });
   const allAddOnRows = useMemo(() => findWorkspaceAddOnRows(workspaceConfig), [workspaceConfig]);
-  const installedIds = new Set(installed.map((row) => String(row.productId || "").trim()));
   const providerProducts = selectedMarketplaceProvider?.products || [];
+  const installedProviderRows = selectedMarketplaceProvider
+    ? installed.filter((row) => providerProducts.some((product) => product.productId === row.productId || product.integrationId === row.integrationId))
+    : [];
+  const installedIds = new Set(installedProviderRows.map((row) => String(row.productId || "").trim()));
   const activeProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) : null;
+  const managedProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) : null;
+  const managedSavedRow = managedProduct
+    ? allAddOnRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+    : null;
+  const createResourceDividerLabel = activeProduct?.resourceDiscovery?.createDividerLabel || "";
+  const hasExistingResources = providerConnected && resourceOptions.length > 0;
+  const showCreateNewOptions = !hasExistingResources || installMode === "new";
   const activeReadiness = productReadiness.find((item) => item.productId === activeProduct?.productId) || null;
   const activeSavedRow = allAddOnRows.find((row) => row.productId === activeProduct?.productId) || null;
+  const productInstalled = Boolean(activeSavedRow?.isVerifiedAddOn);
+  const providerAccountLabel = providerRow?.Name || selectedMarketplaceProvider?.label || "Provider account";
+  const providerAccountRef = providerRow?.authRef || selectedMarketplaceProvider?.authRef || selectedMarketplaceProvider?.providerId || "";
+  const providerAccountOptions = useMemo(() => {
+    const raw = providerRow?.providerAccountOptions;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw !== "string" || !raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [providerRow]);
+  const selectedProviderAccountId = providerRow?.selectedProviderAccountId || providerAccountOptions[0]?.id || "";
   const regionOptions = activeProduct?.regionOptions || [];
   const selectedRegion = regionOptions.find((option) => option.id === region) || regionOptions[0] || { id: region, label: region };
   const readyAdapters = persistenceAdapters.filter((adapter) => adapter.configured);
@@ -61,6 +108,7 @@ function AddOnsSurface({
   const canSyncProduct = Boolean(onSyncProduct);
   const canConnectProvider = Boolean(onConnectProvider);
   const canSyncProvider = Boolean(onSyncProvider);
+  const canSaveProviderCredentials = Boolean(onSaveProviderCredentials);
   const inModal = shell === "modal";
   const details = [
     ["Installed products", String(installed.filter((row) => !selectedMarketplaceProvider || providerProducts.some((product) => product.productId === row.productId)).length)],
@@ -74,7 +122,29 @@ function AddOnsSurface({
 
   function syncProduct() {
     if (!selectedMarketplaceProvider || !activeProduct) return;
-    onSyncProduct?.({ providerId: selectedMarketplaceProvider.providerId, productId: activeProduct.productId, region, plan });
+    const selectedResource = resourceOptions.find((item) => item.id === selectedResourceId) || null;
+    onSyncProduct?.({
+      providerId: selectedMarketplaceProvider.providerId,
+      productId: activeProduct.productId,
+      region: installMode === "existing" ? selectedResource?.region || region : region,
+      plan: installMode === "existing" ? selectedResource?.type || plan : plan,
+      selectedResourceId: installMode === "existing" ? selectedResource?.id || "" : "",
+      selectedResourceLabel: installMode === "existing" ? selectedResource?.label || "" : "",
+      selectedResourceSource: installMode === "existing" ? selectedResource?.source || "" : "",
+    });
+  }
+
+  function syncManagedProduct() {
+    if (!selectedMarketplaceProvider || !managedProduct) return;
+    onSyncProduct?.({
+      providerId: selectedMarketplaceProvider.providerId,
+      productId: managedProduct.productId,
+      region: managedSavedRow?.region || region,
+      plan: managedSavedRow?.plan || plan,
+      selectedResourceId: managedSavedRow?.selectedResourceId || "",
+      selectedResourceLabel: managedSavedRow?.selectedResourceLabel || "",
+      selectedResourceSource: managedSavedRow?.selectedResourceSource || "",
+    });
   }
 
   function syncProvider() {
@@ -84,23 +154,40 @@ function AddOnsSurface({
 
   function connectProvider() {
     if (!selectedMarketplaceProvider) return;
-    onConnectProvider?.({ providerId: selectedMarketplaceProvider.providerId });
+    const setupUrl = selectedMarketplaceProvider.accountSetupUrl || selectedMarketplaceProvider.consoleUrl;
+    if (setupUrl) window.open(setupUrl, `${selectedMarketplaceProvider.providerId}-provider-setup`, "popup,width=1160,height=820");
+    onConnectProvider?.({ providerId: selectedMarketplaceProvider.providerId, openedExternally: Boolean(setupUrl) });
+  }
+
+  function saveProviderCredentials() {
+    if (!selectedMarketplaceProvider) return;
+    onSaveProviderCredentials?.({
+      providerId: selectedMarketplaceProvider.providerId,
+      credentials: providerCredentialValues,
+    });
+  }
+
+  function updateProviderCredential(fieldId, value) {
+    setProviderCredentialValues((current) => ({ ...current, [fieldId]: value }));
   }
 
   function openProvider(providerId) {
     setSelectedProvider(providerId);
     setInstallDrawer("");
+    setManageDrawer("");
   }
 
   function closeProvider() {
     setSelectedProvider("");
     setInstallDrawer("");
+    setManageDrawer("");
   }
 
   function switchPath(path) {
     setActivePath(path);
     setSelectedProvider("");
     setInstallDrawer("");
+    setManageDrawer("");
   }
 
   function ProductIcon({ product, provider = false }) {
@@ -111,6 +198,54 @@ function AddOnsSurface({
       </span>
     );
   }
+
+  useEffect(() => {
+    if (!selectedMarketplaceProvider || !activeProduct || !providerConnected) {
+      setResourceOptions([]);
+      setSelectedResourceId("");
+      setResourceMessage("");
+      return undefined;
+    }
+    let cancelled = false;
+    async function loadResources() {
+      setResourceLoading(true);
+      setResourceMessage("");
+      try {
+        const response = await fetch(`/api/workspace/add-ons/providers/${encodeURIComponent(selectedMarketplaceProvider.providerId)}/products/${encodeURIComponent(activeProduct.productId)}/resources`, {
+          method: "GET",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setResourceOptions([]);
+          setSelectedResourceId("");
+          setResourceMessage(payload?.error || "No provider resources were returned for this product.");
+          return;
+        }
+        const resources = Array.isArray(payload.resources) ? payload.resources : [];
+        setResourceOptions(resources);
+        setSelectedResourceId(resources[0]?.id || "");
+        setInstallMode(resources.length ? "existing" : "new");
+        setResourceMessage(resources.length ? "" : "No existing provider resources were returned for this product.");
+      } catch (error) {
+        if (!cancelled) {
+          setResourceOptions([]);
+          setSelectedResourceId("");
+          setResourceMessage(error?.message || "Provider resources could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setResourceLoading(false);
+      }
+    }
+    loadResources();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMarketplaceProvider?.providerId, activeProduct?.productId, providerConnected]);
+
+  useEffect(() => {
+    setProviderCredentialValues({});
+  }, [selectedMarketplaceProvider?.providerId]);
 
   return (
     <section className={inModal ? "dm-marketplace-modal" : "dm-marketplace-page"} role={inModal ? "dialog" : undefined} aria-modal={inModal ? "true" : undefined} aria-labelledby="workspace-marketplace-title">
@@ -147,7 +282,7 @@ function AddOnsSurface({
         {selectedMarketplaceProvider ? <div className="dm-marketplace-provider-actions">
           <button type="button" className="dm-btn-outline">Build in <PlugZap size={13} /></button>
           {selectedMarketplaceProvider.supportUrl ? <a className="dm-btn-outline" href={selectedMarketplaceProvider.supportUrl} target="_blank" rel="noreferrer">Support <Headphones size={13} /></a> : null}
-          {selectedMarketplaceProvider.consoleUrl ? <a className="dm-btn-primary-sm" href={selectedMarketplaceProvider.consoleUrl} target="_blank" rel="noreferrer">Open provider <ExternalLink size={13} /></a> : null}
+          {providerConnected && installed.some((row) => providerProducts.some((product) => product.productId === row.productId)) && selectedMarketplaceProvider.consoleUrl ? <a className="dm-btn-primary-sm" href={selectedMarketplaceProvider.consoleUrl} target="_blank" rel="noreferrer">Open provider <ExternalLink size={13} /></a> : null}
         </div> : null}
         {onClose ? (
           <button type="button" className="dm-workflow-icon-btn" aria-label="Close Workspace Marketplace" onClick={onClose}>
@@ -174,6 +309,7 @@ function AddOnsSurface({
           </div> : null}
         </aside>
         <div className="dm-marketplace-content">
+          {errorMessage ? <div className="dm-marketplace-error" role="alert">{errorMessage}</div> : null}
           {activePath === "plugins" ? (
             <>
               {!selectedProvider ? (
@@ -190,8 +326,10 @@ function AddOnsSurface({
                   <div className="dm-marketplace-provider-grid">
                     {MARKETPLACE_PROVIDERS.map((provider) => {
                       const row = providerRows[provider.providerId];
-                      const connected = Boolean(row?.isVerifiedProvider);
+                      const connected = Boolean(row?.isConnectedProvider);
+                      const verified = Boolean(row?.isVerifiedProvider);
                       const installedCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId)).length;
+                      const stateLabel = verified ? "Verified" : "Linked";
                       return (
                         <button type="button" className="dm-marketplace-provider-card" key={provider.providerId} onClick={() => openProvider(provider.providerId)}>
                           <span className="dm-marketplace-product-icon is-provider">
@@ -200,9 +338,9 @@ function AddOnsSurface({
                           <div>
                             <strong>{provider.label}</strong>
                             <p>{provider.providerProductsLabel || provider.description}</p>
-                            <small>{connected ? `${installedCount} installed product${installedCount === 1 ? "" : "s"}` : "Provider setup required"}</small>
+                            <small>{connected ? `${stateLabel} · ${installedCount} installed product${installedCount === 1 ? "" : "s"}` : "Provider setup required"}</small>
                           </div>
-                          <span className="dm-btn-outline">{connected ? "Open" : "Install"}</span>
+                          <span className="dm-btn-outline">{connected ? "Manage" : "Install"}</span>
                         </button>
                       );
                     })}
@@ -227,33 +365,49 @@ function AddOnsSurface({
                           <span>Provider account</span>
                           <code>{selectedMarketplaceProvider?.authRef || selectedMarketplaceProvider?.providerId || "provider-auth"}</code>
                         </div>
-                        <p className="dm-cockpit-step-hint">Log in connects the provider account for this workspace. Sync Provider stores the verified provider account reference and unlocks product setup. Cluster, region, and plan choices happen on each product install.</p>
+                        <p className="dm-cockpit-step-hint">Connect the provider account for this workspace. Product setup unlocks after the provider account is available to the workspace.</p>
+                        {setupMessage ? <p className="dm-cockpit-step-hint">{setupMessage}</p> : null}
+                        {providerSetupNeedsCredentials ? (
+                          <div className="dm-marketplace-credential-grid">
+                            {providerSetupFields.map((field) => (
+                              <label className="dm-marketplace-field" key={field.id}>
+                                <span>{field.label || field.id}</span>
+                                <input
+                                  value={providerCredentialValues[field.id] || ""}
+                                  onChange={(event) => updateProviderCredential(field.id, event.target.value)}
+                                  type={field.type || "text"}
+                                  autoComplete={field.autocomplete || "off"}
+                                  placeholder={field.placeholder || ""}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="dm-marketplace-provision-steps">
-                        <div className="is-active">Install provider</div>
-                        <div>Account setup</div>
-                        <div>Environment refs</div>
+                        <div className="is-active dm-marketplace-step-action-row">
+                          <span>Install provider</span>
+                          <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
+                            {activeAction === "connect" ? "Opening..." : `Set up ${selectedMarketplaceProvider?.label || "provider"}`}
+                          </button>
+                        </div>
+                        {providerSetupNeedsCredentials ? <div className="dm-marketplace-step-action-row">
+                          <span>Account setup</span>
+                          <button type="button" className="dm-btn-primary-sm" disabled={installing || !canSaveProviderCredentials || !providerSetupReady} onClick={saveProviderCredentials}>
+                            {activeAction === "save-provider" ? "Verifying..." : "Verify and save account"}
+                          </button>
+                        </div> : <div>Account setup</div>}
+                        <div>{activeAction === "sync-provider" ? "Syncing account" : "Account sync"}</div>
                         <div>Product marketplace</div>
                       </div>
-                      <footer className="dm-marketplace-actions">
-                        {selectedMarketplaceProvider?.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={selectedMarketplaceProvider.consoleUrl} target="_blank" rel="noreferrer">
-                          Open provider <ExternalLink size={13} />
-                        </a> : null}
-                        <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
-                          {installing ? "Opening..." : `Log in with ${selectedMarketplaceProvider?.label || "provider"}`}
-                        </button>
-                        <button type="button" className="dm-btn-outline" disabled={installing || !canSyncProvider} onClick={syncProvider}>
-                          {installing ? "Syncing..." : "Sync Provider"}
-                        </button>
-                      </footer>
                     </section>
                   ) : null}
 
-                  {providerConnected && installed.length ? (
+                  {providerConnected && installedProviderRows.length ? (
                     <section className="dm-marketplace-products" aria-label="Installed Products">
                       <h3>Installed Products</h3>
                       <div className="dm-marketplace-product-grid">
-                        {installed.map((row) => {
+                        {installedProviderRows.map((row) => {
                           const product = getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.productId) || getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.integrationId);
                           if (!product) return null;
                           return (
@@ -261,10 +415,13 @@ function AddOnsSurface({
                             <ProductIcon product={product} />
                             <div>
                               <strong>{row.Name || product.label}</strong>
-                              <p>{row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
+                              <p>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
                             </div>
                             <div className="dm-marketplace-card-actions">
-                              <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Settings for ${product.label}`} onClick={() => setInstallDrawer(product.productId)}>
+                              <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Manage ${product.label}`} onClick={() => {
+                                setInstallDrawer("");
+                                setManageDrawer(product.productId);
+                              }}>
                                 <Settings size={14} />
                               </button>
                               <span className="dm-db-status ok"><span />Installed</span>
@@ -288,10 +445,22 @@ function AddOnsSurface({
                               <strong>{product.label}</strong>
                               <p>{product.subtitle}</p>
                               <small>{product.plans}</small>
-                              <small>{readiness?.configured ? "Ready to sync" : "Configure account"}</small>
+                              <small>{readiness?.configured ? "Product refs ready" : "Set up product refs"}</small>
                             </div>
-                            <button type="button" className="dm-btn-outline" onClick={() => setInstallDrawer(product.productId)}>
-                              {isInstalled ? "Resync" : "Install"}
+                            <button
+                              type="button"
+                              className="dm-btn-outline"
+                              onClick={() => {
+                                if (isInstalled) {
+                                  setInstallDrawer("");
+                                  setManageDrawer(product.productId);
+                                } else {
+                                  setManageDrawer("");
+                                  setInstallDrawer(product.productId);
+                                }
+                              }}
+                            >
+                              {isInstalled ? "Manage" : "Install"}
                             </button>
                           </article>
                         );
@@ -301,7 +470,7 @@ function AddOnsSurface({
 
                   <section className="dm-marketplace-overview" aria-label="Overview">
                     <h3>Overview</h3>
-                    <p>{providerConnected ? "Install provider products into workflow, data, and retrieval surfaces through the shared API Registry." : "Install the provider account first. Product installation stays locked until the account and managed environment references are verified."}</p>
+                    <p>{providerConnected ? "Install provider products into workflow, data, and retrieval surfaces through the shared API Registry." : "Install the provider account first. Product installation stays locked until the account is linked."}</p>
                   </section>
                 </div>
                 <aside className="dm-marketplace-details" aria-label="Provider details">
@@ -424,6 +593,52 @@ function AddOnsSurface({
         </div>
       </div>
 
+      {manageDrawer && managedProduct ? (
+        <div className="dm-marketplace-install-drawer" role="dialog" aria-modal="true" aria-label={`Manage ${managedProduct.label}`}>
+          <section className="dm-marketplace-install-card">
+            <header className="dm-marketplace-drawer-head">
+              <h3>Manage Product</h3>
+              <button type="button" className="dm-workflow-icon-btn" aria-label="Close manage drawer" onClick={() => setManageDrawer("")}>
+                <X size={14} />
+              </button>
+            </header>
+            <div className="dm-marketplace-product-head">
+              <ProductIcon product={managedProduct} />
+              <div>
+                <h3>{managedSavedRow?.Name || managedProduct.label}</h3>
+                <p>{managedProduct.subtitle || "Installed workspace add-on"}</p>
+              </div>
+            </div>
+            <div className="dm-marketplace-config">
+              <p className="dm-marketplace-section-title"><Server size={14} /> Installed Binding</p>
+              <div className="dm-marketplace-config-summary">
+                <div><span>Status</span><code>{managedSavedRow?.isVerifiedAddOn ? "verified" : managedSavedRow?.status || "setup required"}</code></div>
+                <div><span>Provider</span><code>{selectedMarketplaceProvider?.label || "Provider"}</code></div>
+                <div><span>Product</span><code>{managedProduct.shortLabel || managedProduct.label}</code></div>
+                <div><span>Resource</span><code>{managedSavedRow?.selectedResourceLabel || managedSavedRow?.selectedResourceId || "No existing resource binding stored"}</code></div>
+                <div><span>Resource source</span><code>{managedSavedRow?.selectedResourceSource || "not stored"}</code></div>
+                <div><span>Region</span><code>{managedSavedRow?.region || "not stored"}</code></div>
+                <div><span>Plan</span><code>{managedSavedRow?.plan || "not stored"}</code></div>
+                <div><span>Auth ref</span><code>{managedSavedRow?.authRef || managedProduct.authRef}</code></div>
+                <div><span>Resolved env</span><code>{managedSavedRow?.resolvedEnv || "not resolved"}</code></div>
+                <div><span>Last sync</span><code>{managedSavedRow?.syncCheckedAt || managedSavedRow?.lastTested || "not synced"}</code></div>
+                <div><span>Proof</span><code>{managedSavedRow?.syncProof || "no provider proof stored"}</code></div>
+              </div>
+              <p className="dm-cockpit-step-hint">This installed product row is the workspace binding used by workflow canvas upgrades and activation.</p>
+            </div>
+            <footer className="dm-marketplace-actions">
+              {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
+                Open provider <ExternalLink size={13} />
+              </a> : null}
+              <button type="button" className="dm-btn-outline" onClick={() => setManageDrawer("")}>Close</button>
+              <button type="button" className="dm-btn-primary-sm" disabled={installing || !providerConnected || !canSyncProduct || !managedSavedRow} onClick={syncManagedProduct}>
+                {activeAction === "sync-product" ? "Resyncing..." : "Resync product"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
       {installDrawer && activeProduct ? (
         <div className="dm-marketplace-install-drawer" role="dialog" aria-modal="true" aria-label={`Install ${activeProduct.label}`}>
           <section className="dm-marketplace-install-card">
@@ -460,21 +675,76 @@ function AddOnsSurface({
                 <span>Prod Pack (+$200 per month)</span>
               </label>
               <p className="dm-cockpit-step-hint">Recommended for production. Configure paid plan changes in the provider account.</p>
-              <div className="dm-marketplace-plan-list" aria-label="Installation plans">
-                {[
-                  ["free", "Free", "Perfect for prototypes and hobby projects."],
-                  ["payg", "Pay As You Go", "For use cases with bursting traffic."],
-                  ["fixed-1m", "Fixed", "For businesses with consistent high-capacity loads."],
-                ].map(([id, label, desc]) => (
-                  <button key={id} type="button" className={plan === id ? "dm-marketplace-plan is-selected" : "dm-marketplace-plan"} onClick={() => setPlan(id)}>
-                    <span><b>{label}</b> {desc}</span>
-                    {plan === id ? <CheckCircle2 size={15} /> : <span className="dm-marketplace-radio" />}
-                  </button>
-                ))}
-              </div>
+              {providerConnected ? (
+                providerAccountOptions.length ? (
+                  <label className="dm-marketplace-field">
+                    <span>Connected {selectedMarketplaceProvider?.label || "provider"} account</span>
+                    <select value={selectedProviderAccountId} onChange={() => {}}>
+                      {providerAccountOptions.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.label}{account.role ? ` - ${account.role}` : ""}{account.plan ? ` - ${account.plan}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="dm-marketplace-account-unavailable">
+                    <strong>Provider account details unavailable</strong>
+                    <span>Account lookup needs this provider's account API credentials in this runtime. Product install still validates the selected product server-side.</span>
+                  </div>
+                )
+              ) : null}
+              {providerConnected ? (
+                <div className="dm-marketplace-install-choice">
+                  <div>
+                    <strong>Use existing provider resource</strong>
+                    <span>Select an existing account resource and bind it to this workspace.</span>
+                  </div>
+                  <label className="dm-marketplace-field">
+                    <span>{resourceLoading ? "Loading existing resources" : "Existing provider resource"}</span>
+                    <select value={selectedResourceId} onChange={(event) => {
+                      setSelectedResourceId(event.target.value);
+                      setInstallMode("existing");
+                    }} disabled={resourceLoading || !resourceOptions.length}>
+                      {resourceOptions.length ? resourceOptions.map((resource) => (
+                        <option key={resource.id} value={resource.id}>
+                          {resource.label}{resource.region ? ` - ${resource.region}` : ""}
+                        </option>
+                      )) : <option value="">No existing resource found</option>}
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+              {providerConnected && resourceMessage ? <p className="dm-cockpit-step-hint">{resourceMessage}</p> : null}
+              {providerConnected && createResourceDividerLabel ? (
+                <div className="dm-marketplace-resource-divider" role="separator" aria-label={createResourceDividerLabel}>
+                  <span>{createResourceDividerLabel}</span>
+                </div>
+              ) : null}
+              {showCreateNewOptions ? (
+                <div className="dm-marketplace-plan-list" aria-label="New resource plan">
+                  {[
+                    ["free", "Free", "Perfect for prototypes and hobby projects."],
+                    ["payg", "Pay As You Go", "For use cases with bursting traffic."],
+                    ["fixed-1m", "Fixed", "For businesses with consistent high-capacity loads."],
+                  ].map(([id, label, desc]) => (
+                    <button key={id} type="button" className={plan === id ? "dm-marketplace-plan is-selected" : "dm-marketplace-plan"} onClick={() => {
+                      setInstallMode("new");
+                      setPlan(id);
+                    }}>
+                      <span><b>{label}</b> {desc}</span>
+                      {plan === id ? <CheckCircle2 size={15} /> : <span className="dm-marketplace-radio" />}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button type="button" className="dm-btn-outline dm-marketplace-create-new-btn" onClick={() => setInstallMode("new")}>
+                  Configure new resource
+                </button>
+              )}
               <div className={activeReadiness?.configured ? "dm-marketplace-env is-ready" : "dm-marketplace-env is-setup"}>
-                <span>{activeReadiness?.configured ? "Provider connection ready" : "Provider setup required"}</span>
-                <code>{regionOptions.length ? `${selectedRegion.label} / ${plan}` : `${activeProduct.shortLabel || activeProduct.label} / ${plan}`}</code>
+                <span>{activeSavedRow?.isVerifiedAddOn ? "Product installed" : providerConnected ? "Ready to install product" : "Provider setup required"}</span>
+                <code>{installMode === "existing" && selectedResourceId ? (resourceOptions.find((item) => item.id === selectedResourceId)?.label || selectedResourceId) : regionOptions.length ? `${selectedRegion.label} / ${plan}` : `${activeProduct.shortLabel || activeProduct.label} / ${plan}`}</code>
               </div>
               {activeSavedRow ? (
                 <div className="dm-marketplace-config-summary">
@@ -486,25 +756,30 @@ function AddOnsSurface({
                 </div>
               ) : null}
               <div className="dm-cockpit-step-hint">
-                Log in from the provider setup, then Sync to write the verified API Registry row.
+                {providerConnected
+                  ? "Install calls the product sync route, validates the product credentials server-side, and writes the product API Registry row into workspace config."
+                    : "Set up the provider account first. Return here after provider setup, then Sync provider to unlock product install."}
               </div>
             </div>
             <div className="dm-marketplace-provision-steps">
-              <div className="is-active">Install</div>
-              <div>Setup</div>
-              <div>Login / Auth</div>
-              <div>Sync</div>
+              <div className={`${providerConnected ? "is-complete" : "is-active"} dm-marketplace-step-action-row`}>
+                <span>Provider account</span>
+                {!providerConnected ? (
+                  <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
+                    {activeAction === "connect" ? "Opening..." : "Set up provider account"}
+                  </button>
+                ) : null}
+              </div>
+              <div className={productInstalled ? "is-complete" : providerConnected ? "is-active" : ""}>Product install</div>
             </div>
             <footer className="dm-marketplace-actions">
-              {activeProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={activeProduct.consoleUrl} target="_blank" rel="noreferrer">
+              {activeSavedRow?.isVerifiedAddOn && activeProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={activeProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
               </a> : null}
               <button type="button" className="dm-btn-outline" onClick={() => setInstallDrawer("")}>Cancel</button>
-              {activeReadiness?.configured ? (
-                <button type="button" className="dm-btn-primary-sm" disabled={installing || !canSyncProduct} onClick={syncProduct}>
-                  {installing ? "Syncing..." : activeSavedRow ? "Resync" : "Sync"}
-                </button>
-              ) : null}
+              <button type="button" className="dm-btn-primary-sm" disabled={installing || !providerConnected || !canSyncProduct} onClick={syncProduct}>
+                {activeAction === "sync-product" ? "Installing..." : activeSavedRow ? "Resync product" : "Install product"}
+              </button>
             </footer>
           </section>
         </div>

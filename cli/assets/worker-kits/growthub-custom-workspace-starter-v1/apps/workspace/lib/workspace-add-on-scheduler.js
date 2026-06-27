@@ -51,7 +51,7 @@ function slugSegment(value) {
  * Same (providerId, workspaceId, objectId, rowId, version) → same id, so a
  * create/update on the provider is an upsert, never a duplicate schedule.
  *
- *   growthub:{providerId}:{workspaceId}:{objectId}:{rowId}:{version}
+ *   growthub-{providerId}-{workspaceId}-{objectId}-{rowId}-{version}
  */
 function deriveScheduleId({ providerId, workspaceId, objectId, rowId, version } = {}) {
   return [
@@ -61,7 +61,7 @@ function deriveScheduleId({ providerId, workspaceId, objectId, rowId, version } 
     slugSegment(objectId),
     slugSegment(rowId),
     slugSegment(version || "v1"),
-  ].join(":");
+  ].join("-");
 }
 
 /**
@@ -125,6 +125,20 @@ function safeJsonParse(text) {
     return JSON.parse(text);
   } catch {
     return null;
+  }
+}
+
+function withScheduleIdQuery(url, scheduleId) {
+  const raw = clean(url);
+  const id = clean(scheduleId);
+  if (!raw || !id) return raw;
+  try {
+    const parsed = new URL(raw);
+    parsed.searchParams.set("scheduleId", id);
+    return parsed.toString();
+  } catch {
+    const joiner = raw.includes("?") ? "&" : "?";
+    return `${raw}${joiner}scheduleId=${encodeURIComponent(id)}`;
   }
 }
 
@@ -251,8 +265,10 @@ const upstashQstashAdapter = {
       "upstash-cron": clean(cron),
       "upstash-schedule-id": clean(scheduleId),
     };
-    if (clean(callbackUrl)) headers["upstash-callback"] = clean(callbackUrl);
-    if (clean(failureCallbackUrl)) headers["upstash-failure-callback"] = clean(failureCallbackUrl);
+    const callbackWithSchedule = withScheduleIdQuery(callbackUrl, scheduleId);
+    const failureWithSchedule = withScheduleIdQuery(failureCallbackUrl, scheduleId);
+    if (clean(callbackWithSchedule)) headers["upstash-callback"] = clean(callbackWithSchedule);
+    if (clean(failureWithSchedule)) headers["upstash-failure-callback"] = clean(failureWithSchedule);
     // QStash STRIPS the `Upstash-Forward-` prefix before delivering to the
     // destination, so we forward canonical `x-growthub-*` names that the
     // destination route reads back verbatim (e.g. `x-growthub-object-id`).
@@ -267,7 +283,7 @@ const upstashQstashAdapter = {
       if (clean(value)) headers[`upstash-forward-${name}`] = clean(value);
     }
     return {
-      url: `${base}/v2/schedules/${encodeURIComponent(clean(destinationUrl))}`,
+      url: `${base}/v2/schedules/${clean(destinationUrl)}`,
       method: "POST",
       headers,
       // Governed, non-secret run pointer. The destination resolves the row from
@@ -275,6 +291,7 @@ const upstashQstashAdapter = {
       body: JSON.stringify({
         kind: "growthub-scheduled-run-v1",
         scheduleId: clean(scheduleId),
+        runInputs: safeJsonParse(forward.triggerInput) || undefined,
         ...forward,
       }),
     };
@@ -288,6 +305,54 @@ const upstashQstashAdapter = {
       url: `${base}/v2/schedules/${encodeURIComponent(clean(scheduleId))}`,
       method: "DELETE",
       headers: { authorization: `Bearer ${clean(token)}` },
+    };
+  },
+  buildRunRequest({ product, region, token, scheduleId, destinationUrl, callbackUrl, failureCallbackUrl, forward = {}, env = process.env } = {}) {
+    const base = qstashBaseUrl({ product, region, env });
+    if (!base) throw new Error("could not resolve QStash base URL");
+    if (!clean(token)) throw new Error("QSTASH_TOKEN is required to run the scheduler");
+    if (!clean(scheduleId)) throw new Error("scheduleId is required");
+    if (!clean(destinationUrl)) throw new Error("destination URL is required");
+    const headers = {
+      authorization: `Bearer ${clean(token)}`,
+      "content-type": "application/json",
+      // Manual proof runs must not create retry storms while an operator is
+      // actively validating the workflow path.
+      "upstash-retries": "0",
+    };
+    const callbackWithSchedule = withScheduleIdQuery(callbackUrl, scheduleId);
+    const failureWithSchedule = withScheduleIdQuery(failureCallbackUrl, scheduleId);
+    if (clean(callbackWithSchedule)) headers["upstash-callback"] = clean(callbackWithSchedule);
+    if (clean(failureWithSchedule)) headers["upstash-failure-callback"] = clean(failureWithSchedule);
+    const forwardHeaderMap = {
+      "x-growthub-workspace-id": forward.workspaceId,
+      "x-growthub-object-id": forward.objectId,
+      "x-growthub-row-id": forward.rowId,
+      "x-growthub-version": forward.version,
+      "x-growthub-schedule-id": forward.scheduleId || scheduleId,
+    };
+    for (const [name, value] of Object.entries(forwardHeaderMap)) {
+      if (clean(value)) headers[`upstash-forward-${name}`] = clean(value);
+    }
+    return {
+      url: `${base}/v2/publish/${clean(destinationUrl)}`,
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        kind: "growthub-scheduled-run-v1",
+        scheduleId: clean(scheduleId),
+        runInputs: safeJsonParse(forward.triggerInput) || forward.runInputs || undefined,
+        ...forward,
+      }),
+    };
+  },
+  parseRunResponse({ status, body } = {}) {
+    const ok = Number.isFinite(status) && status >= 200 && status < 300;
+    const parsed = typeof body === "string" ? safeJsonParse(body) : body;
+    return {
+      ok,
+      messageId: clean(parsed?.messageId) || clean(parsed?.messageID) || clean(parsed?.id),
+      proof: ok ? `QStash manual run published (HTTP ${status}).` : `QStash manual run publish failed (HTTP ${status}).`,
     };
   },
   /** Map the schedule HTTP response into non-secret proof. */

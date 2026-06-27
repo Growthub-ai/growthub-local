@@ -13,7 +13,7 @@ async function AddOnsSettingsPage() {
     // Provider-keyed so every marketplace provider's per-product readiness renders.
     providerProductReadiness: listAllProviderProductReadiness(process.env),
   };
-  return <SettingsShell active="/settings/add-ons" eyebrow="Settings" title="Add-ons">
+  return <SettingsShell active="/settings/add-ons" eyebrow="Settings" title="Marketplace">
     <AddOnsSettingsClient initialWorkspaceConfig={workspaceConfig} envSignals={envSignals} />
   </SettingsShell>;
 }

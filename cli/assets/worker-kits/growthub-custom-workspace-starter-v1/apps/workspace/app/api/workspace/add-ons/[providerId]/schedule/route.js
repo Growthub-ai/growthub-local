@@ -37,7 +37,7 @@ import {
 } from "@/lib/workspace-add-on-scheduler";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
-import { runScheduleInstall } from "@/lib/scheduler-orchestration";
+import { runScheduleInstall, runScheduleNow } from "@/lib/scheduler-orchestration";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 const SCHEDULE_TIMEOUT_MS = 10000;
@@ -90,6 +90,14 @@ async function POST(request, context) {
     body = await request.json();
   } catch {
     return jsonError("invalid json body", 400);
+  }
+  if (clean(body.action) === "run") {
+    const { status, body: out } = await runScheduleNow(SCHEDULER_DEPS, {
+      providerId: params?.providerId,
+      body,
+      requestOrigin: requestOrigin(request),
+    });
+    return NextResponse.json(out, { status });
   }
   // Thin wrapper over the dependency-injected install core (testable offline).
   const { status, body: out } = await runScheduleInstall(SCHEDULER_DEPS, {

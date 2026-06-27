@@ -900,6 +900,7 @@ const OBJECT_TYPE_PRESETS = {
       "schedulerRegion",
       "scheduleId",
       "schedulerCron",
+      "schedulerTriggerInput",
       "schedulerDestination",
       "schedulerCallbackUrl",
       "schedulerFailureCallbackUrl",

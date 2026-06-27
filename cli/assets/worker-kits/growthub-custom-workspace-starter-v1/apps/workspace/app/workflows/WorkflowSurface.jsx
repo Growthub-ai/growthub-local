@@ -209,6 +209,117 @@ function WorkflowAddOnChooser({ addOn, disabled, onUseQstash, onSetupQstash, onS
   );
 }
 
+const SCHEDULE_CADENCE_OPTIONS = [
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+];
+
+const SCHEDULE_WEEKDAY_OPTIONS = [
+  { id: "1", label: "Monday" },
+  { id: "2", label: "Tuesday" },
+  { id: "3", label: "Wednesday" },
+  { id: "4", label: "Thursday" },
+  { id: "5", label: "Friday" },
+  { id: "6", label: "Saturday" },
+  { id: "0", label: "Sunday" },
+];
+
+function deriveCronFromSchedule({ cadence, time, weekday, monthDay }) {
+  const [hourText, minuteText] = String(time || "09:00").split(":");
+  const hour = Math.min(23, Math.max(0, Number(hourText) || 0));
+  const minute = Math.min(59, Math.max(0, Number(minuteText) || 0));
+  if (cadence === "weekly") return `${minute} ${hour} * * ${String(weekday || "1")}`;
+  if (cadence === "monthly") return `${minute} ${hour} ${Math.min(28, Math.max(1, Number(monthDay) || 1))} * *`;
+  return `${minute} ${hour} * * *`;
+}
+
+function describeSchedule({ cadence, time, weekday, monthDay }) {
+  const selectedWeekday = SCHEDULE_WEEKDAY_OPTIONS.find((option) => option.id === String(weekday))?.label || "Monday";
+  if (cadence === "weekly") return `Runs every ${selectedWeekday} at ${time || "09:00"} UTC.`;
+  if (cadence === "monthly") return `Runs on day ${Math.min(28, Math.max(1, Number(monthDay) || 1))} of each month at ${time || "09:00"} UTC.`;
+  return `Runs every day at ${time || "09:00"} UTC.`;
+}
+
+function WorkflowScheduleModal({
+  open,
+  addOn,
+  workflowName,
+  cadence,
+  scheduleTime,
+  scheduleWeekday,
+  scheduleMonthDay,
+  errorMessage,
+  disabled,
+  onCadenceChange,
+  onScheduleTimeChange,
+  onScheduleWeekdayChange,
+  onScheduleMonthDayChange,
+  onSubmit,
+  onClose,
+}) {
+  if (!open) return null;
+  return (
+    <div className="dm-workflow-schedule-backdrop" role="presentation">
+      <section className="dm-workflow-schedule-modal" role="dialog" aria-modal="true" aria-label="Configure QStash schedule">
+        <header>
+          <div>
+            <p className="dm-api-action-card-eyebrow">Serverless schedule</p>
+            <h3>Use QStash for {workflowName || "this workflow"}</h3>
+          </div>
+          <button type="button" className="dm-workflow-icon-btn" aria-label="Close schedule modal" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </header>
+        <div className="dm-workflow-schedule-body">
+          <div className="dm-marketplace-config-summary">
+            <div><span>Registry</span><code>{addOn?.integrationId || UPSTASH_QSTASH_INTEGRATION_ID}</code></div>
+            <div><span>Region</span><code>{addOn?.region || "pending"}</code></div>
+            <div><span>Status</span><code>{addOn?.syncStatus || "setup required"}</code></div>
+          </div>
+          <label className="dm-marketplace-field">
+            <span>Cadence</span>
+            <select value={cadence} onChange={(event) => onCadenceChange(event.target.value)}>
+              {SCHEDULE_CADENCE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="dm-marketplace-field">
+            <span>Run time</span>
+            <input type="time" value={scheduleTime} onChange={(event) => onScheduleTimeChange(event.target.value)} />
+          </label>
+          {cadence === "weekly" ? (
+            <label className="dm-marketplace-field">
+              <span>Run day</span>
+              <select value={scheduleWeekday} onChange={(event) => onScheduleWeekdayChange(event.target.value)}>
+                {SCHEDULE_WEEKDAY_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {cadence === "monthly" ? (
+            <label className="dm-marketplace-field">
+              <span>Day of month</span>
+              <input type="number" min="1" max="28" value={scheduleMonthDay} onChange={(event) => onScheduleMonthDayChange(event.target.value)} />
+            </label>
+          ) : null}
+          <p className="dm-cockpit-step-hint">{describeSchedule({ cadence, time: scheduleTime, weekday: scheduleWeekday, monthDay: scheduleMonthDay })}</p>
+          {errorMessage ? <p className="dm-workflow-schedule-error" role="alert">{errorMessage}</p> : null}
+          <p className="dm-cockpit-step-hint">This writes the sandbox row to serverless, stores the cadence and trigger input on the workflow trigger, and submits the QStash schedule through the server-owned workspace origin.</p>
+        </div>
+        <footer>
+          <button type="button" className="dm-btn-outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="dm-btn-primary-sm" disabled={disabled || !String(scheduleTime || "").trim()} onClick={onSubmit}>
+            {disabled ? "Scheduling..." : "Create schedule"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 const WORKFLOW_ACTION_GROUPS = [
   {
     label: "Data",
@@ -380,6 +491,12 @@ export default function WorkflowSurface() {
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleCadence, setScheduleCadence] = useState("daily");
+  const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [scheduleWeekday, setScheduleWeekday] = useState("1");
+  const [scheduleMonthDay, setScheduleMonthDay] = useState("1");
+  const [scheduleError, setScheduleError] = useState("");
   const [serverlessSignals, setServerlessSignals] = useState({ configuredEnvRefs: [], persistenceAdapters: [] });
 
   useEffect(() => {
@@ -714,6 +831,80 @@ export default function WorkflowSurface() {
     }
   }
 
+  function findWorkflowRowInConfig(config) {
+    return findSandboxRowByWorkflowRef(config, objectId, rowId)?.row || null;
+  }
+
+  async function fetchWorkspaceConfigOnce() {
+    const res = await fetch("/api/workspace", { cache: "no-store" });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || "Failed to load workspace");
+    if (payload.workspaceConfig) setWorkspaceConfig(payload.workspaceConfig);
+    return payload.workspaceConfig || null;
+  }
+
+  async function waitForScheduledRunProof(messageId) {
+    const wanted = String(messageId || "").trim();
+    const maxAttempts = 20;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const latestConfig = await fetchWorkspaceConfigOnce();
+      const latestRow = findWorkflowRowInConfig(latestConfig);
+      const latestMessageId = String(latestRow?.lastScheduledRunMessageId || "").trim();
+      const latestStatus = String(latestRow?.lastScheduledRunStatus || "").trim();
+      if ((wanted && latestMessageId === wanted) || (!wanted && latestStatus)) return latestRow;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    return findWorkflowRowInConfig(workspaceConfig);
+  }
+
+  async function runInstalledSchedulerNow() {
+    if (!objectId || !rowId || !workspaceConfig || !sandboxRow?.scheduleId) return runSandbox();
+    setRunning(true);
+    setRunMessage("");
+    setLiveRunEvents([]);
+    try {
+      const triggerInput = JSON.stringify({
+        trigger: "manual-scheduler-run",
+        source: "workflow-ui",
+        workflow: rowId,
+      });
+      const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "run",
+          productId: "upstash-qstash",
+          objectId,
+          rowId,
+          region: sandboxRow.schedulerRegion || addOnsState.qstashWorkflow?.region || "us-east-1",
+          scheduleId: sandboxRow.scheduleId,
+          version: String(sandboxRow?.version || "v1"),
+          workspaceId: workspaceConfig?.id || "workspace",
+          triggerInput,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Scheduler run could not be published.");
+      }
+      setRunMessage(payload.messageId ? `Scheduler run published (${payload.messageId}). Waiting for callback proof...` : "Scheduler run published. Waiting for callback proof...");
+      const proofRow = await waitForScheduledRunProof(payload.messageId);
+      const status = String(proofRow?.lastScheduledRunStatus || "").trim();
+      const succeeded = status && Number(status) >= 200 && Number(status) < 300;
+      if (succeeded) {
+        setRunMessage(`Scheduler run succeeded with HTTP ${status}.`);
+      } else if (status) {
+        setRunMessage(redactSecretsFromText(`Scheduler run returned HTTP ${status}: ${proofRow?.lastScheduledRunFailureReason || proofRow?.lastScheduledRunBodyPreview || "see run proof"}`));
+      } else {
+        setRunMessage("Scheduler run was published, but callback proof did not land before the UI timeout.");
+      }
+    } catch (err) {
+      setRunMessage(redactSecretsFromText(err.message || "Scheduler run failed"));
+    } finally {
+      setRunning(false);
+    }
+  }
+
   function openTraceMode() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("run");
@@ -916,10 +1107,29 @@ export default function WorkflowSurface() {
     } else if (action.id === "edit-adapter") {
       // Full scheduler/adapter config lives on the sandbox object's drawer.
       router.push(`/data-model?object=${encodeURIComponent(objectId)}&row=${encodeURIComponent(rowId)}`);
+    } else if (action.id === "run-sandbox") {
+      if (
+        isServerlessWorkflow &&
+        sandboxRow?.schedulerRegistryId === UPSTASH_QSTASH_INTEGRATION_ID &&
+        sandboxRow?.scheduleId
+      ) {
+        await runInstalledSchedulerNow();
+      } else {
+        await runSandbox();
+      }
     }
   }
 
   async function useInstalledQstashWorkflowAddOn() {
+    setScheduleModalOpen(true);
+  }
+
+  function updateScheduleCadence(cadence) {
+    const next = SCHEDULE_CADENCE_OPTIONS.find((option) => option.id === cadence) || SCHEDULE_CADENCE_OPTIONS[0];
+    setScheduleCadence(next.id);
+  }
+
+  async function submitQstashSchedule() {
     // Bind requires an installed+verified QStash product. The schedule route
     // installs THIS row's schedule AND flips it to serverless in ONE
     // server-authoritative write, then returns the persisted config — we adopt
@@ -927,6 +1137,26 @@ export default function WorkflowSurface() {
     // just-written scheduleId), and serverless is never claimed unless the
     // server confirmed both the remote schedule and the local persist.
     if (resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig || !addOnsState.qstashWorkflow) return;
+    if (!String(scheduleTime || "").trim()) {
+      setScheduleError("Choose a run time.");
+      return;
+    }
+    const scheduleCron = deriveCronFromSchedule({
+      cadence: scheduleCadence,
+      time: scheduleTime,
+      weekday: scheduleWeekday,
+      monthDay: scheduleMonthDay,
+    });
+    const triggerInput = JSON.stringify({
+      trigger: "scheduled",
+      source: "qstash",
+      workflow: rowId,
+      cadence: scheduleCadence,
+      runTimeUtc: scheduleTime,
+    });
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
     try {
       const response = await fetch("/api/workspace/add-ons/upstash/schedule", {
         method: "POST",
@@ -936,6 +1166,9 @@ export default function WorkflowSurface() {
           objectId,
           rowId,
           region: addOnsState.qstashWorkflow.region || "us-east-1",
+          cron: scheduleCron,
+          cadence: scheduleCadence,
+          triggerInput,
           version: String(sandboxRow?.version || "v1"),
           workspaceId: workspaceConfig?.id || "workspace",
         }),
@@ -944,15 +1177,17 @@ export default function WorkflowSurface() {
       if (!response.ok || !payload.bound || !payload.workspaceConfig) {
         // No schedule installed (missing token / read-only / provider / persist
         // failure). Keep the workflow local; route the operator to finish setup.
-        setSaveMessage(payload.error ? `Could not bind QStash: ${payload.error}` : "Could not bind QStash. Finish setup in Add-ons.");
-        router.push("/settings/add-ons");
+        setScheduleError(payload.error ? `Could not create schedule: ${payload.error}` : "Could not create the QStash schedule.");
         return;
       }
       setWorkspaceConfig(payload.workspaceConfig);
+      setScheduleModalOpen(false);
       setSaveMessage(`Bound to QStash scheduler ${payload.scheduleId}. Serverless run loop is live.`);
     } catch (error) {
       console.warn(error);
-      router.push("/settings/add-ons");
+      setSaveMessage(error?.message || "Could not create QStash schedule.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1166,6 +1401,24 @@ export default function WorkflowSurface() {
             )}
           </div>
         ) : null}
+
+        <WorkflowScheduleModal
+          open={scheduleModalOpen}
+          addOn={addOnsState.qstashWorkflow}
+          workflowName={rowId}
+          cadence={scheduleCadence}
+          scheduleTime={scheduleTime}
+          scheduleWeekday={scheduleWeekday}
+          scheduleMonthDay={scheduleMonthDay}
+          errorMessage={scheduleError}
+          disabled={saving || publishing || running}
+          onCadenceChange={updateScheduleCadence}
+          onScheduleTimeChange={setScheduleTime}
+          onScheduleWeekdayChange={setScheduleWeekday}
+          onScheduleMonthDayChange={setScheduleMonthDay}
+          onSubmit={submitQstashSchedule}
+          onClose={() => setScheduleModalOpen(false)}
+        />
 
         {loading ? (
           <p className="dm-workflow-empty">Loading workflow…</p>
