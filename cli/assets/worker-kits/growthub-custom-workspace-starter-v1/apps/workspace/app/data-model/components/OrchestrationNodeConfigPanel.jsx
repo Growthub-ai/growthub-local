@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Database, FileInput, ListTree } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -568,10 +568,14 @@ export function OrchestrationNodeConfigPanel({
   objectId,
   rowName,
   onSandboxRowPatch,
+  inputScheduleControls,
+  serverlessScheduleOptionAvailable = false,
+  serverlessScheduleAvailable = false,
   activeTab: controlledTab,
   onTabChange
 }) {
   const [internalTab, setInternalTab] = useState("node");
+  const [inputModeOpen, setInputModeOpen] = useState(false);
   const rawActiveTab = controlledTab ?? internalTab;
 
   function setActiveTab(tab) {
@@ -594,6 +598,14 @@ export function OrchestrationNodeConfigPanel({
 
   const config = node.config || {};
   const type = String(node.type || "");
+  const schedulerAvailable = Boolean(serverlessScheduleOptionAvailable || serverlessScheduleAvailable);
+  const inputModeOptions = [
+    { value: "manual", label: "Manual", Icon: FileInput },
+    { value: "record", label: "Record", Icon: Database },
+    { value: "source-record", label: "Source Record", Icon: ListTree },
+    ...(schedulerAvailable ? [{ value: "serverless-schedule", label: "Serverless Schedule", Icon: CalendarClock }] : []),
+  ];
+  const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
   const meta = config.requestHeadersMetadata || {};
   const workspaceObjects = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.id && object?.objectType !== "sandbox-environment" && object?.objectType !== "api-registry");
@@ -658,15 +670,45 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "configuration" && type === "input" && (
         <div className="dm-orchestration-config__pane">
-          <label className="dm-orchestration-config__field">
+          <div className="dm-orchestration-config__field">
             <span>Input mode</span>
-            <select value={config.inputMode || "manual"} disabled={disabled} onChange={(e) => patchConfig({ inputMode: e.target.value })}>
-              <option value="manual">manual</option>
-              <option value="record">record</option>
-              <option value="source-record">source-record</option>
-              <option value="serverless-schedule">serverless schedule</option>
-            </select>
-          </label>
+            <div className={`dm-select dm-input-mode-select${inputModeOpen ? " open" : ""}${disabled ? " disabled" : ""}`}>
+              <button
+                type="button"
+                className="dm-select-trigger"
+                disabled={disabled}
+                aria-haspopup="listbox"
+                aria-expanded={inputModeOpen}
+                onClick={() => setInputModeOpen((open) => !open)}
+              >
+                <span>{selectedInputMode.label}</span>
+                <ChevronDown size={15} aria-hidden="true" />
+              </button>
+              {inputModeOpen ? (
+                <div className="dm-select-popover">
+                  <div className="dm-select-list" role="listbox" aria-label="Input mode">
+                    {inputModeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={option.value === selectedInputMode.value}
+                        className={`dm-select-option${option.value === selectedInputMode.value ? " selected" : ""}`}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          patchConfig({ inputMode: option.value });
+                          setInputModeOpen(false);
+                        }}
+                      >
+                        <option.Icon size={14} aria-hidden="true" />
+                        <span>{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
           <PayloadKeyRows
             payload={config.samplePayload}
             disabled={disabled}
@@ -675,6 +717,7 @@ export function OrchestrationNodeConfigPanel({
           <p className="dm-orchestration-config__hint">
             Bind values with {"{{input.key}}"} in the API endpoint or body template.
           </p>
+          {inputScheduleControls || null}
         </div>
       )}
 

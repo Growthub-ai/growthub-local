@@ -1,9 +1,8 @@
 import { Suspense } from "react";
-import workspaceConfig from "../growthub.config.json";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
-import { describePersistenceMode, readWorkspaceSourceRecords } from "@/lib/workspace-config";
+import { describePersistenceMode, readWorkspaceConfig, readWorkspaceSourceRecords } from "@/lib/workspace-config";
 import WorkspaceBuilder from "./workspace-builder.jsx";
 
 async function Home() {
@@ -11,6 +10,7 @@ async function Home() {
   const integrationAdapter = describeIntegrationAdapter();
   const integrations = await listGovernedWorkspaceIntegrations();
   const persistence = describePersistenceMode();
+  const workspaceConfig = await readWorkspaceConfig();
   let initialSourceRecords = {};
   try {
     initialSourceRecords = (await readWorkspaceSourceRecords()) || {};

@@ -40,6 +40,27 @@ function safeJsonParse(text) {
   }
 }
 
+function normalizeScheduledRunInputs(payload, request) {
+  const direct = payload?.runInputs;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+    if (direct.values && typeof direct.values === "object" && !Array.isArray(direct.values)) return direct;
+    return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: direct };
+  }
+  const raw = clean(payload?.triggerInput) || clean(request.headers.get("x-growthub-trigger-input"));
+  const parsed = raw ? safeJsonParse(raw) : null;
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    if (parsed.values && typeof parsed.values === "object" && !Array.isArray(parsed.values)) {
+      return {
+        kind: "growthub-workflow-run-inputs-v1",
+        ...parsed,
+        source: clean(parsed.source) || "serverless-scheduler"
+      };
+    }
+    return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: parsed };
+  }
+  return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: {} };
+}
+
 function requestOrigin(request) {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
@@ -131,7 +152,7 @@ async function POST(request, context) {
       workspaceConfig,
       row,
       timeoutMs: 60000,
-      runInputs: payload.runInputs || null,
+      runInputs: normalizeScheduledRunInputs(payload, request),
       executionContext: { runId, ranAt: new Date().toISOString(), sandboxName: row.Name },
     });
   } catch (err) {
@@ -164,6 +185,7 @@ async function POST(request, context) {
       rowId,
       exitCode: result?.exitCode ?? (ok ? 0 : 1),
       durationMs: result?.durationMs ?? 0,
+      response: result?.response || null,
       stdout: clean(result?.stdout).slice(0, 2000),
       error: ok ? undefined : clean(result?.error) || "run failed",
     },
@@ -171,4 +193,17 @@ async function POST(request, context) {
   );
 }
 
-export { POST };
+function HEAD() {
+  return new Response(null, { status: 200 });
+}
+
+function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      allow: "HEAD, OPTIONS, POST",
+    },
+  });
+}
+
+export { HEAD, OPTIONS, POST };

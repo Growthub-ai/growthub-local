@@ -307,6 +307,30 @@ const upstashQstashAdapter = {
       headers: { authorization: `Bearer ${clean(token)}` },
     };
   },
+  buildReadRequest({ product, region, token, scheduleId, env = process.env } = {}) {
+    const base = qstashBaseUrl({ product, region, env });
+    if (!base) throw new Error("could not resolve QStash base URL");
+    if (!clean(token)) throw new Error("QSTASH_TOKEN is required to read a schedule");
+    if (!clean(scheduleId)) throw new Error("scheduleId is required");
+    return {
+      url: `${base}/v2/schedules/${encodeURIComponent(clean(scheduleId))}`,
+      method: "GET",
+      headers: { authorization: `Bearer ${clean(token)}` },
+    };
+  },
+  buildControlRequest({ product, region, token, scheduleId, action, env = process.env } = {}) {
+    const base = qstashBaseUrl({ product, region, env });
+    const normalized = clean(action);
+    if (!base) throw new Error("could not resolve QStash base URL");
+    if (!clean(token)) throw new Error("QSTASH_TOKEN is required to control a schedule");
+    if (!clean(scheduleId)) throw new Error("scheduleId is required");
+    if (!["pause", "resume"].includes(normalized)) throw new Error("schedule action must be pause or resume");
+    return {
+      url: `${base}/v2/schedules/${encodeURIComponent(clean(scheduleId))}/${normalized}`,
+      method: "PATCH",
+      headers: { authorization: `Bearer ${clean(token)}` },
+    };
+  },
   buildRunRequest({ product, region, token, scheduleId, destinationUrl, callbackUrl, failureCallbackUrl, forward = {}, env = process.env } = {}) {
     const base = qstashBaseUrl({ product, region, env });
     if (!base) throw new Error("could not resolve QStash base URL");
@@ -355,17 +379,45 @@ const upstashQstashAdapter = {
       proof: ok ? `QStash manual run published (HTTP ${status}).` : `QStash manual run publish failed (HTTP ${status}).`,
     };
   },
+  parseReadResponse({ status, body, scheduleId } = {}) {
+    const ok = Number.isFinite(status) && status >= 200 && status < 300;
+    const parsed = typeof body === "string" ? safeJsonParse(body) : body;
+    const remoteId = clean(parsed?.scheduleId) || clean(parsed?.id) || clean(parsed?.schedule_id);
+    const cron = clean(parsed?.cron) || clean(parsed?.schedule);
+    return {
+      ok,
+      exists: ok,
+      scheduleId: remoteId || (ok ? clean(scheduleId) : ""),
+      cron,
+      proof: ok
+        ? `QStash schedule ${remoteId || clean(scheduleId)} exists remotely (HTTP ${status}).`
+        : `QStash schedule ${clean(scheduleId)} was not verified remotely (HTTP ${status}).`,
+    };
+  },
+  parseControlResponse({ status, body, action, scheduleId } = {}) {
+    const ok = Number.isFinite(status) && status >= 200 && status < 300;
+    const parsed = typeof body === "string" ? safeJsonParse(body) : body;
+    const detail = clean(parsed?.error) || clean(parsed?.message) || clean(parsed?.detail) || clean(body).slice(0, 220);
+    return {
+      ok,
+      scheduleId: clean(parsed?.scheduleId) || clean(parsed?.id) || clean(scheduleId),
+      proof: ok
+        ? `QStash schedule ${clean(scheduleId)} ${clean(action)}d remotely (HTTP ${status}).`
+        : `QStash schedule ${clean(action)} failed (HTTP ${status})${detail ? `: ${detail}` : ""}.`,
+    };
+  },
   /** Map the schedule HTTP response into non-secret proof. */
   parseScheduleResponse({ status, body, scheduleId } = {}) {
     const ok = Number.isFinite(status) && status >= 200 && status < 300;
     const parsed = typeof body === "string" ? safeJsonParse(body) : body;
     const returnedId = clean(parsed?.scheduleId) || clean(scheduleId);
+    const failureDetail = clean(parsed?.error) || clean(parsed?.message) || clean(parsed?.detail) || clean(body).slice(0, 220);
     return {
       ok,
       scheduleId: returnedId,
       proof: ok
         ? `QStash schedule ${returnedId} upserted (HTTP ${status}).`
-        : `QStash schedule create failed (HTTP ${status}).`,
+        : `QStash schedule create failed (HTTP ${status})${failureDetail ? `: ${failureDetail}` : ""}.`,
     };
   },
   /** Signing keys for callback verification, resolved from the run env. */
@@ -414,8 +466,10 @@ const upstashQstashAdapter = {
       succeeded,
       status: Number.isFinite(status) ? status : null,
       messageId: clean(envelope?.sourceMessageId) || clean(envelope?.messageId),
+      runId: clean(innerResponse?.runId),
       scheduleId,
       bodyPreview,
+      responsePreview: clean(innerResponse?.response) || clean(innerResponse?.stdout) || bodyPreview,
       // Retry counters distinguish "first attempt failed" from "retries exhausted".
       retried: Number.isFinite(retried) ? retried : null,
       maxRetries: Number.isFinite(maxRetries) ? maxRetries : null,

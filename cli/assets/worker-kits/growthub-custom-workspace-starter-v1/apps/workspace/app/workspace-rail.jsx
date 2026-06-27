@@ -70,7 +70,7 @@ import {
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
 import { listAvailableWorkflows } from "@/lib/nav-workflows";
-import { deriveWorkspaceActivationState, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
+import { deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
 import { WorkspaceLensWalkthrough } from "./components/WorkspaceLensWalkthrough.jsx";
 import { isHelperConfigured, WorkspaceHelperSetupModal } from "./components/WorkspaceHelperSetupModal.jsx";
 
@@ -1536,13 +1536,10 @@ export function WorkspaceRail({
   const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
   const pathname = usePathname() || "/";
   const router = useRouter();
-  // Workspace Lens unlocks only after the primary activation loop completes —
-  // onboarding first, operating surface second. Derived from the same config
-  // the rail already holds, so the gate is consistent across every page.
-  const lensUnlocked = useMemo(
-    () => Boolean(deriveWorkspaceActivationState({ workspaceConfig: workspaceConfig || {} }).complete),
-    [workspaceConfig],
-  );
+  // Private Agency Portal contract: Workspace Lens is an operating surface,
+  // not a post-onboarding reward. Keep it visible so agents and users can
+  // inspect blockers even when activation derivation is incomplete.
+  const lensUnlocked = true;
   // One-time Workspace Lens reveal: shown anchored to the (newly visible) lens
   // nav item only in the in-between state, and never on the lens page itself.
   const lensWalkthrough = useMemo(
@@ -1579,8 +1576,13 @@ export function WorkspaceRail({
   const [chatSearch, setChatSearch] = useState("");
   const [chatExpanded, setChatExpanded] = useState(false);
   const [helperSetupOpen, setHelperSetupOpen] = useState(false);
+  const [relativeTimesReady, setRelativeTimesReady] = useState(false);
   const menuWrapRef = useRef(null);
   const CHAT_PREVIEW_COUNT = 10;
+
+  useEffect(() => {
+    setRelativeTimesReady(true);
+  }, []);
 
   useEffect(() => {
     if (!openMenuId) return undefined;
@@ -1964,8 +1966,11 @@ export function WorkspaceRail({
                       ) : (
                         <span className="workspace-rail-thread-title">{title}</span>
                       )}
-                      <span className="workspace-rail-thread-time" aria-label={`Updated ${relativeTime(row.updatedAt)}`}>
-                        {relativeTime(row.updatedAt)}
+                      <span
+                        className="workspace-rail-thread-time"
+                        aria-label={relativeTimesReady ? `Updated ${relativeTime(row.updatedAt)}` : "Updated"}
+                      >
+                        {relativeTimesReady ? relativeTime(row.updatedAt) : ""}
                       </span>
                     </button>
                     <div

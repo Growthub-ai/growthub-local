@@ -348,13 +348,16 @@ function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
   const nextNodes = graph.nodes.map((node, index) => {
     if (index === triggerIndex) {
       const config = { ...(node.config || {}) };
+      const isInputTrigger = node?.type === "input" || node?.id === "input";
       if (clear) {
         config.trigger = "manual";
         config.triggerKind = "manual";
+        if (isInputTrigger) config.inputMode = "manual";
         delete config.schedule;
         delete config.enabled;
       } else {
         Object.assign(config, scheduleTriggerConfig(meta));
+        if (isInputTrigger) config.inputMode = "serverless-schedule";
       }
       return { ...node, config };
     }
@@ -407,6 +410,9 @@ const SANDBOX_SCHEDULE_CLEAR_PATCH = {
   schedulerCallbackUrl: "",
   schedulerFailureCallbackUrl: "",
   schedulerInstalledAt: "",
+  schedulerPaused: "",
+  schedulerPausedAt: "",
+  schedulerResumedAt: "",
 };
 
 /**
@@ -535,6 +541,11 @@ function withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch 
   });
   if (!found) return { config: workspaceConfig, found: false };
   return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, found: true };
+}
+
+/** Merge scheduler control state onto the owning sandbox row. */
+function withSandboxSchedulerControlState(workspaceConfig, { objectId, rowId, patch } = {}) {
+  return withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch });
 }
 
 function findRegistryRowByIntegrationId(workspaceConfig, integrationId) {
@@ -813,9 +824,9 @@ function findMarketplaceProviderRow(workspaceConfig, providerId) {
       if (String(row?.integrationId || "").trim() === provider.integrationId) {
         const syncStatus = String(row?.syncStatus || "").trim();
         const status = String(row?.status || "").trim();
-        const verified = syncStatus === "verified"
+        const verified = Boolean(syncStatus === "verified"
           && String(row?.syncProof || "").trim()
-          && String(row?.syncCheckedAt || "").trim();
+          && String(row?.syncCheckedAt || "").trim());
         let accountOptions = [];
         if (typeof row?.providerAccountOptions === "string" && row.providerAccountOptions.trim()) {
           try {
@@ -827,8 +838,11 @@ function findMarketplaceProviderRow(workspaceConfig, providerId) {
         } else if (Array.isArray(row?.providerAccountOptions)) {
           accountOptions = row.providerAccountOptions;
         }
-        const linked = verified || accountOptions.length > 0;
-        const setupPending = syncStatus === "setup-pending" || status === "setup-pending";
+        const linked = Boolean(verified);
+        const setupPending = syncStatus === "setup-pending"
+          || syncStatus === "setup-opened"
+          || status === "setup-pending"
+          || status === "setup-opened";
         return {
           ...row,
           isConnectedProvider: linked,
@@ -854,9 +868,9 @@ function findInstalledWorkspaceAddOns(workspaceConfig) {
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       const product = products.find((item) => item.integrationId === String(row?.integrationId || "").trim());
       if (product) {
-        const verified = String(row?.syncStatus || "").trim() === "verified"
+        const verified = Boolean(String(row?.syncStatus || "").trim() === "verified"
           && String(row?.syncProof || "").trim()
-          && String(row?.syncCheckedAt || "").trim();
+          && String(row?.syncCheckedAt || "").trim());
         if (verified) rows.push({ ...row, productId: product.productId });
       }
     }
@@ -873,9 +887,9 @@ function findWorkspaceAddOnRows(workspaceConfig) {
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
       const product = products.find((item) => item.integrationId === String(row?.integrationId || "").trim());
       if (product) {
-        const verified = String(row?.syncStatus || "").trim() === "verified"
+        const verified = Boolean(String(row?.syncStatus || "").trim() === "verified"
           && String(row?.syncProof || "").trim()
-          && String(row?.syncCheckedAt || "").trim();
+          && String(row?.syncCheckedAt || "").trim());
         rows.push({ ...row, productId: product.productId, isVerifiedAddOn: verified });
       }
     }
@@ -922,6 +936,7 @@ export {
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
   withSandboxScheduledRunProof,
+  withSandboxSchedulerControlState,
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
   liveGraphField,

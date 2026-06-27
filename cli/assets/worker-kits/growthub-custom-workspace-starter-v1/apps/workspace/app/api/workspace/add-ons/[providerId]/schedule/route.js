@@ -1,4 +1,5 @@
 /**
+ * GET    /api/workspace/add-ons/[providerId]/schedule
  * POST   /api/workspace/add-ons/[providerId]/schedule
  * DELETE /api/workspace/add-ons/[providerId]/schedule
  *
@@ -25,6 +26,7 @@ import {
   findRegistryRowByIntegrationId,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
+  withSandboxSchedulerControlState,
   withWorkflowServerlessBind,
   liveGraphField,
 } from "@/lib/workspace-add-ons";
@@ -99,6 +101,9 @@ async function POST(request, context) {
     });
     return NextResponse.json(out, { status });
   }
+  if (["pause", "resume"].includes(clean(body.action))) {
+    return controlSchedule(request, params?.providerId, body);
+  }
   // Thin wrapper over the dependency-injected install core (testable offline).
   const { status, body: out } = await runScheduleInstall(SCHEDULER_DEPS, {
     providerId: params?.providerId,
@@ -106,6 +111,152 @@ async function POST(request, context) {
     requestOrigin: requestOrigin(request),
   });
   return NextResponse.json(out, { status });
+}
+
+async function controlSchedule(request, providerIdParam, body = {}) {
+  const providerId = clean(providerIdParam);
+  const provider = getMarketplaceProvider(providerId);
+  if (!provider) return jsonError("unknown marketplace provider", 404, { providerId });
+  const product = resolveSchedulerProduct(provider, clean(body.productId));
+  if (!product || !isSchedulerProduct(product)) {
+    return jsonError("provider has no serverless scheduler product", 400, { providerId: provider.providerId });
+  }
+  const adapter = getSchedulerAdapter(product);
+  const action = clean(body.action);
+  const config = await readWorkspaceConfig();
+  const objectId = clean(body.objectId);
+  const rowId = clean(body.rowId || body.name);
+  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  if (!eligible.ok) return jsonError(eligible.error, eligible.status, { providerId: provider.providerId, productId: product.productId });
+  const row = eligible.row;
+  const scheduleId = clean(body.scheduleId || row.scheduleId);
+  if (!scheduleId) return jsonError("workflow row has no installed schedule", 409, { providerId: provider.providerId, productId: product.productId, objectId, rowId });
+  if (clean(row.runLocality) !== "serverless" || clean(row.schedulerRegistryId) !== product.integrationId) {
+    return jsonError("workflow row is not bound to this scheduler", 409, { providerId: provider.providerId, productId: product.productId, objectId, rowId, scheduleId });
+  }
+  const token = readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "";
+  if (!token) return jsonError(`${product.label} runtime credentials are not connected`, 422, { productId: product.productId });
+
+  const region = clean(body.region || row.schedulerRegion || "us-east-1");
+  let controlResult;
+  try {
+    const req = adapter.buildControlRequest({ product, region, token, scheduleId, action, env: process.env });
+    const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers });
+    controlResult = adapter.parseControlResponse({ status: response.status, body: await response.text(), action, scheduleId });
+  } catch (error) {
+    controlResult = { ok: false, proof: error?.message || "remote scheduler control failed", scheduleId };
+  }
+  if (!controlResult.ok) {
+    await appendOutcomeReceipt({
+      kind: "workspace-add-on-schedule-control",
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: [`scheduler_${action}_failed`] },
+      summary: controlResult.proof || `${product.label} schedule ${action} failed`,
+    });
+    return jsonError(controlResult.proof || `remote schedule ${action} failed`, 502, { providerId: provider.providerId, productId: product.productId, scheduleId });
+  }
+
+  const now = new Date().toISOString();
+  const patch = action === "pause"
+    ? { schedulerPaused: true, schedulerPausedAt: now, schedulerResumedAt: "" }
+    : { schedulerPaused: false, schedulerResumedAt: now };
+  const { config: nextConfig, found } = withSandboxSchedulerControlState(config, { objectId, rowId, patch });
+  let persisted = found;
+  if (found) {
+    try { await writeWorkspaceConfig({ dataModel: nextConfig.dataModel }); } catch { persisted = false; }
+  }
+  const { receipt } = await appendOutcomeReceipt({
+    kind: "workspace-add-on-schedule-control",
+    lane: "server-authoritative",
+    outcomeStatus: persisted ? "published" : "failed",
+    actor: "workspace-marketplace",
+    objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+    changedFields: [`dataModel.${objectId}.${rowId}.schedulerPaused`],
+    policyVerdict: { ok: persisted },
+    summary: persisted
+      ? `${product.label} schedule ${scheduleId} ${action}d and row state synced.`
+      : `${product.label} schedule ${scheduleId} ${action}d remotely but row state did not persist.`,
+  });
+  if (!persisted) {
+    return jsonError(`remote schedule ${action}d but workspace state did not persist`, 424, { providerId: provider.providerId, productId: product.productId, scheduleId, receiptId: receipt?.receiptId });
+  }
+  return NextResponse.json({ ok: true, providerId: provider.providerId, productId: product.productId, scheduleId, action, workspaceConfig: nextConfig, receiptId: receipt?.receiptId });
+}
+
+async function GET(request, context) {
+  const params = await context?.params;
+  const providerId = clean(params?.providerId);
+  const provider = getMarketplaceProvider(providerId);
+  if (!provider) return jsonError("unknown marketplace provider", 404, { providerId });
+
+  const auth = requireWorkspaceOperator(request);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const product = resolveSchedulerProduct(provider, clean(request.nextUrl?.searchParams?.get("productId")));
+  if (!product || !isSchedulerProduct(product)) {
+    return jsonError("provider has no serverless scheduler product", 400, { providerId: provider.providerId });
+  }
+  const adapter = getSchedulerAdapter(product);
+  const objectId = clean(request.nextUrl?.searchParams?.get("objectId"));
+  const rowId = clean(request.nextUrl?.searchParams?.get("rowId") || request.nextUrl?.searchParams?.get("name"));
+  const config = await readWorkspaceConfig();
+  let owner = null;
+  if (objectId && rowId) {
+    const eligible = findEligibleSandboxRow(config, objectId, rowId);
+    if (eligible.ok) owner = { objectId: eligible.object.id, row: eligible.row };
+  }
+  const scheduleId = clean(request.nextUrl?.searchParams?.get("scheduleId") || owner?.row?.scheduleId);
+  if (!scheduleId) {
+    return jsonError("workflow row has no installed schedule", 404, {
+      providerId: provider.providerId,
+      productId: product.productId,
+      exists: false,
+      verified: false,
+    });
+  }
+
+  const token = readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "";
+  if (!token) {
+    return jsonError(`${product.label} runtime credentials are not connected`, 422, {
+      providerId: provider.providerId,
+      productId: product.productId,
+      scheduleId,
+      exists: false,
+      verified: false,
+    });
+  }
+
+  const region = clean(request.nextUrl?.searchParams?.get("region") || owner?.row?.schedulerRegion || "us-east-1");
+  let readResult;
+  try {
+    const read = adapter.buildReadRequest({ product, region, token, scheduleId, env: process.env });
+    const response = await fetchWithTimeout(read.url, { method: read.method, headers: read.headers });
+    readResult = adapter.parseReadResponse({ status: response.status, body: await response.text(), scheduleId });
+  } catch (error) {
+    readResult = {
+      ok: false,
+      exists: false,
+      scheduleId,
+      proof: error?.message || "remote schedule verification failed",
+    };
+  }
+
+  const status = readResult.ok ? 200 : 404;
+  return NextResponse.json({
+    ok: readResult.ok,
+    verified: readResult.ok,
+    exists: readResult.exists === true,
+    providerId: provider.providerId,
+    productId: product.productId,
+    scheduleId,
+    remoteScheduleId: readResult.scheduleId || "",
+    cron: readResult.cron || "",
+    region,
+    proof: readResult.proof || "",
+  }, { status });
 }
 
 async function DELETE(request, context) {
@@ -232,4 +383,4 @@ async function DELETE(request, context) {
   return NextResponse.json({ ok: true, providerId: provider.providerId, productId: product.productId, scheduleId, deleted: true, persisted, workspaceConfig: nextConfig, receiptId: receipt.receiptId });
 }
 
-export { POST, DELETE };
+export { GET, POST, DELETE };

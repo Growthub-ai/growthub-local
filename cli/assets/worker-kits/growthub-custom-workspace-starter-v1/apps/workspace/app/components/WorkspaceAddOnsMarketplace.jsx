@@ -59,7 +59,9 @@ function AddOnsSurface({
   const providerRow = selectedMarketplaceProvider ? providerRows[selectedMarketplaceProvider.providerId] : null;
   const providerConnected = Boolean(providerRow?.isConnectedProvider);
   const providerVerified = Boolean(providerRow?.isVerifiedProvider);
-  const providerSetupOpen = Boolean(setupMessage);
+  const providerSetupStarted = Boolean(providerRow?.isSetupPendingProvider);
+  const providerSetupOpen = providerSetupStarted || Boolean(setupMessage);
+  const providerSetupMessage = setupMessage || providerRow?.lastResponse || "";
   const providerSetupFields = Array.isArray(selectedMarketplaceProvider?.accountSetupFields)
     ? selectedMarketplaceProvider.accountSetupFields
     : [];
@@ -328,8 +330,9 @@ function AddOnsSurface({
                       const row = providerRows[provider.providerId];
                       const connected = Boolean(row?.isConnectedProvider);
                       const verified = Boolean(row?.isVerifiedProvider);
+                      const setupStarted = Boolean(row?.isSetupPendingProvider);
                       const installedCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId)).length;
-                      const stateLabel = verified ? "Verified" : "Linked";
+                      const stateLabel = verified ? "Verified" : setupStarted ? "Setup opened" : "Provider setup required";
                       return (
                         <button type="button" className="dm-marketplace-provider-card" key={provider.providerId} onClick={() => openProvider(provider.providerId)}>
                           <span className="dm-marketplace-product-icon is-provider">
@@ -338,9 +341,9 @@ function AddOnsSurface({
                           <div>
                             <strong>{provider.label}</strong>
                             <p>{provider.providerProductsLabel || provider.description}</p>
-                            <small>{connected ? `${stateLabel} · ${installedCount} installed product${installedCount === 1 ? "" : "s"}` : "Provider setup required"}</small>
+                            <small>{connected ? `${stateLabel} · ${installedCount} installed product${installedCount === 1 ? "" : "s"}` : stateLabel}</small>
                           </div>
-                          <span className="dm-btn-outline">{connected ? "Manage" : "Install"}</span>
+                          <span className="dm-btn-outline">{connected ? "Manage" : setupStarted ? "Continue setup" : "Install"}</span>
                         </button>
                       );
                     })}
@@ -366,7 +369,7 @@ function AddOnsSurface({
                           <code>{selectedMarketplaceProvider?.authRef || selectedMarketplaceProvider?.providerId || "provider-auth"}</code>
                         </div>
                         <p className="dm-cockpit-step-hint">Connect the provider account for this workspace. Product setup unlocks after the provider account is available to the workspace.</p>
-                        {setupMessage ? <p className="dm-cockpit-step-hint">{setupMessage}</p> : null}
+                        {providerSetupMessage ? <p className="dm-cockpit-step-hint">{providerSetupMessage}</p> : null}
                         {providerSetupNeedsCredentials ? (
                           <div className="dm-marketplace-credential-grid">
                             {providerSetupFields.map((field) => (

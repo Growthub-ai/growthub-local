@@ -19,4 +19,17 @@ async function POST(request, context) {
   return NextResponse.json(body, { status });
 }
 
-export { POST };
+function HEAD() {
+  return new Response(null, { status: 200 });
+}
+
+function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      allow: "HEAD, OPTIONS, POST",
+    },
+  });
+}
+
+export { HEAD, OPTIONS, POST };
