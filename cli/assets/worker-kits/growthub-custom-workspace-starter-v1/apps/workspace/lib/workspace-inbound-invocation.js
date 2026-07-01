@@ -171,6 +171,70 @@ function verifyApiRequestAuth({ authorization, apiKeyHeader, expectedToken } = {
   return { ok: true, reason: "verified" };
 }
 
+/**
+ * Pure triple-binding agreement check — payload id ↔ owning row ↔ published
+ * trigger node, including the method's trigger kind. This is the SAME
+ * checklist the validated QStash destination applies, extracted so the
+ * destination route AND the uninstall core prove ownership with one function:
+ * an uninstall for one input method must never clear a row bound to another
+ * product/method (a scheduler row cleared locally would keep firing remotely —
+ * a local lie over remote reality).
+ * Returns { ok, code } where code names the first mismatch.
+ */
+function evaluateBindingMatch({ row, triggerBinding, provider, product, expectedTriggerKind, scheduleId } = {}) {
+  const id = clean(scheduleId);
+  if (!id) return { ok: false, code: "missing_binding_id" };
+  if (clean(row?.runLocality) !== "serverless") return { ok: false, code: "row_not_serverless" };
+  if (clean(row?.schedulerRegistryId) !== clean(product?.integrationId)) return { ok: false, code: "row_registry_mismatch" };
+  if (clean(row?.scheduleId) !== id) return { ok: false, code: "row_binding_id_mismatch" };
+  if (!triggerBinding || clean(triggerBinding.triggerKind) !== clean(expectedTriggerKind)) return { ok: false, code: "trigger_kind_mismatch" };
+  if (triggerBinding.enabled !== true) return { ok: false, code: "trigger_disabled" };
+  if (clean(triggerBinding.scheduleId) !== id) return { ok: false, code: "trigger_binding_id_mismatch" };
+  if (clean(triggerBinding.schedulerRegistryId) !== clean(product?.integrationId)) return { ok: false, code: "trigger_registry_mismatch" };
+  if (clean(triggerBinding.providerId) && clean(triggerBinding.providerId) !== clean(provider?.providerId)) return { ok: false, code: "trigger_provider_mismatch" };
+  if (clean(triggerBinding.productId) && clean(triggerBinding.productId) !== clean(product?.productId)) return { ok: false, code: "trigger_product_mismatch" };
+  return { ok: true, code: "" };
+}
+
+/* ------------------------------------------------------------------ *
+ * Duplicate-delivery guard                                            *
+ * ------------------------------------------------------------------ */
+
+// Bounded per-instance replay cache. External webhook senders (Stripe/Shopify
+// class) retry on slow or non-2xx responses; a retry re-sends the SAME signed
+// bytes, so (bindingId, timestamp, body-hash) identifies the delivery. This is
+// best-effort WITHIN one runtime instance — inbound invocation is bounded
+// synchronous execution (60s graph budget), and callers needing cross-instance
+// idempotency send `x-growthub-idempotency-key`, which scopes the key they
+// control. Duplicates are ACKed (2xx, `duplicate: true`) without re-executing,
+// so provider retry loops terminate instead of hammering the graph.
+const DELIVERY_DEDUPE_CAP = 512;
+const deliveryCache = new Map(); // key -> expiresAtS
+
+function inboundDeliveryKey({ bindingId, rawBody, timestamp, idempotencyKey } = {}) {
+  if (clean(idempotencyKey)) return `${clean(bindingId)}:idem:${clean(idempotencyKey)}`;
+  return `${clean(bindingId)}:${clean(timestamp)}:${sha256Hex(typeof rawBody === "string" ? rawBody : "")}`;
+}
+
+function registerInboundDelivery({ bindingId, rawBody, timestamp, idempotencyKey, currentTimeS } = {}) {
+  const now = Number.isFinite(currentTimeS) ? currentTimeS : Math.floor(Date.now() / 1000);
+  const key = inboundDeliveryKey({ bindingId, rawBody, timestamp, idempotencyKey });
+  for (const [cachedKey, expiresAtS] of deliveryCache) {
+    if (expiresAtS <= now) deliveryCache.delete(cachedKey);
+  }
+  if (deliveryCache.has(key)) return { duplicate: true, key };
+  deliveryCache.set(key, now + WEBHOOK_TIMESTAMP_TOLERANCE_S * 2);
+  while (deliveryCache.size > DELIVERY_DEDUPE_CAP) {
+    deliveryCache.delete(deliveryCache.keys().next().value);
+  }
+  return { duplicate: false, key };
+}
+
+/** Test hook — clears the per-instance replay cache. */
+function resetInboundDeliveryCache() {
+  deliveryCache.clear();
+}
+
 /* ------------------------------------------------------------------ *
  * Inbound adapters (mirror of SCHEDULER_ADAPTERS)                     *
  * ------------------------------------------------------------------ */
@@ -266,7 +330,11 @@ export {
   SIGNATURE_CLOCK_TOLERANCE_S,
   WEBHOOK_TIMESTAMP_TOLERANCE_S,
   deriveBindingId,
+  evaluateBindingMatch,
   getInboundAdapter,
+  inboundDeliveryKey,
+  registerInboundDelivery,
+  resetInboundDeliveryCache,
   growthubApiRequestAdapter,
   growthubWebhookAdapter,
   inputModeForTriggerKind,

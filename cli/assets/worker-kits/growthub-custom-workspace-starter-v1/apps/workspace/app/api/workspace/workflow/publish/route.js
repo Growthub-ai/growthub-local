@@ -84,7 +84,15 @@ function rowHasSuccessfulServerlessSchedulerProof(row, draft) {
     const testedConfig = String(row?.orchestrationDraftTestedConfig || "").trim();
     const liveGraph = String(row?.orchestrationGraph || row?.orchestrationConfig || "").trim();
     const binding = readTriggerScheduleBinding(row?.orchestrationGraph || row?.orchestrationConfig);
-    return runLocality === "serverless" && Boolean(schedulerRegistryId) && Boolean(scheduleId) && binding?.enabled === true && binding?.scheduleId === scheduleId && binding?.schedulerRegistryId === schedulerRegistryId && (testedConfig === draftGraph || liveGraph === draftGraph);
+    // METHOD AGREEMENT: the row's declared input method, the published trigger
+    // node's kind, and the last-run proof's trigger kind must all agree, so
+    // stale proof from one input method (e.g. an old schedule) can never
+    // satisfy the publish gate for another (e.g. a webhook binding). Rows
+    // predating schedulerTriggerKind default to the scheduler kind.
+    const rowTriggerKind = String(row?.schedulerTriggerKind || "").trim() || "serverless-scheduler";
+    const lastRunTriggerKind = String(row?.lastScheduledRunTriggerKind || "").trim();
+    const methodAgrees = String(binding?.triggerKind || "").trim() === rowTriggerKind && (!lastRunTriggerKind || lastRunTriggerKind === rowTriggerKind);
+    return runLocality === "serverless" && Boolean(schedulerRegistryId) && Boolean(scheduleId) && binding?.enabled === true && binding?.scheduleId === scheduleId && binding?.schedulerRegistryId === schedulerRegistryId && methodAgrees && (testedConfig === draftGraph || liveGraph === draftGraph);
 }
 /**
  * Gate failures are governance signal: emit a blocked outcome receipt

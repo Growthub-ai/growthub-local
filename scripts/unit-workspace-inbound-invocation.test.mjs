@@ -277,6 +277,110 @@ test("runInputMethodUninstall: clears the row + trigger node in one write, recei
   assert.equal(JSON.parse(row.orchestrationConfig).nodes.find((n) => n.id === "input").config.inputMode, "manual");
 });
 
+/* ================= binding ownership (uninstall + door) ================= */
+
+test("evaluateBindingMatch: cross-method and stale-binding mismatches are named rejections", () => {
+  const provider = growthubProvider();
+  const webhookProduct = addOns.getMarketplaceProduct("growthub", "growthub-webhook-trigger");
+  const bindingId = "growthub-growthub-ws-sandbox-workflows-flow-a-v1";
+  const { config } = addOns.withWorkflowServerlessBind(bindFixture(), {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "growthub-webhook-trigger",
+    schedulerProviderId: "growthub", schedulerProductId: "growthub-webhook-trigger",
+    triggerKind: "inbound-webhook", scheduleId: bindingId, destinationUrl: DEST,
+  });
+  const row = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  const triggerBinding = addOns.readTriggerScheduleBinding(row.orchestrationConfig);
+  const base = { row, triggerBinding, provider, product: webhookProduct, expectedTriggerKind: "inbound-webhook", scheduleId: bindingId };
+  assert.equal(inbound.evaluateBindingMatch(base).ok, true);
+  // wrong method for the same row (webhook-bound, api-request expected)
+  const apiProduct = addOns.getMarketplaceProduct("growthub", "growthub-api-trigger");
+  assert.equal(inbound.evaluateBindingMatch({ ...base, product: apiProduct, expectedTriggerKind: "api-request" }).ok, false);
+  assert.equal(inbound.evaluateBindingMatch({ ...base, product: apiProduct, expectedTriggerKind: "api-request" }).code, "row_registry_mismatch");
+  // stale/rebound binding id
+  assert.equal(inbound.evaluateBindingMatch({ ...base, scheduleId: "growthub-growthub-ws-sandbox-workflows-flow-a-v2" }).code, "row_binding_id_mismatch");
+  // scheduler-bound row, webhook expected
+  const { config: schedCfg } = addOns.withWorkflowServerlessBind(bindFixture(), {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "upstash-qstash-workflow", scheduleId: "sid", cron: "0 * * * *",
+  });
+  const schedRow = schedCfg.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  const schedBinding = addOns.readTriggerScheduleBinding(schedRow.orchestrationConfig);
+  const verdict = inbound.evaluateBindingMatch({ row: schedRow, triggerBinding: schedBinding, provider, product: webhookProduct, expectedTriggerKind: "inbound-webhook", scheduleId: "sid" });
+  assert.equal(verdict.ok, false, "webhook match must refuse a QStash-bound row");
+});
+
+test("runInputMethodUninstall: refuses to clear a QStash-bound row (no local/remote divergence)", async () => {
+  const h = makeHarness();
+  const store = h.getStore();
+  const bound = addOns.withWorkflowServerlessBind(store, {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "upstash-qstash-workflow",
+    schedulerProviderId: "upstash", schedulerProductId: "upstash-qstash",
+    scheduleId: "growthub-upstash-ws-sandbox-workflows-flow-a-v1", cron: "0 * * * *",
+  });
+  h.setStore(bound.config);
+  const res = await orchestration.runInputMethodUninstall(h.deps, { providerId: "growthub", body: { productId: "growthub-webhook-trigger", objectId: "sandbox-workflows", rowId: "Flow A" } });
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  const row = h.getStore().dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  assert.equal(row.runLocality, "serverless", "QStash-bound row stays bound");
+  assert.equal(row.scheduleId, "growthub-upstash-ws-sandbox-workflows-flow-a-v1");
+  assert.ok(h.receipts.some((r) => r.kind === "workspace-add-on-binding" && r.outcomeStatus === "blocked"), "refusal is receipted");
+});
+
+test("runInputMethodUninstall: refuses to clear the OTHER inbound method's binding", async () => {
+  const h = makeHarness();
+  await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY }); // webhook bind
+  const res = await orchestration.runInputMethodUninstall(h.deps, { providerId: "growthub", body: { productId: "growthub-api-trigger", objectId: "sandbox-workflows", rowId: "Flow A" } });
+  assert.equal(res.status, 409, JSON.stringify(res.body));
+  const row = h.getStore().dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  assert.equal(row.schedulerTriggerKind, "inbound-webhook", "webhook binding survives an api-trigger uninstall attempt");
+});
+
+/* ================= duplicate-delivery guard ================= */
+
+test("registerInboundDelivery: retry of the same signed bytes is a duplicate; new body/timestamp/expiry are not", () => {
+  inbound.resetInboundDeliveryCache();
+  const base = { bindingId: "b1", rawBody: "{\"a\":1}", timestamp: "1700000000", currentTimeS: NOW_S };
+  assert.equal(inbound.registerInboundDelivery(base).duplicate, false, "first delivery executes");
+  assert.equal(inbound.registerInboundDelivery(base).duplicate, true, "byte-identical retry is acknowledged, not re-executed");
+  assert.equal(inbound.registerInboundDelivery({ ...base, rawBody: "{\"a\":2}" }).duplicate, false, "different body is a new delivery");
+  assert.equal(inbound.registerInboundDelivery({ ...base, timestamp: "1700000001" }).duplicate, false, "different timestamp is a new delivery");
+  // entry expires after the replay window
+  assert.equal(inbound.registerInboundDelivery({ ...base, currentTimeS: NOW_S + inbound.WEBHOOK_TIMESTAMP_TOLERANCE_S * 2 + 1 }).duplicate, false, "expired entry does not dedupe");
+  // caller idempotency key scopes the dedupe regardless of body
+  inbound.resetInboundDeliveryCache();
+  assert.equal(inbound.registerInboundDelivery({ bindingId: "b1", idempotencyKey: "k1", rawBody: "x", currentTimeS: NOW_S }).duplicate, false);
+  assert.equal(inbound.registerInboundDelivery({ bindingId: "b1", idempotencyKey: "k1", rawBody: "y", currentTimeS: NOW_S }).duplicate, true, "same idempotency key dedupes across bodies");
+  assert.equal(inbound.registerInboundDelivery({ bindingId: "b2", idempotencyKey: "k1", rawBody: "y", currentTimeS: NOW_S }).duplicate, false, "key is scoped per binding");
+  inbound.resetInboundDeliveryCache();
+});
+
+/* ================= run-input contract gate ================= */
+
+test("run-input contract: oversized / over-count envelopes are rejected before execution", async () => {
+  const runInputsMod = await import(pathToFileURL(path.join(kitLib, "orchestration-run-inputs.js")).href);
+  const schema = runInputsMod.discoverRunInputSchema(GRAPH);
+  const tooMany = { kind: "growthub-workflow-run-inputs-v1", source: "api-request", values: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`k${i}`, "v"])) };
+  assert.equal(runInputsMod.validateRunInputsEnvelope(tooMany, schema).ok, false, "over-count rejected");
+  const oversized = { kind: "growthub-workflow-run-inputs-v1", source: "api-request", values: { big: "x".repeat(8 * 1024 + 1) } };
+  assert.equal(runInputsMod.validateRunInputsEnvelope(oversized, schema).ok, false, "oversized field rejected");
+  const fine = { kind: "growthub-workflow-run-inputs-v1", source: "api-request", values: { note: "ok" } };
+  assert.equal(runInputsMod.validateRunInputsEnvelope(fine, schema).ok, true, "small valid envelope passes");
+});
+
+/* ================= mixed proof material ================= */
+
+test("mixed proof: a bad webhook signature with a valid bearer still resolves as webhook (no silent downgrade)", () => {
+  const provider = growthubProvider();
+  const headers = { "x-growthub-signature": "v1=deadbeef", "x-growthub-timestamp": String(NOW_S), authorization: "Bearer tok_invoke" };
+  const product = inbound.resolveInboundProductForRequest(provider, headers);
+  assert.equal(product?.productId, "growthub-webhook-trigger", "signature material selects the webhook method");
+  const adapter = inbound.getInboundAdapter(product);
+  const verdict = adapter.verifyInbound({ headers, rawBody: "{}", expectedUrl: DEST, env: { GROWTHUB_WEBHOOK_SIGNING_SECRET: SECRET }, currentTimeS: NOW_S });
+  assert.equal(verdict.ok, false, "the bad signature is rejected as a webhook — the valid bearer does not rescue it");
+});
+
 /* ================= cockpit visibility ================= */
 
 test("cockpit: a bound webhook workflow surfaces with the Webhook method chip and scheduled state", async () => {

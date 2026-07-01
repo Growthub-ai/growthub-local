@@ -42,12 +42,15 @@ import {
   buildSchedulerCallbackUrls,
 } from "@/lib/workspace-add-on-scheduler";
 import {
+  evaluateBindingMatch,
   getInboundAdapter,
   isInboundInvocationProduct,
+  registerInboundDelivery,
   resolveInboundProductForRequest,
   triggerKindForLane,
   INVOKED_RUN_KIND,
 } from "@/lib/workspace-inbound-invocation";
+import { discoverRunInputSchema, validateRunInputsEnvelope } from "@/lib/orchestration-run-inputs";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
@@ -184,17 +187,8 @@ async function POST(request, context) {
   // the live graph trigger node so a stale/rebound delivery cannot execute.
   const scheduleId = clean(payload.scheduleId || payload.bindingId || request.headers.get("x-growthub-schedule-id"));
   const triggerBinding = readTriggerScheduleBinding(row[liveGraphField(row)]);
-  const bindingOk =
-    Boolean(scheduleId) &&
-    clean(row.runLocality) === "serverless" &&
-    clean(row.schedulerRegistryId) === product.integrationId &&
-    clean(row.scheduleId) === scheduleId &&
-    triggerBinding?.triggerKind === expectedTriggerKind &&
-    triggerBinding?.enabled === true &&
-    triggerBinding?.scheduleId === scheduleId &&
-    triggerBinding?.schedulerRegistryId === product.integrationId &&
-    (!triggerBinding?.providerId || triggerBinding.providerId === provider.providerId) &&
-    (!triggerBinding?.productId || triggerBinding.productId === product.productId);
+  const bindingMatch = evaluateBindingMatch({ row, triggerBinding, provider, product, expectedTriggerKind, scheduleId });
+  const bindingOk = bindingMatch.ok;
   if (!bindingOk) {
     await appendOutcomeReceipt({
       kind: runReceiptKind,
@@ -202,8 +196,8 @@ async function POST(request, context) {
       outcomeStatus: "blocked",
       actor: provider.providerId,
       objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-      policyVerdict: { ok: false, violationCodes: [scheduleId ? "scheduled_run_row_unbound" : "scheduled_run_missing_schedule_id"] },
-      summary: `Rejected ${expectedTriggerKind} run of ${rowId}: ${scheduleId ? `row/trigger not bound to ${product.integrationId} binding ${scheduleId}` : "missing inbound binding id"} (locality=${clean(row.runLocality)}, row.scheduleId=${clean(row.scheduleId) || "none"}, trigger.scheduleId=${triggerBinding?.scheduleId || "none"}).`,
+      policyVerdict: { ok: false, violationCodes: [scheduleId ? "scheduled_run_row_unbound" : "scheduled_run_missing_schedule_id", `binding_${bindingMatch.code}`] },
+      summary: `Rejected ${expectedTriggerKind} run of ${rowId}: ${scheduleId ? `row/trigger not bound to ${product.integrationId} binding ${scheduleId} (${bindingMatch.code})` : "missing inbound binding id"} (locality=${clean(row.runLocality)}, row.scheduleId=${clean(row.scheduleId) || "none"}, trigger.scheduleId=${triggerBinding?.scheduleId || "none"}).`,
     });
     return NextResponse.json({ ok: false, error: scheduleId ? "row/trigger is not currently bound to this input method" : "missing inbound binding id", scheduleId }, { status: scheduleId ? 409 : 400 });
   }
@@ -223,6 +217,51 @@ async function POST(request, context) {
     return NextResponse.json({ ok: false, error: "binding is paused", scheduleId }, { status: 409 });
   }
 
+  const runInputs = normalizeInboundRunInputs(payload, request, runSource);
+
+  if (expectedTriggerKind !== "serverless-scheduler") {
+    // CONTRACT GATE: inbound request inputs must satisfy the workflow's own
+    // run-input schema (field/byte/count limits, required fields, secretRef
+    // rule) BEFORE any graph execution. The request is the input method; an
+    // invalid payload never reaches the runner.
+    const inputSchema = discoverRunInputSchema(row[liveGraphField(row)]);
+    const inputVerdict = validateRunInputsEnvelope(runInputs, inputSchema);
+    if (!inputVerdict.ok) {
+      await appendOutcomeReceipt({
+        kind: runReceiptKind,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: provider.providerId,
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: ["invoked_run_invalid_inputs"] },
+        summary: `Rejected ${expectedTriggerKind} run of ${rowId}: run inputs failed the workflow input contract (${clean(inputVerdict.error) || "invalid envelope"}).`,
+      });
+      return NextResponse.json({ ok: false, error: inputVerdict.error || "run inputs failed the workflow input contract", scheduleId }, { status: 422 });
+    }
+
+    // DUPLICATE GUARD: external senders retry on slow/non-2xx responses. A
+    // retry re-sends the same signed bytes (or the same caller idempotency
+    // key), so acknowledge duplicates without re-executing the graph.
+    const delivery = registerInboundDelivery({
+      bindingId: scheduleId,
+      rawBody,
+      timestamp: request.headers.get("x-growthub-timestamp") || "",
+      idempotencyKey: request.headers.get("x-growthub-idempotency-key") || "",
+    });
+    if (delivery.duplicate) {
+      await appendOutcomeReceipt({
+        kind: runReceiptKind,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: provider.providerId,
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: ["invoked_run_duplicate_delivery"] },
+        summary: `Acknowledged duplicate ${expectedTriggerKind} delivery for ${rowId} (binding ${scheduleId}); graph not re-executed.`,
+      });
+      return NextResponse.json({ ok: true, duplicate: true, scheduleId, objectId, rowId }, { status: 200 });
+    }
+  }
+
   const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
   let result;
   try {
@@ -230,7 +269,7 @@ async function POST(request, context) {
       workspaceConfig,
       row,
       timeoutMs: 60000,
-      runInputs: normalizeInboundRunInputs(payload, request, runSource),
+      runInputs,
       executionContext: { runId, ranAt: new Date().toISOString(), sandboxName: row.Name },
     });
   } catch (err) {

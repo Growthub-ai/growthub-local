@@ -36,6 +36,7 @@ import {
   isInboundInvocationProduct,
   triggerKindForLane,
   deriveBindingId,
+  evaluateBindingMatch,
   BINDING_RECEIPT_KIND,
 } from "./workspace-inbound-invocation.js";
 import { readEnvVar, resolveRequiredEnv } from "./server-secrets.js";
@@ -395,6 +396,7 @@ async function runSchedulerCallback(deps, { providerId, kind = "callback", rawBo
     lastScheduledRunBodyPreview: parsed.bodyPreview,
     lastScheduledRunFailureReason: parsed.succeeded ? "" : parsed.failureReason,
     lastScheduledRunRetries: retryStates,
+    lastScheduledRunTriggerKind: "serverless-scheduler",
   };
   patch[parsed.succeeded ? "lastScheduledRunSucceededAt" : "lastScheduledRunFailedAt"] = now;
 
@@ -602,6 +604,33 @@ async function runInputMethodUninstall(deps, { providerId, body = {} } = {}) {
   if (!owner) return err(404, "no installed workflow binding to remove", { providerId: provider.providerId });
   const bindingId = clean(body.scheduleId || body.bindingId || owner.row?.scheduleId);
   if (!bindingId) return err(404, "owning row has no installed binding", { providerId: provider.providerId });
+
+  // OWNERSHIP GATE: the row must be CURRENTLY bound to THIS product and THIS
+  // input method (row fields + published trigger node, full triple check). An
+  // inbound uninstall must never clear a row bound to another product — a
+  // scheduler-bound row cleared locally would keep firing remotely, a local
+  // lie over remote reality.
+  const triggerBinding = readTriggerScheduleBinding(owner.row[liveGraphField(owner.row)]);
+  const ownership = evaluateBindingMatch({
+    row: owner.row,
+    triggerBinding,
+    provider,
+    product,
+    expectedTriggerKind: triggerKindForLane(product.executionLane),
+    scheduleId: bindingId,
+  });
+  if (!ownership.ok) {
+    await appendReceipt({
+      kind: BINDING_RECEIPT_KIND,
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: owner.objectId, objectType: "sandbox-environment", rowName: owner.row.Name }],
+      policyVerdict: { ok: false, violationCodes: [`binding_uninstall_${ownership.code}`] },
+      summary: `${product.label} uninstall refused: ${owner.row.Name} is not bound to ${product.integrationId} via ${triggerKindForLane(product.executionLane)} (${ownership.code}; row.schedulerRegistryId=${clean(owner.row.schedulerRegistryId) || "none"}, trigger=${triggerBinding?.triggerKind || "none"}).`,
+    });
+    return err(409, `row is not bound to this input method (${ownership.code})`, { providerId: provider.providerId, productId: product.productId, bindingId, code: ownership.code });
+  }
 
   const { config: nextConfig } = withWorkflowServerlessBind(config, {
     objectId: owner.objectId,
