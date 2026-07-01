@@ -1741,6 +1741,8 @@ export default function WorkflowSurface() {
                     readinessFlag={selectedNodeId ? readinessFlags[selectedNodeId] : null}
                     serverlessScheduleOptionAvailable={Boolean(addOnsState.qstashWorkflow || selectedSchedulerRegistryId || schedulerRegistryRows.length)}
                     serverlessScheduleAvailable={remoteScheduleVerified}
+                    webhookTriggerAvailable={addOnsState.hasWebhookTriggerCapability}
+                    apiTriggerAvailable={addOnsState.hasApiTriggerCapability}
                     inputScheduleControls={selectedNode?.type === "input" && selectedNode?.config?.inputMode === "serverless-schedule" ? (
                       <div className="dm-trigger-schedule-config">
                         <span className="dm-field-label">Serverless schedule</span>

@@ -32,6 +32,12 @@ import {
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
 } from "./workspace-add-on-scheduler.js";
+import {
+  isInboundInvocationProduct,
+  triggerKindForLane,
+  deriveBindingId,
+  BINDING_RECEIPT_KIND,
+} from "./workspace-inbound-invocation.js";
 import { readEnvVar, resolveRequiredEnv } from "./server-secrets.js";
 import { scanServerlessReadiness, READINESS_KIND } from "./serverless-readiness.js";
 
@@ -419,8 +425,14 @@ async function runReadinessScan(deps, { providerId, body = {} } = {}) {
   const { readConfig, env } = deps;
   const provider = getMarketplaceProvider(clean(providerId));
   if (!provider) return err(404, "unknown marketplace provider", { providerId });
-  const product = resolveSchedulerProduct(provider, clean(body.productId));
-  if (!product || !isSchedulerProduct(product)) return err(400, "provider has no serverless scheduler product", { providerId: provider.providerId });
+  const product = resolveSchedulerProduct(provider, clean(body.productId))
+    || (clean(body.productId)
+      ? getMarketplaceProduct(provider.providerId, clean(body.productId))
+      : (provider.products || []).find((p) => isInboundInvocationProduct(p)))
+    || null;
+  if (!product || !(isSchedulerProduct(product) || isInboundInvocationProduct(product))) {
+    return err(400, "provider has no serverless scheduler or inbound input-method product", { providerId: provider.providerId });
+  }
 
   const config = await readConfig();
   const objectId = clean(body.objectId);
@@ -446,4 +458,180 @@ async function runReadinessScan(deps, { providerId, body = {} } = {}) {
   return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, objectId, rowId, phase, readiness } };
 }
 
-export { runScheduleInstall, runScheduleNow, runSchedulerCallback, runReadinessScan };
+/* ------------------------------------------------------------------ *
+ * Install an inbound input-method binding (webhook / api-request).    *
+ * EXACT mirror of runScheduleInstall minus the remote provider steps: *
+ * there is no external schedule to create — the workspace's own       *
+ * destination route IS the invocation surface, so the spine is        *
+ * verify capability → env gate → row eligibility → readiness gate →   *
+ * deterministic binding id → ONE bind write → receipt.                *
+ * ------------------------------------------------------------------ */
+async function runInputMethodInstall(deps, { providerId, body = {}, requestOrigin = "" } = {}) {
+  const { readConfig, writeConfig, appendReceipt, env } = deps;
+  const now = (deps.now || (() => new Date().toISOString()))();
+
+  const provider = getMarketplaceProvider(clean(providerId));
+  if (!provider) return err(404, "unknown marketplace provider", { providerId });
+  const product = clean(body.productId)
+    ? getMarketplaceProduct(provider.providerId, clean(body.productId))
+    : (provider.products || []).find((p) => isInboundInvocationProduct(p)) || null;
+  if (!product || !isInboundInvocationProduct(product)) {
+    return err(400, "provider has no inbound input-method product", { providerId: provider.providerId });
+  }
+  const triggerKind = triggerKindForLane(product.executionLane);
+
+  const config = await readConfig();
+  // Capability gate: product must be installed + verified (env-ref probe) first.
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  const installedRow = objects.flatMap((o) => (isApiRegistryObject(o) ? (o.rows || []) : [])).find((r) => clean(r?.integrationId) === product.integrationId);
+  if (!installedRow || clean(installedRow.syncStatus) !== "verified") {
+    return err(409, `${product.label} must be installed and verified before binding`, { productId: product.productId, nextActions: [`Sync ${product.label} from Workspace Add-ons, then create the binding.`] });
+  }
+
+  // Env gate: the signing secret / invoke token must resolve in this runtime —
+  // otherwise the destination route could never verify an invocation.
+  const requiredEnv = resolveRequiredEnv(product.requiredEnv, env);
+  if (!requiredEnv.ok) {
+    return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: requiredEnv.missing });
+  }
+
+  const objectId = clean(body.objectId);
+  const rowId = clean(body.rowId || body.name);
+  if (!objectId || !rowId) return err(400, "objectId and rowId (workflow row) are required");
+
+  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
+  const targetRow = eligible.row;
+
+  // Causality gate: identical to the scheduler install — the whole downstream
+  // graph must be serverless-ready BEFORE the row is bound (inbound runs are
+  // serverless executions of the same published graph).
+  const readiness = scanServerlessReadiness({
+    row: targetRow,
+    workspaceConfig: config,
+    env,
+    phase: "pre-bind",
+    expected: {
+      schedulerRegistryId: product.integrationId,
+      providerId: provider.providerId,
+      productId: product.productId,
+      triggerInput: clean(body.triggerInput),
+    },
+  });
+  if (!readiness.ok) {
+    await appendReceipt({
+      kind: READINESS_KIND,
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: readiness.deltaTags },
+      summary: `${product.label} binding blocked: ${readiness.blockingNodes.length} downstream node(s) are not serverless-ready (${readiness.blockingNodes.map((n) => n.nodeId || n.nodeType).join(", ")}).`,
+      nextActions: readiness.blockingNodes.map((n) => n.helperAction).filter(Boolean),
+    });
+    return err(422, "workflow graph is not serverless-ready", { providerId: provider.providerId, productId: product.productId, readiness });
+  }
+
+  const version = clean(body.version || targetRow.version || "v1");
+  const workspaceId = clean(body.workspaceId || config?.id || "workspace");
+  const explicitPublicBaseUrl = clean(body.publicBaseUrl).replace(/\/+$/, "");
+  const baseUrl = explicitPublicBaseUrl || resolveWorkspacePublicUrl(env, requestOrigin);
+  if (!baseUrl) return err(422, "could not resolve a public workspace URL for the invocation destination", { nextActions: ["Set GROWTHUB_WORKSPACE_PUBLIC_URL to the deployed workspace origin, then retry."] });
+  const { destinationUrl } = buildSchedulerCallbackUrls(baseUrl, provider.providerId);
+  const bindingId = deriveBindingId({ providerId: provider.providerId, workspaceId, objectId, rowId, version });
+
+  // ONE write: bind the owning row + sync its live trigger node (same atomic
+  // writer as the scheduler; runLocality flips to serverless, adapter
+  // normalizes, trigger node carries the method's triggerKind/inputMode).
+  const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(config, {
+    objectId, rowId,
+    schedulerRegistryId: product.integrationId,
+    schedulerProviderId: provider.providerId,
+    schedulerProductId: product.productId,
+    triggerKind,
+    scheduleId: bindingId,
+    cron: "",
+    triggerInput: clean(body.triggerInput),
+    destinationUrl,
+    installedAt: now,
+  });
+  if (!bound) {
+    await appendReceipt({ kind: BINDING_RECEIPT_KIND, lane: "server-authoritative", outcomeStatus: "failed", actor: "workspace-marketplace", objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }], policyVerdict: { ok: false, violationCodes: ["binding_bind_failed"] }, summary: `${product.label} binding ${bindingId} failed: workflow row ${rowId} could not be bound.` });
+    return err(409, `could not bind workflow row ${rowId}`, { providerId: provider.providerId, productId: product.productId });
+  }
+
+  let persisted;
+  try {
+    persisted = await writeConfig({ dataModel: nextConfig.dataModel });
+  } catch (writeErr) {
+    await appendReceipt({ kind: BINDING_RECEIPT_KIND, lane: "server-authoritative", outcomeStatus: "failed", actor: "workspace-marketplace", objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }], policyVerdict: { ok: false, violationCodes: ["binding_persist_failed"] }, summary: `${product.label} binding ${bindingId} not installed: workspace persistence failed (${clean(writeErr?.code) || "write error"}).` });
+    return err(424, "binding not installed: workspace could not persist it", { providerId: provider.providerId, productId: product.productId, persisted: false, bindingId });
+  }
+
+  const { receipt } = await appendReceipt({ kind: BINDING_RECEIPT_KIND, lane: "server-authoritative", outcomeStatus: "published", actor: "workspace-marketplace", objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }], changedFields: (changedFields || []).map((f) => `dataModel.${f}`), policyVerdict: { ok: true }, schemaVerdict: { ok: true }, summary: `${product.label} ${triggerKind} binding ${bindingId} bound to ${rowId}: row serverless + ${liveField} trigger node "${triggerNodeId}" synced (published graph).` });
+
+  return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, triggerKind, scheduleId: bindingId, bindingId, bound, liveField, triggerNodeId, destinationUrl, persisted: true, workspaceConfig: persisted, receiptId: receipt?.receiptId } };
+}
+
+/* ------------------------------------------------------------------ *
+ * Uninstall an inbound input-method binding. Mirror of the scheduler  *
+ * DELETE path minus the remote delete — clearing the row + trigger    *
+ * node IS the full teardown (the destination route rejects unbound    *
+ * deliveries from that instant).                                      *
+ * ------------------------------------------------------------------ */
+async function runInputMethodUninstall(deps, { providerId, body = {} } = {}) {
+  const { readConfig, writeConfig, appendReceipt } = deps;
+
+  const provider = getMarketplaceProvider(clean(providerId));
+  if (!provider) return err(404, "unknown marketplace provider", { providerId });
+  const product = clean(body.productId)
+    ? getMarketplaceProduct(provider.providerId, clean(body.productId))
+    : (provider.products || []).find((p) => isInboundInvocationProduct(p)) || null;
+  if (!product || !isInboundInvocationProduct(product)) {
+    return err(400, "provider has no inbound input-method product", { providerId: provider.providerId });
+  }
+
+  const config = await readConfig();
+  let owner = null;
+  if (clean(body.objectId) && clean(body.rowId || body.name)) {
+    const eligible = findEligibleSandboxRow(config, clean(body.objectId), clean(body.rowId || body.name));
+    if (eligible.ok) owner = { objectId: eligible.object.id, row: eligible.row };
+  } else if (clean(body.scheduleId || body.bindingId)) {
+    owner = findSandboxRowByScheduleId(config, clean(body.scheduleId || body.bindingId));
+  }
+  if (!owner) return err(404, "no installed workflow binding to remove", { providerId: provider.providerId });
+  const bindingId = clean(body.scheduleId || body.bindingId || owner.row?.scheduleId);
+  if (!bindingId) return err(404, "owning row has no installed binding", { providerId: provider.providerId });
+
+  const { config: nextConfig } = withWorkflowServerlessBind(config, {
+    objectId: owner.objectId,
+    rowId: owner.row.Name,
+    clear: true,
+  });
+  let persisted = true;
+  try {
+    await writeConfig({ dataModel: nextConfig.dataModel });
+  } catch {
+    persisted = false;
+  }
+  const liveField = liveGraphField(owner.row);
+  const { receipt } = await appendReceipt({
+    kind: BINDING_RECEIPT_KIND,
+    lane: "server-authoritative",
+    outcomeStatus: persisted ? "published" : "failed",
+    actor: "workspace-marketplace",
+    objectRefs: [{ objectId: owner.objectId, objectType: "sandbox-environment", rowName: owner.row.Name }],
+    changedFields: [`dataModel.${owner.objectId}.${owner.row.Name}.scheduleId`, `dataModel.${owner.objectId}.${owner.row.Name}.${liveField}.trigger`],
+    policyVerdict: { ok: persisted, ...(persisted ? {} : { violationCodes: ["binding_uninstall_persist_failed"] }) },
+    summary: persisted
+      ? `${product.label} binding ${bindingId} uninstalled from ${owner.row.Name}; row reverted to local + manual trigger.`
+      : `${product.label} binding ${bindingId} uninstall did NOT persist — row still shows bound. Re-run uninstall on a writable runtime.`,
+    nextActions: persisted ? [] : ["Persistence is read-only here. Set WORKSPACE_CONFIG_ALLOW_FS_WRITE=true or use a writable runtime, then re-run uninstall to clear the row."],
+  });
+  if (!persisted) {
+    return err(424, `binding ${bindingId} uninstall did not persist`, { providerId: provider.providerId, productId: product.productId, bindingId, persisted: false, receiptId: receipt?.receiptId });
+  }
+  return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, scheduleId: bindingId, bindingId, deleted: true, persisted, workspaceConfig: nextConfig, receiptId: receipt?.receiptId } };
+}
+
+export { runScheduleInstall, runScheduleNow, runSchedulerCallback, runReadinessScan, runInputMethodInstall, runInputMethodUninstall };

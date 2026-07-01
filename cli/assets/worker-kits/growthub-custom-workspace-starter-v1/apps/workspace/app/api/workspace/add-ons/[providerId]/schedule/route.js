@@ -39,7 +39,8 @@ import {
 } from "@/lib/workspace-add-on-scheduler";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
-import { runScheduleInstall, runScheduleNow, runReadinessScan } from "@/lib/scheduler-orchestration";
+import { isInboundInvocationProduct } from "@/lib/workspace-inbound-invocation";
+import { runScheduleInstall, runScheduleNow, runReadinessScan, runInputMethodInstall, runInputMethodUninstall } from "@/lib/scheduler-orchestration";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
@@ -72,6 +73,17 @@ function requestOrigin(request) {
 function resolveSchedulerProduct(provider, productId) {
   if (productId) return getMarketplaceProduct(provider.providerId, productId);
   return (provider.products || []).find((product) => isSchedulerProduct(product)) || null;
+}
+
+/** True when this request targets an inbound input-method product (webhook /
+ * api-request) — those dispatch to the input-method cores (no remote provider). */
+function targetsInboundProduct(providerIdParam, body = {}) {
+  const provider = getMarketplaceProvider(clean(providerIdParam));
+  if (!provider) return false;
+  const product = clean(body.productId)
+    ? getMarketplaceProduct(provider.providerId, clean(body.productId))
+    : (provider.products || []).find((p) => isSchedulerProduct(p)) || (provider.products || []).find((p) => isInboundInvocationProduct(p));
+  return Boolean(product && isInboundInvocationProduct(product));
 }
 
 async function fetchWithTimeout(url, init = {}) {
@@ -114,7 +126,17 @@ async function POST(request, context) {
   if (["pause", "resume"].includes(clean(body.action))) {
     return controlSchedule(request, params?.providerId, body);
   }
-  // Thin wrapper over the dependency-injected install core (testable offline).
+  // Thin wrapper over the dependency-injected install cores (testable offline).
+  // Inbound input-method products (webhook / api-request) have no remote
+  // provider infrastructure — they dispatch to the input-method core.
+  if (targetsInboundProduct(params?.providerId, body)) {
+    const { status, body: out } = await runInputMethodInstall(SCHEDULER_DEPS, {
+      providerId: params?.providerId,
+      body,
+      requestOrigin: requestOrigin(request),
+    });
+    return NextResponse.json(out, { status });
+  }
   const { status, body: out } = await runScheduleInstall(SCHEDULER_DEPS, {
     providerId: params?.providerId,
     body,
@@ -127,8 +149,11 @@ async function controlSchedule(request, providerIdParam, body = {}) {
   const providerId = clean(providerIdParam);
   const provider = getMarketplaceProvider(providerId);
   if (!provider) return jsonError("unknown marketplace provider", 404, { providerId });
-  const product = resolveSchedulerProduct(provider, clean(body.productId));
-  if (!product || !isSchedulerProduct(product)) {
+  const product = resolveSchedulerProduct(provider, clean(body.productId))
+    || (provider.products || []).find((p) => isInboundInvocationProduct(p))
+    || null;
+  const inbound = Boolean(product && isInboundInvocationProduct(product));
+  if (!product || !(isSchedulerProduct(product) || inbound)) {
     return jsonError("provider has no serverless scheduler product", 400, { providerId: provider.providerId });
   }
   const adapter = getSchedulerAdapter(product);
@@ -144,8 +169,10 @@ async function controlSchedule(request, providerIdParam, body = {}) {
   if (clean(row.runLocality) !== "serverless" || clean(row.schedulerRegistryId) !== product.integrationId) {
     return jsonError("workflow row is not bound to this scheduler", 409, { providerId: provider.providerId, productId: product.productId, objectId, rowId, scheduleId });
   }
-  const token = readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "";
-  if (!token) return jsonError(`${product.label} runtime credentials are not connected`, 422, { productId: product.productId });
+  // Inbound bindings pause at the workspace door (no remote scheduler to
+  // control), so no provider token is needed for pause/resume.
+  const token = inbound ? "" : (readEnvVar(product.probe?.tokenEnv || (product.requiredEnv || [])[0], process.env)?.value || "");
+  if (!inbound && !token) return jsonError(`${product.label} runtime credentials are not connected`, 422, { productId: product.productId });
 
   // Resume is a re-activation of a continuing runtime contract — re-run the
   // readiness scan before re-enabling. A workflow compatible at install time can
@@ -176,12 +203,18 @@ async function controlSchedule(request, providerIdParam, body = {}) {
 
   const region = clean(body.region || row.schedulerRegion || "us-east-1");
   let controlResult;
-  try {
-    const req = adapter.buildControlRequest({ product, region, token, scheduleId, action, env: process.env });
-    const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers });
-    controlResult = adapter.parseControlResponse({ status: response.status, body: await response.text(), action, scheduleId });
-  } catch (error) {
-    controlResult = { ok: false, proof: error?.message || "remote scheduler control failed", scheduleId };
+  if (inbound) {
+    // Door-enforced: the destination route rejects deliveries for a paused
+    // binding, so the row-state patch below IS the control action.
+    controlResult = { ok: true, proof: `${product.label} binding ${scheduleId} ${action}d (door-enforced).`, scheduleId };
+  } else {
+    try {
+      const req = adapter.buildControlRequest({ product, region, token, scheduleId, action, env: process.env });
+      const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers });
+      controlResult = adapter.parseControlResponse({ status: response.status, body: await response.text(), action, scheduleId });
+    } catch (error) {
+      controlResult = { ok: false, proof: error?.message || "remote scheduler control failed", scheduleId };
+    }
   }
   if (!controlResult.ok) {
     await appendOutcomeReceipt({
@@ -310,6 +343,12 @@ async function DELETE(request, context) {
     body = await request.json();
   } catch {
     body = {};
+  }
+  // Inbound input-method bindings have no remote schedule to delete — clearing
+  // the row + trigger node is the full teardown (input-method core).
+  if (targetsInboundProduct(providerId, body)) {
+    const { status, body: out } = await runInputMethodUninstall(SCHEDULER_DEPS, { providerId, body });
+    return NextResponse.json(out, { status });
   }
   const product = resolveSchedulerProduct(provider, clean(body.productId));
   if (!product || !isSchedulerProduct(product)) {

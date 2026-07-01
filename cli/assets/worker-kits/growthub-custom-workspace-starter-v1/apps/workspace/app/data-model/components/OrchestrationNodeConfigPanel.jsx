@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, Check, ChevronDown, Database, FileInput, ListTree } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -574,6 +574,8 @@ export function OrchestrationNodeConfigPanel({
   inputScheduleControls,
   serverlessScheduleOptionAvailable = false,
   serverlessScheduleAvailable = false,
+  webhookTriggerAvailable = false,
+  apiTriggerAvailable = false,
   readinessFlag,
   activeTab: controlledTab,
   onTabChange
@@ -608,6 +610,11 @@ export function OrchestrationNodeConfigPanel({
     { value: "record", label: "Record", Icon: Database },
     { value: "source-record", label: "Source Record", Icon: ListTree },
     ...(schedulerAvailable ? [{ value: "serverless-schedule", label: "Serverless Schedule", Icon: CalendarClock }] : []),
+    // Inbound input methods — the exact mirror of the scheduler option: each
+    // appears only when its verified capability row is installed, and each
+    // binds through the same governed bind path (serverless execution).
+    ...(webhookTriggerAvailable ? [{ value: "webhook", label: "Webhook", Icon: Webhook }] : []),
+    ...(apiTriggerAvailable ? [{ value: "api-request", label: "API Request", Icon: KeyRound }] : []),
   ];
   const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
   const meta = config.requestHeadersMetadata || {};

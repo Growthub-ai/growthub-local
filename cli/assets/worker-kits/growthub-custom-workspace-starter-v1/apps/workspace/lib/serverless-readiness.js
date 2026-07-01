@@ -273,7 +273,11 @@ function scanServerlessReadiness({
       const schedule = cfg.schedule && typeof cfg.schedule === "object" ? cfg.schedule : {};
       const rowScheduleId = clean(row?.scheduleId);
       const rowRegistryId = clean(row?.schedulerRegistryId);
-      const triggerIsScheduler = clean(cfg.trigger) === "serverless-scheduler" && cfg.enabled !== false;
+      // One trigger grammar, three input methods: the scheduler kind plus the
+      // inbound kinds (workspace-add-ons.js BINDING_TRIGGER_KINDS). Bound-phase
+      // agreement checks are identical for every method.
+      const bindingTriggerKinds = ["serverless-scheduler", "inbound-webhook", "api-request"];
+      const triggerIsScheduler = bindingTriggerKinds.includes(clean(cfg.trigger)) && cfg.enabled !== false;
       const scheduleIdAgrees =
         clean(schedule.scheduleId) &&
         clean(schedule.scheduleId) === rowScheduleId &&
@@ -291,7 +295,7 @@ function scanServerlessReadiness({
           helperAction: "Re-install the serverless schedule so the trigger node, the owning row, and the remote schedule all carry the same scheduleId.",
         });
       } else {
-        addCheck({ nodeId: triggerNodeId, nodeType: clean(triggerNode?.type) || "input", status: "ok", reason: "trigger node bound to serverless-scheduler and agrees with the row" });
+        addCheck({ nodeId: triggerNodeId, nodeType: clean(triggerNode?.type) || "input", status: "ok", reason: `trigger node bound to ${clean(cfg.trigger)} and agrees with the row` });
       }
     } else {
       // pre-bind: the bind itself will sync the trigger node; just confirm an
