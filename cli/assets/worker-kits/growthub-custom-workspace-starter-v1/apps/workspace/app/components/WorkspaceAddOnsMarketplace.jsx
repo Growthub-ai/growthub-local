@@ -21,6 +21,25 @@ import {
   getMarketplaceProduct,
 } from "@/lib/workspace-add-ons";
 
+// Category labels + display order for the scaled marketplace. Grouping is a
+// pure presentation arrangement of the governed catalog — it changes nothing
+// about the click-path (browse → connect → save credentials → sync product).
+const CATEGORY_LABELS = {
+  infrastructure: "Infrastructure",
+  deploy: "Deploy",
+  data: "Data",
+  messaging: "Messaging",
+  payments: "Payments",
+  "ai-inference": "AI Inference",
+  retrieval: "Retrieval",
+  vector: "Retrieval",
+  telephony: "Telephony",
+  devtools: "Dev Tools",
+  edge: "Edge",
+  "project-management": "Project Management",
+};
+const CATEGORY_ORDER = ["infrastructure", "deploy", "data", "messaging", "ai-inference", "retrieval", "vector", "payments", "telephony", "devtools", "edge", "project-management"];
+
 function AddOnsSurface({
   onConnectProvider,
   onSyncProvider,
@@ -48,6 +67,7 @@ function AddOnsSurface({
   const [resourceMessage, setResourceMessage] = useState("");
   const [installMode, setInstallMode] = useState("existing");
   const [providerCredentialValues, setProviderCredentialValues] = useState({});
+  const [pluginQuery, setPluginQuery] = useState("");
   const persistenceAdapters = Array.isArray(envSignals.persistenceAdapters) ? envSignals.persistenceAdapters : [];
   const installed = useMemo(() => findInstalledWorkspaceAddOns(workspaceConfig), [workspaceConfig]);
   const selectedMarketplaceProvider = MARKETPLACE_PROVIDERS.find((provider) => provider.providerId === selectedProvider) || null;
@@ -178,6 +198,52 @@ function AddOnsSurface({
     setInstallDrawer("");
     setManageDrawer("");
   }
+
+  function renderProviderCard(provider) {
+    const row = providerRows[provider.providerId];
+    const connected = Boolean(row?.isConnectedProvider);
+    const verified = Boolean(row?.isVerifiedProvider);
+    const setupStarted = Boolean(row?.isSetupPendingProvider);
+    const installedCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId)).length;
+    const stateLabel = verified ? "Verified" : setupStarted ? "Setup opened" : "Provider setup required";
+    return (
+      <button type="button" className="dm-marketplace-provider-card" key={provider.providerId} onClick={() => openProvider(provider.providerId)}>
+        <span className="dm-marketplace-product-icon is-provider">
+          {provider.iconSrc ? <img src={provider.iconSrc} alt="" aria-hidden="true" /> : <PlugZap size={18} />}
+        </span>
+        <div>
+          <strong>{provider.label}</strong>
+          <p>{provider.providerProductsLabel || provider.description}</p>
+          <small>{connected ? `${stateLabel} · ${installedCount} installed product${installedCount === 1 ? "" : "s"}` : stateLabel}</small>
+        </div>
+        <span className="dm-btn-outline">{connected ? "Manage" : setupStarted ? "Continue setup" : "Install"}</span>
+      </button>
+    );
+  }
+
+  // Provider list grouped by category + filtered by the search box. Pure
+  // presentation over the governed MARKETPLACE_PROVIDERS catalog.
+  const pluginCategoryGroups = useMemo(() => {
+    const q = pluginQuery.trim().toLowerCase();
+    const matches = MARKETPLACE_PROVIDERS.filter((provider) => {
+      if (!q) return true;
+      return [provider.label, provider.category, provider.providerProductsLabel, provider.description]
+        .filter(Boolean).some((s) => String(s).toLowerCase().includes(q));
+    });
+    const byCategory = new Map();
+    for (const provider of matches) {
+      const cat = provider.category || "infrastructure";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat).push(provider);
+    }
+    return [...byCategory.keys()]
+      .sort((a, b) => {
+        const ia = CATEGORY_ORDER.indexOf(a);
+        const ib = CATEGORY_ORDER.indexOf(b);
+        return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+      })
+      .map((cat) => ({ cat, providers: byCategory.get(cat) }));
+  }, [pluginQuery, providerRows, installed]);
 
   function closeProvider() {
     setSelectedProvider("");
@@ -316,7 +382,16 @@ function AddOnsSurface({
             <>
               {!selectedProvider ? (
                 <div className="dm-marketplace-search-row">
-                  <div className="dm-marketplace-search"><Search size={14} /><span>Search plugins</span></div>
+                  <div className="dm-marketplace-search">
+                    <Search size={14} />
+                    <input
+                      type="text"
+                      value={pluginQuery}
+                      onChange={(event) => setPluginQuery(event.target.value)}
+                      placeholder="Search plugins by name or category"
+                      aria-label="Search plugins"
+                    />
+                  </div>
                   <button type="button" className="dm-marketplace-filter">Filter by <ChevronDown size={13} /></button>
                   <button type="button" className="dm-marketplace-filter">Sort by <ChevronDown size={13} /></button>
                 </div>
@@ -325,29 +400,14 @@ function AddOnsSurface({
               {!selectedProvider ? (
                 <section className="dm-marketplace-products" aria-label="Plugin providers">
                   <h3>Plugin Providers</h3>
-                  <div className="dm-marketplace-provider-grid">
-                    {MARKETPLACE_PROVIDERS.map((provider) => {
-                      const row = providerRows[provider.providerId];
-                      const connected = Boolean(row?.isConnectedProvider);
-                      const verified = Boolean(row?.isVerifiedProvider);
-                      const setupStarted = Boolean(row?.isSetupPendingProvider);
-                      const installedCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId)).length;
-                      const stateLabel = verified ? "Verified" : setupStarted ? "Setup opened" : "Provider setup required";
-                      return (
-                        <button type="button" className="dm-marketplace-provider-card" key={provider.providerId} onClick={() => openProvider(provider.providerId)}>
-                          <span className="dm-marketplace-product-icon is-provider">
-                            {provider.iconSrc ? <img src={provider.iconSrc} alt="" aria-hidden="true" /> : <PlugZap size={18} />}
-                          </span>
-                          <div>
-                            <strong>{provider.label}</strong>
-                            <p>{provider.providerProductsLabel || provider.description}</p>
-                            <small>{connected ? `${stateLabel} · ${installedCount} installed product${installedCount === 1 ? "" : "s"}` : stateLabel}</small>
-                          </div>
-                          <span className="dm-btn-outline">{connected ? "Manage" : setupStarted ? "Continue setup" : "Install"}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {pluginCategoryGroups.length ? pluginCategoryGroups.map(({ cat, providers }) => (
+                    <div className="dm-marketplace-category" key={cat}>
+                      <p className="dm-marketplace-category-label">{CATEGORY_LABELS[cat] || cat} · {providers.length}</p>
+                      <div className="dm-marketplace-provider-grid">
+                        {providers.map((provider) => renderProviderCard(provider))}
+                      </div>
+                    </div>
+                  )) : <p className="dm-cockpit-step-hint">No plugins match “{pluginQuery}”.</p>}
                 </section>
               ) : (
               <div className="dm-marketplace-provider-layout">

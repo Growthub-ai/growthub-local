@@ -66,6 +66,22 @@ export const HELPER_COMMANDS = [
     view: "schedule"
   },
   {
+    name: "/deploy",
+    label: "Deploy",
+    description: "Manage Vercel deployments bound to workflows — trigger, track, and prove each ship (read-only lens)",
+    scope: "workspace",
+    mutates: false,
+    view: "deploy"
+  },
+  {
+    name: "/data",
+    label: "Data",
+    description: "Manage Supabase data capabilities bound to workflows — query, write, and prove each run (read-only lens)",
+    scope: "workspace",
+    mutates: false,
+    view: "data"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",

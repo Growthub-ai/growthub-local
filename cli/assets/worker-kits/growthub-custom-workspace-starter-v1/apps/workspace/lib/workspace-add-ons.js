@@ -1,4 +1,5 @@
 import { readEnvVar } from "./server-secrets.js";
+import { MARKETPLACE_CATALOG_PROVIDERS } from "./marketplace-catalog.js";
 
 const UPSTASH_QSTASH_INTEGRATION_ID = "upstash-qstash-workflow";
 const UPSTASH_AUTH_REF = "QSTASH";
@@ -173,6 +174,7 @@ const MARKETPLACE_PROVIDERS = [
     authRef: "UPSTASH",
     label: "Upstash",
     developer: "Upstash",
+    category: "infrastructure",
     iconSrc: "/integrations/upstash/provider.png",
     baseUrl: "https://api.upstash.com",
     endpoint: "/v2",
@@ -219,7 +221,37 @@ const MARKETPLACE_PROVIDERS = [
     executionLane: "workspace-provider",
     description: "Provider-level Upstash account binding for workspace add-ons. Product rows are installed after this account is verified.",
   },
+  // The real 2026 provider universe (Vercel, Supabase, Resend, Slack, Stripe,
+  // OpenAI, Anthropic, GitHub, …) as governed capability descriptors. Same
+  // descriptor shape as Upstash; the scheduler-specific detection in
+  // schedule-cockpit-console / workspace-add-on-scheduler stays keyed on
+  // executionLane === "serverless-scheduler", so these never collide with it.
+  ...MARKETPLACE_CATALOG_PROVIDERS,
 ];
+
+/**
+ * The env KEY NAMES a provider's ACCOUNT lane requires, derived from either the
+ * legacy Upstash HTTP-Basic accountProbe (emailEnv+keyEnv) or the generalized
+ * `auth` atom (basic → userEnv+passEnv; bearer/header → tokenEnv, plus any
+ * baseUrlEnv for per-project hosts like Supabase). KEY NAMES only — never values.
+ */
+function providerAccountEnvKeys(provider) {
+  const probe = provider?.accountProbe || {};
+  const auth = provider?.auth || {};
+  const scheme = String(probe.authScheme || auth.scheme || "").toLowerCase();
+  const keys = [];
+  if (probe.baseUrlEnv) keys.push(probe.baseUrlEnv);
+  if (scheme === "basic" || (probe.emailEnv && probe.keyEnv)) {
+    const user = probe.userEnv || probe.emailEnv || auth.userEnv;
+    const pass = probe.passEnv || probe.keyEnv || auth.passEnv;
+    if (user) keys.push(user);
+    if (pass) keys.push(pass);
+  } else {
+    const tokenEnv = probe.tokenEnv || auth.tokenEnv;
+    if (tokenEnv) keys.push(tokenEnv);
+  }
+  return Array.from(new Set(keys.filter(Boolean)));
+}
 
 function apiRegistryColumns(existing = []) {
   return Array.from(new Set([
@@ -257,6 +289,7 @@ function apiRegistryColumns(existing = []) {
     "selectedProviderAccountId",
     "selectedProviderAccountLabel",
     "providerAccountSource",
+    "nodeSurface",
     ...existing,
   ]));
 }
@@ -491,6 +524,88 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
   return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, bound: true, liveField, triggerNodeId, changedFields };
 }
 
+const CAPABILITY_NODE_ID = "capability-call";
+
+/**
+ * Apply a capability's api-registry-call node onto a graph value (pure). This is
+ * the non-scheduler analog of `syncTriggerNodeForSchedule`: it makes the
+ * capability USABLE on the workflow canvas by correlating a node to the governed
+ * API Registry row (`config.registryId = integrationId`). If an api-registry-call
+ * node with no/other registryId exists it is pointed at this integration; if the
+ * integration is already referenced it is idempotent; otherwise a canonical
+ * `capability-call` node is appended (never mutating an arbitrary node).
+ */
+function applyCapabilityNodeToGraph(value, { integrationId, authRef = "", endpoint = "", method = "POST" } = {}) {
+  const graph = parseGraphValue(value);
+  const targetIntegration = String(integrationId || "").trim();
+  if (!targetIntegration) return { value, nodeId: null, changed: false };
+  if (!graph || !Array.isArray(graph.nodes)) {
+    // No graph yet — seed a minimal one with the capability node so the binding
+    // still correlates to the API Registry row.
+    const node = { id: CAPABILITY_NODE_ID, type: "api-registry-call", label: "API call", config: { registryId: targetIntegration, integrationId: targetIntegration, authRef, endpoint, method } };
+    const nextGraph = { version: 1, provider: "growthub-native", nodes: [node], edges: [] };
+    return { value: typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph, nodeId: CAPABILITY_NODE_ID, changed: true };
+  }
+  // Already referenced anywhere → idempotent no-op.
+  const already = graph.nodes.find((n) => n?.type === "api-registry-call" && String(n?.config?.registryId || n?.config?.integrationId || "").trim() === targetIntegration);
+  if (already) return { value, nodeId: String(already.id || "").trim() || CAPABILITY_NODE_ID, changed: false };
+  // An unbound api-registry-call node (no registryId) → point it at this row.
+  const unboundIndex = graph.nodes.findIndex((n) => n?.type === "api-registry-call" && !String(n?.config?.registryId || n?.config?.integrationId || "").trim());
+  if (unboundIndex >= 0) {
+    const nextNodes = graph.nodes.map((node, index) => index === unboundIndex
+      ? { ...node, config: { ...(node.config || {}), registryId: targetIntegration, integrationId: targetIntegration, authRef: authRef || node.config?.authRef || "" } }
+      : node);
+    const nextGraph = { ...graph, nodes: nextNodes };
+    const nodeId = String(graph.nodes[unboundIndex]?.id || "").trim() || `node-${unboundIndex}`;
+    return { value: typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph, nodeId, changed: true };
+  }
+  // Otherwise append a canonical capability node.
+  const node = { id: CAPABILITY_NODE_ID, type: "api-registry-call", label: "API call", config: { registryId: targetIntegration, integrationId: targetIntegration, authRef, endpoint, method } };
+  const nextGraph = { ...graph, nodes: [...graph.nodes, node] };
+  return { value: typeof value === "string" ? JSON.stringify(nextGraph) : nextGraph, nodeId: CAPABILITY_NODE_ID, changed: true };
+}
+
+/**
+ * Bind a capability into a workflow ROW's canvas graph (pure) — the non-scheduler
+ * counterpart of `withWorkflowServerlessBind`. Correlates an api-registry-call
+ * node to the capability's governed API Registry row on BOTH live graph fields
+ * (matching the runner's precedence). A route applies the returned config through
+ * the governed `PATCH /api/workspace` boundary — this function never writes.
+ */
+function bindCapabilityNode(workspaceConfig, { objectId, rowId, integrationId, authRef = "", endpoint = "", method = "POST" } = {}) {
+  const targetObject = String(objectId || "").trim();
+  const targetRow = String(rowId || "").trim();
+  const targetIntegration = String(integrationId || "").trim();
+  if (!targetObject || !targetRow || !targetIntegration) return { config: workspaceConfig, bound: false };
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let bound = false;
+  let nodeId = null;
+  let liveField = "orchestrationConfig";
+  const nextObjects = objects.map((object) => {
+    if (object?.id !== targetObject || object?.objectType !== "sandbox-environment") return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.Name || "").trim() !== targetRow) return row;
+      bound = true;
+      liveField = liveGraphField(row);
+      const graphApplied = applyCapabilityNodeToGraph(row.orchestrationGraph, { integrationId: targetIntegration, authRef, endpoint, method });
+      const configApplied = applyCapabilityNodeToGraph(row.orchestrationConfig, { integrationId: targetIntegration, authRef, endpoint, method });
+      nodeId = (liveField === "orchestrationGraph" ? graphApplied.nodeId : configApplied.nodeId) || configApplied.nodeId || graphApplied.nodeId;
+      return { ...row, orchestrationGraph: graphApplied.value, orchestrationConfig: configApplied.value };
+    });
+    return { ...object, rows: nextRows };
+  });
+  if (!bound) return { config: workspaceConfig, bound: false };
+  return {
+    config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } },
+    bound: true,
+    liveField,
+    nodeId,
+    changedFields: [`${targetObject}.${targetRow}.${liveField}.${nodeId || "capability-call"}`],
+  };
+}
+
 /**
  * Resolve a sandbox/workflow row eligible for serverless scheduling. Used by
  * the schedule route to validate BEFORE any remote provider call so we never
@@ -609,9 +724,7 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     Name: provider.label,
     integrationId: provider.integrationId,
     authRef: provider.authRef,
-    requiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
-      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
-      : "",
+    requiredEnv: providerAccountEnvKeys(provider).join(","),
     optionalEnv: "",
     resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
     baseUrl: provider.baseUrl,
@@ -634,9 +747,7 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
-    providerAccountRequiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
-      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
-      : "",
+    providerAccountRequiredEnv: providerAccountEnvKeys(provider).join(","),
     providerAccountOptions: Array.isArray(syncResult?.providerAccountOptions) ? JSON.stringify(syncResult.providerAccountOptions) : "",
     selectedProviderAccountId: syncResult?.selectedProviderAccountId || "",
     selectedProviderAccountLabel: syncResult?.selectedProviderAccountLabel || "",
@@ -762,11 +873,107 @@ function withUpstashProductRegistry(workspaceConfig, { productId = "upstash-qsta
   return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
 }
 
+/**
+ * Provider-agnostic product row builder — the generalization of
+ * `makeUpstashProductRow` for every catalog provider. Region/baseUrl logic is
+ * conditional (only products that declare `regionOptions`, i.e. QStash-style,
+ * carry a region); everything else is driven straight off the descriptor. The
+ * governed `nodeSurface` rides onto the row so the workflow canvas can correlate
+ * the capability to this exact API Registry data object.
+ */
+function makeMarketplaceProductRow(providerId, productId, { region = "", plan = "free", syncResult = null, authReady = false } = {}) {
+  const product = getMarketplaceProduct(providerId, productId);
+  if (!product) return null;
+  const regionOptions = Array.isArray(product.regionOptions) ? product.regionOptions : [];
+  const selectedRegion = regionOptions.find((option) => option.id === region) || regionOptions[0] || null;
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  const baseUrl = syncResult?.baseUrl || selectedRegion?.baseUrl || product.baseUrl || "";
+  return {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || "",
+    selectedResourceSource: syncResult?.selectedResourceSource || "",
+    baseUrl,
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Complete ${product.label} provider setup, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: "",
+    schemaVersion: `growthub-marketplace-${providerId}-v1`,
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: selectedRegion?.id || "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || "",
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+    nodeSurface: product.nodeSurface || "api-registry-call",
+  };
+}
+
+/** Shared idempotent upsert of one product/provider row into the API Registry
+ * object by integrationId (the same governed pattern the Upstash path uses). */
+function upsertApiRegistryRowByIntegrationId(workspaceConfig, productRow, integrationId) {
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  const targetId = String(integrationId || "").trim();
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isApiRegistryObject(object) || found) return object;
+    found = true;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === targetId);
+    return {
+      ...object,
+      columns: apiRegistryColumns(object.columns),
+      rows: hasRow
+        ? rows.map((row) => String(row?.integrationId || "").trim() === targetId ? { ...row, ...productRow } : row)
+        : [productRow, ...rows],
+    };
+  });
+  if (!found) {
+    nextObjects.push({
+      id: "api-registry",
+      label: "API Registry",
+      name: "API Registry",
+      source: "API Registry",
+      objectType: "api-registry",
+      icon: "Code2",
+      columns: apiRegistryColumns(),
+      rows: [productRow],
+      binding: { mode: "manual", source: "API Registry" },
+      relations: [],
+    });
+  }
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
 function withMarketplaceProductRegistry(workspaceConfig, { providerId, productId, region = "us-east-1", plan = "free", syncResult = null, authReady = false } = {}) {
+  // Upstash keeps its dedicated path (region baseUrl + qstash schemaVersion)
+  // byte-for-byte; every other catalog provider registers through the generic
+  // maker + shared upsert — same governed API Registry object, no deviation.
   if (providerId === "upstash") {
     return withUpstashProductRegistry(workspaceConfig, { productId, region, plan, syncResult, authReady });
   }
-  return workspaceConfig;
+  const productRow = makeMarketplaceProductRow(providerId, productId, { region, plan, syncResult, authReady });
+  if (!productRow) return workspaceConfig;
+  return upsertApiRegistryRowByIntegrationId(workspaceConfig, productRow, productRow.integrationId);
 }
 
 function withMarketplaceProviderRegistry(workspaceConfig, { providerId, syncResult = null } = {}) {
@@ -939,6 +1146,8 @@ export {
   withSandboxSchedulerControlState,
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
+  bindCapabilityNode,
+  applyCapabilityNodeToGraph,
   liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,
@@ -946,6 +1155,8 @@ export {
   listUpstashProductReadiness,
   withWorkflowServerlessBind,
   makeMarketplaceProviderRow,
+  makeMarketplaceProductRow,
+  providerAccountEnvKeys,
   makeUpstashProductRow,
   makeUpstashProviderRow,
   makeUpstashSchedulerRow,
