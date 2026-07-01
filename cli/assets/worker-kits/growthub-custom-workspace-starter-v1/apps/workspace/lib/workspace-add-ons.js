@@ -491,6 +491,57 @@ function readTriggerScheduleBinding(value) {
   };
 }
 
+/**
+ * TRUE only when the row carries a fresh, successful, method-consistent
+ * serverless invocation proof for the exact graph bytes being promoted. This
+ * is the publish gate's serverless alternative to the draft-test lineage —
+ * and binding alone is NEVER proof: a bound-but-never-invoked schedule,
+ * webhook, or API endpoint must not publish as stable.
+ *
+ * Requires ALL of:
+ *   - serverless binding agreement: runLocality=serverless, registry id +
+ *     binding id owned by the row, published trigger node enabled and agreeing,
+ *   - METHOD agreement: row.schedulerTriggerKind ↔ trigger node kind ↔
+ *     lastScheduledRunTriggerKind (stale proof from one input method can never
+ *     satisfy the gate for another; legacy rows default to the scheduler kind),
+ *   - a SUCCESSFUL invocation: lastScheduledRunStatus is 2xx AND
+ *     lastScheduledRunSucceededAt is stamped (the destination door / signed
+ *     callback write these only after the whole graph ran and succeeded),
+ *   - graph identity: the tested config or the live graph equals the exact
+ *     draft bytes being promoted (proof freshness against this version).
+ */
+function rowHasSuccessfulServerlessBindingProof(row, draft) {
+  const runLocality = String(row?.runLocality || "").trim().toLowerCase();
+  const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
+  const scheduleId = String(row?.scheduleId || "").trim();
+  const draftGraph = String(draft || "").trim();
+  const testedConfig = String(row?.orchestrationDraftTestedConfig || "").trim();
+  const liveGraph = String(row?.orchestrationGraph || row?.orchestrationConfig || "").trim();
+  const binding = readTriggerScheduleBinding(row?.orchestrationGraph || row?.orchestrationConfig);
+  const rowTriggerKind = String(row?.schedulerTriggerKind || "").trim() || "serverless-scheduler";
+  const lastRunTriggerKind = String(row?.lastScheduledRunTriggerKind || "").trim();
+  const methodAgrees = String(binding?.triggerKind || "").trim() === rowTriggerKind
+    && (!lastRunTriggerKind || lastRunTriggerKind === rowTriggerKind);
+  const lastRunStatus = String(row?.lastScheduledRunStatus || "").trim();
+  // When the objectified node trace is present (inbound door writes it), every
+  // downstream node must have completed — an HTTP 200 with an incomplete chain
+  // is not proof. Legacy scheduler proof (signed callback, no trace column)
+  // passes on 2xx + succeededAt as before.
+  const nodesCompleted = String(row?.lastScheduledRunNodesCompleted || "").trim();
+  const invocationSucceeded = lastRunStatus.startsWith("2")
+    && Boolean(String(row?.lastScheduledRunSucceededAt || "").trim())
+    && (!nodesCompleted || nodesCompleted === "true");
+  return runLocality === "serverless"
+    && Boolean(schedulerRegistryId)
+    && Boolean(scheduleId)
+    && binding?.enabled === true
+    && binding?.scheduleId === scheduleId
+    && binding?.schedulerRegistryId === schedulerRegistryId
+    && methodAgrees
+    && invocationSucceeded
+    && (testedConfig === draftGraph || liveGraph === draftGraph);
+}
+
 const SANDBOX_SCHEDULE_CLEAR_PATCH = {
   scheduleId: "",
   schedulerTriggerKind: "",
@@ -1134,6 +1185,7 @@ export {
   withSandboxSchedulerControlState,
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
+  rowHasSuccessfulServerlessBindingProof,
   liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,

@@ -294,25 +294,36 @@ async function POST(request, context) {
 
   // Inbound runs are synchronous — write the last-run proof inline onto the
   // owning row (the scheduler path receives this via the signed provider
-  // callback instead). Same proof family, no second proof system.
+  // callback instead). Same proof family, no second proof system. Success
+  // proof requires the WHOLE downstream chain: the runner's per-node trace
+  // (completed|failed|skipped) is objectified onto the row so the publish
+  // gate can require every downstream node completed, not just an HTTP 200
+  // at the door.
   let proofPersisted;
   if (expectedTriggerKind !== "serverless-scheduler") {
+    const nodeTrace = Array.isArray(result?.nodeTrace) ? result.nodeTrace : [];
+    const allNodesCompleted = nodeTrace.length > 0 ? nodeTrace.every((n) => n?.status === "completed") : ok;
+    const proofOk = ok && allNodesCompleted;
     const now = new Date().toISOString();
     const statusText = ok ? "200" : "502";
     const patch = {
-      status: ok ? "connected" : "failed",
+      status: proofOk ? "connected" : "failed",
       lastTested: now,
-      lastResponse: ok ? `Invoked run ok (HTTP ${statusText}).` : `Invoked run failed: ${clean(result?.error) || "unknown"}.`,
+      lastResponse: proofOk
+        ? `Invoked run ok (HTTP ${statusText}).`
+        : `Invoked run failed: ${clean(result?.error) || (ok ? "downstream nodes incomplete" : "unknown")}.`,
       lastScheduledRunStatus: statusText,
       lastScheduledRunId: runId,
       lastScheduledRunAt: now,
       lastScheduledRunAttemptedAt: now,
       lastScheduledRunResponse: clean(result?.response || result?.stdout).slice(0, 240),
       lastScheduledRunBodyPreview: clean(result?.stdout).slice(0, 240),
-      lastScheduledRunFailureReason: ok ? "" : clean(result?.error) || "run failed",
+      lastScheduledRunFailureReason: proofOk ? "" : clean(result?.error) || (ok ? "downstream nodes incomplete" : "run failed"),
       lastScheduledRunTriggerKind: expectedTriggerKind,
+      lastScheduledRunNodesCompleted: allNodesCompleted ? "true" : "false",
+      lastScheduledRunNodeTrace: JSON.stringify(nodeTrace).slice(0, 2000),
     };
-    patch[ok ? "lastScheduledRunSucceededAt" : "lastScheduledRunFailedAt"] = now;
+    patch[proofOk ? "lastScheduledRunSucceededAt" : "lastScheduledRunFailedAt"] = now;
     const { config: nextConfig, found } = withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch });
     proofPersisted = found;
     if (found) {

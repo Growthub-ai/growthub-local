@@ -37,6 +37,8 @@ import {
   triggerKindForLane,
   deriveBindingId,
   evaluateBindingMatch,
+  getInboundAdapter,
+  signInboundWebhook,
   BINDING_RECEIPT_KIND,
 } from "./workspace-inbound-invocation.js";
 import { readEnvVar, resolveRequiredEnv } from "./server-secrets.js";
@@ -63,15 +65,19 @@ function isApiRegistryObject(object) {
   return objectType === "api-registry" || id === "api-registry";
 }
 
-async function fetchWithTimeout(fetchImpl, url, init = {}) {
+async function fetchWithTimeout(fetchImpl, url, init = {}, timeoutMs = SCHEDULE_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SCHEDULE_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, { ...init, signal: controller.signal, cache: "no-store" });
   } finally {
     clearTimeout(timer);
   }
 }
+
+// A test invocation runs the WHOLE downstream graph through the real
+// destination door (60s runner budget) — give the door room to answer.
+const INVOKE_TIMEOUT_MS = 65000;
 
 /* ------------------------------------------------------------------ *
  * Install (create/upsert) a per-workflow schedule + bind the row.    *
@@ -663,4 +669,135 @@ async function runInputMethodUninstall(deps, { providerId, body = {} } = {}) {
   return { status: 200, body: { ok: true, providerId: provider.providerId, productId: product.productId, scheduleId: bindingId, bindingId, deleted: true, persisted, workspaceConfig: nextConfig, receiptId: receipt?.receiptId } };
 }
 
-export { runScheduleInstall, runScheduleNow, runSchedulerCallback, runReadinessScan, runInputMethodInstall, runInputMethodUninstall };
+/* ------------------------------------------------------------------ *
+ * First-class TEST INVOCATION for an inbound binding — the mirror of  *
+ * runScheduleNow. Sends a REAL signed webhook / bearer API request    *
+ * with user-supplied test run-input values to the row's bound         *
+ * destination URL, so the invocation exercises the actual endpoint,   *
+ * the actual verifier, and EVERY downstream node. The destination     *
+ * door writes the durable last-run proof (status, succeededAt, node   *
+ * trace) only after the whole graph ran — this core only publishes    *
+ * the attempt and reports the outcome.                                *
+ * ------------------------------------------------------------------ */
+async function runInputMethodInvoke(deps, { providerId, body = {}, requestOrigin = "" } = {}) {
+  const { fetchImpl, readConfig, appendReceipt, env } = deps;
+
+  const provider = getMarketplaceProvider(clean(providerId));
+  if (!provider) return err(404, "unknown marketplace provider", { providerId });
+  const product = clean(body.productId)
+    ? getMarketplaceProduct(provider.providerId, clean(body.productId))
+    : (provider.products || []).find((p) => isInboundInvocationProduct(p)) || null;
+  if (!product || !isInboundInvocationProduct(product)) {
+    return err(400, "provider has no inbound input-method product", { providerId: provider.providerId });
+  }
+  const adapter = getInboundAdapter(product);
+  const triggerKind = triggerKindForLane(product.executionLane);
+
+  const config = await readConfig();
+  const objectId = clean(body.objectId);
+  const rowId = clean(body.rowId || body.name);
+  if (!objectId || !rowId) return err(400, "objectId and rowId (workflow row) are required");
+  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
+  const targetRow = eligible.row;
+  const bindingId = clean(body.scheduleId || body.bindingId || targetRow.scheduleId);
+  if (!bindingId) return err(409, "workflow row has no installed binding", { providerId: provider.providerId, productId: product.productId, objectId, rowId });
+
+  // Ownership: the row must be CURRENTLY bound to this product and method.
+  const triggerBinding = readTriggerScheduleBinding(targetRow[liveGraphField(targetRow)]);
+  const ownership = evaluateBindingMatch({ row: targetRow, triggerBinding, provider, product, expectedTriggerKind: triggerKind, scheduleId: bindingId });
+  if (!ownership.ok) {
+    return err(409, `row is not bound to this input method (${ownership.code})`, { providerId: provider.providerId, productId: product.productId, bindingId, code: ownership.code });
+  }
+
+  // The credential the door will verify must resolve here so the test request
+  // is signed/authenticated exactly like a real external invocation.
+  const secret = adapter.resolveSecret(env);
+  if (!secret) {
+    return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: [adapter.secretEnv] });
+  }
+
+  const workspaceId = clean(body.workspaceId || config?.id || "workspace");
+  const version = clean(body.version || targetRow.version || "v1");
+  const baseUrl = resolveWorkspacePublicUrl(env, requestOrigin);
+  const destinationUrl = clean(targetRow.schedulerDestination)
+    || (baseUrl ? buildSchedulerCallbackUrls(baseUrl, provider.providerId).destinationUrl : "");
+  if (!destinationUrl) return err(422, "could not resolve the binding's destination URL", { nextActions: ["Set GROWTHUB_WORKSPACE_PUBLIC_URL to the deployed workspace origin, then retry."] });
+
+  // User-supplied test values ride the canonical run-input envelope; the door
+  // validates them against the workflow's own input schema before any node runs.
+  const runInputs = body.runInputs && typeof body.runInputs === "object" && !Array.isArray(body.runInputs)
+    ? body.runInputs
+    : undefined;
+  const rawBody = JSON.stringify({
+    kind: "growthub-invoked-run-v1",
+    scheduleId: bindingId,
+    workspaceId,
+    objectId,
+    rowId,
+    version,
+    ...(runInputs ? { runInputs } : {}),
+  });
+
+  const headers = { "content-type": "application/json" };
+  if (triggerKind === "inbound-webhook") {
+    const signed = signInboundWebhook({ secret, rawBody, destinationUrl });
+    headers["x-growthub-signature"] = signed.signature;
+    headers["x-growthub-timestamp"] = signed.timestamp;
+  } else {
+    headers.authorization = `Bearer ${secret}`;
+  }
+
+  let httpStatus = 0;
+  let parsed = null;
+  let failure = "";
+  try {
+    const response = await fetchWithTimeout(fetchImpl, destinationUrl, { method: "POST", headers, body: rawBody }, INVOKE_TIMEOUT_MS);
+    httpStatus = response.status;
+    const text = await response.text();
+    try { parsed = JSON.parse(text); } catch { parsed = null; }
+    if (!(httpStatus >= 200 && httpStatus < 300) || parsed?.ok !== true) {
+      failure = clean(parsed?.error) || `HTTP ${httpStatus}`;
+    }
+  } catch (e) {
+    failure = e?.message || "invocation request failed";
+  }
+  const ok = !failure;
+
+  const { receipt } = await appendReceipt({
+    kind: "workspace-add-on-binding-run",
+    lane: "server-authoritative",
+    outcomeStatus: ok ? "published" : "blocked",
+    actor: "workspace-marketplace",
+    objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+    policyVerdict: { ok, ...(ok ? {} : { violationCodes: ["binding_test_invocation_failed"] }) },
+    runId: clean(parsed?.runId) || undefined,
+    summary: ok
+      ? `${product.label} test invocation of ${rowId} succeeded (HTTP ${httpStatus}); durable proof written by the destination door.`
+      : `${product.label} test invocation of ${rowId} failed: ${failure}.`,
+  });
+
+  if (!ok) {
+    return err(502, `test invocation failed: ${failure}`, { providerId: provider.providerId, productId: product.productId, bindingId, httpStatus, receiptId: receipt?.receiptId });
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      providerId: provider.providerId,
+      productId: product.productId,
+      triggerKind,
+      objectId,
+      rowId,
+      scheduleId: bindingId,
+      bindingId,
+      httpStatus,
+      runId: clean(parsed?.runId),
+      duplicate: parsed?.duplicate === true,
+      proofPersisted: parsed?.proofPersisted !== false,
+      receiptId: receipt?.receiptId,
+    },
+  };
+}
+
+export { runScheduleInstall, runScheduleNow, runSchedulerCallback, runReadinessScan, runInputMethodInstall, runInputMethodUninstall, runInputMethodInvoke };

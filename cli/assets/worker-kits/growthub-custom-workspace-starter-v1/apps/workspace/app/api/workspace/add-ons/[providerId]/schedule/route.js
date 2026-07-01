@@ -40,7 +40,7 @@ import {
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 import { isInboundInvocationProduct } from "@/lib/workspace-inbound-invocation";
-import { runScheduleInstall, runScheduleNow, runReadinessScan, runInputMethodInstall, runInputMethodUninstall } from "@/lib/scheduler-orchestration";
+import { runScheduleInstall, runScheduleNow, runReadinessScan, runInputMethodInstall, runInputMethodUninstall, runInputMethodInvoke } from "@/lib/scheduler-orchestration";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
@@ -116,7 +116,11 @@ async function POST(request, context) {
     return NextResponse.json(out, { status });
   }
   if (clean(body.action) === "run") {
-    const { status, body: out } = await runScheduleNow(SCHEDULER_DEPS, {
+    // Inbound bindings run their first-class test invocation through the REAL
+    // destination door (signed webhook / bearer API request, full graph);
+    // scheduler bindings publish a manual run through the provider as before.
+    const core = targetsInboundProduct(params?.providerId, body) ? runInputMethodInvoke : runScheduleNow;
+    const { status, body: out } = await core(SCHEDULER_DEPS, {
       providerId: params?.providerId,
       body,
       requestOrigin: requestOrigin(request),

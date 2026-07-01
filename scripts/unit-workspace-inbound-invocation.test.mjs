@@ -212,7 +212,11 @@ function makeHarness(opts = {}) {
     ...(opts.env || {}),
   };
   const deps = {
-    fetchImpl: async (url, init = {}) => { calls.push({ url, method: init?.method || "GET" }); return { ok: true, status: 200, text: async () => "{}" }; },
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, method: init?.method || "GET", headers: init?.headers || {}, body: init?.body || "" });
+      if (typeof opts.onFetch === "function") return opts.onFetch(url, init);
+      return { ok: true, status: 200, text: async () => "{}" };
+    },
     readConfig: async () => clone(store),
     writeConfig: async (patch) => {
       if (opts.writeThrows) { const e = new Error("read-only"); e.code = "WORKSPACE_PERSISTENCE_READ_ONLY"; throw e; }
@@ -381,7 +385,146 @@ test("mixed proof: a bad webhook signature with a valid bearer still resolves as
   assert.equal(verdict.ok, false, "the bad signature is rejected as a webhook — the valid bearer does not rescue it");
 });
 
+/* ================= publish proof gate (release contract) ================= */
+
+function boundWebhookRow(extra = {}) {
+  const bindingId = "growthub-growthub-ws-sandbox-workflows-flow-a-v1";
+  const { config } = addOns.withWorkflowServerlessBind(bindFixture(), {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "growthub-webhook-trigger",
+    schedulerProviderId: "growthub", schedulerProductId: "growthub-webhook-trigger",
+    triggerKind: "inbound-webhook", scheduleId: bindingId, destinationUrl: DEST,
+  });
+  const row = { ...config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0], ...extra };
+  return { row, draft: String(row.orchestrationConfig) };
+}
+
+test("publish proof: bound-but-never-invoked webhook/API binding can NOT publish", () => {
+  const { row, draft } = boundWebhookRow();
+  assert.equal(addOns.rowHasSuccessfulServerlessBindingProof(row, draft), false, "binding agreement alone is never proof");
+});
+
+test("publish proof: fresh method-consistent 2xx all-nodes proof for the promoted bytes CAN publish", () => {
+  const { row, draft } = boundWebhookRow({
+    lastScheduledRunStatus: "200",
+    lastScheduledRunSucceededAt: "2026-01-01T00:00:01.000Z",
+    lastScheduledRunTriggerKind: "inbound-webhook",
+    lastScheduledRunNodesCompleted: "true",
+  });
+  assert.equal(addOns.rowHasSuccessfulServerlessBindingProof(row, draft), true);
+});
+
+test("publish proof: stale 200 proof from a DIFFERENT trigger kind can NOT publish", () => {
+  const { row, draft } = boundWebhookRow({
+    lastScheduledRunStatus: "200",
+    lastScheduledRunSucceededAt: "2026-01-01T00:00:01.000Z",
+    lastScheduledRunTriggerKind: "serverless-scheduler",
+    lastScheduledRunNodesCompleted: "true",
+  });
+  assert.equal(addOns.rowHasSuccessfulServerlessBindingProof(row, draft), false, "old scheduler proof cannot vouch for a webhook binding");
+});
+
+test("publish proof: 200 with an incomplete downstream node trace can NOT publish", () => {
+  const { row, draft } = boundWebhookRow({
+    lastScheduledRunStatus: "200",
+    lastScheduledRunSucceededAt: "2026-01-01T00:00:01.000Z",
+    lastScheduledRunTriggerKind: "inbound-webhook",
+    lastScheduledRunNodesCompleted: "false",
+  });
+  assert.equal(addOns.rowHasSuccessfulServerlessBindingProof(row, draft), false, "every downstream node must have completed");
+});
+
+test("publish proof: proof for OTHER graph bytes can NOT publish a new draft (freshness)", () => {
+  const { row } = boundWebhookRow({
+    lastScheduledRunStatus: "200",
+    lastScheduledRunSucceededAt: "2026-01-01T00:00:01.000Z",
+    lastScheduledRunTriggerKind: "inbound-webhook",
+    lastScheduledRunNodesCompleted: "true",
+  });
+  const newDraft = JSON.stringify({ version: 1, nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }] });
+  assert.equal(addOns.rowHasSuccessfulServerlessBindingProof(row, newDraft), false, "a new draft version requires its own draft-mode test or a fresh invocation of those bytes");
+});
+
+/* ================= first-class test invocation ================= */
+
+test("runInputMethodInvoke (webhook): real signed request against the bound destination; 200 → published receipt", async () => {
+  inbound.resetInboundDeliveryCache();
+  const h = makeHarness({
+    onFetch: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true, runId: "run_test_1", proofPersisted: true }) }),
+  });
+  await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
+  const installCalls = h.calls.length;
+  const res = await orchestration.runInputMethodInvoke(h.deps, {
+    providerId: "growthub",
+    body: { productId: "growthub-webhook-trigger", objectId: "sandbox-workflows", rowId: "Flow A", runInputs: { kind: "growthub-workflow-run-inputs-v1", source: "webhook", values: { note: "test" } } },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.runId, "run_test_1");
+  const call = h.calls[installCalls];
+  assert.equal(call.url, DEST, "invocation goes to the row's bound destination URL");
+  const verdict = inbound.verifyInboundWebhookSignature({
+    signature: call.headers["x-growthub-signature"],
+    timestamp: call.headers["x-growthub-timestamp"],
+    rawBody: call.body,
+    expectedUrl: DEST,
+    secret: SECRET,
+    currentTimeS: Number(call.headers["x-growthub-timestamp"]),
+  });
+  assert.equal(verdict.ok, true, "the test invocation is signed exactly like a real external webhook");
+  assert.ok(JSON.parse(call.body).runInputs.values.note === "test", "user-supplied test values ride the envelope");
+  assert.ok(h.receipts.some((r) => r.kind === "workspace-add-on-binding-run" && r.outcomeStatus === "published"));
+});
+
+test("runInputMethodInvoke (api-request): bearer-authenticated; failure → 502 + blocked receipt", async () => {
+  const h = makeHarness({
+    onFetch: async () => ({ ok: false, status: 422, text: async () => JSON.stringify({ ok: false, error: "run inputs failed the workflow input contract" }) }),
+  });
+  await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: { ...INSTALL_BODY, productId: "growthub-api-trigger" } });
+  const installCalls = h.calls.length;
+  const res = await orchestration.runInputMethodInvoke(h.deps, {
+    providerId: "growthub",
+    body: { productId: "growthub-api-trigger", objectId: "sandbox-workflows", rowId: "Flow A" },
+  });
+  assert.equal(res.status, 502);
+  const call = h.calls[installCalls];
+  assert.equal(call.headers.authorization, "Bearer tok_invoke", "bearer invoke token authenticates the test call");
+  assert.ok(h.receipts.some((r) => r.kind === "workspace-add-on-binding-run" && r.outcomeStatus === "blocked"), "failed invocation is receipted, no false success");
+});
+
+test("runInputMethodInvoke: refuses a row bound to another method/product (ownership)", async () => {
+  const h = makeHarness();
+  const bound = addOns.withWorkflowServerlessBind(h.getStore(), {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "upstash-qstash-workflow",
+    schedulerProviderId: "upstash", schedulerProductId: "upstash-qstash",
+    scheduleId: "sid-qstash", cron: "0 * * * *",
+  });
+  h.setStore(bound.config);
+  const res = await orchestration.runInputMethodInvoke(h.deps, {
+    providerId: "growthub",
+    body: { productId: "growthub-webhook-trigger", objectId: "sandbox-workflows", rowId: "Flow A" },
+  });
+  assert.equal(res.status, 409);
+});
+
 /* ================= cockpit visibility ================= */
+
+test("cockpit: bound binding with no receipt shows 'No receipt yet'; failed run shows 'Last run failed'", async () => {
+  const h = makeHarness();
+  await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
+  const noReceiptVm = cockpit.deriveScheduleCockpit({ workspaceConfig: h.getStore(), configuredEnvRefs: [], receipts: [] });
+  const noReceiptCard = noReceiptVm.workflowCards.find((c) => c.name === "Flow A");
+  assert.ok(noReceiptCard.tags.includes("No receipt yet"), `bound-but-never-invoked is visibly unproven (tags: ${noReceiptCard.tags})`);
+
+  const store = h.getStore();
+  const obj = store.dataModel.objects.find((o) => o.id === "sandbox-workflows");
+  obj.rows[0] = { ...obj.rows[0], lastScheduledRunStatus: "502", lastScheduledRunFailureReason: "downstream nodes incomplete", lastScheduledRunAt: "t" };
+  h.setStore(store);
+  const failedVm = cockpit.deriveScheduleCockpit({ workspaceConfig: h.getStore(), configuredEnvRefs: [], receipts: [] });
+  const failedCard = failedVm.workflowCards.find((c) => c.name === "Flow A");
+  assert.ok(failedCard.tags.includes("Last run failed"), `failed invocation is visibly failed (tags: ${failedCard.tags})`);
+  assert.equal(failedCard.lastRunFailed, true);
+});
 
 test("cockpit: a bound webhook workflow surfaces with the Webhook method chip and scheduled state", async () => {
   const h = makeHarness();

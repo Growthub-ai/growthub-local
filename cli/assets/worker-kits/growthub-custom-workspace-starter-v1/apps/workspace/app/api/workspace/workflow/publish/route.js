@@ -4,7 +4,7 @@ import { readWorkspaceConfig, readWorkspaceSourceRecords, writeWorkspaceConfig }
 import { sandboxRunSourceId } from "@/lib/workspace-data-model";
 import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
-import { readTriggerScheduleBinding } from "@/lib/workspace-add-ons";
+import { rowHasSuccessfulServerlessBindingProof } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -76,23 +76,13 @@ function findSandboxRow(workspaceConfig, objectId, name) {
         rowIndex
     };
 }
+// Serverless binding proof — the strict, method-consistent, all-nodes-succeeded
+// invocation proof (2xx + succeededAt + node-trace completion + trigger-kind
+// agreement + graph identity with the promoted bytes). Lives in
+// lib/workspace-add-ons.js beside readTriggerScheduleBinding so it is
+// offline-testable; binding alone is never proof.
 function rowHasSuccessfulServerlessSchedulerProof(row, draft) {
-    const runLocality = String(row?.runLocality || "").trim().toLowerCase();
-    const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
-    const scheduleId = String(row?.scheduleId || "").trim();
-    const draftGraph = String(draft || "").trim();
-    const testedConfig = String(row?.orchestrationDraftTestedConfig || "").trim();
-    const liveGraph = String(row?.orchestrationGraph || row?.orchestrationConfig || "").trim();
-    const binding = readTriggerScheduleBinding(row?.orchestrationGraph || row?.orchestrationConfig);
-    // METHOD AGREEMENT: the row's declared input method, the published trigger
-    // node's kind, and the last-run proof's trigger kind must all agree, so
-    // stale proof from one input method (e.g. an old schedule) can never
-    // satisfy the publish gate for another (e.g. a webhook binding). Rows
-    // predating schedulerTriggerKind default to the scheduler kind.
-    const rowTriggerKind = String(row?.schedulerTriggerKind || "").trim() || "serverless-scheduler";
-    const lastRunTriggerKind = String(row?.lastScheduledRunTriggerKind || "").trim();
-    const methodAgrees = String(binding?.triggerKind || "").trim() === rowTriggerKind && (!lastRunTriggerKind || lastRunTriggerKind === rowTriggerKind);
-    return runLocality === "serverless" && Boolean(schedulerRegistryId) && Boolean(scheduleId) && binding?.enabled === true && binding?.scheduleId === scheduleId && binding?.schedulerRegistryId === schedulerRegistryId && methodAgrees && (testedConfig === draftGraph || liveGraph === draftGraph);
+    return rowHasSuccessfulServerlessBindingProof(row, draft);
 }
 /**
  * Gate failures are governance signal: emit a blocked outcome receipt
