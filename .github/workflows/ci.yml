@@ -53,6 +53,11 @@ jobs:
           node --test scripts/unit-serverless-readiness.test.mjs
           node --test scripts/unit-schedule-cockpit.test.mjs
 
+      - name: Validate governed capability binding (Marketplace V2)
+        run: |
+          node --test scripts/unit-marketplace-catalog.test.mjs
+          node --test scripts/unit-capability-loop.test.mjs
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 

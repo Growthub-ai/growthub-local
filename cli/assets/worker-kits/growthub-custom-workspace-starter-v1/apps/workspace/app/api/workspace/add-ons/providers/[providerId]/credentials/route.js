@@ -8,6 +8,7 @@ import {
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
+import { buildCapabilityProbeRequests } from "@/lib/capability-binding";
 
 const PROBE_TIMEOUT_MS = 8000;
 
@@ -201,6 +202,83 @@ async function POST(request, context) {
   const credentials = body && typeof body.credentials === "object" && !Array.isArray(body.credentials)
     ? body.credentials
     : {};
+
+  // Scheme-aware credential save for the real provider universe (bearer / custom-
+  // header / basic-via-auth-atom). Upstash (legacy HTTP-Basic Developer API with
+  // emailEnv+keyEnv, no `auth` atom) falls through to the original path below.
+  const useSchemeAware = Boolean(provider.auth) && !(provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv);
+  if (useSchemeAware) {
+    const schemeFields = getProviderSetupFields(provider);
+    const missingSchemeFields = schemeFields
+      .filter((field) => field.required && !getCredentialValue(credentials, body, field))
+      .map((field) => field.id);
+    if (!schemeFields.length || missingSchemeFields.length) {
+      return jsonError(`${provider.label} account credentials are required`, 400, { providerId: provider.providerId, missingFields: missingSchemeFields });
+    }
+    // Persist the entered env refs first (server-side, never echoed), then verify
+    // through the same shared, unit-tested probe builder the sync routes use.
+    const schemeEnvUpdates = deriveEnvUpdates(schemeFields, credentials, body);
+    await writeLocalEnv(schemeEnvUpdates);
+    const built = buildCapabilityProbeRequests(provider.accountProbe || {}, provider, process.env);
+    if (!built.ok) {
+      return jsonError(`${provider.label} account credentials are incomplete`, 422, { providerId: provider.providerId, missingEnv: built.missingEnv });
+    }
+    let last = null;
+    let verified = false;
+    for (const req of built.requests) {
+      try {
+        const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers, ...(req.body ? { body: req.body } : {}) });
+        last = { path: req.url, status: response.status };
+        if (response.ok) { verified = true; break; }
+      } catch (error) {
+        last = { path: req.url, status: 0, error: error?.message || "network error" };
+      }
+    }
+    if (!verified) {
+      return jsonError(`${provider.label} account API key could not be verified`, 422, {
+        providerId: provider.providerId,
+        checked: last ? { path: last.path, status: last.status } : null,
+      });
+    }
+    const now = new Date().toISOString();
+    const syncResult = {
+      ok: true,
+      syncStatus: "verified",
+      status: "connected",
+      testedAt: now,
+      proof: `${provider.label} account verified (GET ${last.path} -> HTTP ${last.status}).`,
+      summary: `${provider.label} provider account verified and stored as local runtime env refs.`,
+      resolvedEnv: built.resolvedEnv || Object.keys(schemeEnvUpdates),
+      providerAccountOptions: [],
+      selectedProviderAccountId: "",
+      selectedProviderAccountLabel: "",
+      providerAccountSource: last.path,
+    };
+    const currentConfig = await readWorkspaceConfig();
+    const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });
+    const persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+    const { receipt } = await appendOutcomeReceipt({
+      kind: "workspace-add-on-provider-credentials",
+      lane: "server-authoritative",
+      outcomeStatus: "published",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: provider.label }],
+      changedFields: ["dataModel.api-registry"],
+      policyVerdict: { ok: true },
+      schemaVerdict: { ok: true },
+      summary: syncResult.summary,
+      nextActions: [`Install ${provider.label} products from the marketplace page.`],
+    });
+    return NextResponse.json({
+      ok: true,
+      providerId: provider.providerId,
+      accountState: "verified",
+      workspaceConfig: persisted,
+      resolvedEnv: syncResult.resolvedEnv,
+      receiptId: receipt.receiptId,
+    });
+  }
+
   const { fields, usernameField, passwordField, username: email, password: apiKey } = deriveBasicAuthCredentials(provider, credentials, body);
   const missingFields = fields
     .filter((field) => field.required && !getCredentialValue(credentials, body, field))

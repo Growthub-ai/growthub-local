@@ -23,6 +23,7 @@ import {
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 import { readEnvVar } from "@/lib/server-secrets";
+import { buildCapabilityProbeRequests } from "@/lib/capability-binding";
 
 const PROBE_TIMEOUT_MS = 8000;
 
@@ -155,7 +156,57 @@ async function deriveUpstashQstashRuntimeEnv(provider, email, apiKey) {
  *   { ok:false }                      → creds present but probe rejected
  */
 async function probeProviderAccount(provider, now) {
-  const probe = provider.accountProbe;
+  const probe = provider.accountProbe || {};
+
+  // Generalized auth-scheme-aware account probe (bearer / basic / custom-header),
+  // for the real provider universe. Upstash's accountProbe declares neither an
+  // authScheme nor an `auth` atom, so it falls through to the legacy HTTP-Basic
+  // Developer-API path below — unchanged.
+  if (probe.authScheme || provider.auth) {
+    const built = buildCapabilityProbeRequests(probe, provider, process.env);
+    if (!built.ok) {
+      return {
+        ok: false,
+        syncStatus: "setup-required",
+        status: "draft",
+        missingEnv: built.missingEnv,
+        resolvedEnv: built.resolvedEnv || [],
+        testedAt: now,
+        proof: "",
+        summary: `${provider.label} account credentials are required to verify this provider.`,
+      };
+    }
+    let last = null;
+    for (const req of built.requests) {
+      try {
+        const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers, ...(req.body ? { body: req.body } : {}) });
+        last = { status: response.status, path: req.url };
+        if (response.ok) {
+          return {
+            ok: true,
+            testedAt: now,
+            proof: `${provider.label} account verified (HTTP ${response.status}).`,
+            summary: `${provider.label} provider account verified via a live read-only probe.`,
+            resolvedEnv: built.resolvedEnv || [],
+            providerAccountOptions: [],
+            selectedProviderAccountId: "",
+            selectedProviderAccountLabel: "",
+            providerAccountSource: req.url,
+          };
+        }
+      } catch (err) {
+        last = { status: 0, path: req.url, error: err?.message || "network error" };
+      }
+    }
+    const detail = last ? `HTTP ${last.status}` : "no endpoint responded";
+    return {
+      ok: false,
+      testedAt: now,
+      proof: `${provider.label} account probe failed: ${detail}.`,
+      summary: `${provider.label} account-API probe failed: ${detail}.`,
+    };
+  }
+
   if (!probe?.emailEnv || !probe?.keyEnv) {
     return { ok: false, syncStatus: "account-linked", testedAt: now };
   }

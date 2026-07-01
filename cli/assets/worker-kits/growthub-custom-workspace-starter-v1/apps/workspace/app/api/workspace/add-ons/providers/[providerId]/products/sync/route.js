@@ -10,6 +10,7 @@ import {
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
+import { buildCapabilityProbeRequests } from "@/lib/capability-binding";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const PROBE_TIMEOUT_MS = 8000;
@@ -228,6 +229,55 @@ async function probeProviderProduct({ providerId, productId, region }) {
   }
 
   const probe = product.probe || {};
+
+  // Generalized auth-scheme-aware probe (bearer / basic / custom-header + extra
+  // headers + per-project baseUrlEnv). Any product that declares an auth scheme
+  // (every catalog product) flows through the shared, unit-tested builder. The
+  // Upstash QStash product declares neither an auth scheme nor an `auth` atom, so
+  // it falls through to the legacy Bearer path below — byte-for-byte unchanged.
+  if (probe.authScheme || product.auth) {
+    const built = buildCapabilityProbeRequests(probe, product, process.env);
+    if (!built.ok) {
+      return {
+        ok: false,
+        status: 422,
+        error: `${product.label} product credentials are not connected`,
+        missingEnv: built.missingEnv,
+        resolvedEnv: built.resolvedEnv || [],
+        summary: `${product.label} product credentials are not connected. Complete provider setup, then sync again.`,
+      };
+    }
+    let last = null;
+    for (const req of built.requests) {
+      try {
+        const response = await fetchWithTimeout(req.url, { method: req.method, headers: req.headers, ...(req.body ? { body: req.body } : {}) });
+        await readProbeText(response);
+        last = { status: response.status, path: req.url };
+        if (response.ok) {
+          return {
+            ok: true,
+            baseUrl: built.baseUrl,
+            testedAt: new Date().toISOString(),
+            proof: `${product.label} probe returned HTTP ${response.status}`,
+            summary: `${product.label} sync verified with a read-only REST probe.`,
+            resolvedEnv: requiredEnv.resolvedKeys,
+          };
+        }
+      } catch (error) {
+        last = { status: 0, path: req.url, error: error?.message || "network error" };
+      }
+    }
+    const detail = last ? `HTTP ${last.status}` : "no endpoint returned";
+    return {
+      ok: false,
+      baseUrl: built.baseUrl,
+      testedAt: new Date().toISOString(),
+      proof: `${product.label} probe failed: ${detail}`,
+      summary: `${product.label} REST probe failed: ${detail}.`,
+      resolvedEnv: requiredEnv.resolvedKeys,
+    };
+  }
+
   if (!probe.baseUrlEnv || !probe.tokenEnv || !Array.isArray(probe.paths) || !probe.paths.length) {
     return { ok: false, status: 400, error: "unsupported provider product probe" };
   }
