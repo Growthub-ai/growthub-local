@@ -18,6 +18,8 @@ import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-confi
 import {
   getMarketplaceProvider,
   listProviderProductReadiness,
+  providerAccountAuthMode,
+  resolveProviderAccountAuth,
   withMarketplaceProviderRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -69,12 +71,14 @@ function compactAccountOptions(payload, source) {
         ? payload.accounts
         : Array.isArray(payload?.data)
           ? payload.data
-          : [];
+          : payload?.user && typeof payload.user === "object"
+            ? [payload.user]
+            : [];
   return rawItems
     .map((item, index) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.slug || item.name || `account-${index + 1}`);
-      const label = clean(item.name || item.team_name || item.teamName || item.email || item.slug || id);
+      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.slug || item.username || item.name || `account-${index + 1}`);
+      const label = clean(item.name || item.team_name || item.teamName || item.username || item.email || item.slug || id);
       if (!id || !label) return null;
       return {
         id,
@@ -154,8 +158,67 @@ async function deriveUpstashQstashRuntimeEnv(provider, email, apiKey) {
  *   { ok:false, syncStatus:"account-linked" } → creds absent / Developer API N/A
  *   { ok:false }                      → creds present but probe rejected
  */
+/** Bearer-token account probe (e.g. Vercel REST API). Same honesty contract. */
+async function probeBearerProviderAccount(provider, now) {
+  const probe = provider.accountProbe;
+  const account = resolveProviderAccountAuth(provider, process.env);
+  if (!account.ready) {
+    return {
+      ok: false,
+      syncStatus: "setup-required",
+      status: "draft",
+      missingEnv: account.missingEnv,
+      resolvedEnv: account.resolvedEnv,
+      testedAt: now,
+      proof: "",
+      summary: `${provider.label} account API credentials are required to show connected account details.`,
+    };
+  }
+  const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
+  let last = null;
+  let accountOptions = [];
+  for (const path of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, path), {
+        method: "GET",
+        headers: { authorization: account.header, accept: "application/json" },
+      });
+      last = { status: response.status, path };
+      if (response.ok) {
+        const payload = await readJsonSafe(response);
+        const options = compactAccountOptions(payload, path);
+        if (options.length) accountOptions = options;
+        const selected = accountOptions.find((option) => account.teamId && option.id === account.teamId) || accountOptions[0] || null;
+        return {
+          ok: true,
+          testedAt: now,
+          proof: `${provider.label} REST API account verified (GET ${path} → HTTP ${response.status}).`,
+          summary: `${provider.label} provider account verified via live account-API probe.`,
+          resolvedEnv: account.resolvedEnv,
+          providerAccountOptions: accountOptions,
+          selectedProviderAccountId: selected?.id || account.teamId || "",
+          selectedProviderAccountLabel: selected?.label || "",
+          providerAccountSource: selected?.source || path,
+        };
+      }
+    } catch (err) {
+      last = { status: 0, path, error: err?.message || "network error" };
+    }
+  }
+  const detail = last ? `${last.path} → HTTP ${last.status}` : "no endpoint responded";
+  return {
+    ok: false,
+    testedAt: now,
+    proof: `${provider.label} account-API probe failed: ${detail}.`,
+    summary: `${provider.label} account-API probe failed: ${detail}.`,
+  };
+}
+
 async function probeProviderAccount(provider, now) {
   const probe = provider.accountProbe;
+  if (providerAccountAuthMode(provider) === "bearer") {
+    return probeBearerProviderAccount(provider, now);
+  }
   if (!probe?.emailEnv || !probe?.keyEnv) {
     return { ok: false, syncStatus: "account-linked", testedAt: now };
   }
