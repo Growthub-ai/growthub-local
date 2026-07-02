@@ -707,3 +707,22 @@ test("rate guard: caps NEW invocations per binding per minute; sliding window; p
   assert.equal(inbound.resolveInboundRateLimit({ GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE: "not-a-number" }), 60);
   inbound.resetInboundRateCache();
 });
+
+/* ================= publish route regression pin ================= */
+// The publish handler existed but its `export` line was dropped in a file
+// rewrite on main (0958c17 had it; f1e6a8c lost it), turning every publish
+// into a 405. Pin the export so no rewrite can silently drop it again.
+
+const publishRouteSource = readFileSync(
+  path.join(
+    here,
+    "..",
+    "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/workflow/publish/route.js",
+  ),
+  "utf8",
+);
+
+test("publish route: the POST handler is exported (a defined-but-unexported handler is a 405 for every publish)", () => {
+  assert.match(publishRouteSource, /async function POST\(request\)/);
+  assert.match(publishRouteSource, /export \{ POST \};/);
+});
