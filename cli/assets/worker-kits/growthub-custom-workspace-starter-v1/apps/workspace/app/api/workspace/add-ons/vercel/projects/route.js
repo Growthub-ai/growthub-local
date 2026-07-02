@@ -66,6 +66,7 @@ async function GET(request) {
   }
 
   const workspaceConfig = await readWorkspaceConfig();
+  const hasMore = Boolean(payload?.pagination?.next);
   const projects = pickVercelProjects(payload)
     .map((item) => normalizeVercelProject(item))
     .filter(Boolean)
@@ -85,6 +86,9 @@ async function GET(request) {
     providerId: "vercel",
     productId: product?.productId || "vercel-deployments",
     projects,
+    // Never truncate silently: true when the account has more projects than
+    // this discovery page (limit=100).
+    hasMore,
     resolvedEnv: account.resolvedEnv,
   });
 }

@@ -20,6 +20,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -28,6 +29,11 @@ const kitLib = path.join(
   here,
   "..",
   "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib",
+);
+const kitApp = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app",
 );
 
 const addOns = await import(pathToFileURL(path.join(kitLib, "workspace-add-ons.js")).href);
@@ -318,6 +324,88 @@ test("deploy proof normalization + patch stay non-secret and merge onto the row"
   assert.equal(found, true);
   assert.equal(findVercelProjectRow(patched, "prj_456").latestDeploymentId, "dpl_100");
   assert.equal(withVercelProjectPatch(config, { projectId: "missing", patch }).found, false);
+});
+
+/* ---------- source-truth: governed mutation lane (adversarial-review proof) ----------
+ * The canonical lane, identical to the QStash schedule + provider/product sync
+ * routes: readWorkspaceConfig → pure lib helper → writeWorkspaceConfig (the
+ * schema-validating governed write in lib/workspace-config) →
+ * appendOutcomeReceipt. Routes orchestrate only — no side-channel persistence.
+ */
+const VERCEL_ROUTE_FILES = {
+  link: path.join(kitApp, "api/workspace/add-ons/vercel/projects/link/route.js"),
+  deploy: path.join(kitApp, "api/workspace/add-ons/vercel/deploy/route.js"),
+  projects: path.join(kitApp, "api/workspace/add-ons/vercel/projects/route.js"),
+};
+
+test("vercel mutation routes use ONLY the governed workspace-config write lane", () => {
+  for (const key of ["link", "deploy"]) {
+    const source = readFileSync(VERCEL_ROUTE_FILES[key], "utf8");
+    // governed write + receipt lane
+    assert.match(source, /import\s*\{[^}]*readWorkspaceConfig[^}]*writeWorkspaceConfig[^}]*\}\s*from\s*"@\/lib\/workspace-config"/, `${key}: must import the governed config read/write`);
+    assert.match(source, /appendOutcomeReceipt/, `${key}: must emit outcome receipts`);
+    assert.match(source, /requireWorkspaceOperator/, `${key}: must gate on the operator auth contract`);
+    // no side-channel persistence: no fs access, no raw config file writes
+    assert.ok(!/node:fs/.test(source), `${key}: routes must not touch the filesystem directly`);
+    assert.ok(!/growthub\.config\.json/.test(source), `${key}: routes must not name the config file`);
+  }
+});
+
+test("vercel-projects rows are created ONLY through the canonical pure helpers", () => {
+  const link = readFileSync(VERCEL_ROUTE_FILES.link, "utf8");
+  const deploy = readFileSync(VERCEL_ROUTE_FILES.deploy, "utf8");
+  // creation/patch goes through lib/workspace-add-ons helpers — the same
+  // module that owns api-registry row creation for Upstash
+  assert.match(link, /withVercelProjectsDirectory/);
+  assert.match(deploy, /withVercelProjectsDirectory/);
+  assert.match(deploy, /withVercelProjectPatch/);
+  // neither route hand-builds a Data Model object literal (columns/rows
+  // construction lives ONLY in the pure lib helpers); receipt objectRefs
+  // naming objectType are fine — they reference, they don't create
+  for (const [key, source] of Object.entries({ link, deploy })) {
+    assert.ok(!/columns:\s*\[/.test(source), `${key}: must not hand-roll Data Model columns in the route`);
+    assert.ok(!/rows:\s*\[/.test(source), `${key}: must not hand-roll Data Model rows in the route`);
+    assert.ok(!/binding:\s*\{/.test(source), `${key}: must not construct object bindings inline`);
+    assert.ok(!/dataModel:\s*\{/.test(source), `${key}: must not construct dataModel shapes inline`);
+  }
+});
+
+test("blocked outcomes carry actionable nextActions in both mutation routes", () => {
+  for (const key of ["link", "deploy"]) {
+    const source = readFileSync(VERCEL_ROUTE_FILES[key], "utf8");
+    assert.match(source, /outcomeStatus:\s*"blocked"/, `${key}: blocked receipts missing`);
+    assert.match(source, /nextActions:\s*\[nextAction\]/, `${key}: blocked receipts must carry next-step guidance`);
+    assert.match(source, /policyVerdict:\s*\{\s*ok:\s*false/, `${key}: blocked receipts must carry a policy verdict`);
+  }
+  // the 409 no-deploy-lane case tells the user exactly how to unblock
+  const deploy = readFileSync(VERCEL_ROUTE_FILES.deploy, "utf8");
+  assert.match(deploy, /Deploy the project once from the Vercel dashboard or CLI/);
+});
+
+test("browser surfaces never call the Vercel API directly", () => {
+  const uiFiles = [
+    path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"),
+    path.join(kitApp, "settings/add-ons/add-ons-client.jsx"),
+    path.join(kitApp, "data-model/components/VercelDeployPanel.jsx"),
+  ];
+  for (const file of uiFiles) {
+    const source = readFileSync(file, "utf8");
+    const fetchTargets = [...source.matchAll(/fetch\(\s*[`"']([^`"']+)/g)].map((match) => match[1]);
+    assert.ok(fetchTargets.length > 0 || !file.endsWith("VercelDeployPanel.jsx"), `${file}: expected at least one governed fetch`);
+    for (const target of fetchTargets) {
+      assert.ok(target.startsWith("/api/workspace/"), `${path.basename(file)}: non-governed fetch target ${target}`);
+    }
+    assert.ok(!/api\.vercel\.com/.test(source), `${path.basename(file)}: must not reference the Vercel API host`);
+  }
+});
+
+test("project discovery never truncates silently (hasMore surfaced)", () => {
+  const projects = readFileSync(VERCEL_ROUTE_FILES.projects, "utf8");
+  const link = readFileSync(VERCEL_ROUTE_FILES.link, "utf8");
+  assert.match(projects, /hasMore/);
+  assert.match(link, /hasMore/);
+  const marketplace = readFileSync(path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"), "utf8");
+  assert.match(marketplace, /hasMore/);
 });
 
 /* ---------- upstash regression ---------- */

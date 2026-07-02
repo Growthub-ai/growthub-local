@@ -52,7 +52,9 @@ function VercelProjectsCockpit({ onLinkProject, onDeployProject, disabled = fals
         }
         const rows = Array.isArray(payload.projects) ? payload.projects : [];
         setProjects(rows);
-        setMessage(rows.length ? "" : "No Vercel projects returned for this account.");
+        setMessage(rows.length
+          ? (payload.hasMore ? "Showing the first 100 projects — the account has more." : "")
+          : "No Vercel projects returned for this account.");
       } catch (error) {
         if (!cancelled) {
           setProjects([]);

@@ -6,8 +6,15 @@
  * metadata, executed server-side with the env-resolved bearer token, and the
  * resulting proof (deployment id, url, readyState) is merged onto the owning
  * `vercel-projects` Data Model row — auto-linking the project first if it is
- * not yet a governed record, so a deploy is never unaccounted for. Every
- * outcome (published or blocked) emits a receipt to `workspace:agent-outcomes`.
+ * not yet a governed record, so a deploy is never unaccounted for.
+ *
+ * MUTATION LANE (identical to the QStash schedule + provider/product sync
+ * routes — this route only orchestrates, it owns no persistence of its own):
+ *   readWorkspaceConfig
+ *   → withVercelProjectsDirectory / withVercelProjectPatch (pure,
+ *     lib/workspace-add-ons — the ONLY creators of vercel-projects rows)
+ *   → writeWorkspaceConfig (schema-validating governed write)
+ *   → appendOutcomeReceipt (`workspace:agent-outcomes`, published AND blocked).
  */
 
 import { NextResponse } from "next/server";
