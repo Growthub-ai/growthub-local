@@ -53,6 +53,12 @@ jobs:
           node --test scripts/unit-serverless-readiness.test.mjs
           node --test scripts/unit-schedule-cockpit.test.mjs
 
+      - name: Validate Supabase provider + external data sync loop
+        run: |
+          node --test scripts/unit-workspace-add-ons-supabase.test.mjs
+          node --test scripts/unit-supabase-data-node.test.mjs
+          node --test scripts/unit-workspace-external-sync.test.mjs
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 
