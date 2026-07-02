@@ -575,6 +575,10 @@ export default function WorkflowSurface() {
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
+  // Where collected run inputs go: "sandbox" for the draft test runner, or an
+  // inbound input mode ("webhook" / "api-request") for a real test invocation
+  // through the governed destination door.
+  const [runSetupTarget, setRunSetupTarget] = useState("sandbox");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleCadence, setScheduleCadence] = useState("daily");
@@ -1040,6 +1044,7 @@ export default function WorkflowSurface() {
 
   function handleTestClick() {
     if (runInputSchema.requiresInput) {
+      setRunSetupTarget("sandbox");
       setRunSetupOpen(true);
       setSelectedNodeId("");
       setAddTarget(null);
@@ -1048,8 +1053,26 @@ export default function WorkflowSurface() {
     runSandbox();
   }
 
+  function handleInboundTestClick(inputMode) {
+    // Workflows with a required run-input schema collect user test values
+    // through the same RunSetupPanel path as the sandbox runner — the values
+    // then ride the real signed/bearer invocation through the destination
+    // door, which validates them before any node runs.
+    if (runInputSchema.requiresInput) {
+      setRunSetupTarget(inputMode);
+      setRunSetupOpen(true);
+      setAddTarget(null);
+      return;
+    }
+    runInboundTestInvocation(inputMode);
+  }
+
   async function handleRunWithInputs(runInputs) {
     setRunSetupOpen(false);
+    if (runSetupTarget === "webhook" || runSetupTarget === "api-request") {
+      await runInboundTestInvocation(runSetupTarget, runInputs);
+      return;
+    }
     await runSandbox({ runInputs });
   }
 
@@ -1228,17 +1251,28 @@ export default function WorkflowSurface() {
   // never values). It runs once the input trigger is in (or moving into)
   // Serverless Schedule, and feeds the ultrathin orange node border + the
   // light-orange field/delta-tag fills (the color is the only guidance added).
-  const inputServerlessSelected = String(
+  const selectedInputMode = String(
     (Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes : [])
       .find((n) => n?.type === "input" || n?.id === "input" || n?.type === "data-trigger")?.config?.inputMode || "",
-  ).trim() === "serverless-schedule";
+  ).trim();
+  // Webhook and API Request are serverless invocation methods just like the
+  // schedule — selecting any of the three activates the same pre-bind
+  // readiness/delta field highlighting before the user hits Bind.
+  const inputServerlessSelected = ["serverless-schedule", "webhook", "api-request"].includes(selectedInputMode);
+  // The expected registry for the scan follows the selected method: the bound
+  // inbound capability row for webhook/api-request, the scheduler row otherwise.
+  const expectedReadinessRegistryId = selectedInputMode === "webhook"
+    ? String(addOnsState.webhookTrigger?.integrationId || "").trim()
+    : selectedInputMode === "api-request"
+      ? String(addOnsState.apiTrigger?.integrationId || "").trim()
+      : selectedSchedulerRegistryId;
   const serverlessReadiness = sandboxRow && (isServerlessWorkflow || inputServerlessSelected)
     ? scanServerlessReadiness({
         row: sandboxRow,
         workspaceConfig: workspaceConfig || {},
         configuredEnvRefs: serverlessSignals.configuredEnvRefs,
         phase: isServerlessWorkflow && String(sandboxRow?.scheduleId || "").trim() ? "bound" : "pre-bind",
-        expected: { schedulerRegistryId: selectedSchedulerRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
+        expected: { schedulerRegistryId: expectedReadinessRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
       })
     : null;
   const readinessFlags = serverlessReadiness ? readinessFieldFlags(serverlessReadiness) : {};
@@ -1398,6 +1432,132 @@ export default function WorkflowSurface() {
     }
   }
 
+  // Inbound input methods (webhook / api-request) — the exact mirror of the
+  // QStash schedule actions: the growthub schedule route binds THIS row and
+  // flips it serverless in ONE server-authoritative write; we adopt the
+  // returned config verbatim and never claim bound unless the server
+  // confirmed the persist.
+  const INBOUND_METHOD_META = {
+    webhook: { productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook", secretEnv: "GROWTHUB_WEBHOOK_SIGNING_SECRET" },
+    "api-request": { productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request", secretEnv: "GROWTHUB_API_INVOKE_TOKEN" },
+  };
+
+  async function submitInboundBinding(inputMode) {
+    const meta = INBOUND_METHOD_META[inputMode];
+    if (!meta || resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: meta.productId,
+          objectId,
+          rowId,
+          version: String(sandboxRow?.version || "v1"),
+          workspaceId: workspaceConfig?.id || "workspace",
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.bound || !payload.workspaceConfig) {
+        setScheduleError(payload.error ? `Could not bind ${meta.label}: ${payload.error}` : `Could not bind the ${meta.label} trigger.`);
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage(`${meta.label} trigger bound.`);
+      return true;
+    } catch (error) {
+      console.warn(error);
+      setScheduleError(error?.message || `Could not bind the ${meta.label} trigger.`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function revertInboundBindingToLocal(inputMode) {
+    const meta = INBOUND_METHOD_META[inputMode];
+    if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: meta.productId,
+          objectId,
+          rowId,
+          scheduleId: sandboxRow.scheduleId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.workspaceConfig) {
+        setScheduleError(payload.error || `Could not remove the ${meta.label} binding.`);
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage(`${meta.label} binding removed.`);
+      return true;
+    } catch (error) {
+      setScheduleError(error?.message || `Could not remove the ${meta.label} binding.`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function runInboundTestInvocation(inputMode, runInputs = null) {
+    const meta = INBOUND_METHOD_META[inputMode];
+    if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const body = {
+        action: "run",
+        productId: meta.productId,
+        objectId,
+        rowId,
+        version: String(sandboxRow?.version || "v1"),
+        workspaceId: workspaceConfig?.id || "workspace",
+      };
+      // User-entered test values ride the canonical run-input envelope; the
+      // destination door still validates them against the workflow's own
+      // input schema before any node runs.
+      if (runInputs && typeof runInputs === "object" && !Array.isArray(runInputs)) {
+        body.runInputs = runInputs;
+      }
+      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        setScheduleError(payload.error || `${meta.label} test invocation failed.`);
+        return false;
+      }
+      // The destination door wrote the durable last-run proof; re-hydrate so
+      // the panel and cockpit show the verified 200 without a manual refresh.
+      try {
+        await fetchWorkspaceConfigOnce();
+      } catch {
+        // hydration is best-effort; the proof is already durable server-side
+      }
+      setSaveMessage(`${meta.label} test invocation succeeded (run ${payload.runId || "ok"}).`);
+      return true;
+    } catch (error) {
+      setScheduleError(error?.message || `${meta.label} test invocation failed.`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function controlInstalledScheduler(action) {
     if (!objectId || !rowId || !sandboxRow?.scheduleId || !["pause", "resume"].includes(action)) return false;
     setScheduleError("");
@@ -1426,6 +1586,40 @@ export default function WorkflowSurface() {
       return true;
     } catch (error) {
       setScheduleError(error?.message || `Could not ${action} the remote schedule.`);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function controlInboundBinding(inputMode, action) {
+    const meta = INBOUND_METHOD_META[inputMode];
+    if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId || !["pause", "resume"].includes(action)) return false;
+    setScheduleError("");
+    setSaving(true);
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action,
+          productId: meta.productId,
+          objectId,
+          rowId,
+          scheduleId: sandboxRow.scheduleId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok || !payload.workspaceConfig) {
+        setScheduleError(payload.error || `Could not ${action} the ${meta.label} binding.`);
+        return false;
+      }
+      setWorkspaceConfig(payload.workspaceConfig);
+      setSaveMessage(action === "pause" ? `${meta.label} binding paused.` : `${meta.label} binding resumed.`);
+      return true;
+    } catch (error) {
+      setScheduleError(error?.message || `Could not ${action} the ${meta.label} binding.`);
       return false;
     } finally {
       setSaving(false);
@@ -1667,11 +1861,11 @@ export default function WorkflowSurface() {
                       <X size={14} />
                     </button>
                     <span>Run setup</span>
-                    <em>Manual inputs</em>
+                    <em>{runSetupTarget === "webhook" ? "Webhook test values" : runSetupTarget === "api-request" ? "API request test values" : "Manual inputs"}</em>
                   </div>
                   <RunSetupPanel
                     schema={runInputSchema}
-                    running={running}
+                    running={running || saving}
                     onSubmit={handleRunWithInputs}
                     onCancel={() => setRunSetupOpen(false)}
                   />
@@ -1741,6 +1935,8 @@ export default function WorkflowSurface() {
                     readinessFlag={selectedNodeId ? readinessFlags[selectedNodeId] : null}
                     serverlessScheduleOptionAvailable={Boolean(addOnsState.qstashWorkflow || selectedSchedulerRegistryId || schedulerRegistryRows.length)}
                     serverlessScheduleAvailable={remoteScheduleVerified}
+                    webhookTriggerAvailable
+                    apiTriggerAvailable
                     inputScheduleControls={selectedNode?.type === "input" && selectedNode?.config?.inputMode === "serverless-schedule" ? (
                       <div className="dm-trigger-schedule-config">
                         <span className="dm-field-label">Serverless schedule</span>
@@ -1866,7 +2062,99 @@ export default function WorkflowSurface() {
                           </div>
                         ) : null}
                       </div>
-                    ) : null}
+                    ) : selectedNode?.type === "input" && ["webhook", "api-request"].includes(String(selectedNode?.config?.inputMode || "").trim()) ? (() => {
+                      // Inbound input methods — the exact mirror of the schedule
+                      // panel above: capability → bind → test invocation →
+                      // verified 200 proof, all through the governed growthub
+                      // schedule route and the real destination door.
+                      const inputMode = String(selectedNode.config.inputMode).trim();
+                      const meta = INBOUND_METHOD_META[inputMode];
+                      const capabilityRow = inputMode === "webhook" ? addOnsState.webhookTrigger : addOnsState.apiTrigger;
+                      const bound = Boolean(sandboxRow?.scheduleId) && String(sandboxRow?.schedulerTriggerKind || "").trim() === meta.triggerKind;
+                      const lastStatus = String(sandboxRow?.lastScheduledRunStatus || "").trim();
+                      const lastKindAgrees = String(sandboxRow?.lastScheduledRunTriggerKind || "").trim() === meta.triggerKind;
+                      const verified = bound && lastKindAgrees && lastStatus.startsWith("2") && String(sandboxRow?.lastScheduledRunNodesCompleted || "").trim() !== "false";
+                      const lastFailed = bound && lastKindAgrees && Boolean(lastStatus) && !lastStatus.startsWith("2");
+                      return (
+                        <div className="dm-trigger-schedule-config">
+                          <span className="dm-field-label">{meta.label} trigger</span>
+                          <dl className="dm-workflow-schedule-state">
+                            <div>
+                              <dt>Trigger product</dt>
+                              <dd>{capabilityRow ? capabilityRow.integrationId : `${meta.productId} (built-in)`}</dd>
+                            </div>
+                            <div>
+                              <dt>Status</dt>
+                              <dd>{bound ? (sandboxRow?.schedulerPaused ? "paused" : verified ? "verified 200" : lastFailed ? "last run failed" : "bound — no receipt yet") : "not bound"}</dd>
+                            </div>
+                            {bound && sandboxRow?.scheduleId ? (
+                              <div>
+                                <dt>Binding</dt>
+                                <dd>{sandboxRow.scheduleId}</dd>
+                              </div>
+                            ) : null}
+                            {bound && sandboxRow?.schedulerDestination ? (
+                              <div>
+                                <dt>Destination</dt>
+                                <dd>{sandboxRow.schedulerDestination}</dd>
+                              </div>
+                            ) : null}
+                            {bound && lastStatus ? (
+                              <div>
+                                <dt>Last run</dt>
+                                <dd>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</dd>
+                              </div>
+                            ) : null}
+                          </dl>
+                          {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
+                          {!bound ? (
+                            <button
+                              type="button"
+                              className="dm-btn-outline dm-workflow-schedule-submit"
+                              disabled={saving}
+                              onClick={() => submitInboundBinding(inputMode)}
+                            >
+                              {saving ? "Binding..." : `Bind ${meta.label} trigger`}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="dm-btn-outline dm-workflow-schedule-submit"
+                              disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
+                              onClick={() => handleInboundTestClick(inputMode)}
+                            >
+                              {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with values..." : "Run test invocation"}
+                            </button>
+                          )}
+                          {!capabilityRow && !bound ? (
+                            <p className="dm-cockpit-step-hint">Built-in input method — Bind verifies {meta.secretEnv} resolves in this runtime and records the capability in one governed write.</p>
+                          ) : null}
+                          {bound && !verified && !lastFailed ? (
+                            <p className="dm-cockpit-step-hint">Run a test invocation with real values — publish requires a verified 200 with every downstream node completed.</p>
+                          ) : null}
+                          {bound ? (
+                            <div className="dm-workflow-schedule-actions">
+                              <button
+                                type="button"
+                                className="dm-btn-outline"
+                                disabled={saving}
+                                onClick={() => controlInboundBinding(inputMode, sandboxRow?.schedulerPaused ? "resume" : "pause")}
+                              >
+                                {sandboxRow?.schedulerPaused ? "Resume" : "Pause"}
+                              </button>
+                              <button
+                                type="button"
+                                className="dm-btn-outline is-danger"
+                                disabled={saving}
+                                onClick={() => revertInboundBindingToLocal(inputMode)}
+                              >
+                                Revert to local
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })() : null}
                   />
                   {graphError && <p className="dm-orchestration-config__error">{graphError}</p>}
                 </div>

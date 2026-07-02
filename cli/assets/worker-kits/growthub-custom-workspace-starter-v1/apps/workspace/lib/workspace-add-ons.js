@@ -166,6 +166,58 @@ const UPSTASH_PRODUCTS = [
     regionOptions: UPSTASH_REGION_OPTIONS,
   },
 ];
+// Workspace-native inbound input-method products — the exact mirror of the
+// QStash scheduler product for push invocation. Capability = a verified API
+// Registry row (secret resolvable as an env ref); ownership = the workflow row
+// (same scheduleId/schedulerRegistryId columns); node surface = the same
+// trigger node with a method-specific triggerKind/inputMode. No remote
+// infrastructure exists for these products, so install/uninstall skip the
+// remote create/delete steps and everything else is byte-identical.
+const GROWTHUB_INBOUND_PROVIDER_INTEGRATION_ID = "growthub-inbound-provider";
+const GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID = "growthub-webhook-trigger";
+const GROWTHUB_API_TRIGGER_INTEGRATION_ID = "growthub-api-trigger";
+const GROWTHUB_INBOUND_PRODUCTS = [
+  {
+    productId: "growthub-webhook-trigger",
+    integrationId: GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
+    authRef: "GROWTHUB_WEBHOOK",
+    label: "Growthub Webhook Trigger",
+    shortLabel: "Webhook",
+    icon: "W",
+    iconClass: "is-webhook",
+    connectorKind: "growthub-inbound-webhook",
+    endpoint: "/api/workspace/workflows/growthub",
+    method: "POST",
+    description: "Signed inbound webhook input method for published governed workflows. External systems POST a v1 HMAC-signed request to the workspace destination route; the signing secret stays in env — this row stores only refs and routing metadata.",
+    subtitle: "Signed inbound invocation",
+    plans: "Included",
+    entityTypes: "workflow-run,webhook",
+    capabilities: "webhook,workflow,inbound-invocation",
+    executionLane: "inbound-webhook",
+    requiredEnv: ["GROWTHUB_WEBHOOK_SIGNING_SECRET"],
+    optionalEnv: [],
+  },
+  {
+    productId: "growthub-api-trigger",
+    integrationId: GROWTHUB_API_TRIGGER_INTEGRATION_ID,
+    authRef: "GROWTHUB_API",
+    label: "Growthub API Trigger",
+    shortLabel: "API request",
+    icon: "A",
+    iconClass: "is-api-trigger",
+    connectorKind: "growthub-api-request",
+    endpoint: "/api/workspace/workflows/growthub",
+    method: "POST",
+    description: "Authenticated API-request input method for published governed workflows. A bearer-authenticated POST carries the run-input values (validated against the workflow's run-input schema); the invoke token stays in env.",
+    subtitle: "Authenticated API invocation",
+    plans: "Included",
+    entityTypes: "workflow-run,api-request",
+    capabilities: "api-request,workflow,inbound-invocation",
+    executionLane: "api-request",
+    requiredEnv: ["GROWTHUB_API_INVOKE_TOKEN"],
+    optionalEnv: [],
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -218,6 +270,24 @@ const MARKETPLACE_PROVIDERS = [
     capabilities: "provider-account,env-provisioning,marketplace-products",
     executionLane: "workspace-provider",
     description: "Provider-level Upstash account binding for workspace add-ons. Product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "growthub",
+    integrationId: GROWTHUB_INBOUND_PROVIDER_INTEGRATION_ID,
+    authRef: "GROWTHUB",
+    label: "Growthub Inbound Triggers",
+    developer: "Growthub",
+    baseUrl: "",
+    endpoint: "/api/workspace/workflows/growthub",
+    method: "POST",
+    consoleUrl: "",
+    providerProductsLabel: "Inbound invocation (Webhook, API request)",
+    products: GROWTHUB_INBOUND_PRODUCTS,
+    entityTypes: "provider,marketplace,workspace-native",
+    connectorKind: "growthub-inbound-provider",
+    capabilities: "provider-account,inbound-invocation,marketplace-products",
+    executionLane: "workspace-provider",
+    description: "Workspace-native inbound input methods for published governed workflows. No external account: products verify by resolving their signing/invoke env refs in this runtime.",
   },
 ];
 
@@ -293,10 +363,26 @@ function parseGraphValue(value) {
  */
 const CANONICAL_TRIGGER_NODE_ID = "schedule-trigger";
 
+// One trigger grammar, three input methods. The scheduler value is the shipped
+// default; the inbound values are its exact mirrors (workspace-inbound-invocation.js
+// owns the verification side of each kind).
+const BINDING_TRIGGER_KINDS = ["serverless-scheduler", "inbound-webhook", "api-request"];
+const INPUT_MODE_BY_TRIGGER_KIND = {
+  "serverless-scheduler": "serverless-schedule",
+  "inbound-webhook": "webhook",
+  "api-request": "api-request",
+};
+
+function normalizeTriggerKind(kind) {
+  const value = String(kind == null ? "" : kind).trim();
+  return BINDING_TRIGGER_KINDS.includes(value) ? value : "serverless-scheduler";
+}
+
 function scheduleTriggerConfig(meta) {
+  const triggerKind = normalizeTriggerKind(meta.triggerKind);
   return {
-    trigger: "serverless-scheduler",
-    triggerKind: "serverless-scheduler",
+    trigger: triggerKind,
+    triggerKind,
     schedule: {
       schedulerRegistryId: meta.schedulerRegistryId || "",
       scheduleId: meta.scheduleId || "",
@@ -326,11 +412,17 @@ function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
   if (triggerIndex < 0) {
     // No canonical trigger/input node — create one rather than mutate node 0.
     if (clear) return { value, triggerNodeId: null, changed: false };
+    const triggerLabels = {
+      "serverless-scheduler": { label: "Schedule trigger", subtitle: "Serverless scheduler" },
+      "inbound-webhook": { label: "Webhook trigger", subtitle: "Signed inbound webhook" },
+      "api-request": { label: "API trigger", subtitle: "Authenticated API request" },
+    };
+    const kindLabels = triggerLabels[normalizeTriggerKind(meta.triggerKind)];
     const triggerNode = {
       id: CANONICAL_TRIGGER_NODE_ID,
       type: "data-trigger",
-      label: "Schedule trigger",
-      subtitle: "Serverless scheduler",
+      label: kindLabels.label,
+      subtitle: kindLabels.subtitle,
       config: { action: "schedule-fired", ...scheduleTriggerConfig(meta) },
     };
     const nextNodes = graph.nodes.map((node) =>
@@ -357,7 +449,7 @@ function syncTriggerNodeForSchedule(value, meta = {}, { clear = false } = {}) {
         delete config.enabled;
       } else {
         Object.assign(config, scheduleTriggerConfig(meta));
-        if (isInputTrigger) config.inputMode = "serverless-schedule";
+        if (isInputTrigger) config.inputMode = INPUT_MODE_BY_TRIGGER_KIND[normalizeTriggerKind(meta.triggerKind)];
       }
       return { ...node, config };
     }
@@ -387,7 +479,7 @@ function readTriggerScheduleBinding(value) {
     graph.nodes.find((n) => n?.type === "data-trigger") ||
     graph.nodes.find((n) => n?.type === "input" || n?.id === "input");
   const schedule = node?.config?.schedule;
-  if (!schedule || node?.config?.trigger !== "serverless-scheduler") return null;
+  if (!schedule || !BINDING_TRIGGER_KINDS.includes(String(node?.config?.trigger || "").trim())) return null;
   return {
     triggerNodeId: String(node.id || "").trim(),
     triggerKind: String(node.config.triggerKind || node.config.trigger || "").trim(),
@@ -399,8 +491,60 @@ function readTriggerScheduleBinding(value) {
   };
 }
 
+/**
+ * TRUE only when the row carries a fresh, successful, method-consistent
+ * serverless invocation proof for the exact graph bytes being promoted. This
+ * is the publish gate's serverless alternative to the draft-test lineage —
+ * and binding alone is NEVER proof: a bound-but-never-invoked schedule,
+ * webhook, or API endpoint must not publish as stable.
+ *
+ * Requires ALL of:
+ *   - serverless binding agreement: runLocality=serverless, registry id +
+ *     binding id owned by the row, published trigger node enabled and agreeing,
+ *   - METHOD agreement: row.schedulerTriggerKind ↔ trigger node kind ↔
+ *     lastScheduledRunTriggerKind (stale proof from one input method can never
+ *     satisfy the gate for another; legacy rows default to the scheduler kind),
+ *   - a SUCCESSFUL invocation: lastScheduledRunStatus is 2xx AND
+ *     lastScheduledRunSucceededAt is stamped (the destination door / signed
+ *     callback write these only after the whole graph ran and succeeded),
+ *   - graph identity: the tested config or the live graph equals the exact
+ *     draft bytes being promoted (proof freshness against this version).
+ */
+function rowHasSuccessfulServerlessBindingProof(row, draft) {
+  const runLocality = String(row?.runLocality || "").trim().toLowerCase();
+  const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
+  const scheduleId = String(row?.scheduleId || "").trim();
+  const draftGraph = String(draft || "").trim();
+  const testedConfig = String(row?.orchestrationDraftTestedConfig || "").trim();
+  const liveGraph = String(row?.orchestrationGraph || row?.orchestrationConfig || "").trim();
+  const binding = readTriggerScheduleBinding(row?.orchestrationGraph || row?.orchestrationConfig);
+  const rowTriggerKind = String(row?.schedulerTriggerKind || "").trim() || "serverless-scheduler";
+  const lastRunTriggerKind = String(row?.lastScheduledRunTriggerKind || "").trim();
+  const methodAgrees = String(binding?.triggerKind || "").trim() === rowTriggerKind
+    && (!lastRunTriggerKind || lastRunTriggerKind === rowTriggerKind);
+  const lastRunStatus = String(row?.lastScheduledRunStatus || "").trim();
+  // When the objectified node trace is present (inbound door writes it), every
+  // downstream node must have completed — an HTTP 200 with an incomplete chain
+  // is not proof. Legacy scheduler proof (signed callback, no trace column)
+  // passes on 2xx + succeededAt as before.
+  const nodesCompleted = String(row?.lastScheduledRunNodesCompleted || "").trim();
+  const invocationSucceeded = lastRunStatus.startsWith("2")
+    && Boolean(String(row?.lastScheduledRunSucceededAt || "").trim())
+    && (!nodesCompleted || nodesCompleted === "true");
+  return runLocality === "serverless"
+    && Boolean(schedulerRegistryId)
+    && Boolean(scheduleId)
+    && binding?.enabled === true
+    && binding?.scheduleId === scheduleId
+    && binding?.schedulerRegistryId === schedulerRegistryId
+    && methodAgrees
+    && invocationSucceeded
+    && (testedConfig === draftGraph || liveGraph === draftGraph);
+}
+
 const SANDBOX_SCHEDULE_CLEAR_PATCH = {
   scheduleId: "",
+  schedulerTriggerKind: "",
   schedulerProviderId: "",
   schedulerProductId: "",
   schedulerRegion: "",
@@ -448,6 +592,7 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
       // both live fields consistent when both are present.
       liveField = liveGraphField(row);
       const triggerMeta = {
+        triggerKind: normalizeTriggerKind(params.triggerKind),
         schedulerRegistryId: String(schedulerRegistryId || "").trim(),
         scheduleId: params.scheduleId || "",
         cron: params.cron || "",
@@ -468,6 +613,7 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
       return {
         ...base,
         runLocality: "serverless",
+        schedulerTriggerKind: triggerMeta.triggerKind,
         schedulerRegistryId: triggerMeta.schedulerRegistryId,
         adapter: SERVERLESS_LOCAL_ADAPTERS.includes(adapterId) ? "local-process" : (adapterId || "local-process"),
         schedulerProviderId: triggerMeta.schedulerProviderId,
@@ -726,6 +872,91 @@ function makeUpstashSchedulerRow({ region, authReady }) {
   return makeUpstashProductRow({ productId: "upstash-qstash", region, authReady });
 }
 
+/**
+ * Provider-agnostic product row (mirror of makeUpstashProductRow for products
+ * with no region/remote-resource semantics — e.g. the workspace-native inbound
+ * trigger products). Verified = the product's env refs resolve in this runtime
+ * (same proof rule the scheduler product uses; secrets never persisted).
+ */
+function makeMarketplaceProductRow({ providerId, productId, plan = "included", syncResult = null, authReady = false } = {}) {
+  if (providerId === "upstash") return makeUpstashProductRow({ productId, plan, syncResult, authReady });
+  const product = getMarketplaceProduct(providerId, productId);
+  if (!product) return null;
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  return {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: "",
+    selectedResourceLabel: "",
+    selectedResourceSource: "",
+    baseUrl: syncResult?.baseUrl || "",
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Set ${(product.requiredEnv || []).join(", ")} in this runtime, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: "",
+    schemaVersion: "growthub-marketplace-product-v1",
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || (authReady ? `${(product.requiredEnv || []).join(", ")} resolved in runtime env.` : ""),
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+  };
+}
+
+/** Upsert one product row into the api-registry object (shared shape). */
+function withRegistryProductRowUpsert(workspaceConfig, productRow) {
+  if (!productRow) return workspaceConfig;
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isApiRegistryObject(object) || found) return object;
+    found = true;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === productRow.integrationId);
+    return {
+      ...object,
+      columns: apiRegistryColumns(object.columns),
+      rows: hasRow
+        ? rows.map((row) => String(row?.integrationId || "").trim() === productRow.integrationId ? { ...row, ...productRow } : row)
+        : [productRow, ...rows],
+    };
+  });
+  if (!found) {
+    nextObjects.push({
+      id: "api-registry",
+      label: "API Registry",
+      name: "API Registry",
+      source: "API Registry",
+      objectType: "api-registry",
+      icon: "Code2",
+      columns: apiRegistryColumns(),
+      rows: [productRow],
+      binding: { mode: "manual", source: "API Registry" },
+      relations: [],
+    });
+  }
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
 function withUpstashProductRegistry(workspaceConfig, { productId = "upstash-qstash", region = "us-east-1", plan = "free", syncResult = null, authReady = false } = {}) {
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
@@ -766,7 +997,8 @@ function withMarketplaceProductRegistry(workspaceConfig, { providerId, productId
   if (providerId === "upstash") {
     return withUpstashProductRegistry(workspaceConfig, { productId, region, plan, syncResult, authReady });
   }
-  return workspaceConfig;
+  const productRow = makeMarketplaceProductRow({ providerId, productId, plan, syncResult, authReady });
+  return withRegistryProductRowUpsert(workspaceConfig, productRow);
 }
 
 function withMarketplaceProviderRegistry(workspaceConfig, { providerId, syncResult = null } = {}) {
@@ -905,6 +1137,10 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   // is what lets the canvas OFFER a bind; the per-workflow schedule itself is
   // created on bind and stored on the owning sandbox row, not here.
   const qstashScheduler = qstashWorkflow;
+  // Inbound input-method capabilities — same proof rule (installed + verified
+  // registry row) that gates the scheduler bind in the canvas.
+  const webhookTrigger = installed.find((row) => row.productId === "growthub-webhook-trigger") || null;
+  const apiTrigger = installed.find((row) => row.productId === "growthub-api-trigger") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -914,10 +1150,20 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     qstashWorkflow,
     qstashScheduler,
     hasQstashSchedulerCapability: Boolean(qstashWorkflow),
+    webhookTrigger,
+    hasWebhookTriggerCapability: Boolean(webhookTrigger),
+    apiTrigger,
+    hasApiTriggerCapability: Boolean(apiTrigger),
   };
 }
 
 export {
+  BINDING_TRIGGER_KINDS,
+  GROWTHUB_API_TRIGGER_INTEGRATION_ID,
+  GROWTHUB_INBOUND_PRODUCTS,
+  GROWTHUB_INBOUND_PROVIDER_INTEGRATION_ID,
+  GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
+  INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
   UPSTASH_AUTH_REF,
   UPSTASH_PRODUCTS,
@@ -939,6 +1185,7 @@ export {
   withSandboxSchedulerControlState,
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
+  rowHasSuccessfulServerlessBindingProof,
   liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,
@@ -946,6 +1193,8 @@ export {
   listUpstashProductReadiness,
   withWorkflowServerlessBind,
   makeMarketplaceProviderRow,
+  makeMarketplaceProductRow,
+  normalizeTriggerKind,
   makeUpstashProductRow,
   makeUpstashProviderRow,
   makeUpstashSchedulerRow,
