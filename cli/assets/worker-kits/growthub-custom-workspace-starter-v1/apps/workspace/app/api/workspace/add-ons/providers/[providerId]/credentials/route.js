@@ -293,6 +293,11 @@ async function POST(request, context) {
     }
 
     const envToWrite = deriveEnvUpdates(fields, credentials, body);
+    // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)
+    // so the canonical authRef candidate expansion resolves the product key.
+    for (const [alias, source] of Object.entries(provider.accountProbe?.aliasEnv || {})) {
+      if (!envToWrite[alias] && envToWrite[source]) envToWrite[alias] = envToWrite[source];
+    }
     await writeLocalEnv(envToWrite);
     const resolvedEnv = Object.keys(envToWrite);
     const selected = verified.options[0] || null;

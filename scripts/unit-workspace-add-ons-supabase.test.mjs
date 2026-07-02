@@ -60,6 +60,7 @@ test("supabase provider registers with the canonical marketplace identity", () =
   assert.equal(provider.accountProbe?.tokenEnv, "SUPABASE_ACCESS_TOKEN");
   assert.equal(provider.accountProbe?.fallback?.baseUrlEnv, "SUPABASE_URL");
   assert.equal(provider.accountProbe?.fallback?.tokenEnv, "SUPABASE_SERVICE_ROLE_KEY");
+  assert.deepEqual(provider.accountProbe?.aliasEnv, { SUPABASE_API_KEY: "SUPABASE_SERVICE_ROLE_KEY" });
   // Provider must resolve by integrationId too (registry row correlation).
   assert.equal(getMarketplaceProvider(SUPABASE_PROVIDER_INTEGRATION_ID)?.providerId, "supabase");
 });
@@ -140,6 +141,7 @@ test("generic product row builds with refs only and upserts idempotently", () =>
   assert.equal(row.resolverTemplateId, "supabase-postgrest");
   assert.equal(row.baseUrl, "https://abcd1234.supabase.co");
   assert.equal(row.schemaVersion, "growthub-marketplace-product-v1");
+  assert.equal(row.authHeaderName, "apikey", "generic HTTP lanes send the key on the apikey header");
   // Secret rule: no secret VALUE anywhere on the row.
   const rowText = JSON.stringify(row);
   assert.ok(!rowText.includes(SECRET) && !rowText.includes(SERVICE_KEY), "row must not embed secret values");
