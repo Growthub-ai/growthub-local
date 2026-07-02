@@ -55,6 +55,7 @@ import { OrchestrationNodeConfigPanel } from "../data-model/components/Orchestra
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
+import { InboundResponseInspector, JsonTree } from "./InboundResponseInspector.jsx";
 import { describeRunInputMetadataItems, discoverRunInputSchema, RUN_INPUTS_KIND } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
 import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/workspace-activation";
@@ -406,6 +407,67 @@ function WorkflowScheduleModal({
   );
 }
 
+/**
+ * InboundTestEventModal — the dedicated JSON test-event editor for the
+ * Webhook / API-request input methods (same backdrop/modal primitives as the
+ * schedule modal, no new design system). Keeps the sidecar clean: one
+ * "Generate Test Event" button opens this, the user reviews/edits the derived
+ * payload, and Send fires the REAL signed/bearer invocation through the
+ * destination door — every downstream node in the blast radius runs.
+ * The editor is drag-resizable; downstream references show the runner's own
+ * `{{input.<path>}}` substitution grammar per field.
+ */
+function InboundTestEventModal({ open, methodLabel, valueText, seedValues, errorMessage, disabled, onChangeText, onSend, onClose }) {
+  if (!open) return null;
+  let parsedDraft = null;
+  try {
+    const candidate = JSON.parse(String(valueText || "").trim() || "{}");
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) parsedDraft = candidate;
+  } catch {
+    parsedDraft = null;
+  }
+  const referenceSource = parsedDraft || seedValues || null;
+  return (
+    <div className="dm-workflow-schedule-backdrop" role="presentation">
+      <section className="dm-workflow-schedule-modal dm-inbound-test-modal" role="dialog" aria-modal="true" aria-label={`${methodLabel} test event`}>
+        <header>
+          <div>
+            <p className="dm-api-action-card-eyebrow">Test event</p>
+            <h3>{methodLabel} request body</h3>
+          </div>
+          <button type="button" className="dm-workflow-icon-btn" aria-label="Close test event editor" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </header>
+        <div className="dm-workflow-schedule-body">
+          <label className="dm-orchestration-config__field dm-inbound-body">
+            <span>Request body (JSON)</span>
+            <textarea rows={12} value={valueText} onChange={(e) => onChangeText(e.target.value)} spellCheck={false} />
+          </label>
+          <p className="dm-inbound-help">Derived from the input node&apos;s sample payload and the row&apos;s trigger input — edit freely. Sent as the real {String(methodLabel || "").toLowerCase()} request; every downstream node runs.</p>
+          {parsedDraft === null ? (
+            <p className="dm-workflow-schedule-error" role="alert">Body is not valid JSON yet — Send stays disabled until it parses.</p>
+          ) : null}
+          {errorMessage ? <p className="dm-workflow-schedule-error" role="alert">{errorMessage}</p> : null}
+          {referenceSource && Object.keys(referenceSource).length ? (
+            <details className="dm-inbound-example" open>
+              <summary>Downstream references</summary>
+              <p className="dm-inbound-help">Click a token to copy it — paste into any downstream node&apos;s endpoint or body template to use this field&apos;s live value.</p>
+              <JsonTree value={referenceSource} refBase="input" />
+            </details>
+          ) : null}
+        </div>
+        <footer>
+          <button type="button" className="dm-btn-outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="dm-btn-primary-sm" disabled={disabled || parsedDraft === null} onClick={onSend}>
+            {disabled ? "Sending..." : "Send test event"}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 const WORKFLOW_ACTION_GROUPS = [
   {
     label: "Data",
@@ -587,6 +649,8 @@ export default function WorkflowSurface() {
   // (collectAvailableInputKeys) derives from, so what the user tests is what
   // downstream nodes consume. null = not yet edited (re-seed from contract).
   const [inboundTestValuesText, setInboundTestValuesText] = useState(null);
+  // Which input mode the dedicated test-event modal is open for (null = closed).
+  const [inboundTestModal, setInboundTestModal] = useState(null);
   const [inboundExampleCopied, setInboundExampleCopied] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
@@ -1110,9 +1174,25 @@ export default function WorkflowSurface() {
     return values;
   }
 
+  // Opens the dedicated test-event editor (or the canonical RunSetupPanel when
+  // the workflow declares a run-input schema). The panel itself stays clean —
+  // one button; the JSON body editing happens in the modal.
+  function openInboundTestEvent(inputMode) {
+    setScheduleError("");
+    if (runInputSchema.requiresInput) {
+      handleInboundTestClick(inputMode);
+      return;
+    }
+    if (inboundTestValuesText == null) {
+      setInboundTestValuesText(JSON.stringify(deriveInboundTestSeed(), null, 2));
+    }
+    setInboundTestModal(inputMode);
+  }
+
   function handleInboundTestClick(inputMode) {
     const values = parseInboundTestValues();
     if (!values) return;
+    setInboundTestModal(null);
     if (runInputSchema.requiresInput) {
       // Canonical run-input entry path: the workflow declares a run-input
       // schema, so the SAME RunSetupPanel that fronts every execution lane
@@ -1938,6 +2018,18 @@ export default function WorkflowSurface() {
           onClose={() => setScheduleModalOpen(false)}
         />
 
+        <InboundTestEventModal
+          open={Boolean(inboundTestModal)}
+          methodLabel={inboundMethodMeta(inboundTestModal || "webhook").label}
+          valueText={inboundTestValuesText != null ? inboundTestValuesText : JSON.stringify(deriveInboundTestSeed(), null, 2)}
+          seedValues={inboundTestModal ? deriveInboundTestSeed() : null}
+          errorMessage={scheduleError}
+          disabled={saving || running}
+          onChangeText={setInboundTestValuesText}
+          onSend={() => handleInboundTestClick(inboundTestModal)}
+          onClose={() => setInboundTestModal(null)}
+        />
+
         {loading ? (
           <p className="dm-workflow-empty">Loading workflow…</p>
         ) : error ? (
@@ -2302,30 +2394,16 @@ export default function WorkflowSurface() {
                           {bound ? (
                             <section className="dm-inbound-step">
                               <header><b>3</b><span>Test</span></header>
-                              <label className="dm-orchestration-config__field dm-inbound-body">
-                                <span>Request body (JSON)</span>
-                                <textarea
-                                  rows={7}
-                                  value={inboundTestValuesText != null ? inboundTestValuesText : JSON.stringify(deriveInboundTestSeed(), null, 2)}
-                                  onChange={(e) => setInboundTestValuesText(e.target.value)}
-                                  spellCheck={false}
-                                />
-                              </label>
-                              <p className="dm-inbound-help">Seeded from the input node&apos;s sample payload. Sent as the real {meta.label.toLowerCase()} request — every downstream node in this workflow runs.</p>
                               <button
                                 type="button"
                                 className="dm-btn-outline dm-workflow-schedule-submit"
                                 disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
-                                onClick={() => handleInboundTestClick(inputMode)}
+                                onClick={() => openInboundTestEvent(inputMode)}
                               >
-                                {saving ? "Sending..." : runInputSchema.requiresInput ? "Send test request with inputs..." : "Send test request"}
+                                {saving ? "Sending..." : "Generate Test Event"}
                               </button>
-                              {lastStatus ? (
-                                <div className="dm-workflow-schedule-last-run">
-                                  <span>Last run</span>
-                                  <strong>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</strong>
-                                </div>
-                              ) : null}
+                              <p className="dm-inbound-help">Opens the JSON event editor with a payload derived from this workflow&apos;s input contract, then sends it as the real {meta.label.toLowerCase()} request — every downstream node runs.</p>
+                              <InboundResponseInspector sandboxRow={sandboxRow} methodLabel={meta.label} />
                             </section>
                           ) : null}
 

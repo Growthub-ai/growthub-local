@@ -581,9 +581,88 @@ test("canvas: inbound test values compose the payload contract with the canonica
   assert.match(workflowSurfaceSource, /values: \{ \.\.\.bodyValues, \.\.\.\(runInputs\?\.values \|\| \{\}\) \},/);
   // Workflows with no declared schema invoke directly with the seeded body.
   assert.match(workflowSurfaceSource, /runInboundTestInvocation\(inputMode, \{ kind: RUN_INPUTS_KIND, source: "manual", values, files: \[\] \}\);/);
-  assert.match(workflowSurfaceSource, /onClick=\{\(\) => handleInboundTestClick\(inputMode\)\}/);
+  // Clean-by-default: the panel shows ONE "Generate Test Event" button which
+  // opens the dedicated JSON event modal (or the canonical RunSetupPanel when
+  // a schema is declared); the modal's Send fires the real invocation.
+  assert.match(workflowSurfaceSource, /onClick=\{\(\) => openInboundTestEvent\(inputMode\)\}/);
+  assert.match(workflowSurfaceSource, /Generate Test Event/);
+  assert.match(workflowSurfaceSource, /function InboundTestEventModal\(/);
+  assert.match(workflowSurfaceSource, /onSend=\{\(\) => handleInboundTestClick\(inboundTestModal\)\}/);
   // Invalid JSON is a visible UI failure before any request is made.
   assert.match(workflowSurfaceSource, /setScheduleError\("Test request values must be valid JSON\."\)/);
+});
+
+test("canvas: last-run inspector + dynamic references reuse the existing proof family and substitution grammar", () => {
+  const inspectorSource = readFileSync(
+    path.join(
+      here,
+      "..",
+      "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/workflows/InboundResponseInspector.jsx",
+    ),
+    "utf8",
+  );
+  // Multi-tab lens over the EXISTING durable proof fields — no new run state.
+  assert.match(inspectorSource, /lastScheduledRunResponse/);
+  assert.match(inspectorSource, /lastScheduledRunNodeTrace/);
+  assert.match(inspectorSource, /\{ id: "response", label: "Response" \}/);
+  assert.match(inspectorSource, /\{ id: "trace", label: "Trace" \}/);
+  // Large payloads are chunked, never dumped whole.
+  assert.match(inspectorSource, /const CHUNK = \d+/);
+  assert.match(inspectorSource, /Show \{hidden\} more/);
+  // Reference chips emit the RUNNER'S OWN substitution grammar — {{input.<path>}}
+  // (lib/orchestration-graph-runner.js substituteVariables) — no new grammar.
+  assert.match(inspectorSource, /\{\{input\.\$\{path\}\}\}/);
+  assert.doesNotMatch(inspectorSource, /fetch\(|localStorage|sessionStorage/, "inspector is pure presentation");
+  // The panel mounts it against the sandbox row.
+  assert.match(workflowSurfaceSource, /<InboundResponseInspector sandboxRow=\{sandboxRow\} methodLabel=\{meta\.label\} \/>/);
+});
+
+test("webhook HTTP method: draft-authored on the trigger node, carried through bind, enforced at the door", () => {
+  // The selector renders ONLY on the canonical webhook input path.
+  const nodePanelSrc = readFileSync(
+    path.join(
+      here,
+      "..",
+      "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/components/OrchestrationNodeConfigPanel.jsx",
+    ),
+    "utf8",
+  );
+  assert.match(nodePanelSrc, /config\.inputMode === "webhook" \? \(\s*<label className="dm-orchestration-config__field">\s*<span>HTTP method<\/span>/);
+  assert.match(nodePanelSrc, /patchConfig\(\{ httpMethod: event\.target\.value \}\)/);
+  // Bind preserves the draft-authored method and the binding reader exposes it.
+  const graphWithMethod = JSON.stringify({
+    version: 1,
+    nodes: [
+      { id: "input", type: "input", config: { inputMode: "manual", httpMethod: "PATCH" } },
+      { id: "result", type: "tool-result", config: { writeLastResponse: false } },
+    ],
+    edges: [{ from: "input", to: "result" }],
+  });
+  const fixture = bindFixture();
+  fixture.dataModel.objects[1].rows[0].orchestrationConfig = graphWithMethod;
+  const { config } = addOns.withWorkflowServerlessBind(fixture, {
+    objectId: "sandbox-workflows", rowId: "Flow A",
+    schedulerRegistryId: "growthub-webhook-trigger",
+    schedulerProviderId: "growthub", schedulerProductId: "growthub-webhook-trigger",
+    triggerKind: "inbound-webhook", scheduleId: "bid", destinationUrl: DEST,
+  });
+  const row = config.dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  const binding = addOns.readTriggerScheduleBinding(row.orchestrationConfig);
+  assert.equal(binding.httpMethod, "PATCH", "draft-authored method survives the bind write");
+  // The door funnels every method through ONE handler and enforces conformance
+  // (405 naming the expected method) — POST default keeps existing bindings.
+  const doorSrc = readFileSync(
+    path.join(
+      here,
+      "..",
+      "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/workflows/[providerId]/route.js",
+    ),
+    "utf8",
+  );
+  assert.match(doorSrc, /const expectedHttpMethod = String\(triggerBinding\?\.httpMethod \|\| "POST"\)\.toUpperCase\(\)/);
+  assert.match(doorSrc, /status: 405/);
+  assert.match(doorSrc, /const GET = POST;\s*const PUT = POST;\s*const PATCH = POST;/);
+  assert.match(doorSrc, /export \{ GET, HEAD, OPTIONS, PATCH, POST, PUT \};/);
 });
 
 test("canvas + add-ons: inbound methods are marketplace-agnostic (lane-derived, provider-scoped route)", () => {

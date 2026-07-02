@@ -736,6 +736,21 @@ export function OrchestrationNodeConfigPanel({
               ) : null}
             </div>
           </div>
+          {config.inputMode === "webhook" ? (
+            <label className="dm-orchestration-config__field">
+              <span>HTTP method</span>
+              <select
+                value={String(config.httpMethod || "POST").toUpperCase()}
+                disabled={disabled}
+                onChange={(event) => patchConfig({ httpMethod: event.target.value })}
+              >
+                {["POST", "PUT", "PATCH", "GET"].map((method) => (
+                  <option key={method} value={method}>{method}</option>
+                ))}
+              </select>
+              <small className="dm-run-setup__help">The method external senders must use against this workflow&apos;s endpoint — enforced at the destination door once published.</small>
+            </label>
+          ) : null}
           <PayloadKeyRows
             payload={config.samplePayload}
             disabled={disabled}

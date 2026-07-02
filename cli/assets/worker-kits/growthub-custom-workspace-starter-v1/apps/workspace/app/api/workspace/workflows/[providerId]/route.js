@@ -203,6 +203,18 @@ async function POST(request, context) {
     return NextResponse.json({ ok: false, error: scheduleId ? "row/trigger is not currently bound to this input method" : "missing inbound binding id", scheduleId }, { status: scheduleId ? 409 : 400 });
   }
 
+  // Method conformance: the draft author may pin the HTTP method external
+  // senders must use (webhook path node config, carried through bind). The
+  // POST default preserves every existing binding; a mismatch is a caller
+  // error — 405 naming the expected method, nothing executes.
+  const expectedHttpMethod = String(triggerBinding?.httpMethod || "POST").toUpperCase();
+  if (expectedTriggerKind !== "serverless-scheduler" && String(request.method || "POST").toUpperCase() !== expectedHttpMethod) {
+    return NextResponse.json(
+      { ok: false, error: `method not allowed for this binding — send ${expectedHttpMethod}`, expectedMethod: expectedHttpMethod, scheduleId },
+      { status: 405 },
+    );
+  }
+
   // Inbound methods enforce pause AT THE DOOR (the scheduler pauses remotely
   // at the provider; an inbound binding has no remote to pause).
   if (expectedTriggerKind !== "serverless-scheduler" && truthy(row.schedulerPaused)) {
@@ -386,9 +398,16 @@ function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
-      allow: "HEAD, OPTIONS, POST",
+      allow: "HEAD, OPTIONS, POST, PUT, PATCH, GET",
     },
   });
 }
 
-export { HEAD, OPTIONS, POST };
+// The webhook path lets the draft author pin GET/PUT/PATCH senders (node
+// config httpMethod); every method funnels through the SAME handler — one
+// door, one verification spine, with per-binding method conformance above.
+const GET = POST;
+const PUT = POST;
+const PATCH = POST;
+
+export { GET, HEAD, OPTIONS, PATCH, POST, PUT };

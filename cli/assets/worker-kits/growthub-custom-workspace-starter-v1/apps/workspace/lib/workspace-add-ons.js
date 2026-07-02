@@ -487,6 +487,9 @@ function readTriggerScheduleBinding(value) {
     schedulerRegistryId: String(schedule.schedulerRegistryId || "").trim(),
     providerId: String(schedule.providerId || "").trim(),
     productId: String(schedule.productId || "").trim(),
+    // Draft-authored HTTP method for the webhook path (canvas node config,
+    // preserved through bind); empty means the POST default.
+    httpMethod: String(node.config.httpMethod || "").trim().toUpperCase(),
     enabled: node.config.enabled !== false,
   };
 }

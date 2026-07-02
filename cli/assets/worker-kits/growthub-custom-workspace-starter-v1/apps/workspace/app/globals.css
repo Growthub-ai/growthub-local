@@ -9797,3 +9797,55 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-inbound-example > summary { font-size: 12px; color: var(--dm-muted); cursor: pointer; user-select: none; }
 .dm-inbound-example > summary:hover { color: var(--dm-ink); }
 .dm-inbound-example > textarea { width: 100%; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.5; color: var(--dm-ink); background: var(--dm-surface-soft); border: 1px solid var(--dm-line-soft); border-radius: var(--dm-radius-sm); padding: 8px; resize: vertical; }
+
+/* Inbound last-run inspector — multi-tab lens over the row's existing durable
+   proof (response / trace / details). Structural + tone only, on the shared
+   facelift tokens; scroll follows the cockpit pattern (overflow-y auto with a
+   stable gutter), tab chrome mirrors the fleet-tab grammar. */
+.dm-inbound-inspector { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--dm-line-soft); border-radius: var(--dm-radius); background: var(--dm-surface); padding: 8px; }
+.dm-inbound-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.dm-inbound-tabs button { min-height: 28px; padding: 4px 10px; border: 1px solid var(--dm-line); border-radius: var(--dm-radius-sm); background: var(--dm-surface); color: var(--dm-muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.dm-inbound-tabs button:hover { border-color: var(--dm-faint); color: var(--dm-ink); }
+.dm-inbound-tabs button.is-active { background: var(--dm-ink); border-color: var(--dm-ink); color: #fff; }
+.dm-inbound-inspector-body { max-height: 300px; overflow-y: auto; scrollbar-gutter: stable; }
+
+.dm-json-tree { display: flex; flex-direction: column; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.6; }
+.dm-json-branch { display: flex; flex-direction: column; }
+.dm-json-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; padding: 1px 2px; border: 0; background: transparent; font: inherit; text-align: left; border-radius: 4px; }
+.dm-json-row.is-branch { cursor: pointer; }
+.dm-json-row.is-branch:hover { background: var(--dm-hover); }
+.dm-json-row > i { font-style: normal; color: var(--dm-faint); width: 10px; flex-shrink: 0; }
+.dm-json-key { color: var(--dm-ink); font-weight: 600; flex-shrink: 0; }
+.dm-json-key::after { content: ":"; color: var(--dm-faint); }
+.dm-json-value { color: var(--dm-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-json-meta { color: var(--dm-faint); }
+.dm-json-children { display: flex; flex-direction: column; margin-left: 14px; border-left: 1px solid var(--dm-line-soft); padding-left: 8px; }
+.dm-json-more { align-self: flex-start; margin: 2px 0; padding: 1px 8px; border: 1px solid var(--dm-line); border-radius: 999px; background: var(--dm-surface-soft); color: var(--dm-muted); font-size: 10px; font-weight: 600; cursor: pointer; }
+.dm-json-more:hover { color: var(--dm-ink); border-color: var(--dm-faint); }
+.dm-json-ref { margin-left: auto; flex-shrink: 0; padding: 0 6px; border: 1px solid var(--dm-accent-line); border-radius: 999px; background: var(--dm-accent-soft); color: var(--dm-accent); font-family: inherit; font-size: 10px; cursor: pointer; opacity: 0; }
+.dm-json-row:hover .dm-json-ref, .dm-json-ref:focus-visible { opacity: 1; }
+.dm-json-raw { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.5; color: var(--dm-ink); white-space: pre-wrap; word-break: break-word; }
+.dm-json-scalar { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dm-muted); }
+
+.dm-inbound-trace { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dm-inbound-trace li { display: flex; align-items: baseline; gap: 8px; padding: 3px 4px; border-radius: 4px; font-size: 12px; }
+.dm-inbound-trace li > code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dm-ink); }
+.dm-inbound-trace li > span { font-size: 11px; font-weight: 600; color: var(--dm-muted); }
+.dm-inbound-trace li.is-completed > span { color: var(--dm-ok); }
+.dm-inbound-trace li.is-failed { background: var(--dm-bad-soft); }
+.dm-inbound-trace li.is-failed > span { color: var(--dm-bad); }
+.dm-inbound-trace li > em { font-style: normal; font-size: 11px; color: var(--dm-bad); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dm-inbound-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; font-size: 12px; }
+.dm-inbound-detail-grid > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dm-inbound-detail-grid > div > span { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-faint); }
+.dm-inbound-detail-grid > div > code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dm-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-inbound-detail-grid > div > code.is-ok { color: var(--dm-ok); }
+.dm-inbound-detail-grid > div > code.is-bad { color: var(--dm-bad); }
+.dm-inbound-detail-grid > div > em { font-style: normal; font-size: 11px; color: var(--dm-bad); }
+.dm-inbound-detail-grid > .is-span { grid-column: 1 / -1; }
+
+/* Test-event modal editor — drag-resizable with the cockpit scroll pattern. */
+.dm-inbound-test-modal { width: min(560px, calc(100vw - 48px)); }
+.dm-inbound-test-modal .dm-inbound-body textarea { min-height: 180px; max-height: 50vh; resize: vertical; overflow-y: auto; scrollbar-gutter: stable; }
+.dm-inbound-test-modal .dm-inbound-example .dm-json-tree { max-height: 180px; overflow-y: auto; scrollbar-gutter: stable; }
