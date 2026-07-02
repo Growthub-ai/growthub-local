@@ -69,7 +69,11 @@ function AddOnsSurface({
   const providerSetupReady = providerSetupFields.every((field) => {
     if (!field?.required) return true;
     return Boolean(String(providerCredentialValues[field.id] || "").trim());
-  });
+  })
+    // Providers with only-optional fields (e.g. Supabase: token OR url+key)
+    // still need at least one value before the credentials route can verify.
+    && (providerSetupFields.some((field) => field?.required)
+      || providerSetupFields.some((field) => Boolean(String(providerCredentialValues[field.id] || "").trim())));
   const allAddOnRows = useMemo(() => findWorkspaceAddOnRows(workspaceConfig), [workspaceConfig]);
   const providerProducts = selectedMarketplaceProvider?.products || [];
   const installedProviderRows = selectedMarketplaceProvider
@@ -271,7 +275,7 @@ function AddOnsSurface({
               {selectedProvider === "custom" ? <span className="dm-marketplace-product-icon is-custom"><Database size={18} /></span> : <ProductIcon provider />}
               <div>
                 <h2 id="workspace-marketplace-title">{selectedProviderLabel}</h2>
-                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : "Serverless DB (Redis, Vector, Queue, Search)"}</p>
+                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : (selectedMarketplaceProvider?.providerProductsLabel || selectedMarketplaceProvider?.description || "Provider products")}</p>
               </div>
             </div>
           ) : (
@@ -419,6 +423,12 @@ function AddOnsSurface({
                             <div>
                               <strong>{row.Name || product.label}</strong>
                               <p>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
+                              {/* Installed rows are verified by construction
+                                  (findInstalledWorkspaceAddOns) — data-lane
+                                  products manage synced tables in /data. */}
+                              {product.executionLane === "workspace-data" ? (
+                                <small><a href="/data-model">Manage tables in /data</a></small>
+                              ) : null}
                             </div>
                             <div className="dm-marketplace-card-actions">
                               <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Manage ${product.label}`} onClick={() => {
@@ -630,6 +640,9 @@ function AddOnsSurface({
               <p className="dm-cockpit-step-hint">This installed product row is the workspace binding used by workflow canvas upgrades and activation.</p>
             </div>
             <footer className="dm-marketplace-actions">
+              {managedSavedRow?.isVerifiedAddOn && managedProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/data-model">
+                Manage tables in /data
+              </a> : null}
               {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
               </a> : null}
@@ -776,6 +789,9 @@ function AddOnsSurface({
               <div className={productInstalled ? "is-complete" : providerConnected ? "is-active" : ""}>Product install</div>
             </div>
             <footer className="dm-marketplace-actions">
+              {activeSavedRow?.isVerifiedAddOn && activeProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/data-model">
+                Manage tables in /data
+              </a> : null}
               {activeSavedRow?.isVerifiedAddOn && activeProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={activeProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
               </a> : null}
