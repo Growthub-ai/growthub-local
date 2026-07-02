@@ -7,7 +7,9 @@ import {
   Database,
   ExternalLink,
   Headphones,
+  Link2,
   PlugZap,
+  Rocket,
   Search,
   Server,
   Settings,
@@ -21,11 +23,124 @@ import {
   getMarketplaceProduct,
 } from "@/lib/workspace-add-ons";
 
+/**
+ * One-click deploy cockpit for the installed Vercel Deployments product.
+ * Reads the governed server discovery route (the browser never calls the
+ * Vercel API) and hands every mutation — link, deploy — to the governed
+ * handlers wired in add-ons-client, so workspace config state and receipts
+ * stay authoritative.
+ */
+function VercelProjectsCockpit({ onLinkProject, onDeployProject, disabled = false }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busyProject, setBusyProject] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjects() {
+      setLoading(true);
+      try {
+        const response = await fetch("/api/workspace/add-ons/vercel/projects", { method: "GET" });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setProjects([]);
+          setMessage(payload?.error || "Vercel projects could not be loaded.");
+          return;
+        }
+        const rows = Array.isArray(payload.projects) ? payload.projects : [];
+        setProjects(rows);
+        setMessage(rows.length ? "" : "No Vercel projects returned for this account.");
+      } catch (error) {
+        if (!cancelled) {
+          setProjects([]);
+          setMessage(error?.message || "Vercel projects could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  async function runAction(projectId, action) {
+    setBusyProject(`${action}:${projectId}`);
+    setMessage("");
+    try {
+      const payload = action === "deploy"
+        ? await onDeployProject?.({ projectId })
+        : await onLinkProject?.({ projectId });
+      if (payload?.error) {
+        setMessage(payload.error);
+        return;
+      }
+      if (action === "deploy" && payload?.deployment) {
+        setMessage(`Deployment ${payload.deployment.deploymentId || ""} ${payload.deployment.readyState || "QUEUED"}${payload.deployment.url ? ` → ${payload.deployment.url}` : ""}`.trim());
+      }
+      setRefreshKey((key) => key + 1);
+    } catch (error) {
+      setMessage(error?.message || `Project ${action} failed.`);
+    } finally {
+      setBusyProject("");
+    }
+  }
+
+  return (
+    <div className="dm-marketplace-config" aria-label="Vercel projects">
+      <p className="dm-marketplace-section-title"><Rocket size={14} /> Your Vercel Projects</p>
+      {loading ? <p className="dm-cockpit-step-hint">Loading projects…</p> : null}
+      {!loading && projects.map((project) => (
+        <div className="dm-marketplace-adapter" key={project.id}>
+          <div>
+            <strong>{project.name}</strong>
+            <span>
+              {[project.framework, project.gitRepo, project.linked ? "linked" : "not linked", project.lastDeployStatus || project.latestDeploymentState]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+          <div className="dm-marketplace-card-actions">
+            {!project.linked ? (
+              <button
+                type="button"
+                className="dm-btn-outline"
+                disabled={disabled || Boolean(busyProject)}
+                onClick={() => runAction(project.id, "link")}
+              >
+                {busyProject === `link:${project.id}` ? "Linking…" : (<><Link2 size={12} aria-hidden /> Link</>)}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="dm-btn-primary-sm"
+              disabled={disabled || Boolean(busyProject)}
+              onClick={() => runAction(project.id, "deploy")}
+            >
+              {busyProject === `deploy:${project.id}` ? "Deploying…" : (<><Rocket size={12} aria-hidden /> Deploy</>)}
+            </button>
+          </div>
+        </div>
+      ))}
+      {message ? <p className="dm-cockpit-step-hint">{message}</p> : null}
+      <p className="dm-cockpit-step-hint">
+        Deploy auto-links the project as a governed Data Model record (Vercel Projects object) with receipt-backed proof — manage config, redeploy, or link it to workflows from that record.
+      </p>
+    </div>
+  );
+}
+
 function AddOnsSurface({
   onConnectProvider,
   onSyncProvider,
   onSaveProviderCredentials,
   onSyncProduct,
+  onLinkVercelProject,
+  onDeployVercelProject,
   onCustomSetup,
   installing = false,
   activeAction = "",
@@ -271,7 +386,7 @@ function AddOnsSurface({
               {selectedProvider === "custom" ? <span className="dm-marketplace-product-icon is-custom"><Database size={18} /></span> : <ProductIcon provider />}
               <div>
                 <h2 id="workspace-marketplace-title">{selectedProviderLabel}</h2>
-                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : "Serverless DB (Redis, Vector, Queue, Search)"}</p>
+                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : (selectedMarketplaceProvider?.providerProductsLabel || selectedMarketplaceProvider?.description || "Provider plugins")}</p>
               </div>
             </div>
           ) : (
@@ -629,6 +744,13 @@ function AddOnsSurface({
               </div>
               <p className="dm-cockpit-step-hint">This installed product row is the workspace binding used by workflow canvas upgrades and activation.</p>
             </div>
+            {selectedMarketplaceProvider?.providerId === "vercel" && managedProduct.productId === "vercel-deployments" && managedSavedRow?.isVerifiedAddOn ? (
+              <VercelProjectsCockpit
+                onLinkProject={onLinkVercelProject}
+                onDeployProject={onDeployVercelProject}
+                disabled={installing}
+              />
+            ) : null}
             <footer className="dm-marketplace-actions">
               {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />

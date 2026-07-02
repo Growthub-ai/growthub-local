@@ -145,6 +145,44 @@ function AddOnsSettingsClient({ initialWorkspaceConfig, envSignals }) {
     }
   }
 
+  async function linkVercelProject({ projectId, all = false } = {}) {
+    if (!projectId && !all) return { error: "projectId is required" };
+    setErrorMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/vercel/projects/link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(all ? { all: true } : { projectId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return { error: payload?.error || "Project link failed." };
+      if (payload.workspaceConfig) setWorkspaceConfig(payload.workspaceConfig);
+      return payload;
+    } catch (error) {
+      console.warn(error);
+      return { error: error?.message || "Project link failed." };
+    }
+  }
+
+  async function deployVercelProject({ projectId } = {}) {
+    if (!projectId) return { error: "projectId is required" };
+    setErrorMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/vercel/deploy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return { error: payload?.error || "Deploy failed." };
+      if (payload.workspaceConfig) setWorkspaceConfig(payload.workspaceConfig);
+      return payload;
+    } catch (error) {
+      console.warn(error);
+      return { error: error?.message || "Deploy failed." };
+    }
+  }
+
   useEffect(() => {
     if (!pendingProviderId) return undefined;
     let didSync = false;
@@ -186,6 +224,8 @@ function AddOnsSettingsClient({ initialWorkspaceConfig, envSignals }) {
         onSyncProvider={syncProvider}
         onSaveProviderCredentials={saveProviderCredentials}
         onSyncProduct={syncProduct}
+        onLinkVercelProject={linkVercelProject}
+        onDeployVercelProject={deployVercelProject}
         onCustomSetup={() => router.push("/settings/apis-webhooks")}
       />
     </>
