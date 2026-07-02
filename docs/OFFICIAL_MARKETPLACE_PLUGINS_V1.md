@@ -189,6 +189,36 @@ Validated V1 capability:
 - Receipts record the full lifecycle, including blocked outcomes with
   actionable next steps.
 
+### Guided Create Production App (Vercel + GitHub)
+
+Alongside "link existing", the Vercel provider page carries a guided creation
+journey for new setups: private GitHub repo → starter seed → Vercel project
+with the repo linked at creation (`POST /v11/projects` + `gitRepository`) →
+initial deployment → governed record.
+
+Journey contract:
+
+- GitHub account lane: `GET/POST /api/workspace/add-ons/github/credentials`
+  verifies a token against `GET /user` and persists only the `GITHUB_TOKEN`
+  env reference (same pattern as the Vercel bearer lane)
+- repo step: `POST …/vercel/create-app/github-repo` creates the PRIVATE repo
+  (`/user/repos` or `/orgs/{org}/repos`) and seeds the starter page via the
+  contents API — atomic step contract, real 2xx required
+- project step: `POST …/vercel/create-app/project` creates the Vercel project
+  with the repo linked at creation time (requires the Vercel GitHub App;
+  failures map to specific guidance)
+- validation gate: the creation steps write NOTHING to workspace config; the
+  only persist in the chain is the existing governed deploy route, which runs
+  after repo + project + deployment all return real successes and atomically
+  writes the `vercel-projects` record with live proof
+- success state: live production URL, repo link, deployment proof, and the
+  governed Data Model record — every step's progress turns green only on a
+  real server response (shared `deriveCreateAppChecklist` helper)
+- receipts: `workspace-add-on-github-credentials` and
+  `workspace-add-on-vercel-create-app` record published and blocked outcomes
+  (token scope, name conflicts, GitHub App missing, deploy failures) with
+  actionable next steps
+
 ## User Surfaces
 
 Official marketplace plugins appear in these workspace surfaces:

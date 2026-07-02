@@ -38,6 +38,7 @@ const kitApp = path.join(
 
 const addOns = await import(pathToFileURL(path.join(kitLib, "workspace-add-ons.js")).href);
 const deployments = await import(pathToFileURL(path.join(kitLib, "workspace-add-on-deployments.js")).href);
+const createApp = await import(pathToFileURL(path.join(kitLib, "workspace-add-on-create-app.js")).href);
 const schema = await import(pathToFileURL(path.join(kitLib, "workspace-schema.js")).href);
 
 const {
@@ -406,6 +407,150 @@ test("project discovery never truncates silently (hasMore surfaced)", () => {
   assert.match(link, /hasMore/);
   const marketplace = readFileSync(path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"), "utf8");
   assert.match(marketplace, /hasMore/);
+});
+
+/* ---------- guided create-app: pure helpers ---------- */
+const {
+  actionableGithubError,
+  actionableVercelProjectError,
+  buildGithubRepoCreateRequest,
+  buildGithubSeedRequest,
+  buildVercelProjectCreateRequest,
+  deriveCreateAppChecklist,
+  normalizeGithubRepo,
+  resolveGithubAccountAuth,
+  slugifyRepoName,
+  starterAppFiles,
+} = createApp;
+
+test("github account auth resolves the env ref without leaking beyond the header", () => {
+  const missing = resolveGithubAccountAuth({});
+  assert.equal(missing.ready, false);
+  assert.deepEqual(missing.missingEnv, ["GITHUB_TOKEN"]);
+  assert.equal(missing.header, null);
+  const ready = resolveGithubAccountAuth({ GITHUB_TOKEN: "ghp_secret" });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.header, "Bearer ghp_secret");
+  for (const value of [...ready.requiredEnv, ...ready.resolvedEnv]) {
+    assert.ok(!String(value).includes("ghp_secret"));
+  }
+});
+
+test("repo create request is private-by-default and slug-safe, org optional", () => {
+  const personal = buildGithubRepoCreateRequest({ name: "My Production App!" });
+  assert.equal(personal.ok, true);
+  assert.equal(personal.url, "https://api.github.com/user/repos");
+  assert.equal(personal.body.name, "my-production-app");
+  assert.equal(personal.body.private, true);
+  assert.equal(personal.body.auto_init, true);
+  const org = buildGithubRepoCreateRequest({ name: "app", org: "acme-inc" });
+  assert.equal(org.url, "https://api.github.com/orgs/acme-inc/repos");
+  assert.equal(buildGithubRepoCreateRequest({ name: "  " }).ok, false);
+  assert.equal(slugifyRepoName("Hello World v2"), "hello-world-v2");
+});
+
+test("starter files seed a real page and the seed request targets the contents API", () => {
+  const files = starterAppFiles({ appName: "My App" });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, "index.html");
+  const html = Buffer.from(files[0].contentBase64, "base64").toString("utf8");
+  assert.match(html, /<!doctype html>/);
+  assert.match(html, /My App/);
+  const seed = buildGithubSeedRequest({ repoFullName: "acme/app", file: files[0], branch: "main" });
+  assert.equal(seed.ok, true);
+  assert.equal(seed.url, "https://api.github.com/repos/acme/app/contents/index.html");
+  assert.equal(seed.body.branch, "main");
+  assert.equal(seed.body.content, files[0].contentBase64);
+});
+
+test("vercel project create request links the repo at creation (POST /v11/projects)", () => {
+  const request = buildVercelProjectCreateRequest({ name: "My App", repoFullName: "acme/app", teamId: "team_1" });
+  assert.equal(request.ok, true);
+  assert.equal(request.url, "https://api.vercel.com/v11/projects?teamId=team_1");
+  assert.deepEqual(request.body, {
+    name: "my-app",
+    gitRepository: { type: "github", repo: "acme/app" },
+  });
+  assert.equal(buildVercelProjectCreateRequest({ name: "x" }).ok, false);
+});
+
+test("normalizeGithubRepo keeps non-secret routing metadata only", () => {
+  const repo = normalizeGithubRepo({ id: 4242, full_name: "acme/app", name: "app", owner: { login: "acme" }, html_url: "https://github.com/acme/app", default_branch: "main", private: true });
+  assert.deepEqual(repo, { id: 4242, fullName: "acme/app", name: "app", owner: "acme", htmlUrl: "https://github.com/acme/app", defaultBranch: "main", private: true });
+  assert.equal(normalizeGithubRepo({}), null);
+});
+
+test("failure mapping produces specific actionable guidance, never bare status codes", () => {
+  assert.match(actionableGithubError(403, {}), /repo scope|Contents \+ Administration/);
+  assert.match(actionableGithubError(422, { message: "name already exists on this account" }), /different name/);
+  assert.match(actionableVercelProjectError(403, { error: { message: "git repository access denied" } }), /Vercel GitHub App/);
+  assert.match(actionableVercelProjectError(409, { error: { message: "project already exists" } }), /different name/);
+});
+
+test("checklist derivation is green ONLY on real proof and orders the journey", () => {
+  const empty = deriveCreateAppChecklist({});
+  assert.equal(empty.complete, false);
+  assert.equal(empty.nextStep, "github-account");
+  assert.equal(empty.steps.length, 6);
+  const mid = deriveCreateAppChecklist({
+    github: { connected: true, login: "octocat" },
+    repo: { fullName: "acme/app" },
+    vercel: { connected: true },
+  });
+  assert.equal(mid.nextStep, "vercel-project");
+  const done = deriveCreateAppChecklist({
+    github: { connected: true, login: "octocat" },
+    repo: { fullName: "acme/app" },
+    vercel: { connected: true },
+    project: { id: "prj_1", name: "app" },
+    deployment: { deploymentId: "dpl_1", readyState: "READY", url: "https://app.vercel.app" },
+    published: true,
+  });
+  assert.equal(done.complete, true);
+  // no optimistic states: a claimed-but-proofless deployment stays pending
+  const fake = deriveCreateAppChecklist({ github: { connected: true }, vercel: { connected: true }, deployment: {} });
+  assert.equal(fake.steps.find((step) => step.id === "initial-deploy").done, false);
+});
+
+/* ---------- guided create-app: validation gate (source truth) ---------- */
+const CREATE_APP_ROUTE_FILES = {
+  githubCredentials: path.join(kitApp, "api/workspace/add-ons/github/credentials/route.js"),
+  preflight: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/route.js"),
+  githubRepo: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/github-repo/route.js"),
+  project: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/project/route.js"),
+};
+
+test("creation steps persist NOTHING to workspace config — the deploy route is the only publish gate", () => {
+  for (const [key, file] of Object.entries(CREATE_APP_ROUTE_FILES)) {
+    const source = readFileSync(file, "utf8");
+    assert.ok(!/writeWorkspaceConfig/.test(source), `${key}: creation steps must not write workspace config`);
+    assert.ok(!/withVercelProjectsDirectory|withVercelProjectPatch/.test(source), `${key}: creation steps must not touch the governed directory`);
+    assert.match(source, /requireWorkspaceOperator/, `${key}: must gate on the operator auth contract`);
+  }
+  // mutation steps are receipted; the read-only preflight is not a mutation
+  for (const key of ["githubCredentials", "githubRepo", "project"]) {
+    const source = readFileSync(CREATE_APP_ROUTE_FILES[key], "utf8");
+    assert.match(source, /appendOutcomeReceipt/, `${key}: mutation steps must emit receipts`);
+  }
+  for (const key of ["githubRepo", "project"]) {
+    const source = readFileSync(CREATE_APP_ROUTE_FILES[key], "utf8");
+    assert.match(source, /outcomeStatus:\s*"blocked"/, `${key}: blocked outcomes must be receipted`);
+    assert.match(source, /nextActions:\s*\[nextAction\]/, `${key}: blocked receipts must carry next-step guidance`);
+  }
+});
+
+test("guided flow UI is governed end-to-end (no direct GitHub/Vercel calls, shared checklist)", () => {
+  const source = readFileSync(path.join(kitApp, "components/VercelCreateAppFlow.jsx"), "utf8");
+  const fetchTargets = [...source.matchAll(/(?:fetch|postJson)\(\s*[`"']([^`"']+)/g)].map((match) => match[1]);
+  assert.ok(fetchTargets.length >= 4, "guided flow should call the governed routes");
+  for (const target of fetchTargets) {
+    assert.ok(target.startsWith("/api/workspace/"), `non-governed fetch target ${target}`);
+  }
+  assert.ok(!/api\.vercel\.com|api\.github\.com/.test(source), "must not reference provider API hosts");
+  // progress derives from the pure helper — no hand-rolled optimistic checklist
+  assert.match(source, /deriveCreateAppChecklist/);
+  // the atomic publish gate is the existing governed deploy handler
+  assert.match(source, /onDeployProject/);
 });
 
 /* ---------- upstash regression ---------- */
