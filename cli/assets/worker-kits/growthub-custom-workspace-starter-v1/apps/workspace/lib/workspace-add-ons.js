@@ -510,6 +510,37 @@ function readTriggerScheduleBinding(value) {
  *   - graph identity: the tested config or the live graph equals the exact
  *     draft bytes being promoted (proof freshness against this version).
  */
+// Graph-content equality for proof freshness. The trigger sync, the canvas
+// serializer, and hand-authored seeds each emit different JSON formatting,
+// and the canvas injects derived `sandboxRecordRef` identity metadata — none
+// of which changes what the runner executes. Freshness must be strict on
+// CONTENT (any node/config/edge change breaks it) and indifferent to writer
+// formatting. Non-parseable values fall back to exact trimmed-byte equality.
+function normalizeGraphForComparison(value) {
+  const graph = parseGraphValue(value);
+  if (!graph) return String(value == null ? "" : value).trim();
+  const stable = (v) => {
+    if (Array.isArray(v)) return v.map(stable);
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const key of Object.keys(v).sort()) {
+        if (key === "sandboxRecordRef") continue;
+        out[key] = stable(v[key]);
+      }
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(stable(graph));
+}
+
+function orchestrationGraphContentEquals(a, b) {
+  const left = String(a == null ? "" : a).trim();
+  const right = String(b == null ? "" : b).trim();
+  if (!left || !right) return left === right;
+  return normalizeGraphForComparison(left) === normalizeGraphForComparison(right);
+}
+
 function rowHasSuccessfulServerlessBindingProof(row, draft) {
   const runLocality = String(row?.runLocality || "").trim().toLowerCase();
   const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
@@ -539,7 +570,7 @@ function rowHasSuccessfulServerlessBindingProof(row, draft) {
     && binding?.schedulerRegistryId === schedulerRegistryId
     && methodAgrees
     && invocationSucceeded
-    && (testedConfig === draftGraph || liveGraph === draftGraph);
+    && (orchestrationGraphContentEquals(testedConfig, draftGraph) || orchestrationGraphContentEquals(liveGraph, draftGraph));
 }
 
 const SANDBOX_SCHEDULE_CLEAR_PATCH = {
@@ -604,9 +635,27 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
       };
       const graphSync = syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear });
       const configSync = syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear });
+      // The bind OWNS the trigger-binding metadata in every representation of
+      // the graph. A saved draft that predates the bind would otherwise carry
+      // stale trigger bytes forever — making the draft permanently
+      // unpublishable under the proof freshness gate (liveGraph === draftGraph)
+      // even though its only delta is metadata this bind itself wrote. Sync
+      // existing drafts too; never create one.
+      const draftGraphSync = String(row.orchestrationDraftGraph || "").trim()
+        ? syncTriggerNodeForSchedule(row.orchestrationDraftGraph, triggerMeta, { clear })
+        : null;
+      const draftConfigSync = String(row.orchestrationDraftConfig || "").trim()
+        ? syncTriggerNodeForSchedule(row.orchestrationDraftConfig, triggerMeta, { clear })
+        : null;
       triggerNodeId = (liveField === "orchestrationGraph" ? graphSync.triggerNodeId : configSync.triggerNodeId)
         || configSync.triggerNodeId || graphSync.triggerNodeId;
-      const base = { ...row, orchestrationGraph: graphSync.value, orchestrationConfig: configSync.value };
+      const base = {
+        ...row,
+        orchestrationGraph: graphSync.value,
+        orchestrationConfig: configSync.value,
+        ...(draftGraphSync ? { orchestrationDraftGraph: draftGraphSync.value } : {}),
+        ...(draftConfigSync ? { orchestrationDraftConfig: draftConfigSync.value } : {}),
+      };
       if (clear) {
         return { ...base, runLocality: "local", ...SANDBOX_SCHEDULE_CLEAR_PATCH };
       }
@@ -1129,6 +1178,38 @@ function findWorkspaceAddOnRows(workspaceConfig) {
   return rows;
 }
 
+// Marketplace-agnostic inbound input methods — ANY installed + verified
+// marketplace product whose executionLane is an inbound binding lane surfaces
+// as a canvas input method, the exact mirror of the provider-agnostic custom
+// scheduler registry rows. The packaged growthub webhook/API products are
+// simply the first two such products; a third-party plugin that declares the
+// same lane grammar (executionLane + requiredEnv + verified registry row)
+// joins with zero canvas changes. Returns one entry per installed method:
+//   { inputMode, lane, triggerKind, providerId, productId, integrationId, label, row }
+function resolveInboundMethodProducts(workspaceConfig) {
+  const installed = findInstalledWorkspaceAddOns(workspaceConfig);
+  const products = listMarketplaceProducts();
+  const methods = [];
+  for (const row of installed) {
+    const product = products.find((item) => item.productId === row.productId);
+    const lane = String(product?.executionLane || "").trim();
+    const inputMode = lane !== "serverless-scheduler" ? INPUT_MODE_BY_TRIGGER_KIND[lane] || "" : "";
+    if (!inputMode) continue;
+    methods.push({
+      inputMode,
+      lane,
+      // Inbound binding trigger kinds ARE the lanes (one trigger grammar).
+      triggerKind: lane,
+      providerId: String(product.providerId || "").trim(),
+      productId: row.productId,
+      integrationId: String(row.integrationId || "").trim(),
+      label: String(product.shortLabel || product.label || row.productId).trim(),
+      row,
+    });
+  }
+  return methods;
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -1138,9 +1219,13 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   // created on bind and stored on the owning sandbox row, not here.
   const qstashScheduler = qstashWorkflow;
   // Inbound input-method capabilities — same proof rule (installed + verified
-  // registry row) that gates the scheduler bind in the canvas.
-  const webhookTrigger = installed.find((row) => row.productId === "growthub-webhook-trigger") || null;
-  const apiTrigger = installed.find((row) => row.productId === "growthub-api-trigger") || null;
+  // registry row) that gates the scheduler bind in the canvas, resolved by
+  // execution LANE (marketplace-agnostic), not by hardcoded product id.
+  const inboundMethods = resolveInboundMethodProducts(workspaceConfig);
+  const webhookMethod = inboundMethods.find((method) => method.inputMode === "webhook") || null;
+  const apiMethod = inboundMethods.find((method) => method.inputMode === "api-request") || null;
+  const webhookTrigger = webhookMethod?.row || null;
+  const apiTrigger = apiMethod?.row || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -1150,6 +1235,9 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     qstashWorkflow,
     qstashScheduler,
     hasQstashSchedulerCapability: Boolean(qstashWorkflow),
+    inboundMethods,
+    webhookMethod,
+    apiMethod,
     webhookTrigger,
     hasWebhookTriggerCapability: Boolean(webhookTrigger),
     apiTrigger,
@@ -1171,6 +1259,7 @@ export {
   UPSTASH_QSTASH_INTEGRATION_ID,
   UPSTASH_REGION_OPTIONS,
   deriveWorkspaceAddOnsState,
+  resolveInboundMethodProducts,
   findMarketplaceProviderRow,
   findUpstashProviderRow,
   findInstalledWorkspaceAddOns,
@@ -1186,6 +1275,7 @@ export {
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
   rowHasSuccessfulServerlessBindingProof,
+  orchestrationGraphContentEquals,
   liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,
