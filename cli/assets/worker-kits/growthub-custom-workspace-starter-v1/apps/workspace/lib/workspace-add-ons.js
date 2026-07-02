@@ -263,6 +263,71 @@ const VERCEL_PRODUCTS = [
     },
   },
 ];
+const SUPABASE_PROVIDER_INTEGRATION_ID = "supabase-provider";
+const SUPABASE_POSTGREST_INTEGRATION_ID = "supabase-postgrest";
+// Database-operations lane — provider-agnostic grouping for products that
+// expose governed external database read/write (mirrors how
+// "serverless-scheduler" groups scheduler products). Cockpits and the canvas
+// detect capability by THIS lane string, never by provider id.
+const WORKSPACE_DATA_LANE = "workspace-data";
+const SUPABASE_PRODUCTS = [
+  {
+    productId: "supabase-postgrest",
+    integrationId: SUPABASE_POSTGREST_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase Postgres (PostgREST)",
+    shortLabel: "Postgres",
+    icon: "S",
+    iconClass: "is-supabase",
+    iconSrc: "/integrations/supabase/postgrest.png",
+    connectorKind: "supabase-data",
+    endpoint: "/rest/v1/",
+    method: "GET",
+    description: "Supabase Postgres connection over PostgREST for governed workspace data objects. Secrets stay in env; this row stores only refs and routing metadata.",
+    subtitle: "Postgres for the governed workspace",
+    plans: "Free, Pro, Team plans",
+    entityTypes: "table,record,postgres",
+    capabilities: "database,workspace-data,two-way-sync,workflow",
+    executionLane: WORKSPACE_DATA_LANE,
+    requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+    optionalEnv: ["SUPABASE_ANON_KEY"],
+    consoleUrl: "https://supabase.com/dashboard",
+    resolverTemplateId: "supabase-postgrest",
+    probe: {
+      baseUrlEnv: "SUPABASE_URL",
+      tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+      // Supabase's gateway authenticates on the `apikey` header; Authorization
+      // Bearer carries the same key for PostgREST. probeJsonPaths sends both
+      // when tokenHeaderName is declared.
+      tokenHeaderName: "apikey",
+      paths: ["/rest/v1/"],
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/v1/projects"],
+      emptyLabel: "No Supabase projects returned for this account.",
+      createDividerLabel: "Or create a new Supabase project",
+      envFromResource: [
+        { envRef: "SUPABASE_URL", urlTemplate: "https://{id}.supabase.co" },
+        {
+          envRef: "SUPABASE_SERVICE_ROLE_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "service_role",
+          fieldCandidates: ["api_key", "apiKey"],
+        },
+        {
+          envRef: "SUPABASE_ANON_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "anon",
+          fieldCandidates: ["api_key", "apiKey"],
+          optional: true,
+        },
+      ],
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -390,6 +455,77 @@ const MARKETPLACE_PROVIDERS = [
     capabilities: "provider-account,marketplace-products,deployments",
     executionLane: "workspace-provider",
     description: "Provider-level Vercel account binding for workspace add-ons. Product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "supabase",
+    integrationId: SUPABASE_PROVIDER_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase",
+    developer: "Supabase",
+    iconSrc: "/integrations/supabase/provider.png",
+    baseUrl: "https://api.supabase.com",
+    endpoint: "/v1/projects",
+    method: "GET",
+    // Provider/account-management lane (Management API): Bearer personal
+    // access token (sbp_…). Absence ⇒ account-linked, not verified — the
+    // product can still verify through SUPABASE_URL + service key directly.
+    // Same authMode grammar as the Vercel provider row.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "SUPABASE_ACCESS_TOKEN",
+      paths: ["/v1/projects"],
+      // Product-lane fallback probe when no management token is present:
+      // verify the project itself with the service key (apikey + Bearer).
+      fallback: {
+        baseUrlEnv: "SUPABASE_URL",
+        tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+        tokenHeaderName: "apikey",
+        paths: ["/rest/v1/"],
+      },
+    },
+    accountSetupFields: [
+      {
+        id: "accessToken",
+        label: "Personal access token (sbp_…)",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_ACCESS_TOKEN",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "projectUrl",
+        label: "Project URL (https://<ref>.supabase.co)",
+        type: "url",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_URL",
+        credentialRole: "baseUrl",
+      },
+      {
+        id: "serviceRoleKey",
+        label: "Service role key",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_SERVICE_ROLE_KEY",
+        credentialRole: "secret",
+      },
+    ],
+    consoleUrl: "https://supabase.com/dashboard",
+    accountSetupUrl: "https://supabase.com/dashboard/account/tokens",
+    supportUrl: "https://supabase.com/support",
+    websiteUrl: "https://supabase.com",
+    docsUrl: "https://supabase.com/docs",
+    termsUrl: "https://supabase.com/terms",
+    privacyUrl: "https://supabase.com/privacy",
+    providerProductsLabel: "Postgres Database (PostgREST, two-way sync)",
+    products: SUPABASE_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "supabase-provider",
+    capabilities: "provider-account,env-provisioning,marketplace-products",
+    executionLane: "workspace-provider",
+    description: "Provider-level Supabase account binding for workspace add-ons. Connect with a management token to discover projects, or bind one project directly with its URL and service key.",
   },
 ];
 
@@ -1080,8 +1216,9 @@ function makeUpstashSchedulerRow({ region, authReady }) {
 /**
  * Provider-agnostic product row (mirror of makeUpstashProductRow for products
  * with no region/remote-resource semantics — e.g. the workspace-native inbound
- * trigger products). Verified = the product's env refs resolve in this runtime
- * (same proof rule the scheduler product uses; secrets never persisted).
+ * trigger products and data providers like Supabase). Verified = the product's
+ * env refs resolve in this runtime (same proof rule the scheduler product
+ * uses; secrets never persisted).
  */
 function makeMarketplaceProductRow({ providerId, productId, plan = "included", syncResult = null, authReady = false } = {}) {
   if (providerId === "upstash") return makeUpstashProductRow({ productId, plan, syncResult, authReady });
@@ -1112,7 +1249,7 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     entityTypes: product.entityTypes,
     description: product.description,
     connectorKind: product.connectorKind,
-    resolverTemplateId: "",
+    resolverTemplateId: product.resolverTemplateId || "",
     schemaVersion: providerId === "vercel" ? "growthub-marketplace-vercel-v1" : "growthub-marketplace-product-v1",
     capabilities: product.capabilities,
     executionLane: product.executionLane,
@@ -1173,7 +1310,7 @@ function makeVercelProductRow({ productId = "vercel-deployments", plan = "hobby"
 
 /** Upsert one product row into the api-registry object (shared shape). */
 function withRegistryProductRowUpsert(workspaceConfig, productRow) {
-  if (!productRow) return workspaceConfig;
+  if (!productRow || !String(productRow.integrationId || "").trim()) return workspaceConfig;
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
   let found = false;
@@ -1656,6 +1793,18 @@ function resolveInboundMethodProducts(workspaceConfig) {
   return methods;
 }
 
+/**
+ * Installed + verified products on the database-operations lane
+ * (executionLane === "workspace-data"). Provider-agnostic by design: any
+ * future first-party data provider whose product declares this lane becomes a
+ * /data cockpit + supabase-data-class capability with zero surface changes —
+ * the same lane grammar the scheduler cockpit uses for "serverless-scheduler".
+ */
+function listInstalledDataProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -1672,6 +1821,9 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const apiMethod = inboundMethods.find((method) => method.inputMode === "api-request") || null;
   const webhookTrigger = webhookMethod?.row || null;
   const apiTrigger = apiMethod?.row || null;
+  const supabaseProvider = findMarketplaceProviderRow(workspaceConfig, "supabase");
+  const dataProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+  const supabaseData = dataProducts.find((row) => row.productId === "supabase-postgrest") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -1688,6 +1840,13 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     hasWebhookTriggerCapability: Boolean(webhookTrigger),
     apiTrigger,
     hasApiTriggerCapability: Boolean(apiTrigger),
+    supabaseProvider,
+    hasSupabaseProvider: Boolean(supabaseProvider?.isConnectedProvider),
+    // Lane-derived database-operations capability (provider-agnostic).
+    dataProducts,
+    supabaseData,
+    hasSupabaseDataCapability: Boolean(supabaseData),
+    hasWorkspaceDataCapability: dataProducts.length > 0,
   };
 }
 
@@ -1699,6 +1858,9 @@ export {
   GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
   INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
+  SUPABASE_POSTGREST_INTEGRATION_ID,
+  SUPABASE_PRODUCTS,
+  SUPABASE_PROVIDER_INTEGRATION_ID,
   VERCEL_API_BASE_URL,
   VERCEL_AUTH_REF,
   VERCEL_DEPLOYMENTS_INTEGRATION_ID,
@@ -1725,8 +1887,10 @@ export {
   UPSTASH_PROVIDER_INTEGRATION_ID,
   UPSTASH_QSTASH_INTEGRATION_ID,
   UPSTASH_REGION_OPTIONS,
+  WORKSPACE_DATA_LANE,
   deriveWorkspaceAddOnsState,
   resolveInboundMethodProducts,
+  listInstalledDataProducts,
   findMarketplaceProviderRow,
   findUpstashProviderRow,
   findInstalledWorkspaceAddOns,
@@ -1749,14 +1913,15 @@ export {
   listProviderProductReadiness,
   listUpstashProductReadiness,
   withWorkflowServerlessBind,
-  makeMarketplaceProviderRow,
   makeMarketplaceProductRow,
+  makeMarketplaceProviderRow,
   normalizeTriggerKind,
   makeUpstashProductRow,
   makeUpstashProviderRow,
   makeUpstashSchedulerRow,
   withMarketplaceProductRegistry,
   withMarketplaceProviderRegistry,
+  withRegistryProductRowUpsert,
   withUpstashProductRegistry,
   withUpstashProviderRegistry,
   withUpstashSchedulerRegistry,

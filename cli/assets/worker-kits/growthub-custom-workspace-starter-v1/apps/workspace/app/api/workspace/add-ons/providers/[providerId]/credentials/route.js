@@ -112,8 +112,9 @@ function deriveEnvUpdates(fields, credentials, body) {
     .filter(([, value]) => value));
 }
 
-/** Bearer-token account verification (e.g. Vercel). Probe paths come from the
- * provider's accountProbe contract — no hardcoded provider endpoints here. */
+/** Bearer-token account verification (e.g. Vercel REST API, Supabase
+ * Management API). Probe paths come from the provider's accountProbe
+ * contract — no hardcoded provider endpoints here. */
 async function verifyBearerProviderAccount(provider, token) {
   const probe = provider.accountProbe || {};
   const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
@@ -137,30 +138,89 @@ async function verifyBearerProviderAccount(provider, token) {
   return { ok: false, last };
 }
 
+/**
+ * Direct project probe fallback for bearer providers: no management token,
+ * but the product base URL + secret verify the bound project itself
+ * (accountProbe.fallback declares the header shape and paths).
+ */
+async function verifyProviderProjectFallback(provider, baseUrl, secret) {
+  const fallback = provider.accountProbe?.fallback || {};
+  const paths = Array.isArray(fallback.paths) && fallback.paths.length ? fallback.paths : ["/"];
+  const headerName = clean(fallback.tokenHeaderName);
+  let host = clean(baseUrl);
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    /* keep raw value */
+  }
+  let last = null;
+  for (const probePath of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(baseUrl, probePath), {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${secret}`,
+          ...(headerName ? { [headerName]: secret } : {}),
+          accept: "application/json",
+        },
+      });
+      last = { path: probePath, status: response.status };
+      if (!response.ok) continue;
+      return { ok: true, path: probePath, status: response.status, options: [{ id: host, label: host, source: probePath }] };
+    } catch (error) {
+      last = { path: probePath, status: 0, error: error?.message || "network error" };
+    }
+  }
+  return { ok: false, last };
+}
+
 async function handleBearerCredentials(request, provider, credentials, body) {
   const fields = getProviderSetupFields(provider);
   const tokenField = fields.find((field) => field.credentialRole === "bearerToken");
   const teamField = fields.find((field) => field.credentialRole === "teamScope");
+  const baseUrlField = fields.find((field) => field.credentialRole === "baseUrl");
+  const secretField = fields.find((field) => field.credentialRole === "secret");
   const tokenEnv = tokenField?.envRef || provider.accountProbe?.tokenEnv;
   if (!tokenField || !tokenEnv) return jsonError("provider does not support account credential setup", 400);
   const token = getCredentialValue(credentials, body, tokenField);
   const teamId = teamField ? getCredentialValue(credentials, body, teamField) : "";
-  if (!token) {
-    return jsonError(`${provider.label} account credentials are required`, 400, {
+  const projectUrl = baseUrlField ? getCredentialValue(credentials, body, baseUrlField) : "";
+  const projectSecret = secretField ? getCredentialValue(credentials, body, secretField) : "";
+  // Providers that declare accountProbe.fallback (e.g. Supabase) can verify a
+  // single bound project with its URL + secret when no management token is
+  // supplied — same persistence tail either way.
+  const hasProjectFallback = Boolean(provider.accountProbe?.fallback && baseUrlField && secretField);
+  if (!token && !(hasProjectFallback && projectUrl && projectSecret)) {
+    return jsonError(
+      hasProjectFallback
+        ? `${provider.label} needs a personal access token, or a project URL plus its service key`
+        : `${provider.label} account credentials are required`,
+      400,
+      {
+        providerId: provider.providerId,
+        missingFields: hasProjectFallback
+          ? [tokenField.id, baseUrlField.id, secretField.id]
+          : [tokenField.id],
+      },
+    );
+  }
+
+  let verified = token ? await verifyBearerProviderAccount(provider, token) : null;
+  let accountSource = verified?.ok ? "management-api" : "";
+  if (!verified?.ok && hasProjectFallback && projectUrl && projectSecret) {
+    const fallbackVerified = await verifyProviderProjectFallback(provider, projectUrl, projectSecret);
+    if (fallbackVerified.ok || !verified) verified = fallbackVerified;
+    if (fallbackVerified.ok) accountSource = "project-probe";
+  }
+  if (!verified?.ok) {
+    return jsonError(`${provider.label} ${token ? "access token" : "project binding"} could not be verified`, 422, {
       providerId: provider.providerId,
-      missingFields: [tokenField.id],
+      checked: verified?.last ? { path: verified.last.path, status: verified.last.status } : null,
     });
   }
 
-  const verified = await verifyBearerProviderAccount(provider, token);
-  if (!verified.ok) {
-    return jsonError(`${provider.label} access token could not be verified`, 422, {
-      providerId: provider.providerId,
-      checked: verified.last ? { path: verified.last.path, status: verified.last.status } : null,
-    });
-  }
-
-  const envToWrite = { [tokenEnv]: token };
+  const envToWrite = deriveEnvUpdates(fields, credentials, body);
+  if (token) envToWrite[tokenEnv] = token;
   if (teamField?.envRef && teamId) envToWrite[teamField.envRef] = teamId;
   await writeLocalEnv(envToWrite);
 
@@ -171,13 +231,17 @@ async function handleBearerCredentials(request, provider, credentials, body) {
     syncStatus: "verified",
     status: "connected",
     testedAt: now,
-    proof: `${provider.label} REST API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
-    summary: `${provider.label} provider account verified and stored as local runtime env refs.`,
+    proof: accountSource === "project-probe"
+      ? `${provider.label} project verified (GET ${verified.path} -> HTTP ${verified.status}).`
+      : `${provider.label} REST API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
+    summary: accountSource === "project-probe"
+      ? `${provider.label} provider project binding verified and stored as local runtime env refs.`
+      : `${provider.label} provider account verified and stored as local runtime env refs.`,
     resolvedEnv: Object.keys(envToWrite),
     providerAccountOptions: verified.options,
     selectedProviderAccountId: selected?.id || teamId || "",
     selectedProviderAccountLabel: selected?.label || "",
-    providerAccountSource: verified.path,
+    providerAccountSource: accountSource === "project-probe" ? "project-probe" : verified.path,
   };
   const currentConfig = await readWorkspaceConfig();
   const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });

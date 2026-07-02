@@ -138,17 +138,31 @@ function resourceFieldValue(row, mapping) {
   return "";
 }
 
-async function resolveProviderResource({ provider, product, selectedResourceId }) {
-  const discovery = product?.resourceDiscovery || {};
-  const envFromResource = Array.isArray(discovery.envFromResource) ? discovery.envFromResource : [];
-  if (!selectedResourceId || discovery.auth !== "provider-basic" || !envFromResource.length) return { writtenEnv: [] };
+function providerDiscoveryAuthHeader(provider, discoveryAuth) {
+  if (discoveryAuth === "provider-bearer") {
+    const tokenKey = provider.accountProbe?.tokenEnv;
+    const token = envValue(tokenKey);
+    if (!token) return { missingProviderEnv: [tokenKey].filter(Boolean) };
+    return { authHeader: `Bearer ${token}` };
+  }
   const emailKey = provider.accountProbe?.emailEnv;
   const apiKey = provider.accountProbe?.keyEnv;
   const email = envValue(emailKey);
   const apiKeyValue = envValue(apiKey);
-  if (!email || !apiKeyValue) return { writtenEnv: [], missingProviderEnv: [emailKey, apiKey].filter(Boolean) };
+  if (!email || !apiKeyValue) return { missingProviderEnv: [emailKey, apiKey].filter(Boolean) };
+  return { authHeader: `Basic ${Buffer.from(`${email}:${apiKeyValue}`).toString("base64")}` };
+}
 
-  const authHeader = `Basic ${Buffer.from(`${email}:${apiKeyValue}`).toString("base64")}`;
+async function resolveProviderResource({ provider, product, selectedResourceId }) {
+  const discovery = product?.resourceDiscovery || {};
+  const envFromResource = Array.isArray(discovery.envFromResource) ? discovery.envFromResource : [];
+  const discoveryAuth = clean(discovery.auth);
+  if (!selectedResourceId || !envFromResource.length) return { writtenEnv: [] };
+  if (discoveryAuth !== "provider-basic" && discoveryAuth !== "provider-bearer") return { writtenEnv: [] };
+  const resolvedAuth = providerDiscoveryAuthHeader(provider, discoveryAuth);
+  if (!resolvedAuth.authHeader) return { writtenEnv: [], missingProviderEnv: resolvedAuth.missingProviderEnv || [] };
+
+  const authHeader = resolvedAuth.authHeader;
   const paths = Array.isArray(discovery.paths) ? discovery.paths : [];
   const candidates = [];
   const failures = [];
@@ -173,21 +187,65 @@ async function resolveProviderResource({ provider, product, selectedResourceId }
   const updates = {};
   for (const mapping of envFromResource) {
     const envRef = clean(mapping.envRef);
+    if (!envRef) continue;
+    // Mapping shapes (all resolve server-side, values never leave this route):
+    //   urlTemplate — derive the value from the resource id ({id} substitution)
+    //   fromPath    — fetch a per-resource sub-path with the provider auth and
+    //                 pick the row matching matchField=matchValue
+    //   default     — read fieldCandidates straight off the resource row
+    if (mapping.urlTemplate) {
+      const value = clean(mapping.urlTemplate).replaceAll("{id}", selected.id);
+      if (value) updates[envRef] = value;
+      continue;
+    }
+    if (mapping.fromPath) {
+      const subPath = clean(mapping.fromPath).replaceAll("{id}", selected.id);
+      try {
+        const response = await fetchWithTimeout(safeUrl(provider.baseUrl, subPath), {
+          method: "GET",
+          headers: { authorization: authHeader, accept: "application/json" },
+        });
+        if (!response.ok) {
+          if (!mapping.optional) failures.push({ path: subPath, status: response.status });
+          continue;
+        }
+        const rows = pickArray(await readJsonSafe(response));
+        const matchField = clean(mapping.matchField);
+        const matchValue = clean(mapping.matchValue);
+        const hit = matchField
+          ? rows.find((row) => clean(row?.[matchField]) === matchValue)
+          : rows[0];
+        const value = hit ? resourceFieldValue(hit, mapping) : "";
+        if (value) updates[envRef] = value;
+        else if (!mapping.optional) failures.push({ path: subPath, status: 200, error: `no ${matchValue || "matching"} entry` });
+      } catch (error) {
+        if (!mapping.optional) failures.push({ path: subPath, status: 0, error: error?.message || "network error" });
+      }
+      continue;
+    }
     const value = resourceFieldValue(selected.row, mapping);
-    if (envRef && value) updates[envRef] = value;
+    if (value) updates[envRef] = value;
   }
   const writtenEnv = await writeLocalEnv(updates);
   return { writtenEnv, resource: selected, failures };
 }
 
-async function probeJsonPaths({ baseUrl, token, paths, label, query = "" }) {
+async function probeJsonPaths({ baseUrl, token, paths, label, query = "", tokenHeaderName = "" }) {
   let last = null;
   for (const path of paths) {
     const base = safeUrl(baseUrl, path);
     const url = query ? `${base}${base.includes("?") ? "&" : "?"}${query}` : base;
+    // Default probe auth is a Bearer token. When the product declares
+    // probe.tokenHeaderName (Supabase: "apikey"), send the token on that
+    // header AND as Bearer — the gateway reads the named header, PostgREST
+    // reads Authorization.
+    const headerName = clean(tokenHeaderName);
     const response = await fetchWithTimeout(url, {
       method: "GET",
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(headerName ? { [headerName]: token } : {}),
+      },
     });
     const text = await readProbeText(response);
     last = { status: response.status, path, text };
@@ -245,6 +303,7 @@ async function probeProviderProduct({ providerId, productId, region }) {
     paths: probe.paths,
     label: product.label,
     query: teamId ? `teamId=${encodeURIComponent(teamId)}` : "",
+    tokenHeaderName: probe.tokenHeaderName,
   });
   return {
     ...result,

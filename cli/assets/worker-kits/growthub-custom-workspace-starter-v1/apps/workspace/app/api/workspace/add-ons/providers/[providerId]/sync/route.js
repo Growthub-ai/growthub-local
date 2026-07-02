@@ -158,11 +158,62 @@ async function deriveUpstashQstashRuntimeEnv(provider, email, apiKey) {
  *   { ok:false, syncStatus:"account-linked" } → creds absent / Developer API N/A
  *   { ok:false }                      → creds present but probe rejected
  */
-/** Bearer-token account probe (e.g. Vercel REST API). Same honesty contract. */
+/** Bearer-token account probe (e.g. Vercel REST API, Supabase Management
+ * API). Same honesty contract. Providers that declare accountProbe.fallback
+ * (Supabase) verify the bound project directly when no management token is
+ * present. */
 async function probeBearerProviderAccount(provider, now) {
   const probe = provider.accountProbe;
+  const fallback = probe?.fallback || {};
+  const fallbackBaseUrl = fallback.baseUrlEnv ? envValue(fallback.baseUrlEnv) : "";
+  const fallbackSecret = fallback.tokenEnv ? envValue(fallback.tokenEnv) : "";
   const account = resolveProviderAccountAuth(provider, process.env);
   if (!account.ready) {
+    // Direct-project fallback probe when only the product env is set.
+    if (fallbackBaseUrl && fallbackSecret) {
+      const headerName = clean(fallback.tokenHeaderName);
+      const paths = Array.isArray(fallback.paths) && fallback.paths.length ? fallback.paths : ["/"];
+      let last = null;
+      for (const path of paths) {
+        try {
+          const response = await fetchWithTimeout(safeUrl(fallbackBaseUrl, path), {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${fallbackSecret}`,
+              ...(headerName ? { [headerName]: fallbackSecret } : {}),
+              accept: "application/json",
+            },
+          });
+          last = { status: response.status, path };
+          if (response.ok) {
+            let host = fallbackBaseUrl;
+            try {
+              host = new URL(fallbackBaseUrl).host;
+            } catch { /* keep raw */ }
+            return {
+              ok: true,
+              testedAt: now,
+              proof: `${provider.label} project verified (GET ${path} → HTTP ${response.status}).`,
+              summary: `${provider.label} project binding verified via direct project probe (no management token).`,
+              resolvedEnv: resolvedEnvKeys([fallback.baseUrlEnv, fallback.tokenEnv]),
+              providerAccountOptions: [{ id: host, label: host, source: path }],
+              selectedProviderAccountId: host,
+              selectedProviderAccountLabel: host,
+              providerAccountSource: "project-probe",
+            };
+          }
+        } catch (err) {
+          last = { status: 0, path, error: err?.message || "network error" };
+        }
+      }
+      const detail = last ? `${last.path} → HTTP ${last.status}` : "no endpoint responded";
+      return {
+        ok: false,
+        testedAt: now,
+        proof: `${provider.label} project probe failed: ${detail}.`,
+        summary: `${provider.label} project probe failed: ${detail}.`,
+      };
+    }
     return {
       ok: false,
       syncStatus: "setup-required",
@@ -171,7 +222,9 @@ async function probeBearerProviderAccount(provider, now) {
       resolvedEnv: account.resolvedEnv,
       testedAt: now,
       proof: "",
-      summary: `${provider.label} account API credentials are required to show connected account details.`,
+      summary: probe?.fallback
+        ? `${provider.label} needs a management access token, or a bound project URL and key, to show connected account details.`
+        : `${provider.label} account API credentials are required to show connected account details.`,
     };
   }
   const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
