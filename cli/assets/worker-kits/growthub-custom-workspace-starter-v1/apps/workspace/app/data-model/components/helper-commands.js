@@ -66,6 +66,14 @@ export const HELPER_COMMANDS = [
     view: "schedule"
   },
   {
+    name: "/data",
+    label: "Data",
+    description: "See and sync external database tables (Supabase and future data providers) bound to governed objects",
+    scope: "workspace",
+    mutates: false,
+    view: "data"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",

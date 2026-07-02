@@ -8,6 +8,7 @@ import {
   ArrowUp,
   Bot,
   Code,
+  Database,
   Filter,
   FormInput,
   GitBranch,
@@ -153,7 +154,7 @@ function resolveSchedulerRegistryRows(workspaceConfig) {
 
 function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
-  const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call");
+  const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call" || n?.type === "supabase-data");
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
   ).trim();
@@ -415,6 +416,7 @@ const WORKFLOW_ACTION_GROUPS = [
       { id: "delete-record", label: "Delete Record", type: "data-action", Icon: Trash2, destructive: true },
       { id: "search-records", label: "Search Records", type: "data-action", Icon: Search, destructive: false },
       { id: "upsert-record", label: "Create or Update Record", type: "data-action", Icon: PencilLine, destructive: false },
+      { id: "supabase-data", label: "Supabase", type: "supabase-data", Icon: Database, destructive: false },
     ],
   },
   { label: "AI", items: [{ id: "ai-agent", label: "AI Agent", type: "ai-agent", Icon: Bot, destructive: false }] },
@@ -458,6 +460,23 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
     index += 1;
   }
   const isData = action.type === "data-action";
+  if (action.type === "supabase-data") {
+    // Subtitle stays empty so the canvas derives it from operation/table config.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "",
+      config: {
+        registryId: "supabase-postgrest",
+        operation: "select",
+        table: "",
+        query: "",
+        bodyTemplate: "",
+        returnRepresentation: true
+      }
+    };
+  }
   return {
     id,
     type: action.type,
