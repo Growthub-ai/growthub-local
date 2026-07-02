@@ -131,13 +131,74 @@ Product identity:
 - execution lane: `workspace-retrieval`
 - required env: `UPSTASH_VECTOR_REST_URL`, `UPSTASH_VECTOR_REST_TOKEN`
 
+## V1 Provider: Vercel
+
+Vercel is the second official marketplace provider and the first on the
+bearer-token account lane. The provider row represents the account binding;
+the product row represents the runnable one-click deployment capability.
+
+Provider:
+
+- `providerId`: `vercel`
+- provider account lane: Vercel REST API (`Authorization: Bearer`)
+- setup fields: access token + optional team ID (team-scoped tokens)
+- setup surface: Add-ons Marketplace / provider setup
+- account verification: live probe of `/v2/user` / `/v2/teams`
+- persisted truth: provider row and product row in the API Registry
+- secret rule: the token is stored only as the `VERCEL_TOKEN` env reference —
+  never in config, receipts, browser payloads, or row output
+
+### Vercel Deployments (One-Click Deploy)
+
+Deployments is the validated runnable Vercel product.
+
+It enables:
+
+- server-side project discovery (`GET /v9/projects`; the browser never calls
+  the Vercel API)
+- linking each Vercel project as an atomic governed Data Model record in the
+  `vercel-projects` custom object — zero schema/contract change
+- one-click deploys through the governed deploy route
+  (`POST /api/workspace/add-ons/vercel/deploy`): git-source lane for linked
+  repos, redeploy lane for previously deployed projects
+- deploy proof (deployment id, url, readyState) written back to the owning
+  project record
+- workflow linkage from the same record via the existing reference primitive
+  (`linkedWorkflowRef` → sandbox-environment)
+- receipt-backed audit for connect, link, and every deploy —
+  `workspace-add-on-vercel-link` / `workspace-add-on-vercel-deploy`
+
+Product identity:
+
+- `productId`: `vercel-deployments`
+- `integrationId`: `vercel-deployments`
+- `authRef`: `VERCEL`
+- execution lane: `workspace-deployments`
+- required env: `VERCEL_TOKEN`
+- optional env: `VERCEL_TEAM_ID`, `VERCEL_API_URL`
+
+Validated V1 capability:
+
+- Product sync verifies `/v9/projects` over the live provider API.
+- Project link upserts governed `vercel-projects` records idempotently
+  (operator extras and deploy proof are never clobbered by a re-link).
+- One-click deploy auto-links the project first, so a deploy always lands as
+  a governed Data Model record.
+- Deploy surfaces: Add-ons Marketplace product cockpit and the project
+  record's Data Model drawer (`Deploy to Vercel`).
+- Receipts record the full lifecycle, including blocked outcomes with
+  actionable next steps.
+
 ## User Surfaces
 
 Official marketplace plugins appear in these workspace surfaces:
 
 - Add-ons Marketplace: provider/product setup, product verification, resource
-  selection, env reference binding
+  selection, env reference binding, Vercel project link + one-click deploy
+  cockpit
 - API Registry: persisted provider/product capability rows
+- Data Model: governed `vercel-projects` records with per-record deploy,
+  latest-deployment proof, and workflow linkage
 - Workflow Canvas: trigger/runtime configuration and schedule ownership
 - Workspace Helper: `/schedule` command entry point
 - Schedule Cockpit: fleet view for scheduled, ready, blocked, and drifted
@@ -151,6 +212,7 @@ Marketplace plugins must obey the workspace mutation boundary:
 - config changes go through `PATCH /api/workspace`
 - serverless/sandbox execution goes through governed execution routes
 - schedule operations go through the existing add-on schedule route
+- deployment operations go through the governed add-on deploy route
 - receipts are written to `workspace:agent-outcomes`
 - secrets remain server-side
 - UI controls hand off to governed routes, not direct client-side config edits
