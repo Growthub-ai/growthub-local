@@ -7,6 +7,7 @@ import {
   applyFilters,
   extractApiRegistryCallNode,
   extractInputNode,
+  extractSupabaseDataNode,
   extractTransformConfig,
   isAgentSwarmGraph,
   normalizeJsonAtPath,
@@ -16,7 +17,7 @@ import {
 } from "./orchestration-graph.js";
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
-import { readServerSecret } from "./server-secrets.js";
+import { readEnvVar, readServerSecret } from "./server-secrets.js";
 
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
@@ -265,6 +266,207 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
   }
 }
 
+const SUPABASE_DATA_OPERATIONS = ["select", "insert", "update", "upsert", "delete", "rpc"];
+
+/**
+ * Execute the `supabase-data` node — governed PostgREST database operations
+ * against the installed supabase-postgrest registry row. Mirrors
+ * executeApiRegistryCall's envelope exactly (ok / exitCode / stdout /
+ * rawPayload / httpStatus / adapterMeta) so the downstream transform/result
+ * stages and receipts treat both HTTP stages identically.
+ *
+ * Secrets resolve server-side only: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+ * via the canonical env contract; the key rides the `apikey` header (gateway)
+ * and Authorization Bearer (PostgREST) and never appears in results — errors
+ * pass through redactSecretsFromText like every other stage.
+ */
+async function executeSupabaseData(workspaceConfig, nodeConfig, inputPayload, timeoutMs) {
+  const registryId = String(nodeConfig?.registryId || nodeConfig?.integrationId || "supabase-postgrest").trim();
+  const registryRecord = findRegistryRecord(workspaceConfig, registryId);
+  if (!registryRecord) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `no API Registry row for integrationId ${registryId} — install the Supabase product from the Add-ons Marketplace first`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId }
+    };
+  }
+
+  const operation = String(nodeConfig?.operation || "select").trim().toLowerCase();
+  if (!SUPABASE_DATA_OPERATIONS.includes(operation)) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `unsupported supabase-data operation "${operation}" (expected ${SUPABASE_DATA_OPERATIONS.join("/")})`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId }
+    };
+  }
+
+  const table = substituteVariables(String(nodeConfig?.table || "").trim(), inputPayload);
+  const rpcFunction = substituteVariables(String(nodeConfig?.rpcFunction || "").trim(), inputPayload);
+  if (operation === "rpc" ? !rpcFunction : !table) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: operation === "rpc" ? "supabase-data rpc requires rpcFunction" : "supabase-data requires a table",
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation }
+    };
+  }
+
+  const query = substituteVariables(String(nodeConfig?.query || "").trim(), inputPayload).replace(/^\?+/, "");
+  // Guardrail: an update/delete with no PostgREST filter would mutate the
+  // whole table — refuse instead of forwarding.
+  if ((operation === "update" || operation === "delete") && !query) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `supabase-data ${operation} requires a row filter query (e.g. id=eq.{{input.id}})`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation, table }
+    };
+  }
+
+  // Env resolution order matches product truth: row baseUrl (stamped from the
+  // verified sync probe) → SUPABASE_URL; key via declared concrete env → the
+  // row's authRef candidates.
+  const baseUrl = String(nodeConfig?.baseUrl || registryRecord.baseUrl || "").trim()
+    || String(readEnvVar("SUPABASE_URL")?.value || "").trim();
+  const authRef = String(nodeConfig?.authRef || registryRecord.authRef || "SUPABASE").trim();
+  const secret = String(
+    readEnvVar("SUPABASE_SERVICE_ROLE_KEY")?.value
+    || readServerSecret(authRef)?.value
+    || ""
+  );
+  if (!baseUrl || !secret) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `Supabase runtime env is not resolved (${!baseUrl ? "SUPABASE_URL" : "SUPABASE_SERVICE_ROLE_KEY"} missing) — verify the product in Add-ons`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation, table }
+    };
+  }
+
+  const resource = operation === "rpc" ? `rpc/${rpcFunction}` : table;
+  const url = `${baseUrl.replace(/\/+$/, "")}/rest/v1/${resource}${query ? `?${query}` : ""}`;
+  const methodByOperation = { select: "GET", insert: "POST", upsert: "POST", update: "PATCH", delete: "DELETE", rpc: "POST" };
+  const method = methodByOperation[operation];
+
+  const preferParts = [];
+  if (operation === "upsert") preferParts.push("resolution=merge-duplicates");
+  if (["insert", "upsert", "update", "delete"].includes(operation) && nodeConfig?.returnRepresentation !== false) {
+    preferParts.push("return=representation");
+  }
+
+  let body;
+  if (method !== "GET" && method !== "DELETE") {
+    const bodyTemplate = substituteVariables(String(nodeConfig?.bodyTemplate || ""), inputPayload);
+    if (bodyTemplate) {
+      try {
+        body = JSON.parse(bodyTemplate);
+      } catch {
+        return {
+          ok: false,
+          exitCode: 1,
+          durationMs: 0,
+          stdout: "",
+          stderr: "",
+          error: "supabase-data bodyTemplate is not valid JSON after input substitution",
+          adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation, table }
+        };
+      }
+    } else if (operation !== "rpc") {
+      return {
+        ok: false,
+        exitCode: 1,
+        durationMs: 0,
+        stdout: "",
+        stderr: "",
+        error: `supabase-data ${operation} requires a JSON bodyTemplate`,
+        adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation, table }
+      };
+    }
+  }
+
+  const outboundTimeout = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000);
+  const startedAt = Date.now();
+
+  const mockResult = executeFeatureSeedMock(url, { registryId, method, startedAt });
+  if (mockResult) return mockResult;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), outboundTimeout);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        accept: "application/json",
+        apikey: secret,
+        authorization: `Bearer ${secret}`,
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(preferParts.length ? { prefer: preferParts.join(",") } : {})
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      signal: controller.signal
+    });
+    const durationMs = Date.now() - startedAt;
+    const responseContentType = response.headers.get("content-type") || "";
+    const payload = responseContentType.includes("json") ? await response.json() : await response.text();
+
+    return {
+      ok: response.ok,
+      exitCode: response.ok ? 0 : 1,
+      durationMs,
+      stdout: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
+      stderr: "",
+      error: response.ok ? undefined : `HTTP ${response.status}`,
+      rawPayload: payload,
+      httpStatus: response.status,
+      adapterMeta: {
+        mode: "orchestration-graph",
+        nodeType: "supabase-data",
+        registryId,
+        operation,
+        table: operation === "rpc" ? "" : table,
+        rpcFunction: operation === "rpc" ? rpcFunction : "",
+        url,
+        httpStatus: response.status,
+        method,
+        authRefSlug: authRef
+      }
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const safeError = redactSecretsFromText(
+      error.name === "AbortError" ? `request timed out after ${outboundTimeout}ms` : (error.message || "fetch failed")
+    );
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs,
+      stdout: "",
+      stderr: "",
+      error: safeError,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "supabase-data", registryId, operation, url, aborted: error.name === "AbortError" }
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Run a growthub-native orchestration graph when present on the sandbox row.
  * Returns null when the row has no executable graph (caller falls back to adapter path).
@@ -289,7 +491,12 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     });
   }
 
-  const apiNode = extractApiRegistryCallNode(graph);
+  // The single executing HTTP stage: api-registry-call (generic registry row)
+  // or supabase-data (database operations). api-registry-call keeps precedence
+  // when both exist so pre-existing graphs never change behavior.
+  const registryCallNode = extractApiRegistryCallNode(graph);
+  const supabaseDataNode = extractSupabaseDataNode(graph);
+  const apiNode = registryCallNode?.config ? registryCallNode : supabaseDataNode;
   if (!apiNode?.config) {
     if ((Array.isArray(graph.nodes) ? graph.nodes : []).some((node) => node?.type === "ai-agent")) {
       return null;
@@ -300,10 +507,11 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
       durationMs: 0,
       stdout: "",
       stderr: "",
-      error: "orchestrationGraph is missing an api-registry-call node",
+      error: "orchestrationGraph is missing an api-registry-call or supabase-data node",
       adapterMeta: { mode: "orchestration-graph", provider: graph.provider }
     };
   }
+  const runHttpStage = apiNode === supabaseDataNode ? executeSupabaseData : executeApiRegistryCall;
 
   const inputNode = extractInputNode(graph);
   const baseInputPayload = parseInputPayload(inputNode);
@@ -346,9 +554,9 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   // Input stage — payload is assembled above; it ran.
   if (inputNode?.id) { emitNode(inputNode.id, "started"); emitNode(inputNode.id, "completed"); }
 
-  // API Registry call stage.
+  // HTTP stage (API Registry call or Supabase data operation).
   if (apiNode?.id) emitNode(apiNode.id, "started");
-  const raw = await executeApiRegistryCall(
+  const raw = await runHttpStage(
     workspaceConfig,
     apiNode.config,
     inputPayload,
@@ -405,4 +613,4 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   };
 }
 
-export { runOrchestrationGraphIfPresent };
+export { executeSupabaseData, runOrchestrationGraphIfPresent };
