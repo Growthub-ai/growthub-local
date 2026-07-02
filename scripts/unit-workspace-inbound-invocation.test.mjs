@@ -646,7 +646,7 @@ test("proof freshness: graph-content equality is strict on content, indifferent 
   assert.equal(addOns.orchestrationGraphContentEquals("not-json", "other"), false);
 });
 
-test("bind: an existing saved draft receives the same trigger-binding sync as the live graph", () => {
+test("bind: NEVER mutates a saved draft; content freshness holds through bind-owned key exclusion", () => {
   const graphJson = JSON.stringify({ version: 1, provider: "growthub-native", nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }], edges: [] }, null, 2);
   const config = { id: "ws", dataModel: { objects: [
     { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
@@ -661,10 +661,18 @@ test("bind: an existing saved draft receives the same trigger-binding sync as th
   });
   assert.equal(result.bound, true);
   const row = result.config.dataModel.objects[0].rows[0];
-  const liveBinding = addOns.readTriggerScheduleBinding(row.orchestrationConfig);
-  const draftBinding = addOns.readTriggerScheduleBinding(row.orchestrationDraftConfig);
-  assert.equal(liveBinding.scheduleId, "bind-1");
-  assert.equal(draftBinding.scheduleId, "bind-1", "draft trigger node carries the same binding");
+  // The bind writes the LIVE graph only — the user's saved draft is untouched.
+  assert.equal(row.orchestrationDraftConfig, graphJson, "bind must NEVER mutate a saved draft");
+  assert.equal(addOns.readTriggerScheduleBinding(row.orchestrationConfig)?.scheduleId, "bind-1");
+  assert.equal(addOns.readTriggerScheduleBinding(row.orchestrationDraftConfig), null, "draft carries no binding");
+  // Content freshness still holds: bind-owned trigger keys (trigger/triggerKind/
+  // schedule/enabled + tool-result writeLastResponse) are excluded from the
+  // comparison — binding agreement is enforced by the proof gate's own checks.
   assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, row.orchestrationDraftConfig), true,
-    "post-bind draft and live are the same content — the proof freshness gate is satisfiable");
+    "post-bind live and untouched draft are the same user content");
+  // A real user edit in the draft still breaks freshness.
+  const edited = JSON.parse(row.orchestrationDraftConfig);
+  edited.nodes[0].config.inputMode = "api-request";
+  assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, JSON.stringify(edited)), false,
+    "a real content change still breaks freshness");
 });
