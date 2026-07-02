@@ -46,6 +46,7 @@ import {
   getInboundAdapter,
   isInboundInvocationProduct,
   registerInboundDelivery,
+  registerInboundRateSample,
   resolveInboundProductForRequest,
   triggerKindForLane,
   INVOKED_RUN_KIND,
@@ -259,6 +260,27 @@ async function POST(request, context) {
         summary: `Acknowledged duplicate ${expectedTriggerKind} delivery for ${rowId} (binding ${scheduleId}); graph not re-executed.`,
       });
       return NextResponse.json({ ok: true, duplicate: true, scheduleId, objectId, rowId }, { status: 200 });
+    }
+
+    // RATE GUARD: bounded per-binding invocation rate. Inbound runs are
+    // synchronous graph executions, so a flood of validly authenticated calls
+    // is a compute lever. Duplicates above never touch this budget; the
+    // scheduler callback lane is not rated (the provider owns its pacing).
+    const rate = registerInboundRateSample({ bindingId: scheduleId, env: process.env });
+    if (rate.limited) {
+      await appendOutcomeReceipt({
+        kind: runReceiptKind,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: provider.providerId,
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: ["invoked_run_rate_limited"] },
+        summary: `Rate-limited ${expectedTriggerKind} invocation for ${rowId} (binding ${scheduleId}): over ${rate.limit}/min; graph not executed.`,
+      });
+      return NextResponse.json(
+        { ok: false, error: `rate limit exceeded for this binding (${rate.limit}/min)`, scheduleId, retryAfterS: rate.retryAfterS },
+        { status: 429, headers: { "retry-after": String(rate.retryAfterS) } },
+      );
     }
   }
 

@@ -1,6 +1,7 @@
 # Governed Capability Binding Loop V1
 
-**Status:** investigative proof + phased extension plan. Verified against `origin/main`
+**Status:** investigative proof + phased extension plan, now **shipped through
+Phase 5 with the V1.1 deltas below**. Originally verified against `origin/main`
 tip `f1e6a8c` ("feat(workspace-kit): governed serverless scheduler") — the release
 whose live smoke is frozen in
 [`SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md`](./SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md).
@@ -8,6 +9,43 @@ Every "already exists" claim below cites a real path in the starter workspace
 (`cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`,
 abbreviated `apps/workspace/` throughout, matching the anchor convention in
 [`GOVERNED_COCKPIT_ENTRY_POINT_PATTERN_V1.md`](./GOVERNED_COCKPIT_ENTRY_POINT_PATTERN_V1.md)).
+
+## V1.1 — shipped deltas (supersede the plan text where they conflict)
+
+The webhook / API-request input methods shipped with these architecture
+decisions that refine Phases 3–4 as written:
+
+1. **Native workspace capabilities, not marketplace installs.** There is no
+   external account behind the inbound methods, so nothing is "installed from
+   Workspace Add-ons". The resolvable signing/invoke env ref
+   (`GROWTHUB_WEBHOOK_SIGNING_SECRET` / `GROWTHUB_API_INVOKE_TOKEN`) **is** the
+   capability: the bind's env gate enforces it first and names the missing ref;
+   the API Registry row is provisioned automatically inside the same governed
+   bind write as verification **lineage** (proof = the env probe). The canvas
+   offers both methods unconditionally; `env-status` always includes the
+   native refs (like persistence-adapter readiness). Any marketplace plugin
+   declaring the same lane grammar still joins via
+   `resolveInboundMethodProducts` — lane-derived, provider-scoped.
+2. **Binds never mutate drafts; freshness is content equality.** The proof
+   gate (`rowHasSuccessfulServerlessBindingProof`) compares graph CONTENT via
+   `orchestrationGraphContentEquals` — writer formatting, canvas
+   `sandboxRecordRef` metadata, and the bind-owned trigger keys
+   (`trigger`/`triggerKind`/`schedule`/`enabled`, tool-result
+   `writeLastResponse`) are excluded; every user-authored change still breaks
+   freshness. Publish promotion re-syncs the trigger node from the ROW's
+   binding fields so promoting a draft cannot sever a live binding.
+3. **Door guards.** After auth + binding validation: duplicate deliveries are
+   ACKed without re-execution (signed-bytes / `x-growthub-idempotency-key`
+   identity), and genuinely new invocations are rate-limited per binding
+   (sliding window, default 60/min, `GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE`),
+   returning 429 + `retry-after` with a blocked receipt. The scheduler
+   callback lane is not rated — the provider owns its pacing.
+4. **Proof of the loop:** `scripts/e2e-inbound-journey-playwright.mjs` +
+   `scripts/e2e-inbound-journey-seed.mjs` drive the full no-code journey in a
+   real browser against a temp workspace export (readiness deltas → bind →
+   seeded test values → verified 200 without refresh → proof-gated publish →
+   real signed/bearer domain hit → tamper 401), and
+   `scripts/unit-workspace-inbound-invocation.test.mjs` locks the contracts.
 
 ## The claim being proven
 

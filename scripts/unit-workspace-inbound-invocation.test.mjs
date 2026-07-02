@@ -686,3 +686,24 @@ test("bind: NEVER mutates a saved draft; content freshness holds through bind-ow
   assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, JSON.stringify(edited)), false,
     "a real content change still breaks freshness");
 });
+
+test("rate guard: caps NEW invocations per binding per minute; sliding window; per-binding isolation; env-tunable", () => {
+  inbound.resetInboundRateCache();
+  const env = { GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE: "3" };
+  const base = { bindingId: "bind-rate", env };
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S }).limited, false);
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 1 }).limited, false);
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 2 }).limited, false);
+  const blocked = inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 3 });
+  assert.equal(blocked.limited, true, "4th call within the window is limited");
+  assert.equal(blocked.limit, 3);
+  assert.ok(blocked.retryAfterS >= 1, "caller gets an honest retry-after");
+  // The window slides: capacity returns once the oldest sample ages out.
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 61 }).limited, false);
+  // Bindings are isolated — one hot binding cannot starve another.
+  assert.equal(inbound.registerInboundRateSample({ bindingId: "bind-other", env, currentTimeS: NOW_S + 3 }).limited, false);
+  // Deployment default applies when the env knob is absent/invalid.
+  assert.equal(inbound.resolveInboundRateLimit({}), 60);
+  assert.equal(inbound.resolveInboundRateLimit({ GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE: "not-a-number" }), 60);
+  inbound.resetInboundRateCache();
+});
