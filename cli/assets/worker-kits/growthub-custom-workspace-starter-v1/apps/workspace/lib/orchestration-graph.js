@@ -23,7 +23,8 @@ const KNOWN_NODE_TYPES = new Set([
   "ai-agent",
   "flow-control",
   "core-action",
-  "human-input"
+  "human-input",
+  "supabase-data"
 ]);
 
 const API_REGISTRY_SETUP_FIELDS = ["integrationId", "baseUrl", "endpoint", "method", "authRef"];
@@ -128,7 +129,7 @@ function validateOrchestrationGraph(graph) {
       if (!swarmCheck.ok) errors.push(...swarmCheck.errors);
     } else {
       const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
-      const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call");
+      const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call" || n?.type === "supabase-data");
       const hasAiAgent = graph.nodes.some((n) => n?.type === "ai-agent");
       const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
       if (!hasThinAdapter && !hasApi && !hasAiAgent) errors.push("orchestrationGraph requires an executable node");
@@ -367,6 +368,15 @@ function extractApiRegistryCallNode(graph) {
 
 function extractInputNode(graph) {
   return extractNodeByType(graph, "input");
+}
+
+/**
+ * The database-operations node (Supabase PostgREST V1). Occupies the same
+ * pipeline stage as api-registry-call: exactly one executing HTTP stage per
+ * linear graph, resolved against a governed api-registry row.
+ */
+function extractSupabaseDataNode(graph) {
+  return extractNodeByType(graph, "supabase-data");
 }
 
 function extractTransformConfig(graph) {
@@ -917,6 +927,7 @@ export {
   findDataSourceRowsForRegistry,
   extractApiRegistryCallNode,
   extractInputNode,
+  extractSupabaseDataNode,
   extractTransformConfig,
   extractNormalizeConfig,
   findSandboxObject,
