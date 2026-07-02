@@ -229,6 +229,23 @@ async function probeProviderProduct({ providerId, productId, region }) {
 
   const probe = product.probe || {};
   if (!probe.baseUrlEnv || !probe.tokenEnv || !Array.isArray(probe.paths) || !probe.paths.length) {
+    // Env-ready capability with NO remote infrastructure to probe (the growthub
+    // inbound trigger products): the workspace's own destination route is the
+    // invocation surface, so "verified" means the product's env refs resolve in
+    // THIS runtime — the same proof rule the generic marketplace product row
+    // documents. The requiredEnv gate above already enforced resolution; a
+    // remote-probed product still takes the REST-probe path below.
+    if (Array.isArray(product.requiredEnv) && product.requiredEnv.length) {
+      return {
+        ok: true,
+        status: "connected",
+        syncStatus: "verified",
+        testedAt: new Date().toISOString(),
+        resolvedEnv: requiredEnv.resolvedKeys,
+        proof: `${product.requiredEnv.join(", ")} resolved in runtime env.`,
+        summary: `${product.label} env ref resolves in this runtime.`,
+      };
+    }
     return { ok: false, status: 400, error: "unsupported provider product probe" };
   }
   const regionOption = selectedRegion(product, region);

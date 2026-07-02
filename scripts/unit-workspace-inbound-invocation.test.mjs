@@ -586,3 +586,41 @@ test("canvas: selecting Webhook / API Request activates the same pre-bind readin
   assert.match(workflowSurfaceSource, /const expectedReadinessRegistryId = selectedInputMode === "webhook"\s*\?\s*String\(addOnsState\.webhookTrigger\?\.integrationId \|\| ""\)\.trim\(\)/);
   assert.match(workflowSurfaceSource, /expected: \{ schedulerRegistryId: expectedReadinessRegistryId, scheduleId:/);
 });
+
+/* ================= live-loop release blockers (found by the running-app smoke) ================= */
+// Two wire-level dead ends only a real invocation surfaces — pinned here so
+// they can never regress silently again.
+
+const appRoot = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace",
+);
+const productsSyncSource = readFileSync(
+  path.join(appRoot, "app/api/workspace/add-ons/providers/[providerId]/products/sync/route.js"),
+  "utf8",
+);
+const publishRouteSource = readFileSync(
+  path.join(appRoot, "app/api/workspace/workflow/publish/route.js"),
+  "utf8",
+);
+
+test("add-ons sync: env-ready inbound products verify without a remote probe (no unsupported-probe dead end)", () => {
+  // The growthub trigger products have NO remote infrastructure to probe —
+  // the sync route must verify them from resolved env refs instead of 400ing,
+  // or the capability gate ("installed and verified before binding") is
+  // unpassable from the Add-ons surface and the whole no-code loop is dead.
+  const probeStart = productsSyncSource.indexOf("const probe = product.probe || {};");
+  const noProbeBranch = productsSyncSource.slice(
+    probeStart,
+    productsSyncSource.indexOf("const regionOption", probeStart),
+  );
+  assert.match(noProbeBranch, /if \(Array\.isArray\(product\.requiredEnv\) && product\.requiredEnv\.length\) \{/);
+  assert.match(noProbeBranch, /syncStatus: "verified"/);
+  assert.match(noProbeBranch, /resolved in runtime env/);
+});
+
+test("publish route: the POST handler is exported (a defined-but-unexported handler is a 405 for every publish)", () => {
+  assert.match(publishRouteSource, /async function POST\(request\)/);
+  assert.match(publishRouteSource, /export \{ POST \};/);
+});

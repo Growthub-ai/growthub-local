@@ -451,3 +451,7 @@ async function POST(request) {
         });
     }
 }
+
+// Next.js only wires exported handlers — without this line the whole
+// server-authoritative publish gate is a 405 for every caller.
+export { POST };
