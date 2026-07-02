@@ -22,6 +22,7 @@ import {
   findWorkspaceAddOnRows,
   getMarketplaceProduct,
 } from "@/lib/workspace-add-ons";
+import { VercelCreateAppFlow } from "./VercelCreateAppFlow.jsx";
 
 /**
  * One-click deploy cockpit for the installed Vercel Deployments product.
@@ -587,6 +588,14 @@ function AddOnsSurface({
                       })}
                     </div>
                   </section> : null}
+
+                  {selectedMarketplaceProvider?.providerId === "vercel" ? (
+                    <VercelCreateAppFlow
+                      vercelConnected={providerConnected}
+                      onDeployProject={onDeployVercelProject}
+                      disabled={installing}
+                    />
+                  ) : null}
 
                   <section className="dm-marketplace-overview" aria-label="Overview">
                     <h3>Overview</h3>
