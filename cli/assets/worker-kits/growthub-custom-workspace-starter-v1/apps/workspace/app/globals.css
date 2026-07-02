@@ -9768,3 +9768,32 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-schedule-tag[data-tag-tone="alert"] { border-color: #fde68a; color: #92400e; background: #fffbeb; }
 .dm-schedule-tag[data-tag-tone="ok"] { border-color: #bbf7d0; color: #166534; background: #f0fdf4; }
 .dm-schedule-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* Inbound trigger config — the stepped Connect → Bind → Test → Go-live journey
+   for the Webhook / API-request input methods in the canvas sidecar. Layout +
+   state tones only, on the shared facelift tokens; buttons/fields inherit the
+   existing dm-btn / dm-orchestration-config primitives. */
+.dm-inbound-config { display: flex; flex-direction: column; gap: 12px; }
+.dm-inbound-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dm-inbound-state { font-size: 11px; font-weight: 600; line-height: 1.4; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--dm-line); color: var(--dm-muted); background: var(--dm-surface-soft); white-space: nowrap; }
+.dm-inbound-state.is-ok { border-color: var(--dm-ok-line); color: var(--dm-ok); background: var(--dm-ok-soft); }
+.dm-inbound-state.is-bad { border-color: var(--dm-bad-line); color: var(--dm-bad); background: var(--dm-bad-soft); }
+.dm-inbound-state.is-warn { border-color: var(--dm-warn-line, #fde68a); color: var(--dm-warn, #d97706); background: var(--dm-warn-soft, #fffbeb); }
+.dm-inbound-step { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--dm-line-soft); }
+.dm-inbound-step > header { display: flex; align-items: center; gap: 7px; }
+.dm-inbound-step > header > b { width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; border-radius: 999px; color: var(--dm-muted); background: var(--dm-surface-soft); border: 1px solid var(--dm-line); }
+.dm-inbound-step > header > span { font-size: 12px; font-weight: 600; color: var(--dm-ink); }
+.dm-inbound-kv { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dm-muted); min-width: 0; }
+.dm-inbound-kv > code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dm-ink); background: var(--dm-surface-soft); border: 1px solid var(--dm-line-soft); border-radius: var(--dm-radius-sm); padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-inbound-kv > em { font-style: normal; font-size: 11px; font-weight: 600; margin-left: auto; white-space: nowrap; }
+.dm-inbound-kv > em.is-ok { color: var(--dm-ok); }
+.dm-inbound-kv > em.is-missing { color: var(--dm-warn, #d97706); }
+.dm-inbound-endpoint { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dm-inbound-endpoint > code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 700; color: var(--dm-muted); border: 1px solid var(--dm-line); border-radius: var(--dm-radius-sm); padding: 3px 6px; }
+.dm-inbound-endpoint > input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--dm-ink); background: var(--dm-surface-soft); border: 1px solid var(--dm-line); border-radius: var(--dm-radius-sm); padding: 5px 8px; }
+.dm-inbound-endpoint > button { flex-shrink: 0; }
+.dm-inbound-help { margin: 0; font-size: 12px; line-height: 1.45; color: var(--dm-muted); }
+.dm-inbound-body textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; min-height: 120px; resize: vertical; }
+.dm-inbound-example > summary { font-size: 12px; color: var(--dm-muted); cursor: pointer; user-select: none; }
+.dm-inbound-example > summary:hover { color: var(--dm-ink); }
+.dm-inbound-example > textarea { width: 100%; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.5; color: var(--dm-ink); background: var(--dm-surface-soft); border: 1px solid var(--dm-line-soft); border-radius: var(--dm-radius-sm); padding: 8px; resize: vertical; }

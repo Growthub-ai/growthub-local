@@ -2226,99 +2226,122 @@ export default function WorkflowSurface() {
                       const lastKindAgrees = String(sandboxRow?.lastScheduledRunTriggerKind || "").trim() === meta.triggerKind;
                       const verified = bound && lastKindAgrees && lastStatus.startsWith("2") && String(sandboxRow?.lastScheduledRunNodesCompleted || "").trim() !== "false";
                       const lastFailed = bound && lastKindAgrees && Boolean(lastStatus) && !lastStatus.startsWith("2");
+                      // One state pill instead of a metadata list — everything
+                      // else in the panel is a numbered step of the journey:
+                      // connect → bind → test (real invocation, whole blast
+                      // radius) → go live (existing publish proof gate).
+                      const state = !bound
+                        ? { label: "Not bound", tone: "muted" }
+                        : sandboxRow?.schedulerPaused
+                          ? { label: "Paused", tone: "warn" }
+                          : verified
+                            ? { label: "Verified 200", tone: "ok" }
+                            : lastFailed
+                              ? { label: "Last run failed", tone: "bad" }
+                              : { label: "Bound — not verified", tone: "warn" };
                       return (
-                        <div className="dm-trigger-schedule-config">
-                          <span className="dm-field-label">{meta.label} trigger</span>
-                          <dl className="dm-workflow-schedule-state">
-                            <div>
-                              <dt>Status</dt>
-                              <dd>{bound ? (sandboxRow?.schedulerPaused ? "paused" : verified ? "verified 200" : lastFailed ? "last run failed" : "bound — no receipt yet") : "not bound"}</dd>
+                        <div className="dm-trigger-schedule-config dm-inbound-config">
+                          <div className="dm-inbound-head">
+                            <span className="dm-field-label">{meta.label} trigger</span>
+                            <span className={`dm-inbound-state is-${state.tone}`}>{state.label}</span>
+                          </div>
+
+                          <section className="dm-inbound-step">
+                            <header><b>1</b><span>Connect</span></header>
+                            <div className="dm-inbound-kv">
+                              <span>{inputMode === "webhook" ? "Signing secret" : "Invoke token"}</span>
+                              <code>{envRef}</code>
+                              <em className={secretConfigured ? "is-ok" : "is-missing"}>{secretConfigured ? "Configured" : "Not set"}</em>
                             </div>
-                            {bound && sandboxRow?.scheduleId ? (
-                              <div>
-                                <dt>Binding</dt>
-                                <dd>{sandboxRow.scheduleId}</dd>
-                              </div>
+                            {!secretConfigured && envRef ? (
+                              <p className="dm-inbound-help">Set {envRef} in the workspace environment, then bind. The value stays server-side.</p>
                             ) : null}
-                            {bound && sandboxRow?.schedulerDestination ? (
-                              <div>
-                                <dt>Destination</dt>
-                                <dd>{sandboxRow.schedulerDestination}</dd>
-                              </div>
-                            ) : null}
-                            <div>
-                              <dt>Auth</dt>
-                              <dd>{inputMode === "webhook" ? "v1 HMAC — x-growthub-signature + x-growthub-timestamp (±300s)" : "Bearer — authorization or x-growthub-api-key"}</dd>
-                            </div>
-                            {envRef ? (
-                              <div>
-                                <dt>{inputMode === "webhook" ? "Signing secret" : "Invoke token"}</dt>
-                                <dd>{envRef} — {secretConfigured ? "configured" : "not configured"} (env ref; value stays server-side)</dd>
-                              </div>
-                            ) : null}
-                          </dl>
-                          {bound && lastStatus ? (
-                            <div className="dm-workflow-schedule-last-run">
-                              <span>Last run</span>
-                              <strong>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</strong>
-                            </div>
-                          ) : null}
-                          {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
-                          {!bound ? (
-                            <button
-                              type="button"
-                              className="dm-btn-outline dm-workflow-schedule-submit"
-                              disabled={saving || !secretConfigured}
-                              onClick={() => submitInboundBinding(inputMode)}
-                            >
-                              {saving ? "Binding..." : `Bind ${meta.label} trigger`}
-                            </button>
-                          ) : (
-                            <>
-                              <label className="dm-orchestration-config__field">
-                                <span>Test request values (JSON)</span>
+                          </section>
+
+                          <section className="dm-inbound-step">
+                            <header><b>2</b><span>{bound ? "Endpoint" : "Bind"}</span></header>
+                            {bound ? (
+                              <>
+                                <div className="dm-inbound-endpoint">
+                                  <code>POST</code>
+                                  <input readOnly value={sandboxRow?.schedulerDestination || ""} onFocus={(e) => e.target.select()} spellCheck={false} />
+                                  <button type="button" className="dm-btn-outline" onClick={() => copyInboundExample(inputMode, meta)}>
+                                    {inboundExampleCopied ? "Copied" : "Copy request"}
+                                  </button>
+                                </div>
+                                <p className="dm-inbound-help">{inputMode === "webhook" ? "Auth: x-growthub-signature + x-growthub-timestamp (v1 HMAC over timestamp.body)." : "Auth: Authorization: Bearer <invoke token>."}</p>
+                                <details className="dm-inbound-example">
+                                  <summary>Full example request</summary>
+                                  <textarea
+                                    rows={7}
+                                    readOnly
+                                    value={buildInboundInvocationExample(inputMode, meta)}
+                                    spellCheck={false}
+                                    onFocus={(e) => e.target.select()}
+                                  />
+                                  {inputMode === "api-request" ? (
+                                    <p className="dm-inbound-help">Identical bodies within ~10 minutes are acknowledged as duplicates without re-executing — send an x-growthub-idempotency-key header to control retry identity.</p>
+                                  ) : null}
+                                </details>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="dm-btn-outline dm-workflow-schedule-submit"
+                                  disabled={saving || !secretConfigured}
+                                  onClick={() => submitInboundBinding(inputMode)}
+                                >
+                                  {saving ? "Binding..." : `Bind ${meta.label} trigger`}
+                                </button>
+                                <p className="dm-inbound-help">One governed write — flips this workflow serverless and opens its endpoint.</p>
+                              </>
+                            )}
+                          </section>
+
+                          {bound ? (
+                            <section className="dm-inbound-step">
+                              <header><b>3</b><span>Test</span></header>
+                              <label className="dm-orchestration-config__field dm-inbound-body">
+                                <span>Request body (JSON)</span>
                                 <textarea
-                                  rows={5}
+                                  rows={7}
                                   value={inboundTestValuesText != null ? inboundTestValuesText : JSON.stringify(deriveInboundTestSeed(), null, 2)}
                                   onChange={(e) => setInboundTestValuesText(e.target.value)}
                                   spellCheck={false}
                                 />
-                                <small className="dm-run-setup__help">Seeded from the input node&apos;s sample payload — the same contract the readiness scan checks downstream nodes against. Sent as the real {meta.label.toLowerCase()} request body.</small>
                               </label>
+                              <p className="dm-inbound-help">Seeded from the input node&apos;s sample payload. Sent as the real {meta.label.toLowerCase()} request — every downstream node in this workflow runs.</p>
                               <button
                                 type="button"
                                 className="dm-btn-outline dm-workflow-schedule-submit"
                                 disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
                                 onClick={() => handleInboundTestClick(inputMode)}
                               >
-                                {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with inputs..." : "Run test invocation"}
+                                {saving ? "Sending..." : runInputSchema.requiresInput ? "Send test request with inputs..." : "Send test request"}
                               </button>
-                              <label className="dm-orchestration-config__field">
-                                <span>Call it from your system</span>
-                                <textarea
-                                  rows={7}
-                                  readOnly
-                                  value={buildInboundInvocationExample(inputMode, meta)}
-                                  spellCheck={false}
-                                  onFocus={(e) => e.target.select()}
-                                />
-                                <small className="dm-run-setup__help">The complete v1 wire contract for this binding: destination, auth header{inputMode === "webhook" ? "s (signature is HMAC-SHA256 over `timestamp.body` with the signing secret)" : ""}, and the invoked-run envelope carrying your run inputs.{inputMode === "api-request" ? " Identical bodies within ~10 minutes are acknowledged as duplicates without re-executing — send an x-growthub-idempotency-key header to control retry identity." : ""}</small>
-                              </label>
-                              <button
-                                type="button"
-                                className="dm-btn-outline"
-                                onClick={() => copyInboundExample(inputMode, meta)}
-                              >
-                                {inboundExampleCopied ? "Copied" : "Copy example request"}
-                              </button>
-                            </>
-                          )}
-                          {!secretConfigured && envRef ? (
-                            <p className="dm-cockpit-step-hint">Set {envRef} in the workspace environment (deployment env or .env.local), then bind — the {meta.label.toLowerCase()} endpoint can only verify calls once the ref resolves.</p>
+                              {lastStatus ? (
+                                <div className="dm-workflow-schedule-last-run">
+                                  <span>Last run</span>
+                                  <strong>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</strong>
+                                </div>
+                              ) : null}
+                            </section>
                           ) : null}
-                          {bound && !verified && !lastFailed ? (
-                            <p className="dm-cockpit-step-hint">Run a test invocation with real values — publish requires a verified 200 with every downstream node completed.</p>
+
+                          {bound ? (
+                            <section className="dm-inbound-step">
+                              <header><b>4</b><span>Go live</span></header>
+                              <p className="dm-inbound-help">
+                                {verified
+                                  ? "Verified — publish is unlocked for this method."
+                                  : "Publish unlocks after a verified 200 with every downstream node completed."}
+                              </p>
+                            </section>
                           ) : null}
+
+                          {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
+
                           {bound ? (
                             <div className="dm-workflow-schedule-actions">
                               <button
