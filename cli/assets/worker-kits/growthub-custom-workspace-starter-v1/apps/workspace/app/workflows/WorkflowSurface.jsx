@@ -1438,8 +1438,8 @@ export default function WorkflowSurface() {
   // returned config verbatim and never claim bound unless the server
   // confirmed the persist.
   const INBOUND_METHOD_META = {
-    webhook: { productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook" },
-    "api-request": { productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request" },
+    webhook: { productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook", secretEnv: "GROWTHUB_WEBHOOK_SIGNING_SECRET" },
+    "api-request": { productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request", secretEnv: "GROWTHUB_API_INVOKE_TOKEN" },
   };
 
   async function submitInboundBinding(inputMode) {
@@ -1935,8 +1935,8 @@ export default function WorkflowSurface() {
                     readinessFlag={selectedNodeId ? readinessFlags[selectedNodeId] : null}
                     serverlessScheduleOptionAvailable={Boolean(addOnsState.qstashWorkflow || selectedSchedulerRegistryId || schedulerRegistryRows.length)}
                     serverlessScheduleAvailable={remoteScheduleVerified}
-                    webhookTriggerAvailable={addOnsState.hasWebhookTriggerCapability}
-                    apiTriggerAvailable={addOnsState.hasApiTriggerCapability}
+                    webhookTriggerAvailable
+                    apiTriggerAvailable
                     inputScheduleControls={selectedNode?.type === "input" && selectedNode?.config?.inputMode === "serverless-schedule" ? (
                       <div className="dm-trigger-schedule-config">
                         <span className="dm-field-label">Serverless schedule</span>
@@ -2081,7 +2081,7 @@ export default function WorkflowSurface() {
                           <dl className="dm-workflow-schedule-state">
                             <div>
                               <dt>Trigger product</dt>
-                              <dd>{capabilityRow ? capabilityRow.integrationId : "Install trigger first"}</dd>
+                              <dd>{capabilityRow ? capabilityRow.integrationId : `${meta.productId} (built-in)`}</dd>
                             </div>
                             <div>
                               <dt>Status</dt>
@@ -2111,7 +2111,7 @@ export default function WorkflowSurface() {
                             <button
                               type="button"
                               className="dm-btn-outline dm-workflow-schedule-submit"
-                              disabled={saving || !capabilityRow}
+                              disabled={saving}
                               onClick={() => submitInboundBinding(inputMode)}
                             >
                               {saving ? "Binding..." : `Bind ${meta.label} trigger`}
@@ -2126,8 +2126,8 @@ export default function WorkflowSurface() {
                               {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with values..." : "Run test invocation"}
                             </button>
                           )}
-                          {!capabilityRow ? (
-                            <p className="dm-cockpit-step-hint">Install + sync the {meta.label} trigger in Workspace Add-ons first, then bind it here.</p>
+                          {!capabilityRow && !bound ? (
+                            <p className="dm-cockpit-step-hint">Built-in input method — Bind verifies {meta.secretEnv} resolves in this runtime and records the capability in one governed write.</p>
                           ) : null}
                           {bound && !verified && !lastFailed ? (
                             <p className="dm-cockpit-step-hint">Run a test invocation with real values — publish requires a verified 200 with every downstream node completed.</p>

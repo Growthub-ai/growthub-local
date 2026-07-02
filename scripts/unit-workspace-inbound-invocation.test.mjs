@@ -247,13 +247,25 @@ test("runInputMethodInstall: capability + env + readiness gates pass → ONE bin
   assert.ok(published, "binding receipt published");
 });
 
-test("runInputMethodInstall: unverified product row → 409 capability gate (mirror of the scheduler gate)", async () => {
+test("runInputMethodInstall: built-in method binds from a BARE workspace — env proof IS the capability, recorded in the same write", async () => {
+  // Webhook / API request are first-class input methods, not marketplace
+  // add-ons: no prior install/sync step exists. Binding from the canvas is the
+  // first-run path — the env gate proves the capability and the verified
+  // registry record lands in the same governed config write as the bind.
   const h = makeHarness();
   const store = h.getStore();
-  store.dataModel.objects[0].rows[0].syncStatus = "missing-env";
+  store.dataModel.objects = store.dataModel.objects.filter((o) => o.objectType !== "api-registry");
   h.setStore(store);
   const res = await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
-  assert.equal(res.status, 409);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(h.calls.length, 0, "still no remote infrastructure");
+  const registry = h.getStore().dataModel.objects.find((o) => o.objectType === "api-registry" || o.id === "api-registry");
+  const capRow = (registry?.rows || []).find((r) => String(r.integrationId) === "growthub-webhook-trigger");
+  assert.ok(capRow, "capability record written by the bind itself");
+  assert.equal(capRow.syncStatus, "verified", "env-resolved capability is verified — same proof rule as every product row");
+  const row = h.getStore().dataModel.objects.find((o) => o.id === "sandbox-workflows").rows[0];
+  assert.equal(row.runLocality, "serverless");
+  assert.equal(row.schedulerTriggerKind, "inbound-webhook");
 });
 
 test("runInputMethodInstall: missing signing secret → 422 env gate", async () => {

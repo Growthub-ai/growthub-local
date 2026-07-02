@@ -20,6 +20,7 @@ import {
   getMarketplaceProduct,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
+  withMarketplaceProductRegistry,
   withWorkflowServerlessBind,
   withSandboxScheduledRunProof,
   readTriggerScheduleBinding,
@@ -488,20 +489,23 @@ async function runInputMethodInstall(deps, { providerId, body = {}, requestOrigi
   }
   const triggerKind = triggerKindForLane(product.executionLane);
 
-  const config = await readConfig();
-  // Capability gate: product must be installed + verified (env-ref probe) first.
-  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
-  const installedRow = objects.flatMap((o) => (isApiRegistryObject(o) ? (o.rows || []) : [])).find((r) => clean(r?.integrationId) === product.integrationId);
-  if (!installedRow || clean(installedRow.syncStatus) !== "verified") {
-    return err(409, `${product.label} must be installed and verified before binding`, { productId: product.productId, nextActions: [`Sync ${product.label} from Workspace Add-ons, then create the binding.`] });
-  }
-
-  // Env gate: the signing secret / invoke token must resolve in this runtime —
-  // otherwise the destination route could never verify an invocation.
+  // Capability gate: for a BUILT-IN input method the capability IS the env
+  // proof — the signing secret / invoke token must resolve in this runtime,
+  // otherwise the destination route could never verify an invocation. There is
+  // no marketplace install step: binding from the canvas is the first-class
+  // path, and the verified capability record is written as part of THIS bind's
+  // one config write (so the cockpit, readiness scans, and the trigger panel
+  // read the same governed registry state as every other capability).
   const requiredEnv = resolveRequiredEnv(product.requiredEnv, env);
   if (!requiredEnv.ok) {
     return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: requiredEnv.missing });
   }
+
+  const config = withMarketplaceProductRegistry(await readConfig(), {
+    providerId: provider.providerId,
+    productId: product.productId,
+    authReady: true,
+  });
 
   const objectId = clean(body.objectId);
   const rowId = clean(body.rowId || body.name);
