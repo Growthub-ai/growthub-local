@@ -538,3 +538,51 @@ test("cockpit: a bound webhook workflow surfaces with the Webhook method chip an
   assert.ok(["scheduled", "drifted"].includes(card.state), `bound state is scheduled/drifted (got ${card.state})`);
   assert.ok(vm.filters.some((f) => f.id === "webhook"), "Method: Webhook filter present");
 });
+
+/* ================= canvas UI release contract ================= */
+// Source-contract tests (same style as unit-orchestration-canvas-ui.test.mjs):
+// the no-code canvas path must exercise the full "real 200 with test values,
+// visible proof, safe publish" journey without hidden operator knowledge.
+
+import { readFileSync } from "node:fs";
+
+const workflowSurfacePath = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/workflows/WorkflowSurface.jsx",
+);
+const workflowSurfaceSource = readFileSync(workflowSurfacePath, "utf8");
+
+test("canvas: inbound test invocation forwards user-entered runInputs through the run-setup path", () => {
+  // The invocation function accepts and forwards the canonical envelope.
+  assert.match(workflowSurfaceSource, /async function runInboundTestInvocation\(inputMode, runInputs = null\)/);
+  assert.match(workflowSurfaceSource, /if \(runInputs && typeof runInputs === "object" && !Array\.isArray\(runInputs\)\) \{\s*body\.runInputs = runInputs;/);
+  // Workflows with a required input schema collect values via RunSetupPanel
+  // before the real signed/bearer invocation — never a blind, value-less run.
+  assert.match(workflowSurfaceSource, /function handleInboundTestClick\(inputMode\)/);
+  assert.match(workflowSurfaceSource, /setRunSetupTarget\(inputMode\);\s*setRunSetupOpen\(true\);/);
+  assert.match(workflowSurfaceSource, /onClick=\{\(\) => handleInboundTestClick\(inputMode\)\}/);
+  // Submitted values are routed to the inbound invocation, not the sandbox runner.
+  assert.match(workflowSurfaceSource, /if \(runSetupTarget === "webhook" \|\| runSetupTarget === "api-request"\) \{\s*await runInboundTestInvocation\(runSetupTarget, runInputs\);/);
+});
+
+test("canvas: post-invocation proof rehydration reads the { workspaceConfig } response shape", () => {
+  // The rehydration after a successful inbound test must use the same
+  // /api/workspace response shape as load()/fetchWorkspaceConfigOnce so the
+  // panel shows the verified 200 without a manual refresh.
+  const invocationFn = workflowSurfaceSource.slice(
+    workflowSurfaceSource.indexOf("async function runInboundTestInvocation"),
+    workflowSurfaceSource.indexOf("async function controlInstalledScheduler"),
+  );
+  assert.match(invocationFn, /await fetchWorkspaceConfigOnce\(\);/);
+  assert.doesNotMatch(invocationFn, /nextConfig\.dataModel/, "must not read the raw config shape that /api/workspace never returns");
+  // fetchWorkspaceConfigOnce itself hydrates from payload.workspaceConfig.
+  assert.match(workflowSurfaceSource, /async function fetchWorkspaceConfigOnce\(\) \{[\s\S]*?payload\.workspaceConfig\) setWorkspaceConfig\(payload\.workspaceConfig\);/);
+});
+
+test("canvas: selecting Webhook / API Request activates the same pre-bind readiness scan as Serverless Schedule", () => {
+  assert.match(workflowSurfaceSource, /const inputServerlessSelected = \["serverless-schedule", "webhook", "api-request"\]\.includes\(selectedInputMode\);/);
+  // The expected registry fed to the scan follows the selected inbound method.
+  assert.match(workflowSurfaceSource, /const expectedReadinessRegistryId = selectedInputMode === "webhook"\s*\?\s*String\(addOnsState\.webhookTrigger\?\.integrationId \|\| ""\)\.trim\(\)/);
+  assert.match(workflowSurfaceSource, /expected: \{ schedulerRegistryId: expectedReadinessRegistryId, scheduleId:/);
+});

@@ -575,6 +575,10 @@ export default function WorkflowSurface() {
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
+  // Where collected run inputs go: "sandbox" for the draft test runner, or an
+  // inbound input mode ("webhook" / "api-request") for a real test invocation
+  // through the governed destination door.
+  const [runSetupTarget, setRunSetupTarget] = useState("sandbox");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleCadence, setScheduleCadence] = useState("daily");
@@ -1040,6 +1044,7 @@ export default function WorkflowSurface() {
 
   function handleTestClick() {
     if (runInputSchema.requiresInput) {
+      setRunSetupTarget("sandbox");
       setRunSetupOpen(true);
       setSelectedNodeId("");
       setAddTarget(null);
@@ -1048,8 +1053,26 @@ export default function WorkflowSurface() {
     runSandbox();
   }
 
+  function handleInboundTestClick(inputMode) {
+    // Workflows with a required run-input schema collect user test values
+    // through the same RunSetupPanel path as the sandbox runner — the values
+    // then ride the real signed/bearer invocation through the destination
+    // door, which validates them before any node runs.
+    if (runInputSchema.requiresInput) {
+      setRunSetupTarget(inputMode);
+      setRunSetupOpen(true);
+      setAddTarget(null);
+      return;
+    }
+    runInboundTestInvocation(inputMode);
+  }
+
   async function handleRunWithInputs(runInputs) {
     setRunSetupOpen(false);
+    if (runSetupTarget === "webhook" || runSetupTarget === "api-request") {
+      await runInboundTestInvocation(runSetupTarget, runInputs);
+      return;
+    }
     await runSandbox({ runInputs });
   }
 
@@ -1228,17 +1251,28 @@ export default function WorkflowSurface() {
   // never values). It runs once the input trigger is in (or moving into)
   // Serverless Schedule, and feeds the ultrathin orange node border + the
   // light-orange field/delta-tag fills (the color is the only guidance added).
-  const inputServerlessSelected = String(
+  const selectedInputMode = String(
     (Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes : [])
       .find((n) => n?.type === "input" || n?.id === "input" || n?.type === "data-trigger")?.config?.inputMode || "",
-  ).trim() === "serverless-schedule";
+  ).trim();
+  // Webhook and API Request are serverless invocation methods just like the
+  // schedule — selecting any of the three activates the same pre-bind
+  // readiness/delta field highlighting before the user hits Bind.
+  const inputServerlessSelected = ["serverless-schedule", "webhook", "api-request"].includes(selectedInputMode);
+  // The expected registry for the scan follows the selected method: the bound
+  // inbound capability row for webhook/api-request, the scheduler row otherwise.
+  const expectedReadinessRegistryId = selectedInputMode === "webhook"
+    ? String(addOnsState.webhookTrigger?.integrationId || "").trim()
+    : selectedInputMode === "api-request"
+      ? String(addOnsState.apiTrigger?.integrationId || "").trim()
+      : selectedSchedulerRegistryId;
   const serverlessReadiness = sandboxRow && (isServerlessWorkflow || inputServerlessSelected)
     ? scanServerlessReadiness({
         row: sandboxRow,
         workspaceConfig: workspaceConfig || {},
         configuredEnvRefs: serverlessSignals.configuredEnvRefs,
         phase: isServerlessWorkflow && String(sandboxRow?.scheduleId || "").trim() ? "bound" : "pre-bind",
-        expected: { schedulerRegistryId: selectedSchedulerRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
+        expected: { schedulerRegistryId: expectedReadinessRegistryId, scheduleId: String(sandboxRow?.scheduleId || "").trim() },
       })
     : null;
   const readinessFlags = serverlessReadiness ? readinessFieldFlags(serverlessReadiness) : {};
@@ -1476,24 +1510,31 @@ export default function WorkflowSurface() {
     }
   }
 
-  async function runInboundTestInvocation(inputMode) {
+  async function runInboundTestInvocation(inputMode, runInputs = null) {
     const meta = INBOUND_METHOD_META[inputMode];
     if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId) return false;
     setScheduleError("");
     setSaving(true);
     setSaveMessage("");
     try {
+      const body = {
+        action: "run",
+        productId: meta.productId,
+        objectId,
+        rowId,
+        version: String(sandboxRow?.version || "v1"),
+        workspaceId: workspaceConfig?.id || "workspace",
+      };
+      // User-entered test values ride the canonical run-input envelope; the
+      // destination door still validates them against the workflow's own
+      // input schema before any node runs.
+      if (runInputs && typeof runInputs === "object" && !Array.isArray(runInputs)) {
+        body.runInputs = runInputs;
+      }
       const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "run",
-          productId: meta.productId,
-          objectId,
-          rowId,
-          version: String(sandboxRow?.version || "v1"),
-          workspaceId: workspaceConfig?.id || "workspace",
-        }),
+        body: JSON.stringify(body),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
@@ -1503,9 +1544,7 @@ export default function WorkflowSurface() {
       // The destination door wrote the durable last-run proof; re-hydrate so
       // the panel and cockpit show the verified 200 without a manual refresh.
       try {
-        const hydrated = await fetch("/api/workspace", { cache: "no-store" });
-        const nextConfig = await hydrated.json().catch(() => null);
-        if (nextConfig && nextConfig.dataModel) setWorkspaceConfig(nextConfig);
+        await fetchWorkspaceConfigOnce();
       } catch {
         // hydration is best-effort; the proof is already durable server-side
       }
@@ -1822,11 +1861,11 @@ export default function WorkflowSurface() {
                       <X size={14} />
                     </button>
                     <span>Run setup</span>
-                    <em>Manual inputs</em>
+                    <em>{runSetupTarget === "webhook" ? "Webhook test values" : runSetupTarget === "api-request" ? "API request test values" : "Manual inputs"}</em>
                   </div>
                   <RunSetupPanel
                     schema={runInputSchema}
-                    running={running}
+                    running={running || saving}
                     onSubmit={handleRunWithInputs}
                     onCancel={() => setRunSetupOpen(false)}
                   />
@@ -2082,9 +2121,9 @@ export default function WorkflowSurface() {
                               type="button"
                               className="dm-btn-outline dm-workflow-schedule-submit"
                               disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
-                              onClick={() => runInboundTestInvocation(inputMode)}
+                              onClick={() => handleInboundTestClick(inputMode)}
                             >
-                              {saving ? "Invoking..." : "Run test invocation"}
+                              {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with values..." : "Run test invocation"}
                             </button>
                           )}
                           {!capabilityRow ? (
