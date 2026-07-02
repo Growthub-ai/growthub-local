@@ -4,7 +4,7 @@ import { readWorkspaceConfig, readWorkspaceSourceRecords, writeWorkspaceConfig }
 import { sandboxRunSourceId } from "@/lib/workspace-data-model";
 import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
-import { rowHasSuccessfulServerlessBindingProof } from "@/lib/workspace-add-ons";
+import { rowHasSuccessfulServerlessBindingProof, syncTriggerNodeForSchedule } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -346,8 +346,25 @@ async function POST(request) {
     // This is the same value sandbox-run stamped as the record's draftSha256,
     // so the lineage record and the publish delta are directly comparable.
     const publishedSha256 = expectedSha256;
+    // A serverless-bound row's trigger binding is ROW authority — promoting
+    // draft bytes must not sever it. Re-sync the trigger node into the
+    // promoted live graph from the row's own binding fields (the exact writer
+    // the bind uses); drafts themselves are never mutated by binds.
+    const promotedLive = String(row.runLocality || "").trim() === "serverless" && String(row.scheduleId || "").trim()
+        ? syncTriggerNodeForSchedule(draft, {
+            triggerKind: row.schedulerTriggerKind,
+            schedulerRegistryId: row.schedulerRegistryId,
+            scheduleId: row.scheduleId,
+            cron: row.schedulerCron,
+            schedulerProviderId: row.schedulerProviderId,
+            schedulerProductId: row.schedulerProductId,
+            destinationUrl: row.schedulerDestination,
+            callbackUrl: row.schedulerCallbackUrl,
+            triggerInput: row.schedulerTriggerInput
+        }).value
+        : draft;
     const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
-        [liveField]: draft,
+        [liveField]: promotedLive,
         [draftField]: "",
         version: nextVersion,
         lifecycleStatus: "live",
@@ -451,3 +468,5 @@ async function POST(request) {
         });
     }
 }
+
+export { POST };

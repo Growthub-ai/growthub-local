@@ -510,6 +510,54 @@ function readTriggerScheduleBinding(value) {
  *   - graph identity: the tested config or the live graph equals the exact
  *     draft bytes being promoted (proof freshness against this version).
  */
+// Graph-content equality for proof freshness. The trigger sync, the canvas
+// serializer, and hand-authored seeds each emit different JSON formatting,
+// and the canvas injects derived `sandboxRecordRef` identity metadata — none
+// of which changes what the user authored. The bind additionally OWNS the
+// trigger-binding metadata it writes into the LIVE graph only (the draft is
+// NEVER mutated by a bind): `trigger`/`triggerKind`/`schedule`/`enabled` on
+// the trigger node and `writeLastResponse` on tool-result nodes. Those exact
+// keys are excluded from content comparison — binding agreement is enforced
+// separately and explicitly by the proof gate's binding checks. Everything
+// else is user content: any node/config/edge change breaks freshness.
+// Non-parseable values fall back to exact trimmed-byte equality.
+const BIND_OWNED_TRIGGER_CONFIG_KEYS = ["trigger", "triggerKind", "schedule", "enabled"];
+function normalizeGraphForComparison(value) {
+  const graph = parseGraphValue(value);
+  if (!graph) return String(value == null ? "" : value).trim();
+  const stripped = {
+    ...graph,
+    nodes: (Array.isArray(graph.nodes) ? graph.nodes : []).map((node) => {
+      if (!node || typeof node !== "object") return node;
+      const config = { ...(node.config || {}) };
+      const isTrigger = node.type === "data-trigger" || node.type === "input" || node.id === "input";
+      if (isTrigger) for (const key of BIND_OWNED_TRIGGER_CONFIG_KEYS) delete config[key];
+      if (node.type === "tool-result") delete config.writeLastResponse;
+      return { ...node, config };
+    }),
+  };
+  const stable = (v) => {
+    if (Array.isArray(v)) return v.map(stable);
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const key of Object.keys(v).sort()) {
+        if (key === "sandboxRecordRef") continue;
+        out[key] = stable(v[key]);
+      }
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(stable(stripped));
+}
+
+function orchestrationGraphContentEquals(a, b) {
+  const left = String(a == null ? "" : a).trim();
+  const right = String(b == null ? "" : b).trim();
+  if (!left || !right) return left === right;
+  return normalizeGraphForComparison(left) === normalizeGraphForComparison(right);
+}
+
 function rowHasSuccessfulServerlessBindingProof(row, draft) {
   const runLocality = String(row?.runLocality || "").trim().toLowerCase();
   const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
@@ -539,7 +587,7 @@ function rowHasSuccessfulServerlessBindingProof(row, draft) {
     && binding?.schedulerRegistryId === schedulerRegistryId
     && methodAgrees
     && invocationSucceeded
-    && (testedConfig === draftGraph || liveGraph === draftGraph);
+    && (orchestrationGraphContentEquals(testedConfig, draftGraph) || orchestrationGraphContentEquals(liveGraph, draftGraph));
 }
 
 const SANDBOX_SCHEDULE_CLEAR_PATCH = {
@@ -1129,6 +1177,41 @@ function findWorkspaceAddOnRows(workspaceConfig) {
   return rows;
 }
 
+// Marketplace-agnostic inbound input methods — ANY installed + verified
+// marketplace product whose executionLane is an inbound binding lane surfaces
+// as a canvas input method, the exact mirror of the provider-agnostic custom
+// scheduler registry rows. The packaged growthub webhook/API products are
+// simply the first two such products; a third-party plugin that declares the
+// same lane grammar (executionLane + requiredEnv + verified registry row)
+// joins with zero canvas changes. Returns one entry per installed method:
+//   { inputMode, lane, triggerKind, providerId, productId, integrationId, label, row }
+function resolveInboundMethodProducts(workspaceConfig) {
+  const installed = findInstalledWorkspaceAddOns(workspaceConfig);
+  const products = listMarketplaceProducts();
+  const methods = [];
+  for (const row of installed) {
+    const product = products.find((item) => item.productId === row.productId);
+    const lane = String(product?.executionLane || "").trim();
+    const inputMode = lane !== "serverless-scheduler" ? INPUT_MODE_BY_TRIGGER_KIND[lane] || "" : "";
+    if (!inputMode) continue;
+    methods.push({
+      inputMode,
+      lane,
+      // Inbound binding trigger kinds ARE the lanes (one trigger grammar).
+      triggerKind: lane,
+      providerId: String(product.providerId || "").trim(),
+      productId: row.productId,
+      integrationId: String(row.integrationId || "").trim(),
+      label: String(product.shortLabel || product.label || row.productId).trim(),
+      // The env refs the caller-facing panel names (never values) — e.g. the
+      // signing secret / invoke token slug the external system must hold.
+      requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv : [],
+      row,
+    });
+  }
+  return methods;
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -1138,9 +1221,13 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   // created on bind and stored on the owning sandbox row, not here.
   const qstashScheduler = qstashWorkflow;
   // Inbound input-method capabilities — same proof rule (installed + verified
-  // registry row) that gates the scheduler bind in the canvas.
-  const webhookTrigger = installed.find((row) => row.productId === "growthub-webhook-trigger") || null;
-  const apiTrigger = installed.find((row) => row.productId === "growthub-api-trigger") || null;
+  // registry row) that gates the scheduler bind in the canvas, resolved by
+  // execution LANE (marketplace-agnostic), not by hardcoded product id.
+  const inboundMethods = resolveInboundMethodProducts(workspaceConfig);
+  const webhookMethod = inboundMethods.find((method) => method.inputMode === "webhook") || null;
+  const apiMethod = inboundMethods.find((method) => method.inputMode === "api-request") || null;
+  const webhookTrigger = webhookMethod?.row || null;
+  const apiTrigger = apiMethod?.row || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -1150,6 +1237,9 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     qstashWorkflow,
     qstashScheduler,
     hasQstashSchedulerCapability: Boolean(qstashWorkflow),
+    inboundMethods,
+    webhookMethod,
+    apiMethod,
     webhookTrigger,
     hasWebhookTriggerCapability: Boolean(webhookTrigger),
     apiTrigger,
@@ -1171,6 +1261,7 @@ export {
   UPSTASH_QSTASH_INTEGRATION_ID,
   UPSTASH_REGION_OPTIONS,
   deriveWorkspaceAddOnsState,
+  resolveInboundMethodProducts,
   findMarketplaceProviderRow,
   findUpstashProviderRow,
   findInstalledWorkspaceAddOns,
@@ -1186,6 +1277,7 @@ export {
   syncTriggerNodeForSchedule,
   readTriggerScheduleBinding,
   rowHasSuccessfulServerlessBindingProof,
+  orchestrationGraphContentEquals,
   liveGraphField,
   listAllProviderProductReadiness,
   listMarketplaceProducts,

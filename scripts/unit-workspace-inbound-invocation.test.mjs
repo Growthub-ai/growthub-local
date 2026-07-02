@@ -247,13 +247,23 @@ test("runInputMethodInstall: capability + env + readiness gates pass → ONE bin
   assert.ok(published, "binding receipt published");
 });
 
-test("runInputMethodInstall: unverified product row → 409 capability gate (mirror of the scheduler gate)", async () => {
+test("runInputMethodInstall: NATIVE capability — no marketplace prerequisite; env probe verifies, row is auto-provisioned lineage", async () => {
+  // Webhook / API request are workspace-native input methods: there is no
+  // external account to install. The resolvable env ref IS the capability;
+  // the registry row is provisioned as lineage in the same governed write.
   const h = makeHarness();
   const store = h.getStore();
-  store.dataModel.objects[0].rows[0].syncStatus = "missing-env";
+  store.dataModel.objects[0].rows = store.dataModel.objects[0].rows.filter(
+    (r) => r.integrationId !== "growthub-webhook-trigger",
+  );
   h.setStore(store);
   const res = await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
-  assert.equal(res.status, 409);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const rows = h.getStore().dataModel.objects.find((o) => o.objectType === "api-registry").rows;
+  const lineage = rows.find((r) => r.integrationId === "growthub-webhook-trigger");
+  assert.ok(lineage, "native capability row auto-provisioned as lineage");
+  assert.equal(lineage.syncStatus, "verified");
+  assert.match(String(lineage.syncProof || ""), /GROWTHUB_WEBHOOK_SIGNING_SECRET/, "proof names the resolved env ref");
 });
 
 test("runInputMethodInstall: missing signing secret → 422 env gate", async () => {
@@ -537,4 +547,163 @@ test("cockpit: a bound webhook workflow surfaces with the Webhook method chip an
   assert.equal(card.provider, "Webhook");
   assert.ok(["scheduled", "drifted"].includes(card.state), `bound state is scheduled/drifted (got ${card.state})`);
   assert.ok(vm.filters.some((f) => f.id === "webhook"), "Method: Webhook filter present");
+});
+
+/* ================= canvas UI release contract ================= */
+// Source-contract tests (same style as unit-orchestration-canvas-ui.test.mjs):
+// the no-code canvas path must exercise the full "real 200 with test values,
+// visible proof, safe publish" journey without hidden operator knowledge.
+
+import { readFileSync } from "node:fs";
+
+const workflowSurfacePath = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/workflows/WorkflowSurface.jsx",
+);
+const workflowSurfaceSource = readFileSync(workflowSurfacePath, "utf8");
+
+test("canvas: inbound test values compose the payload contract with the canonical run-input entry path", () => {
+  // The invocation function accepts and forwards the canonical envelope.
+  assert.match(workflowSurfaceSource, /async function runInboundTestInvocation\(inputMode, runInputs = null\)/);
+  assert.match(workflowSurfaceSource, /if \(runInputs && typeof runInputs === "object" && !Array\.isArray\(runInputs\)\) \{\s*body\.runInputs = runInputs;/);
+  // Request-body values are seeded from samplePayload + schedulerTriggerInput —
+  // the SAME sources the readiness scan's collectAvailableInputKeys derives
+  // the scheduled-input contract from.
+  assert.match(workflowSurfaceSource, /function deriveInboundTestSeed\(\)/);
+  assert.match(workflowSurfaceSource, /merge\(inputNode\?\.config\?\.samplePayload\);\s*merge\(sandboxRow\?\.schedulerTriggerInput\);/);
+  assert.match(workflowSurfaceSource, /JSON\.stringify\(deriveInboundTestSeed\(\), null, 2\)/);
+  // The canonical run-input entry path (RunSetupPanel) is PRESERVED: a
+  // declared run-input schema routes the inbound test through the same panel
+  // as every other lane, and schema values merge OVER the request-body seed.
+  assert.match(workflowSurfaceSource, /setRunSetupTarget\(inputMode\);\s*setRunSetupOpen\(true\);/);
+  assert.match(workflowSurfaceSource, /if \(runSetupTarget === "webhook" \|\| runSetupTarget === "api-request"\) \{/);
+  assert.match(workflowSurfaceSource, /values: \{ \.\.\.bodyValues, \.\.\.\(runInputs\?\.values \|\| \{\}\) \},/);
+  // Workflows with no declared schema invoke directly with the seeded body.
+  assert.match(workflowSurfaceSource, /runInboundTestInvocation\(inputMode, \{ kind: RUN_INPUTS_KIND, source: "manual", values, files: \[\] \}\);/);
+  assert.match(workflowSurfaceSource, /onClick=\{\(\) => handleInboundTestClick\(inputMode\)\}/);
+  // Invalid JSON is a visible UI failure before any request is made.
+  assert.match(workflowSurfaceSource, /setScheduleError\("Test request values must be valid JSON\."\)/);
+});
+
+test("canvas + add-ons: inbound methods are marketplace-agnostic (lane-derived, provider-scoped route)", () => {
+  // Any installed + verified marketplace product on an inbound execution lane
+  // is an input method — the mirror of provider-agnostic custom schedulers.
+  const methods = addOns.resolveInboundMethodProducts({
+    dataModel: { objects: [
+      { id: "api-registry", objectType: "api-registry", rows: [
+        { integrationId: "growthub-webhook-trigger", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+        { integrationId: "growthub-api-trigger", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+        { integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+      ] },
+    ] },
+  });
+  const modes = methods.map((m) => m.inputMode).sort();
+  assert.deepEqual(modes, ["api-request", "webhook"], "scheduler lane is a binding, not an inbound input method");
+  for (const method of methods) {
+    assert.equal(method.triggerKind, method.lane, "one trigger grammar: inbound trigger kinds ARE the lanes");
+    assert.ok(method.providerId, "method carries its marketplace provider for route scoping");
+    assert.ok(method.integrationId && method.row, "method carries the verified capability row");
+  }
+  // Unverified rows never surface as methods (capability proof rule).
+  const unverified = addOns.resolveInboundMethodProducts({
+    dataModel: { objects: [
+      { id: "api-registry", objectType: "api-registry", rows: [
+        { integrationId: "growthub-webhook-trigger", syncStatus: "pending" },
+      ] },
+    ] },
+  });
+  assert.equal(unverified.length, 0);
+  // The canvas derives method meta from this state (with packaged fallback)
+  // and posts to the method's OWN provider route — no hardcoded product ids.
+  assert.match(workflowSurfaceSource, /function inboundMethodMeta\(inputMode\) \{\s*const method = \(addOnsState\.inboundMethods \|\| \[\]\)\.find/);
+  assert.match(workflowSurfaceSource, /\/api\/workspace\/add-ons\/\$\{encodeURIComponent\(meta\?\.providerId \|\| "growthub"\)\}\/schedule/);
+  assert.doesNotMatch(workflowSurfaceSource, /fetch\("\/api\/workspace\/add-ons\/growthub\/schedule"/);
+});
+
+test("canvas: post-invocation proof rehydration reads the { workspaceConfig } response shape", () => {
+  // The rehydration after a successful inbound test must use the same
+  // /api/workspace response shape as load()/fetchWorkspaceConfigOnce so the
+  // panel shows the verified 200 without a manual refresh.
+  const invocationFn = workflowSurfaceSource.slice(
+    workflowSurfaceSource.indexOf("async function runInboundTestInvocation"),
+    workflowSurfaceSource.indexOf("async function controlInstalledScheduler"),
+  );
+  assert.match(invocationFn, /await fetchWorkspaceConfigOnce\(\);/);
+  assert.doesNotMatch(invocationFn, /nextConfig\.dataModel/, "must not read the raw config shape that /api/workspace never returns");
+  // fetchWorkspaceConfigOnce itself hydrates from payload.workspaceConfig.
+  assert.match(workflowSurfaceSource, /async function fetchWorkspaceConfigOnce\(\) \{[\s\S]*?payload\.workspaceConfig\) setWorkspaceConfig\(payload\.workspaceConfig\);/);
+});
+
+test("canvas: selecting Webhook / API Request activates the same pre-bind readiness scan as Serverless Schedule", () => {
+  assert.match(workflowSurfaceSource, /const inputServerlessSelected = \["serverless-schedule", "webhook", "api-request"\]\.includes\(selectedInputMode\);/);
+  // The expected registry fed to the scan follows the selected inbound method.
+  assert.match(workflowSurfaceSource, /const expectedReadinessRegistryId = selectedInputMode === "webhook"\s*\?\s*String\(addOnsState\.webhookTrigger\?\.integrationId \|\| ""\)\.trim\(\)/);
+  assert.match(workflowSurfaceSource, /expected: \{ schedulerRegistryId: expectedReadinessRegistryId, scheduleId:/);
+});
+
+test("proof freshness: graph-content equality is strict on content, indifferent to writer formatting", () => {
+  const graph = { version: 1, provider: "growthub-native", nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }], edges: [] };
+  const pretty = JSON.stringify(graph, null, 2);
+  const compact = JSON.stringify(graph);
+  const withRefs = JSON.stringify({ ...graph, nodes: [{ ...graph.nodes[0], config: { ...graph.nodes[0].config, sandboxRecordRef: "sbx::o::r::input" } }] });
+  const edited = JSON.stringify({ ...graph, nodes: [{ ...graph.nodes[0], config: { inputMode: "api-request" } }] });
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, compact), true, "formatting-only difference is the same content");
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, withRefs), true, "canvas-derived sandboxRecordRef metadata is not a content change");
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, edited), false, "a real config change breaks freshness");
+  assert.equal(addOns.orchestrationGraphContentEquals("", pretty), false, "empty draft never matches");
+  assert.equal(addOns.orchestrationGraphContentEquals("not-json", "not-json"), true, "non-graph values fall back to exact bytes");
+  assert.equal(addOns.orchestrationGraphContentEquals("not-json", "other"), false);
+});
+
+test("bind: NEVER mutates a saved draft; content freshness holds through bind-owned key exclusion", () => {
+  const graphJson = JSON.stringify({ version: 1, provider: "growthub-native", nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }], edges: [] }, null, 2);
+  const config = { id: "ws", dataModel: { objects: [
+    { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
+      { Name: "Flow A", orchestrationConfig: graphJson, orchestrationDraftConfig: graphJson },
+    ] },
+  ] } };
+  const result = addOns.withWorkflowServerlessBind(config, {
+    objectId: "sandbox-workflows", rowId: "Flow A", triggerKind: "inbound-webhook",
+    schedulerRegistryId: "growthub-webhook-trigger", scheduleId: "bind-1",
+    schedulerProviderId: "growthub", schedulerProductId: "growthub-webhook-trigger",
+    destinationUrl: "https://ws.example.com/api/workspace/workflows/growthub",
+  });
+  assert.equal(result.bound, true);
+  const row = result.config.dataModel.objects[0].rows[0];
+  // The bind writes the LIVE graph only — the user's saved draft is untouched.
+  assert.equal(row.orchestrationDraftConfig, graphJson, "bind must NEVER mutate a saved draft");
+  assert.equal(addOns.readTriggerScheduleBinding(row.orchestrationConfig)?.scheduleId, "bind-1");
+  assert.equal(addOns.readTriggerScheduleBinding(row.orchestrationDraftConfig), null, "draft carries no binding");
+  // Content freshness still holds: bind-owned trigger keys (trigger/triggerKind/
+  // schedule/enabled + tool-result writeLastResponse) are excluded from the
+  // comparison — binding agreement is enforced by the proof gate's own checks.
+  assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, row.orchestrationDraftConfig), true,
+    "post-bind live and untouched draft are the same user content");
+  // A real user edit in the draft still breaks freshness.
+  const edited = JSON.parse(row.orchestrationDraftConfig);
+  edited.nodes[0].config.inputMode = "api-request";
+  assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, JSON.stringify(edited)), false,
+    "a real content change still breaks freshness");
+});
+
+test("rate guard: caps NEW invocations per binding per minute; sliding window; per-binding isolation; env-tunable", () => {
+  inbound.resetInboundRateCache();
+  const env = { GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE: "3" };
+  const base = { bindingId: "bind-rate", env };
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S }).limited, false);
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 1 }).limited, false);
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 2 }).limited, false);
+  const blocked = inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 3 });
+  assert.equal(blocked.limited, true, "4th call within the window is limited");
+  assert.equal(blocked.limit, 3);
+  assert.ok(blocked.retryAfterS >= 1, "caller gets an honest retry-after");
+  // The window slides: capacity returns once the oldest sample ages out.
+  assert.equal(inbound.registerInboundRateSample({ ...base, currentTimeS: NOW_S + 61 }).limited, false);
+  // Bindings are isolated — one hot binding cannot starve another.
+  assert.equal(inbound.registerInboundRateSample({ bindingId: "bind-other", env, currentTimeS: NOW_S + 3 }).limited, false);
+  // Deployment default applies when the env knob is absent/invalid.
+  assert.equal(inbound.resolveInboundRateLimit({}), 60);
+  assert.equal(inbound.resolveInboundRateLimit({ GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE: "not-a-number" }), 60);
+  inbound.resetInboundRateCache();
 });

@@ -236,6 +236,52 @@ function resetInboundDeliveryCache() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Rate guard                                                          *
+ * ------------------------------------------------------------------ */
+
+// Bounded per-instance, per-binding sliding window. Inbound invocation is
+// bounded synchronous graph execution (60s budget), so a flood of validly
+// authenticated calls is a compute lever — the guard caps genuinely NEW
+// invocations per binding per minute (duplicate deliveries are ACKed by the
+// guard above without touching this budget). Tunable per deployment via
+// GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE; same best-effort-within-one-runtime
+// posture as the delivery cache. The scheduler callback lane is NOT rated —
+// the provider owns its pacing.
+const RATE_LIMIT_DEFAULT_PER_MINUTE = 60;
+const RATE_WINDOW_S = 60;
+const RATE_CACHE_CAP = 512;
+const rateCache = new Map(); // bindingId -> ascending epoch-second samples
+
+function resolveInboundRateLimit(env = process.env) {
+  const source = env && typeof env === "object" ? env : {};
+  const raw = Number(source.GROWTHUB_INBOUND_RATE_LIMIT_PER_MINUTE);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : RATE_LIMIT_DEFAULT_PER_MINUTE;
+}
+
+function registerInboundRateSample({ bindingId, currentTimeS, env } = {}) {
+  const now = Number.isFinite(currentTimeS) ? currentTimeS : Math.floor(Date.now() / 1000);
+  const limit = resolveInboundRateLimit(env);
+  const key = clean(bindingId) || "unbound";
+  const windowStart = now - RATE_WINDOW_S;
+  const samples = (rateCache.get(key) || []).filter((t) => t > windowStart);
+  if (samples.length >= limit) {
+    rateCache.set(key, samples);
+    return { limited: true, limit, retryAfterS: Math.max(1, samples[0] + RATE_WINDOW_S - now) };
+  }
+  samples.push(now);
+  rateCache.set(key, samples);
+  while (rateCache.size > RATE_CACHE_CAP) {
+    rateCache.delete(rateCache.keys().next().value);
+  }
+  return { limited: false, limit, retryAfterS: 0 };
+}
+
+/** Test hook — clears the per-instance rate cache. */
+function resetInboundRateCache() {
+  rateCache.clear();
+}
+
+/* ------------------------------------------------------------------ *
  * Inbound adapters (mirror of SCHEDULER_ADAPTERS)                     *
  * ------------------------------------------------------------------ */
 
@@ -335,6 +381,9 @@ export {
   inboundDeliveryKey,
   registerInboundDelivery,
   resetInboundDeliveryCache,
+  registerInboundRateSample,
+  resolveInboundRateLimit,
+  resetInboundRateCache,
   growthubApiRequestAdapter,
   growthubWebhookAdapter,
   inputModeForTriggerKind,
