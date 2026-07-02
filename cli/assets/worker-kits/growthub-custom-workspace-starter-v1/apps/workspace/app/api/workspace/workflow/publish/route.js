@@ -451,3 +451,5 @@ async function POST(request) {
         });
     }
 }
+
+export { POST };

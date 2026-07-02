@@ -55,13 +55,13 @@ import { OrchestrationNodeConfigPanel } from "../data-model/components/Orchestra
 import { OrchestrationRunTracePanel } from "../data-model/components/OrchestrationRunTracePanel.jsx";
 import { AgentSwarmPanel } from "../data-model/components/AgentSwarmPanel.jsx";
 import { RunSetupPanel } from "./RunSetupPanel.jsx";
-import { describeRunInputMetadataItems, discoverRunInputSchema } from "@/lib/orchestration-run-inputs";
+import { describeRunInputMetadataItems, discoverRunInputSchema, RUN_INPUTS_KIND } from "@/lib/orchestration-run-inputs";
 import { selectWorkflowNodeInputSchema } from "@/lib/workspace-metadata-selectors";
 import { deriveProvenance, hasConnectionId, readUiCacheFlag } from "@/lib/workspace-activation";
 import { ApiRegistryCreationCockpit } from "../data-model/components/ApiRegistryCreationCockpit.jsx";
 import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
-import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState } from "@/lib/workspace-add-ons";
+import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState, orchestrationGraphContentEquals } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, readinessFieldFlags } from "@/lib/serverless-readiness";
 
 // Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
@@ -575,10 +575,18 @@ export default function WorkflowSurface() {
   const [orchestrationGraph, setOrchestrationGraph] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [runSetupOpen, setRunSetupOpen] = useState(false);
-  // Where collected run inputs go: "sandbox" for the draft test runner, or an
-  // inbound input mode ("webhook" / "api-request") for a real test invocation
-  // through the governed destination door.
+  // Which lane the canonical RunSetupPanel submits to: "sandbox" (draft test
+  // runner — unchanged behavior) or an inbound input mode ("webhook" /
+  // "api-request") whose test invocation must ALSO satisfy the workflow's
+  // declared run-input schema through the same canonical entry path.
   const [runSetupTarget, setRunSetupTarget] = useState("sandbox");
+  // Inbound test-request values — the editable JSON body a webhook / API
+  // request test invocation sends through the destination door. Seeded from
+  // the input node's samplePayload + the row's schedulerTriggerInput: the SAME
+  // two sources the readiness scan's scheduled-input contract
+  // (collectAvailableInputKeys) derives from, so what the user tests is what
+  // downstream nodes consume. null = not yet edited (re-seed from contract).
+  const [inboundTestValuesText, setInboundTestValuesText] = useState(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleCadence, setScheduleCadence] = useState("daily");
@@ -842,7 +850,9 @@ export default function WorkflowSurface() {
     // Direct PATCH of live workflow fields is rejected by the runtime policy.
     const serialized = serializeCurrentGraph();
     const savedDraft = String(sandboxRow?.[draftFieldName] || "");
-    if (dirty || serialized !== savedDraft) {
+    // Content equality, not byte equality: the trigger-bind sync and the
+    // canvas serializer format the same graph differently.
+    if (dirty || !orchestrationGraphContentEquals(serialized, savedDraft)) {
       setSaveMessage("Publish blocked. Save this draft first — publish promotes the saved, tested draft.");
       return;
     }
@@ -963,6 +973,20 @@ export default function WorkflowSurface() {
     return findSandboxRowByWorkflowRef(config, objectId, rowId)?.row || null;
   }
 
+  // After a successful bind, the server synced the trigger-binding metadata
+  // into the row's graph fields (draft included). Adopt those bytes into the
+  // canvas so the graph the user sees — and the draft the publish gate
+  // compares against the invocation proof — is the bound graph, verbatim.
+  function adoptBoundGraphFromConfig(config) {
+    const nextRow = findWorkflowRowInConfig(config);
+    const nextValue = nextRow?.[draftFieldName] || nextRow?.[effectiveFieldName];
+    const parsed = nextValue ? parseOrchestrationGraph(nextValue) : null;
+    if (parsed) {
+      setOrchestrationGraph(parsed);
+      setDirty(false);
+    }
+  }
+
   async function fetchWorkspaceConfigOnce() {
     const res = await fetch("/api/workspace", { cache: "no-store" });
     const payload = await res.json().catch(() => ({}));
@@ -1053,24 +1077,73 @@ export default function WorkflowSurface() {
     runSandbox();
   }
 
+  // The inbound test-request contract: seed values from the input node's
+  // samplePayload merged with the row's schedulerTriggerInput — the exact
+  // sources collectAvailableInputKeys() (serverless-readiness) builds the
+  // scheduled-input contract from, so the seeded test body matches what the
+  // readiness scan verified downstream nodes can consume.
+  function deriveInboundTestSeed() {
+    const seed = {};
+    const merge = (raw) => {
+      let value = raw;
+      if (typeof value === "string" && value.trim()) {
+        try { value = JSON.parse(value); } catch { value = null; }
+      }
+      if (value && typeof value === "object" && !Array.isArray(value)) Object.assign(seed, value);
+    };
+    const inputNode = (Array.isArray(orchestrationGraph?.nodes) ? orchestrationGraph.nodes : [])
+      .find((n) => n?.type === "input" || n?.id === "input" || n?.type === "data-trigger") || null;
+    merge(inputNode?.config?.samplePayload);
+    merge(sandboxRow?.schedulerTriggerInput);
+    return seed;
+  }
+
+  // Parse the (possibly edited) inbound test-request body. Returns the values
+  // object, or null after surfacing a visible error — never invokes on bad JSON.
+  function parseInboundTestValues() {
+    const text = inboundTestValuesText != null
+      ? inboundTestValuesText
+      : JSON.stringify(deriveInboundTestSeed(), null, 2);
+    let values = null;
+    try {
+      values = JSON.parse(String(text || "").trim() || "{}");
+    } catch {
+      setScheduleError("Test request values must be valid JSON.");
+      return null;
+    }
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+      setScheduleError("Test request values must be a JSON object.");
+      return null;
+    }
+    return values;
+  }
+
   function handleInboundTestClick(inputMode) {
-    // Workflows with a required run-input schema collect user test values
-    // through the same RunSetupPanel path as the sandbox runner — the values
-    // then ride the real signed/bearer invocation through the destination
-    // door, which validates them before any node runs.
+    const values = parseInboundTestValues();
+    if (!values) return;
     if (runInputSchema.requiresInput) {
+      // Canonical run-input entry path: the workflow declares a run-input
+      // schema, so the SAME RunSetupPanel that fronts every execution lane
+      // collects those fields; they merge over the request-body seed below.
       setRunSetupTarget(inputMode);
       setRunSetupOpen(true);
       setAddTarget(null);
       return;
     }
-    runInboundTestInvocation(inputMode);
+    runInboundTestInvocation(inputMode, { kind: RUN_INPUTS_KIND, source: "manual", values, files: [] });
   }
 
   async function handleRunWithInputs(runInputs) {
     setRunSetupOpen(false);
     if (runSetupTarget === "webhook" || runSetupTarget === "api-request") {
-      await runInboundTestInvocation(runSetupTarget, runInputs);
+      // Compose the two contracts: the inbound request body (samplePayload /
+      // triggerInput contract) under the canonical schema-collected fields.
+      const bodyValues = parseInboundTestValues() || {};
+      const merged = {
+        ...(runInputs && typeof runInputs === "object" ? runInputs : { kind: RUN_INPUTS_KIND, source: "manual", files: [] }),
+        values: { ...bodyValues, ...(runInputs?.values || {}) },
+      };
+      await runInboundTestInvocation(runSetupTarget, merged);
       return;
     }
     await runSandbox({ runInputs });
@@ -1204,15 +1277,32 @@ export default function WorkflowSurface() {
       schedulerRegistryId: String(schedule.schedulerRegistryId || "").trim()
     };
   })();
+  // Inbound bindings have no remote schedule to read-probe; their equivalent
+  // (and stronger) verification is the method-specific durable proof the
+  // destination door wrote: a 2xx run of the SAME trigger kind with every
+  // downstream node completed. The server publish route re-derives all of
+  // this authoritatively — this only unlocks the canvas control.
+  const inboundProofVerified = (() => {
+    const kind = String(sandboxRow?.schedulerTriggerKind || "").trim();
+    if (!["inbound-webhook", "api-request"].includes(kind)) return false;
+    return (
+      String(sandboxRow?.lastScheduledRunTriggerKind || "").trim() === kind &&
+      String(sandboxRow?.lastScheduledRunStatus || "").trim().startsWith("2") &&
+      String(sandboxRow?.lastScheduledRunNodesCompleted || "").trim() !== "false"
+    );
+  })();
   const serverlessInstalledAndBound =
     String(sandboxRow?.runLocality || "").trim() === "serverless" &&
     Boolean(String(sandboxRow?.scheduleId || "").trim()) &&
-    remoteScheduleVerified &&
+    (remoteScheduleVerified || inboundProofVerified) &&
     Boolean(String(sandboxRow?.schedulerRegistryId || "").trim()) &&
     liveScheduleBinding.enabled === true &&
     liveScheduleBinding.scheduleId === String(sandboxRow?.scheduleId || "").trim() &&
     liveScheduleBinding.schedulerRegistryId === String(sandboxRow?.schedulerRegistryId || "").trim() &&
-    String(sandboxRow?.orchestrationDraftConfig || sandboxRow?.orchestrationDraftGraph || "").trim() === currentGraphSerialized;
+    orchestrationGraphContentEquals(
+      String(sandboxRow?.orchestrationDraftConfig || sandboxRow?.orchestrationDraftGraph || "").trim(),
+      currentGraphSerialized,
+    );
   const publishReady = !dirty && (
     (draftPassed && String(sandboxRow?.orchestrationDraftTestedConfig || "") === currentGraphSerialized) ||
     serverlessInstalledAndBound
@@ -1388,6 +1478,7 @@ export default function WorkflowSurface() {
         return false;
       }
       setWorkspaceConfig(payload.workspaceConfig);
+      adoptBoundGraphFromConfig(payload.workspaceConfig);
       setScheduleModalOpen(false);
       setSaveMessage("Schedule updated.");
       return true;
@@ -1437,19 +1528,38 @@ export default function WorkflowSurface() {
   // flips it serverless in ONE server-authoritative write; we adopt the
   // returned config verbatim and never claim bound unless the server
   // confirmed the persist.
-  const INBOUND_METHOD_META = {
-    webhook: { productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook" },
-    "api-request": { productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request" },
+  // Inbound method meta is DERIVED from the marketplace-agnostic add-ons
+  // state (any installed + verified product on an inbound execution lane —
+  // resolveInboundMethodProducts), falling back to the packaged growthub
+  // products so the canvas can name the method before anything is installed.
+  const INBOUND_METHOD_FALLBACK = {
+    webhook: { providerId: "growthub", productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook" },
+    "api-request": { providerId: "growthub", productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request" },
   };
+  function inboundMethodMeta(inputMode) {
+    const method = (addOnsState.inboundMethods || []).find((entry) => entry.inputMode === inputMode) || null;
+    if (method) {
+      return {
+        providerId: method.providerId || "growthub",
+        productId: method.productId,
+        triggerKind: method.triggerKind,
+        label: method.label || INBOUND_METHOD_FALLBACK[inputMode]?.label || inputMode,
+      };
+    }
+    return INBOUND_METHOD_FALLBACK[inputMode] || null;
+  }
+  function inboundScheduleRoute(meta) {
+    return `/api/workspace/add-ons/${encodeURIComponent(meta?.providerId || "growthub")}/schedule`;
+  }
 
   async function submitInboundBinding(inputMode) {
-    const meta = INBOUND_METHOD_META[inputMode];
+    const meta = inboundMethodMeta(inputMode);
     if (!meta || resolved.rowIndex < 0 || !objectId || !rowId || !workspaceConfig) return false;
     setScheduleError("");
     setSaving(true);
     setSaveMessage("");
     try {
-      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+      const response = await fetch(inboundScheduleRoute(meta), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1466,6 +1576,7 @@ export default function WorkflowSurface() {
         return false;
       }
       setWorkspaceConfig(payload.workspaceConfig);
+      adoptBoundGraphFromConfig(payload.workspaceConfig);
       setSaveMessage(`${meta.label} trigger bound.`);
       return true;
     } catch (error) {
@@ -1478,13 +1589,13 @@ export default function WorkflowSurface() {
   }
 
   async function revertInboundBindingToLocal(inputMode) {
-    const meta = INBOUND_METHOD_META[inputMode];
+    const meta = inboundMethodMeta(inputMode);
     if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId) return false;
     setScheduleError("");
     setSaving(true);
     setSaveMessage("");
     try {
-      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+      const response = await fetch(inboundScheduleRoute(meta), {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1511,7 +1622,7 @@ export default function WorkflowSurface() {
   }
 
   async function runInboundTestInvocation(inputMode, runInputs = null) {
-    const meta = INBOUND_METHOD_META[inputMode];
+    const meta = inboundMethodMeta(inputMode);
     if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId) return false;
     setScheduleError("");
     setSaving(true);
@@ -1531,7 +1642,7 @@ export default function WorkflowSurface() {
       if (runInputs && typeof runInputs === "object" && !Array.isArray(runInputs)) {
         body.runInputs = runInputs;
       }
-      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+      const response = await fetch(inboundScheduleRoute(meta), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -1593,13 +1704,13 @@ export default function WorkflowSurface() {
   }
 
   async function controlInboundBinding(inputMode, action) {
-    const meta = INBOUND_METHOD_META[inputMode];
+    const meta = inboundMethodMeta(inputMode);
     if (!meta || !objectId || !rowId || !sandboxRow?.scheduleId || !["pause", "resume"].includes(action)) return false;
     setScheduleError("");
     setSaving(true);
     setSaveMessage("");
     try {
-      const response = await fetch("/api/workspace/add-ons/growthub/schedule", {
+      const response = await fetch(inboundScheduleRoute(meta), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -2068,7 +2179,7 @@ export default function WorkflowSurface() {
                       // verified 200 proof, all through the governed growthub
                       // schedule route and the real destination door.
                       const inputMode = String(selectedNode.config.inputMode).trim();
-                      const meta = INBOUND_METHOD_META[inputMode];
+                      const meta = inboundMethodMeta(inputMode);
                       const capabilityRow = inputMode === "webhook" ? addOnsState.webhookTrigger : addOnsState.apiTrigger;
                       const bound = Boolean(sandboxRow?.scheduleId) && String(sandboxRow?.schedulerTriggerKind || "").trim() === meta.triggerKind;
                       const lastStatus = String(sandboxRow?.lastScheduledRunStatus || "").trim();
@@ -2117,14 +2228,26 @@ export default function WorkflowSurface() {
                               {saving ? "Binding..." : `Bind ${meta.label} trigger`}
                             </button>
                           ) : (
-                            <button
-                              type="button"
-                              className="dm-btn-outline dm-workflow-schedule-submit"
-                              disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
-                              onClick={() => handleInboundTestClick(inputMode)}
-                            >
-                              {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with values..." : "Run test invocation"}
-                            </button>
+                            <>
+                              <label className="dm-orchestration-config__field">
+                                <span>Test request values (JSON)</span>
+                                <textarea
+                                  rows={5}
+                                  value={inboundTestValuesText != null ? inboundTestValuesText : JSON.stringify(deriveInboundTestSeed(), null, 2)}
+                                  onChange={(e) => setInboundTestValuesText(e.target.value)}
+                                  spellCheck={false}
+                                />
+                                <small className="dm-run-setup__help">Seeded from the input node&apos;s sample payload — the same contract the readiness scan checks downstream nodes against. Sent as the real {meta.label.toLowerCase()} request body.</small>
+                              </label>
+                              <button
+                                type="button"
+                                className="dm-btn-outline dm-workflow-schedule-submit"
+                                disabled={saving || Boolean(sandboxRow?.schedulerPaused)}
+                                onClick={() => handleInboundTestClick(inputMode)}
+                              >
+                                {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with inputs..." : "Run test invocation"}
+                              </button>
+                            </>
                           )}
                           {!capabilityRow ? (
                             <p className="dm-cockpit-step-hint">Install + sync the {meta.label} trigger in Workspace Add-ons first, then bind it here.</p>

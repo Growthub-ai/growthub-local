@@ -553,17 +553,62 @@ const workflowSurfacePath = path.join(
 );
 const workflowSurfaceSource = readFileSync(workflowSurfacePath, "utf8");
 
-test("canvas: inbound test invocation forwards user-entered runInputs through the run-setup path", () => {
+test("canvas: inbound test values compose the payload contract with the canonical run-input entry path", () => {
   // The invocation function accepts and forwards the canonical envelope.
   assert.match(workflowSurfaceSource, /async function runInboundTestInvocation\(inputMode, runInputs = null\)/);
   assert.match(workflowSurfaceSource, /if \(runInputs && typeof runInputs === "object" && !Array\.isArray\(runInputs\)\) \{\s*body\.runInputs = runInputs;/);
-  // Workflows with a required input schema collect values via RunSetupPanel
-  // before the real signed/bearer invocation — never a blind, value-less run.
-  assert.match(workflowSurfaceSource, /function handleInboundTestClick\(inputMode\)/);
+  // Request-body values are seeded from samplePayload + schedulerTriggerInput —
+  // the SAME sources the readiness scan's collectAvailableInputKeys derives
+  // the scheduled-input contract from.
+  assert.match(workflowSurfaceSource, /function deriveInboundTestSeed\(\)/);
+  assert.match(workflowSurfaceSource, /merge\(inputNode\?\.config\?\.samplePayload\);\s*merge\(sandboxRow\?\.schedulerTriggerInput\);/);
+  assert.match(workflowSurfaceSource, /JSON\.stringify\(deriveInboundTestSeed\(\), null, 2\)/);
+  // The canonical run-input entry path (RunSetupPanel) is PRESERVED: a
+  // declared run-input schema routes the inbound test through the same panel
+  // as every other lane, and schema values merge OVER the request-body seed.
   assert.match(workflowSurfaceSource, /setRunSetupTarget\(inputMode\);\s*setRunSetupOpen\(true\);/);
+  assert.match(workflowSurfaceSource, /if \(runSetupTarget === "webhook" \|\| runSetupTarget === "api-request"\) \{/);
+  assert.match(workflowSurfaceSource, /values: \{ \.\.\.bodyValues, \.\.\.\(runInputs\?\.values \|\| \{\}\) \},/);
+  // Workflows with no declared schema invoke directly with the seeded body.
+  assert.match(workflowSurfaceSource, /runInboundTestInvocation\(inputMode, \{ kind: RUN_INPUTS_KIND, source: "manual", values, files: \[\] \}\);/);
   assert.match(workflowSurfaceSource, /onClick=\{\(\) => handleInboundTestClick\(inputMode\)\}/);
-  // Submitted values are routed to the inbound invocation, not the sandbox runner.
-  assert.match(workflowSurfaceSource, /if \(runSetupTarget === "webhook" \|\| runSetupTarget === "api-request"\) \{\s*await runInboundTestInvocation\(runSetupTarget, runInputs\);/);
+  // Invalid JSON is a visible UI failure before any request is made.
+  assert.match(workflowSurfaceSource, /setScheduleError\("Test request values must be valid JSON\."\)/);
+});
+
+test("canvas + add-ons: inbound methods are marketplace-agnostic (lane-derived, provider-scoped route)", () => {
+  // Any installed + verified marketplace product on an inbound execution lane
+  // is an input method — the mirror of provider-agnostic custom schedulers.
+  const methods = addOns.resolveInboundMethodProducts({
+    dataModel: { objects: [
+      { id: "api-registry", objectType: "api-registry", rows: [
+        { integrationId: "growthub-webhook-trigger", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+        { integrationId: "growthub-api-trigger", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+        { integrationId: "upstash-qstash-workflow", syncStatus: "verified", syncProof: "p", syncCheckedAt: "t" },
+      ] },
+    ] },
+  });
+  const modes = methods.map((m) => m.inputMode).sort();
+  assert.deepEqual(modes, ["api-request", "webhook"], "scheduler lane is a binding, not an inbound input method");
+  for (const method of methods) {
+    assert.equal(method.triggerKind, method.lane, "one trigger grammar: inbound trigger kinds ARE the lanes");
+    assert.ok(method.providerId, "method carries its marketplace provider for route scoping");
+    assert.ok(method.integrationId && method.row, "method carries the verified capability row");
+  }
+  // Unverified rows never surface as methods (capability proof rule).
+  const unverified = addOns.resolveInboundMethodProducts({
+    dataModel: { objects: [
+      { id: "api-registry", objectType: "api-registry", rows: [
+        { integrationId: "growthub-webhook-trigger", syncStatus: "pending" },
+      ] },
+    ] },
+  });
+  assert.equal(unverified.length, 0);
+  // The canvas derives method meta from this state (with packaged fallback)
+  // and posts to the method's OWN provider route — no hardcoded product ids.
+  assert.match(workflowSurfaceSource, /function inboundMethodMeta\(inputMode\) \{\s*const method = \(addOnsState\.inboundMethods \|\| \[\]\)\.find/);
+  assert.match(workflowSurfaceSource, /\/api\/workspace\/add-ons\/\$\{encodeURIComponent\(meta\?\.providerId \|\| "growthub"\)\}\/schedule/);
+  assert.doesNotMatch(workflowSurfaceSource, /fetch\("\/api\/workspace\/add-ons\/growthub\/schedule"/);
 });
 
 test("canvas: post-invocation proof rehydration reads the { workspaceConfig } response shape", () => {
@@ -585,4 +630,41 @@ test("canvas: selecting Webhook / API Request activates the same pre-bind readin
   // The expected registry fed to the scan follows the selected inbound method.
   assert.match(workflowSurfaceSource, /const expectedReadinessRegistryId = selectedInputMode === "webhook"\s*\?\s*String\(addOnsState\.webhookTrigger\?\.integrationId \|\| ""\)\.trim\(\)/);
   assert.match(workflowSurfaceSource, /expected: \{ schedulerRegistryId: expectedReadinessRegistryId, scheduleId:/);
+});
+
+test("proof freshness: graph-content equality is strict on content, indifferent to writer formatting", () => {
+  const graph = { version: 1, provider: "growthub-native", nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }], edges: [] };
+  const pretty = JSON.stringify(graph, null, 2);
+  const compact = JSON.stringify(graph);
+  const withRefs = JSON.stringify({ ...graph, nodes: [{ ...graph.nodes[0], config: { ...graph.nodes[0].config, sandboxRecordRef: "sbx::o::r::input" } }] });
+  const edited = JSON.stringify({ ...graph, nodes: [{ ...graph.nodes[0], config: { inputMode: "api-request" } }] });
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, compact), true, "formatting-only difference is the same content");
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, withRefs), true, "canvas-derived sandboxRecordRef metadata is not a content change");
+  assert.equal(addOns.orchestrationGraphContentEquals(pretty, edited), false, "a real config change breaks freshness");
+  assert.equal(addOns.orchestrationGraphContentEquals("", pretty), false, "empty draft never matches");
+  assert.equal(addOns.orchestrationGraphContentEquals("not-json", "not-json"), true, "non-graph values fall back to exact bytes");
+  assert.equal(addOns.orchestrationGraphContentEquals("not-json", "other"), false);
+});
+
+test("bind: an existing saved draft receives the same trigger-binding sync as the live graph", () => {
+  const graphJson = JSON.stringify({ version: 1, provider: "growthub-native", nodes: [{ id: "input", type: "input", config: { inputMode: "webhook" } }], edges: [] }, null, 2);
+  const config = { id: "ws", dataModel: { objects: [
+    { id: "sandbox-workflows", objectType: "sandbox-environment", rows: [
+      { Name: "Flow A", orchestrationConfig: graphJson, orchestrationDraftConfig: graphJson },
+    ] },
+  ] } };
+  const result = addOns.withWorkflowServerlessBind(config, {
+    objectId: "sandbox-workflows", rowId: "Flow A", triggerKind: "inbound-webhook",
+    schedulerRegistryId: "growthub-webhook-trigger", scheduleId: "bind-1",
+    schedulerProviderId: "growthub", schedulerProductId: "growthub-webhook-trigger",
+    destinationUrl: "https://ws.example.com/api/workspace/workflows/growthub",
+  });
+  assert.equal(result.bound, true);
+  const row = result.config.dataModel.objects[0].rows[0];
+  const liveBinding = addOns.readTriggerScheduleBinding(row.orchestrationConfig);
+  const draftBinding = addOns.readTriggerScheduleBinding(row.orchestrationDraftConfig);
+  assert.equal(liveBinding.scheduleId, "bind-1");
+  assert.equal(draftBinding.scheduleId, "bind-1", "draft trigger node carries the same binding");
+  assert.equal(addOns.orchestrationGraphContentEquals(row.orchestrationConfig, row.orchestrationDraftConfig), true,
+    "post-bind draft and live are the same content — the proof freshness gate is satisfiable");
 });
