@@ -38,19 +38,24 @@ function isApiRegistryObject(object) {
 }
 
 const SERVERLESS_SCHEDULER_LANE = "serverless-scheduler";
+// The full input-method lane set: the scheduler lane plus the inbound lanes
+// (workspace-inbound-invocation.js). One cockpit, every input method.
+const BINDING_LANES = [SERVERLESS_SCHEDULER_LANE, "inbound-webhook", "api-request"];
+const LANE_PROVIDER_LABEL = { "inbound-webhook": "Webhook", "api-request": "API request" };
 // First-class default provider integration id — see workspace-add-ons.js. Kept
 // as a known slug ONLY to label/route the Upstash setup shortcut; everything
 // else is provider-agnostic via executionLane + schedulerRegistryId.
 const UPSTASH_QSTASH_INTEGRATION_ID = "upstash-qstash-workflow";
 
-/** Detect every scheduler-capable product/provider from existing governed state. */
+/** Detect every binding-capable product/provider from existing governed state. */
 function detectSchedulerProducts(workspaceConfig) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const products = [];
   for (const object of objects) {
     if (!isApiRegistryObject(object)) continue;
     for (const row of Array.isArray(object.rows) ? object.rows : []) {
-      if (clean(row?.executionLane) !== SERVERLESS_SCHEDULER_LANE) continue;
+      const lane = clean(row?.executionLane);
+      if (!BINDING_LANES.includes(lane)) continue;
       const integrationId = clean(row?.integrationId);
       if (!integrationId) continue;
       const verified = clean(row?.syncStatus) === "verified";
@@ -61,8 +66,9 @@ function detectSchedulerProducts(workspaceConfig) {
         productId: clean(row?.productId),
         providerId: clean(row?.providerId) || (isUpstash ? "upstash" : ""),
         verified,
-        provider: isUpstash ? "QStash" : "Custom",
-        custom: !isUpstash,
+        provider: isUpstash ? "QStash" : (LANE_PROVIDER_LABEL[lane] || "Custom"),
+        method: lane,
+        custom: !isUpstash && !LANE_PROVIDER_LABEL[lane],
         region: clean(row?.region),
       });
     }
@@ -254,6 +260,8 @@ export function deriveScheduleCockpit({ workspaceConfig, configuredEnvRefs = [],
     { id: "local", label: "Local-only", count: counts.localOnly },
     { id: "missing-secret", label: "Missing secrets", count: counts.missingSecret },
     { id: "qstash", label: "Provider: QStash", count: cards.filter((c) => c.provider === "QStash").length },
+    { id: "webhook", label: "Method: Webhook", count: cards.filter((c) => c.provider === "Webhook").length },
+    { id: "api-request", label: "Method: API request", count: cards.filter((c) => c.provider === "API request").length },
     { id: "custom", label: "Provider: Custom", count: cards.filter((c) => c.provider === "Custom").length },
   ].filter((f) => f.id === "all" || f.count > 0);
 

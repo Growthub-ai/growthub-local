@@ -1,35 +1,65 @@
 /**
  * POST /api/workspace/workflows/[providerId]
  *
- * Serverless workflow destination. The provider's scheduler (e.g. QStash) calls
- * this signed endpoint on the cron; it is a THIN ADAPTER over the existing
- * governed orchestration loop — NOT a second workflow engine. It:
+ * Serverless workflow destination — the ONE inbound door for every input
+ * method. It is a THIN ADAPTER over the existing governed orchestration loop —
+ * NOT a second workflow engine. Three input methods share it:
  *
- *   1. verifies the provider signature (raw body, never re-stringified),
- *   2. parses the governed, non-secret run pointer { workspaceId, objectId, rowId },
- *   3. resolves the SAME sandbox/workflow row the local sandbox-run path uses,
- *   4. executes `runOrchestrationGraphIfPresent` (the existing runner),
- *   5. appends an outcome receipt and returns a compact result.
+ *   - serverless-scheduler: the provider's scheduler (e.g. QStash) calls it
+ *     signed on the cron (the validated PR #258 path — unchanged),
+ *   - inbound-webhook: an external system calls it with a v1 HMAC signature
+ *     bound to this destination URL (workspace-inbound-invocation.js),
+ *   - api-request: an authenticated API request (bearer invoke token) carries
+ *     the run-input values.
  *
- * The provider forwards this response to the workspace callback URL, where it is
- * synchronized into workspace config. Durability/retry/scheduling come from the
- * provider; step semantics come from the existing orchestration graph.
+ * Every method follows the same spine:
+ *
+ *   1. verify the method's proof over the RAW body (never re-stringified),
+ *   2. parse the governed, non-secret run pointer { objectId, rowId, scheduleId },
+ *   3. resolve the SAME sandbox/workflow row the local sandbox-run path uses,
+ *   4. validate the TRIPLE binding (payload id ↔ owning row ↔ published trigger
+ *      node, including the method's triggerKind),
+ *   5. execute `runOrchestrationGraphIfPresent` (the existing runner),
+ *   6. append an outcome receipt and return a compact result.
+ *
+ * Scheduler runs get their last-run proof via the provider's signed callback;
+ * inbound runs are synchronous, so this route writes the same proof fields
+ * inline (one proof family per row — no second proof system).
  */
 
 import { NextResponse } from "next/server";
-import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { getMarketplaceProvider, readTriggerScheduleBinding, liveGraphField } from "@/lib/workspace-add-ons";
+import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
+import {
+  getMarketplaceProvider,
+  readTriggerScheduleBinding,
+  liveGraphField,
+  withSandboxScheduledRunProof,
+} from "@/lib/workspace-add-ons";
 import {
   getSchedulerAdapter,
   isSchedulerProduct,
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
 } from "@/lib/workspace-add-on-scheduler";
+import {
+  evaluateBindingMatch,
+  getInboundAdapter,
+  isInboundInvocationProduct,
+  registerInboundDelivery,
+  resolveInboundProductForRequest,
+  triggerKindForLane,
+  INVOKED_RUN_KIND,
+} from "@/lib/workspace-inbound-invocation";
+import { discoverRunInputSchema, validateRunInputsEnvelope } from "@/lib/orchestration-run-inputs";
 import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
+}
+
+function truthy(value) {
+  return ["true", "1", "on", "yes"].includes(clean(value).toLowerCase()) || value === true;
 }
 
 function safeJsonParse(text) {
@@ -40,11 +70,16 @@ function safeJsonParse(text) {
   }
 }
 
-function normalizeScheduledRunInputs(payload, request) {
+function normalizeInboundRunInputs(payload, request, source) {
   const direct = payload?.runInputs;
   if (direct && typeof direct === "object" && !Array.isArray(direct)) {
     if (direct.values && typeof direct.values === "object" && !Array.isArray(direct.values)) return direct;
-    return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: direct };
+    return { kind: "growthub-workflow-run-inputs-v1", source, values: direct };
+  }
+  // api-request convenience: a bare `values` object on the invocation body is
+  // the run-input envelope's values (the request IS the input method).
+  if (payload?.values && typeof payload.values === "object" && !Array.isArray(payload.values)) {
+    return { kind: "growthub-workflow-run-inputs-v1", source, values: payload.values };
   }
   const raw = clean(payload?.triggerInput) || clean(request.headers.get("x-growthub-trigger-input"));
   const parsed = raw ? safeJsonParse(raw) : null;
@@ -53,12 +88,12 @@ function normalizeScheduledRunInputs(payload, request) {
       return {
         kind: "growthub-workflow-run-inputs-v1",
         ...parsed,
-        source: clean(parsed.source) || "serverless-scheduler"
+        source: clean(parsed.source) || source
       };
     }
-    return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: parsed };
+    return { kind: "growthub-workflow-run-inputs-v1", source, values: parsed };
   }
-  return { kind: "growthub-workflow-run-inputs-v1", source: "serverless-scheduler", values: {} };
+  return { kind: "growthub-workflow-run-inputs-v1", source, values: {} };
 }
 
 function requestOrigin(request) {
@@ -85,23 +120,54 @@ async function POST(request, context) {
   const provider = getMarketplaceProvider(clean(params?.providerId));
   if (!provider) return NextResponse.json({ ok: false, error: "unknown marketplace provider" }, { status: 404 });
 
-  const product = (provider.products || []).find((p) => isSchedulerProduct(p));
-  if (!product) return NextResponse.json({ ok: false, error: "provider has no scheduler product" }, { status: 400 });
-  const adapter = getSchedulerAdapter(product);
+  const schedulerProduct = (provider.products || []).find((p) => isSchedulerProduct(p));
+  const inboundProduct = resolveInboundProductForRequest(provider, request.headers);
+  const hasInboundProducts = (provider.products || []).some((p) => isInboundInvocationProduct(p));
+  if (!schedulerProduct && !hasInboundProducts) {
+    return NextResponse.json({ ok: false, error: "provider has no invocable workflow product" }, { status: 400 });
+  }
 
   const rawBody = await request.text();
-  const signature = request.headers.get("upstash-signature") || request.headers.get("Upstash-Signature") || "";
   // Signature must be minted for THIS destination route (anti-replay).
   const baseUrl = resolveWorkspacePublicUrl(process.env, requestOrigin(request));
   const expectedUrl = buildSchedulerCallbackUrls(baseUrl, provider.providerId).destinationUrl;
-  const verdict = adapter.verifyCallback({ signature, rawBody, expectedUrl, env: process.env });
-  if (!verdict.ok) {
-    return NextResponse.json({ ok: false, error: "invalid signature", reason: verdict.reason }, { status: 401 });
+
+  // Method dispatch: a QStash-signed delivery takes the validated scheduler
+  // path; otherwise the request's own proof material selects the inbound
+  // product. No proof material at all → 401, mirroring missing-signature.
+  const qstashSignature = request.headers.get("upstash-signature") || request.headers.get("Upstash-Signature") || "";
+  let product;
+  let expectedTriggerKind;
+  let runReceiptKind;
+  let runSource;
+  if (schedulerProduct && (qstashSignature || !inboundProduct)) {
+    product = schedulerProduct;
+    expectedTriggerKind = "serverless-scheduler";
+    runReceiptKind = "workspace-scheduled-run";
+    runSource = "serverless-scheduler";
+    const adapter = getSchedulerAdapter(product);
+    const verdict = adapter.verifyCallback({ signature: qstashSignature, rawBody, expectedUrl, env: process.env });
+    if (!verdict.ok) {
+      return NextResponse.json({ ok: false, error: "invalid signature", reason: verdict.reason }, { status: 401 });
+    }
+  } else if (inboundProduct) {
+    product = inboundProduct;
+    expectedTriggerKind = triggerKindForLane(product.executionLane);
+    runReceiptKind = INVOKED_RUN_KIND;
+    runSource = expectedTriggerKind === "inbound-webhook" ? "webhook" : "api-request";
+    const adapter = getInboundAdapter(product);
+    const verdict = adapter.verifyInbound({ headers: request.headers, rawBody, expectedUrl, env: process.env });
+    if (!verdict.ok) {
+      return NextResponse.json({ ok: false, error: "invalid signature", reason: verdict.reason }, { status: 401 });
+    }
+  } else {
+    return NextResponse.json({ ok: false, error: "invalid signature", reason: "missing-credentials" }, { status: 401 });
   }
 
   // Run pointer: prefer the JSON body, fall back to the canonical forwarded
   // headers. QStash strips the `Upstash-Forward-` prefix, so these arrive as
-  // `x-growthub-*` (NOT `upstash-forward-*`).
+  // `x-growthub-*` (NOT `upstash-forward-*`). Inbound callers send the same
+  // header names or body fields directly.
   const payload = safeJsonParse(rawBody) || {};
   const objectId = clean(payload.objectId || request.headers.get("x-growthub-object-id"));
   const rowId = clean(payload.rowId || request.headers.get("x-growthub-row-id"));
@@ -115,34 +181,85 @@ async function POST(request, context) {
     return NextResponse.json({ ok: false, error: `no sandbox row ${rowId} in object ${objectId}` }, { status: 404 });
   }
 
-  // A valid signature proves QStash sent this; it does NOT prove the row is
-  // STILL bound to this schedule. The inbound scheduleId is REQUIRED (missing
+  // A valid proof shows WHO sent this; it does NOT prove the row is STILL
+  // bound to this input method. The inbound binding id is REQUIRED (missing
   // identity blocks, never runs), and we validate BOTH the row-level fields AND
   // the live graph trigger node so a stale/rebound delivery cannot execute.
-  const scheduleId = clean(payload.scheduleId || request.headers.get("x-growthub-schedule-id"));
+  const scheduleId = clean(payload.scheduleId || payload.bindingId || request.headers.get("x-growthub-schedule-id"));
   const triggerBinding = readTriggerScheduleBinding(row[liveGraphField(row)]);
-  const bindingOk =
-    Boolean(scheduleId) &&
-    clean(row.runLocality) === "serverless" &&
-    clean(row.schedulerRegistryId) === product.integrationId &&
-    clean(row.scheduleId) === scheduleId &&
-    triggerBinding?.triggerKind === "serverless-scheduler" &&
-    triggerBinding?.enabled === true &&
-    triggerBinding?.scheduleId === scheduleId &&
-    triggerBinding?.schedulerRegistryId === product.integrationId &&
-    (!triggerBinding?.providerId || triggerBinding.providerId === provider.providerId) &&
-    (!triggerBinding?.productId || triggerBinding.productId === product.productId);
+  const bindingMatch = evaluateBindingMatch({ row, triggerBinding, provider, product, expectedTriggerKind, scheduleId });
+  const bindingOk = bindingMatch.ok;
   if (!bindingOk) {
     await appendOutcomeReceipt({
-      kind: "workspace-scheduled-run",
+      kind: runReceiptKind,
       lane: "server-authoritative",
       outcomeStatus: "blocked",
       actor: provider.providerId,
       objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
-      policyVerdict: { ok: false, violationCodes: [scheduleId ? "scheduled_run_row_unbound" : "scheduled_run_missing_schedule_id"] },
-      summary: `Rejected scheduled run of ${rowId}: ${scheduleId ? `row/trigger not bound to ${product.integrationId} schedule ${scheduleId}` : "missing inbound scheduleId"} (locality=${clean(row.runLocality)}, row.scheduleId=${clean(row.scheduleId) || "none"}, trigger.scheduleId=${triggerBinding?.scheduleId || "none"}).`,
+      policyVerdict: { ok: false, violationCodes: [scheduleId ? "scheduled_run_row_unbound" : "scheduled_run_missing_schedule_id", `binding_${bindingMatch.code}`] },
+      summary: `Rejected ${expectedTriggerKind} run of ${rowId}: ${scheduleId ? `row/trigger not bound to ${product.integrationId} binding ${scheduleId} (${bindingMatch.code})` : "missing inbound binding id"} (locality=${clean(row.runLocality)}, row.scheduleId=${clean(row.scheduleId) || "none"}, trigger.scheduleId=${triggerBinding?.scheduleId || "none"}).`,
     });
-    return NextResponse.json({ ok: false, error: scheduleId ? "row/trigger is not currently bound to this schedule" : "missing inbound scheduleId", scheduleId }, { status: scheduleId ? 409 : 400 });
+    return NextResponse.json({ ok: false, error: scheduleId ? "row/trigger is not currently bound to this input method" : "missing inbound binding id", scheduleId }, { status: scheduleId ? 409 : 400 });
+  }
+
+  // Inbound methods enforce pause AT THE DOOR (the scheduler pauses remotely
+  // at the provider; an inbound binding has no remote to pause).
+  if (expectedTriggerKind !== "serverless-scheduler" && truthy(row.schedulerPaused)) {
+    await appendOutcomeReceipt({
+      kind: runReceiptKind,
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: provider.providerId,
+      objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+      policyVerdict: { ok: false, violationCodes: ["invoked_run_binding_paused"] },
+      summary: `Rejected ${expectedTriggerKind} run of ${rowId}: binding ${scheduleId} is paused.`,
+    });
+    return NextResponse.json({ ok: false, error: "binding is paused", scheduleId }, { status: 409 });
+  }
+
+  const runInputs = normalizeInboundRunInputs(payload, request, runSource);
+
+  if (expectedTriggerKind !== "serverless-scheduler") {
+    // CONTRACT GATE: inbound request inputs must satisfy the workflow's own
+    // run-input schema (field/byte/count limits, required fields, secretRef
+    // rule) BEFORE any graph execution. The request is the input method; an
+    // invalid payload never reaches the runner.
+    const inputSchema = discoverRunInputSchema(row[liveGraphField(row)]);
+    const inputVerdict = validateRunInputsEnvelope(runInputs, inputSchema);
+    if (!inputVerdict.ok) {
+      await appendOutcomeReceipt({
+        kind: runReceiptKind,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: provider.providerId,
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: ["invoked_run_invalid_inputs"] },
+        summary: `Rejected ${expectedTriggerKind} run of ${rowId}: run inputs failed the workflow input contract (${clean(inputVerdict.error) || "invalid envelope"}).`,
+      });
+      return NextResponse.json({ ok: false, error: inputVerdict.error || "run inputs failed the workflow input contract", scheduleId }, { status: 422 });
+    }
+
+    // DUPLICATE GUARD: external senders retry on slow/non-2xx responses. A
+    // retry re-sends the same signed bytes (or the same caller idempotency
+    // key), so acknowledge duplicates without re-executing the graph.
+    const delivery = registerInboundDelivery({
+      bindingId: scheduleId,
+      rawBody,
+      timestamp: request.headers.get("x-growthub-timestamp") || "",
+      idempotencyKey: request.headers.get("x-growthub-idempotency-key") || "",
+    });
+    if (delivery.duplicate) {
+      await appendOutcomeReceipt({
+        kind: runReceiptKind,
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: provider.providerId,
+        objectRefs: [{ objectId, objectType: "sandbox-environment", rowName: rowId }],
+        policyVerdict: { ok: false, violationCodes: ["invoked_run_duplicate_delivery"] },
+        summary: `Acknowledged duplicate ${expectedTriggerKind} delivery for ${rowId} (binding ${scheduleId}); graph not re-executed.`,
+      });
+      return NextResponse.json({ ok: true, duplicate: true, scheduleId, objectId, rowId }, { status: 200 });
+    }
   }
 
   const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
@@ -152,7 +269,7 @@ async function POST(request, context) {
       workspaceConfig,
       row,
       timeoutMs: 60000,
-      runInputs: normalizeScheduledRunInputs(payload, request),
+      runInputs,
       executionContext: { runId, ranAt: new Date().toISOString(), sandboxName: row.Name },
     });
   } catch (err) {
@@ -161,7 +278,7 @@ async function POST(request, context) {
 
   const ok = Boolean(result && result.ok !== false);
   await appendOutcomeReceipt({
-    kind: "workspace-scheduled-run",
+    kind: runReceiptKind,
     lane: "server-authoritative",
     outcomeStatus: ok ? "published" : "failed",
     actor: provider.providerId,
@@ -169,13 +286,58 @@ async function POST(request, context) {
     policyVerdict: { ok },
     runId,
     summary: ok
-      ? `Scheduled serverless run of ${rowId} completed via ${provider.label}.`
-      : `Scheduled serverless run of ${rowId} failed: ${clean(result?.error) || "unknown"}.`,
+      ? (expectedTriggerKind === "serverless-scheduler"
+        ? `Scheduled serverless run of ${rowId} completed via ${provider.label}.`
+        : `${expectedTriggerKind === "inbound-webhook" ? "Webhook" : "API request"} serverless run of ${rowId} completed via ${product.label}.`)
+      : `${expectedTriggerKind === "serverless-scheduler" ? "Scheduled" : "Invoked"} serverless run of ${rowId} failed: ${clean(result?.error) || "unknown"}.`,
   });
 
-  // Compact result — the provider forwards this (base64) to the callback URL.
-  // scheduleId is echoed so the callback can recover schedule identity even when
-  // QStash omits a top-level scheduleId on the callback envelope.
+  // Inbound runs are synchronous — write the last-run proof inline onto the
+  // owning row (the scheduler path receives this via the signed provider
+  // callback instead). Same proof family, no second proof system. Success
+  // proof requires the WHOLE downstream chain: the runner's per-node trace
+  // (completed|failed|skipped) is objectified onto the row so the publish
+  // gate can require every downstream node completed, not just an HTTP 200
+  // at the door.
+  let proofPersisted;
+  if (expectedTriggerKind !== "serverless-scheduler") {
+    const nodeTrace = Array.isArray(result?.nodeTrace) ? result.nodeTrace : [];
+    const allNodesCompleted = nodeTrace.length > 0 ? nodeTrace.every((n) => n?.status === "completed") : ok;
+    const proofOk = ok && allNodesCompleted;
+    const now = new Date().toISOString();
+    const statusText = ok ? "200" : "502";
+    const patch = {
+      status: proofOk ? "connected" : "failed",
+      lastTested: now,
+      lastResponse: proofOk
+        ? `Invoked run ok (HTTP ${statusText}).`
+        : `Invoked run failed: ${clean(result?.error) || (ok ? "downstream nodes incomplete" : "unknown")}.`,
+      lastScheduledRunStatus: statusText,
+      lastScheduledRunId: runId,
+      lastScheduledRunAt: now,
+      lastScheduledRunAttemptedAt: now,
+      lastScheduledRunResponse: clean(result?.response || result?.stdout).slice(0, 240),
+      lastScheduledRunBodyPreview: clean(result?.stdout).slice(0, 240),
+      lastScheduledRunFailureReason: proofOk ? "" : clean(result?.error) || (ok ? "downstream nodes incomplete" : "run failed"),
+      lastScheduledRunTriggerKind: expectedTriggerKind,
+      lastScheduledRunNodesCompleted: allNodesCompleted ? "true" : "false",
+      lastScheduledRunNodeTrace: JSON.stringify(nodeTrace).slice(0, 2000),
+    };
+    patch[proofOk ? "lastScheduledRunSucceededAt" : "lastScheduledRunFailedAt"] = now;
+    const { config: nextConfig, found } = withSandboxScheduledRunProof(workspaceConfig, { objectId, rowId, patch });
+    proofPersisted = found;
+    if (found) {
+      try {
+        await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+      } catch {
+        proofPersisted = false;
+      }
+    }
+  }
+
+  // Compact result — the scheduler provider forwards this (base64) to the
+  // callback URL; inbound callers receive it directly. scheduleId is echoed so
+  // callback/caller can recover binding identity.
   return NextResponse.json(
     {
       ok,
@@ -188,6 +350,7 @@ async function POST(request, context) {
       response: result?.response || null,
       stdout: clean(result?.stdout).slice(0, 2000),
       error: ok ? undefined : clean(result?.error) || "run failed",
+      ...(proofPersisted === undefined ? {} : { proofPersisted }),
     },
     { status: ok ? 200 : 502 },
   );
