@@ -14,6 +14,11 @@
 import { describePostgresAdapter } from "./adapters/persistence/postgres.js";
 import { describeQstashKvAdapter } from "./adapters/persistence/qstash-kv.js";
 import { describeProviderManagedAdapter } from "./adapters/persistence/provider-managed.js";
+// Native inbound input methods (webhook / api-request) are WORKSPACE-level
+// capabilities — their signing/invoke env refs are always part of the
+// readiness signal, like the persistence adapters below, independent of any
+// registry rows referencing them.
+import { GROWTHUB_INBOUND_PRODUCTS } from "./workspace-add-ons.js";
 // Canonical UPPER_SNAKE candidate expansion — single source in server-secrets.js.
 import { envKeyCandidates } from "./server-secrets.js";
 
@@ -47,6 +52,12 @@ function collectReferencedRefs(workspaceConfig) {
           if (ref) refs.add(ref);
         }
       }
+    }
+  }
+  // Workspace-native inbound input methods: always-referenced refs.
+  for (const product of GROWTHUB_INBOUND_PRODUCTS) {
+    for (const ref of Array.isArray(product.requiredEnv) ? product.requiredEnv : []) {
+      if (clean(ref)) refs.add(clean(ref));
     }
   }
   return Array.from(refs);

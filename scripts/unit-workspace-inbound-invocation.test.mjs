@@ -247,13 +247,23 @@ test("runInputMethodInstall: capability + env + readiness gates pass → ONE bin
   assert.ok(published, "binding receipt published");
 });
 
-test("runInputMethodInstall: unverified product row → 409 capability gate (mirror of the scheduler gate)", async () => {
+test("runInputMethodInstall: NATIVE capability — no marketplace prerequisite; env probe verifies, row is auto-provisioned lineage", async () => {
+  // Webhook / API request are workspace-native input methods: there is no
+  // external account to install. The resolvable env ref IS the capability;
+  // the registry row is provisioned as lineage in the same governed write.
   const h = makeHarness();
   const store = h.getStore();
-  store.dataModel.objects[0].rows[0].syncStatus = "missing-env";
+  store.dataModel.objects[0].rows = store.dataModel.objects[0].rows.filter(
+    (r) => r.integrationId !== "growthub-webhook-trigger",
+  );
   h.setStore(store);
   const res = await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
-  assert.equal(res.status, 409);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const rows = h.getStore().dataModel.objects.find((o) => o.objectType === "api-registry").rows;
+  const lineage = rows.find((r) => r.integrationId === "growthub-webhook-trigger");
+  assert.ok(lineage, "native capability row auto-provisioned as lineage");
+  assert.equal(lineage.syncStatus, "verified");
+  assert.match(String(lineage.syncProof || ""), /GROWTHUB_WEBHOOK_SIGNING_SECRET/, "proof names the resolved env ref");
 });
 
 test("runInputMethodInstall: missing signing secret → 422 env gate", async () => {

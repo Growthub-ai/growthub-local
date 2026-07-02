@@ -2208,7 +2208,11 @@ export default function WorkflowSurface() {
                       // schedule route and the real destination door.
                       const inputMode = String(selectedNode.config.inputMode).trim();
                       const meta = inboundMethodMeta(inputMode);
-                      const capabilityRow = inputMode === "webhook" ? addOnsState.webhookTrigger : addOnsState.apiTrigger;
+                      // Native readiness: the signing secret / invoke token env
+                      // ref resolving in this runtime IS the capability — the
+                      // same signal the server bind gate enforces.
+                      const envRef = (meta.requiredEnv || [])[0] || "";
+                      const secretConfigured = envRef ? (serverlessSignals.configuredEnvRefs || []).includes(envRef) : false;
                       const bound = Boolean(sandboxRow?.scheduleId) && String(sandboxRow?.schedulerTriggerKind || "").trim() === meta.triggerKind;
                       const lastStatus = String(sandboxRow?.lastScheduledRunStatus || "").trim();
                       const lastKindAgrees = String(sandboxRow?.lastScheduledRunTriggerKind || "").trim() === meta.triggerKind;
@@ -2218,10 +2222,6 @@ export default function WorkflowSurface() {
                         <div className="dm-trigger-schedule-config">
                           <span className="dm-field-label">{meta.label} trigger</span>
                           <dl className="dm-workflow-schedule-state">
-                            <div>
-                              <dt>Trigger product</dt>
-                              <dd>{capabilityRow ? capabilityRow.integrationId : "Install trigger first"}</dd>
-                            </div>
                             <div>
                               <dt>Status</dt>
                               <dd>{bound ? (sandboxRow?.schedulerPaused ? "paused" : verified ? "verified 200" : lastFailed ? "last run failed" : "bound — no receipt yet") : "not bound"}</dd>
@@ -2238,31 +2238,29 @@ export default function WorkflowSurface() {
                                 <dd>{sandboxRow.schedulerDestination}</dd>
                               </div>
                             ) : null}
-                            {bound && lastStatus ? (
-                              <div>
-                                <dt>Last run</dt>
-                                <dd>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</dd>
-                              </div>
-                            ) : null}
-                            {capabilityRow ? (
-                              <div>
-                                <dt>Auth</dt>
-                                <dd>{inputMode === "webhook" ? "v1 HMAC — x-growthub-signature + x-growthub-timestamp (±300s)" : "Bearer — authorization or x-growthub-api-key"}</dd>
-                              </div>
-                            ) : null}
-                            {capabilityRow && (meta.requiredEnv || [])[0] ? (
+                            <div>
+                              <dt>Auth</dt>
+                              <dd>{inputMode === "webhook" ? "v1 HMAC — x-growthub-signature + x-growthub-timestamp (±300s)" : "Bearer — authorization or x-growthub-api-key"}</dd>
+                            </div>
+                            {envRef ? (
                               <div>
                                 <dt>{inputMode === "webhook" ? "Signing secret" : "Invoke token"}</dt>
-                                <dd>{meta.requiredEnv[0]} (env ref — value stays server-side)</dd>
+                                <dd>{envRef} — {secretConfigured ? "configured" : "not configured"} (env ref; value stays server-side)</dd>
                               </div>
                             ) : null}
                           </dl>
+                          {bound && lastStatus ? (
+                            <div className="dm-workflow-schedule-last-run">
+                              <span>Last run</span>
+                              <strong>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</strong>
+                            </div>
+                          ) : null}
                           {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
                           {!bound ? (
                             <button
                               type="button"
                               className="dm-btn-outline dm-workflow-schedule-submit"
-                              disabled={saving || !capabilityRow}
+                              disabled={saving || !secretConfigured}
                               onClick={() => submitInboundBinding(inputMode)}
                             >
                               {saving ? "Binding..." : `Bind ${meta.label} trigger`}
@@ -2307,8 +2305,8 @@ export default function WorkflowSurface() {
                               </button>
                             </>
                           )}
-                          {!capabilityRow ? (
-                            <p className="dm-cockpit-step-hint">Install + sync the {meta.label} trigger in Workspace Add-ons first, then bind it here.</p>
+                          {!secretConfigured && envRef ? (
+                            <p className="dm-cockpit-step-hint">Set {envRef} in the workspace environment (deployment env or .env.local), then bind — the {meta.label.toLowerCase()} endpoint can only verify calls once the ref resolves.</p>
                           ) : null}
                           {bound && !verified && !lastFailed ? (
                             <p className="dm-cockpit-step-hint">Run a test invocation with real values — publish requires a verified 200 with every downstream node completed.</p>

@@ -6,9 +6,6 @@
  * (never against the repo tree) and layers the inbound fixtures on top of the
  * standard feature seed — same lane: direct pre-boot filesystem write.
  *
- *   - installs + verifies the two packaged inbound capability rows
- *     (growthub-webhook-trigger / growthub-api-trigger) in the api-registry
- *     object, the exact end-state of "Install + sync in Workspace Add-ons",
  *   - gives the registry-workflow input node a REAL samplePayload (the
  *     scheduled-input contract collectAvailableInputKeys derives from),
  *   - clones a second workflow row (api-workflow) so webhook and api-request
@@ -36,16 +33,10 @@ const configPath = path.join(appDir, "growthub.config.json");
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const objects = config?.dataModel?.objects || [];
 
-const verified = { syncStatus: "verified", syncProof: "e2e-inbound-journey", syncCheckedAt: new Date().toISOString() };
-const registry = objects.find((o) => String(o?.objectType || "") === "api-registry");
-if (!registry) throw new Error("api-registry object missing from feature seed");
-registry.rows = registry.rows || [];
-for (const cap of [
-  { Name: "Growthub Webhook Trigger", integrationId: "growthub-webhook-trigger", authRef: "GROWTHUB_WEBHOOK", requiredEnv: "GROWTHUB_WEBHOOK_SIGNING_SECRET", ...verified },
-  { Name: "Growthub API Trigger", integrationId: "growthub-api-trigger", authRef: "GROWTHUB_API", requiredEnv: "GROWTHUB_API_INVOKE_TOKEN", ...verified },
-]) {
-  if (!registry.rows.some((r) => String(r?.integrationId || "") === cap.integrationId)) registry.rows.push(cap);
-}
+// Webhook / API request are workspace-NATIVE input methods: nothing is
+// pre-seeded in the registry for them. The env refs below are the only real
+// prerequisite; the bind auto-provisions the lineage row, and the journey
+// proves that native path end to end.
 
 const sandbox = objects.find((o) => String(o?.objectType || "") === "sandbox-environment"
   && (o.rows || []).some((r) => String(r?.Name || "") === "registry-workflow"));
@@ -98,7 +89,7 @@ fs.writeFileSync(envPath, env);
 console.log(JSON.stringify({
   ok: true,
   appDir,
-  capabilityRows: ["growthub-webhook-trigger", "growthub-api-trigger"],
+  nativeInputMethods: true,
   workflows: ["registry-workflow", "api-workflow"],
   samplePayload: SAMPLE_PAYLOAD,
 }, null, 2));
