@@ -636,6 +636,11 @@ export default function WorkflowSurface() {
   // workflow settles from its own persisted nodeTrace until it is run.
   useEffect(() => { setLiveRunEvents([]); }, [objectId, rowId]);
 
+  // Inbound test-request values are PER-WORKFLOW state: reset when the active
+  // workflow changes so row B never inherits row A's edited request body —
+  // the textarea re-seeds from B's own samplePayload contract.
+  useEffect(() => { setInboundTestValuesText(null); setInboundExampleCopied(false); }, [objectId, rowId]);
+
   const resolved = useMemo(
     () => (workspaceConfig ? findSandboxRowByWorkflowRef(workspaceConfig, objectId, rowId) : { object: null, row: null, rowIndex: -1 }),
     [workspaceConfig, objectId, rowId]
@@ -1125,7 +1130,10 @@ export default function WorkflowSurface() {
     if (runSetupTarget === "webhook" || runSetupTarget === "api-request") {
       // Compose the two contracts: the inbound request body (samplePayload /
       // triggerInput contract) under the canonical schema-collected fields.
-      const bodyValues = parseInboundTestValues() || {};
+      // An unparseable request body is a visible failure — never silently
+      // downgraded to an empty body.
+      const bodyValues = parseInboundTestValues();
+      if (!bodyValues) return;
       const merged = {
         ...(runInputs && typeof runInputs === "object" ? runInputs : { kind: RUN_INPUTS_KIND, source: "manual", files: [] }),
         values: { ...bodyValues, ...(runInputs?.values || {}) },
@@ -2294,7 +2302,7 @@ export default function WorkflowSurface() {
                                   spellCheck={false}
                                   onFocus={(e) => e.target.select()}
                                 />
-                                <small className="dm-run-setup__help">The complete v1 wire contract for this binding: destination, auth header{inputMode === "webhook" ? "s (signature is HMAC-SHA256 over `timestamp.body` with the signing secret)" : ""}, and the invoked-run envelope carrying your run inputs.</small>
+                                <small className="dm-run-setup__help">The complete v1 wire contract for this binding: destination, auth header{inputMode === "webhook" ? "s (signature is HMAC-SHA256 over `timestamp.body` with the signing secret)" : ""}, and the invoked-run envelope carrying your run inputs.{inputMode === "api-request" ? " Identical bodies within ~10 minutes are acknowledged as duplicates without re-executing — send an x-growthub-idempotency-key header to control retry identity." : ""}</small>
                               </label>
                               <button
                                 type="button"
