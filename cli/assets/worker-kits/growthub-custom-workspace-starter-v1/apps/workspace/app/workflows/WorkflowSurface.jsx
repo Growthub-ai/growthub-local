@@ -587,6 +587,7 @@ export default function WorkflowSurface() {
   // (collectAvailableInputKeys) derives from, so what the user tests is what
   // downstream nodes consume. null = not yet edited (re-seed from contract).
   const [inboundTestValuesText, setInboundTestValuesText] = useState(null);
+  const [inboundExampleCopied, setInboundExampleCopied] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleCadence, setScheduleCadence] = useState("daily");
@@ -971,20 +972,6 @@ export default function WorkflowSurface() {
 
   function findWorkflowRowInConfig(config) {
     return findSandboxRowByWorkflowRef(config, objectId, rowId)?.row || null;
-  }
-
-  // After a successful bind, the server synced the trigger-binding metadata
-  // into the row's graph fields (draft included). Adopt those bytes into the
-  // canvas so the graph the user sees — and the draft the publish gate
-  // compares against the invocation proof — is the bound graph, verbatim.
-  function adoptBoundGraphFromConfig(config) {
-    const nextRow = findWorkflowRowInConfig(config);
-    const nextValue = nextRow?.[draftFieldName] || nextRow?.[effectiveFieldName];
-    const parsed = nextValue ? parseOrchestrationGraph(nextValue) : null;
-    if (parsed) {
-      setOrchestrationGraph(parsed);
-      setDirty(false);
-    }
   }
 
   async function fetchWorkspaceConfigOnce() {
@@ -1478,7 +1465,6 @@ export default function WorkflowSurface() {
         return false;
       }
       setWorkspaceConfig(payload.workspaceConfig);
-      adoptBoundGraphFromConfig(payload.workspaceConfig);
       setScheduleModalOpen(false);
       setSaveMessage("Schedule updated.");
       return true;
@@ -1533,8 +1519,8 @@ export default function WorkflowSurface() {
   // resolveInboundMethodProducts), falling back to the packaged growthub
   // products so the canvas can name the method before anything is installed.
   const INBOUND_METHOD_FALLBACK = {
-    webhook: { providerId: "growthub", productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook" },
-    "api-request": { providerId: "growthub", productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request" },
+    webhook: { providerId: "growthub", productId: "growthub-webhook-trigger", triggerKind: "inbound-webhook", label: "Webhook", requiredEnv: ["GROWTHUB_WEBHOOK_SIGNING_SECRET"] },
+    "api-request": { providerId: "growthub", productId: "growthub-api-trigger", triggerKind: "api-request", label: "API request", requiredEnv: ["GROWTHUB_API_INVOKE_TOKEN"] },
   };
   function inboundMethodMeta(inputMode) {
     const method = (addOnsState.inboundMethods || []).find((entry) => entry.inputMode === inputMode) || null;
@@ -1544,9 +1530,52 @@ export default function WorkflowSurface() {
         productId: method.productId,
         triggerKind: method.triggerKind,
         label: method.label || INBOUND_METHOD_FALLBACK[inputMode]?.label || inputMode,
+        requiredEnv: method.requiredEnv?.length ? method.requiredEnv : (INBOUND_METHOD_FALLBACK[inputMode]?.requiredEnv || []),
       };
     }
     return INBOUND_METHOD_FALLBACK[inputMode] || null;
+  }
+
+  // The caller-facing wire contract (v1) per inbound method: exactly what an
+  // external system needs to invoke the bound workflow — full envelope,
+  // destination, and auth headers. Secrets appear as env-ref NAMES only.
+  function buildInboundInvocationExample(inputMode, meta) {
+    const dest = String(sandboxRow?.schedulerDestination || "").trim() || "<workspace-destination-url>";
+    const envRef = (meta?.requiredEnv || [])[0] || (inputMode === "webhook" ? "GROWTHUB_WEBHOOK_SIGNING_SECRET" : "GROWTHUB_API_INVOKE_TOKEN");
+    const body = JSON.stringify({
+      kind: "growthub-invoked-run-v1",
+      scheduleId: String(sandboxRow?.scheduleId || ""),
+      workspaceId: workspaceConfig?.id || "workspace",
+      objectId,
+      rowId,
+      version: String(sandboxRow?.version || "v1"),
+      runInputs: { kind: RUN_INPUTS_KIND, source: inputMode, values: deriveInboundTestSeed(), files: [] },
+    });
+    if (inputMode === "webhook") {
+      return [
+        `curl -X POST '${dest}' \\`,
+        "  -H 'content-type: application/json' \\",
+        "  -H 'x-growthub-timestamp: <unix-seconds>' \\",
+        `  -H 'x-growthub-signature: v1=<hex hmac-sha256(${envRef}, \"<timestamp>.<body>\")>' \\`,
+        `  -d '${body}'`,
+      ].join("\n");
+    }
+    return [
+      `curl -X POST '${dest}' \\`,
+      "  -H 'content-type: application/json' \\",
+      `  -H "authorization: Bearer $${envRef}" \\`,
+      `  -d '${body}'`,
+    ].join("\n");
+  }
+
+  async function copyInboundExample(inputMode, meta) {
+    try {
+      await navigator.clipboard.writeText(buildInboundInvocationExample(inputMode, meta));
+      setInboundExampleCopied(true);
+      window.setTimeout(() => setInboundExampleCopied(false), 1200);
+    } catch {
+      // Clipboard API unavailable — the example stays selectable by hand.
+    }
   }
   function inboundScheduleRoute(meta) {
     return `/api/workspace/add-ons/${encodeURIComponent(meta?.providerId || "growthub")}/schedule`;
@@ -1576,7 +1605,6 @@ export default function WorkflowSurface() {
         return false;
       }
       setWorkspaceConfig(payload.workspaceConfig);
-      adoptBoundGraphFromConfig(payload.workspaceConfig);
       setSaveMessage(`${meta.label} trigger bound.`);
       return true;
     } catch (error) {
@@ -2216,6 +2244,18 @@ export default function WorkflowSurface() {
                                 <dd>{lastStatus}{lastKindAgrees ? "" : " (other method)"}</dd>
                               </div>
                             ) : null}
+                            {capabilityRow ? (
+                              <div>
+                                <dt>Auth</dt>
+                                <dd>{inputMode === "webhook" ? "v1 HMAC — x-growthub-signature + x-growthub-timestamp (±300s)" : "Bearer — authorization or x-growthub-api-key"}</dd>
+                              </div>
+                            ) : null}
+                            {capabilityRow && (meta.requiredEnv || [])[0] ? (
+                              <div>
+                                <dt>{inputMode === "webhook" ? "Signing secret" : "Invoke token"}</dt>
+                                <dd>{meta.requiredEnv[0]} (env ref — value stays server-side)</dd>
+                              </div>
+                            ) : null}
                           </dl>
                           {scheduleError ? <p className="dm-workflow-schedule-error" role="alert">{scheduleError}</p> : null}
                           {!bound ? (
@@ -2246,6 +2286,24 @@ export default function WorkflowSurface() {
                                 onClick={() => handleInboundTestClick(inputMode)}
                               >
                                 {saving ? "Invoking..." : runInputSchema.requiresInput ? "Run test invocation with inputs..." : "Run test invocation"}
+                              </button>
+                              <label className="dm-orchestration-config__field">
+                                <span>Call it from your system</span>
+                                <textarea
+                                  rows={7}
+                                  readOnly
+                                  value={buildInboundInvocationExample(inputMode, meta)}
+                                  spellCheck={false}
+                                  onFocus={(e) => e.target.select()}
+                                />
+                                <small className="dm-run-setup__help">The complete v1 wire contract for this binding: destination, auth header{inputMode === "webhook" ? "s (signature is HMAC-SHA256 over `timestamp.body` with the signing secret)" : ""}, and the invoked-run envelope carrying your run inputs.</small>
+                              </label>
+                              <button
+                                type="button"
+                                className="dm-btn-outline"
+                                onClick={() => copyInboundExample(inputMode, meta)}
+                              >
+                                {inboundExampleCopied ? "Copied" : "Copy example request"}
                               </button>
                             </>
                           )}

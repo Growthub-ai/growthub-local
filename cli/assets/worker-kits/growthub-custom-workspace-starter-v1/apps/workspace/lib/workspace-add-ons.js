@@ -513,12 +513,29 @@ function readTriggerScheduleBinding(value) {
 // Graph-content equality for proof freshness. The trigger sync, the canvas
 // serializer, and hand-authored seeds each emit different JSON formatting,
 // and the canvas injects derived `sandboxRecordRef` identity metadata — none
-// of which changes what the runner executes. Freshness must be strict on
-// CONTENT (any node/config/edge change breaks it) and indifferent to writer
-// formatting. Non-parseable values fall back to exact trimmed-byte equality.
+// of which changes what the user authored. The bind additionally OWNS the
+// trigger-binding metadata it writes into the LIVE graph only (the draft is
+// NEVER mutated by a bind): `trigger`/`triggerKind`/`schedule`/`enabled` on
+// the trigger node and `writeLastResponse` on tool-result nodes. Those exact
+// keys are excluded from content comparison — binding agreement is enforced
+// separately and explicitly by the proof gate's binding checks. Everything
+// else is user content: any node/config/edge change breaks freshness.
+// Non-parseable values fall back to exact trimmed-byte equality.
+const BIND_OWNED_TRIGGER_CONFIG_KEYS = ["trigger", "triggerKind", "schedule", "enabled"];
 function normalizeGraphForComparison(value) {
   const graph = parseGraphValue(value);
   if (!graph) return String(value == null ? "" : value).trim();
+  const stripped = {
+    ...graph,
+    nodes: (Array.isArray(graph.nodes) ? graph.nodes : []).map((node) => {
+      if (!node || typeof node !== "object") return node;
+      const config = { ...(node.config || {}) };
+      const isTrigger = node.type === "data-trigger" || node.type === "input" || node.id === "input";
+      if (isTrigger) for (const key of BIND_OWNED_TRIGGER_CONFIG_KEYS) delete config[key];
+      if (node.type === "tool-result") delete config.writeLastResponse;
+      return { ...node, config };
+    }),
+  };
   const stable = (v) => {
     if (Array.isArray(v)) return v.map(stable);
     if (v && typeof v === "object") {
@@ -531,7 +548,7 @@ function normalizeGraphForComparison(value) {
     }
     return v;
   };
-  return JSON.stringify(stable(graph));
+  return JSON.stringify(stable(stripped));
 }
 
 function orchestrationGraphContentEquals(a, b) {
@@ -635,27 +652,9 @@ function withWorkflowServerlessBind(workspaceConfig, params = {}) {
       };
       const graphSync = syncTriggerNodeForSchedule(row.orchestrationGraph, triggerMeta, { clear });
       const configSync = syncTriggerNodeForSchedule(row.orchestrationConfig, triggerMeta, { clear });
-      // The bind OWNS the trigger-binding metadata in every representation of
-      // the graph. A saved draft that predates the bind would otherwise carry
-      // stale trigger bytes forever — making the draft permanently
-      // unpublishable under the proof freshness gate (liveGraph === draftGraph)
-      // even though its only delta is metadata this bind itself wrote. Sync
-      // existing drafts too; never create one.
-      const draftGraphSync = String(row.orchestrationDraftGraph || "").trim()
-        ? syncTriggerNodeForSchedule(row.orchestrationDraftGraph, triggerMeta, { clear })
-        : null;
-      const draftConfigSync = String(row.orchestrationDraftConfig || "").trim()
-        ? syncTriggerNodeForSchedule(row.orchestrationDraftConfig, triggerMeta, { clear })
-        : null;
       triggerNodeId = (liveField === "orchestrationGraph" ? graphSync.triggerNodeId : configSync.triggerNodeId)
         || configSync.triggerNodeId || graphSync.triggerNodeId;
-      const base = {
-        ...row,
-        orchestrationGraph: graphSync.value,
-        orchestrationConfig: configSync.value,
-        ...(draftGraphSync ? { orchestrationDraftGraph: draftGraphSync.value } : {}),
-        ...(draftConfigSync ? { orchestrationDraftConfig: draftConfigSync.value } : {}),
-      };
+      const base = { ...row, orchestrationGraph: graphSync.value, orchestrationConfig: configSync.value };
       if (clear) {
         return { ...base, runLocality: "local", ...SANDBOX_SCHEDULE_CLEAR_PATCH };
       }
@@ -1204,6 +1203,9 @@ function resolveInboundMethodProducts(workspaceConfig) {
       productId: row.productId,
       integrationId: String(row.integrationId || "").trim(),
       label: String(product.shortLabel || product.label || row.productId).trim(),
+      // The env refs the caller-facing panel names (never values) — e.g. the
+      // signing secret / invoke token slug the external system must hold.
+      requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv : [],
       row,
     });
   }
