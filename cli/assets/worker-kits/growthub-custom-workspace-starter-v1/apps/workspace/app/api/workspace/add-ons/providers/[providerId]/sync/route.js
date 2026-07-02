@@ -154,8 +154,117 @@ async function deriveUpstashQstashRuntimeEnv(provider, email, apiKey) {
  *   { ok:false, syncStatus:"account-linked" } → creds absent / Developer API N/A
  *   { ok:false }                      → creds present but probe rejected
  */
+/** Bearer account-management probe (accountProbe.mode === "bearer"), with an
+ * optional direct-project fallback probe when only the product env is set. */
+async function probeProviderAccountBearer(provider, now) {
+  const probe = provider.accountProbe || {};
+  const token = envValue(probe.tokenEnv);
+  const fallback = probe.fallback || {};
+  const fallbackBaseUrl = envValue(fallback.baseUrlEnv);
+  const fallbackSecret = envValue(fallback.tokenEnv);
+
+  if (token) {
+    const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/"];
+    let last = null;
+    for (const path of paths) {
+      try {
+        const response = await fetchWithTimeout(safeUrl(provider.baseUrl, path), {
+          method: "GET",
+          headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+        });
+        last = { status: response.status, path };
+        if (response.ok) {
+          const payload = await readJsonSafe(response);
+          const accountOptions = compactAccountOptions(payload, path);
+          const selected = accountOptions[0] || null;
+          return {
+            ok: true,
+            testedAt: now,
+            proof: `${provider.label} Management API account verified (GET ${path} → HTTP ${response.status}).`,
+            summary: `${provider.label} provider account verified via live Management API probe.`,
+            resolvedEnv: resolvedEnvKeys([probe.tokenEnv, fallback.baseUrlEnv, fallback.tokenEnv]),
+            providerAccountOptions: accountOptions,
+            selectedProviderAccountId: selected?.id || "",
+            selectedProviderAccountLabel: selected?.label || "",
+            providerAccountSource: "management-api",
+          };
+        }
+      } catch (err) {
+        last = { status: 0, path, error: err?.message || "network error" };
+      }
+    }
+    const detail = last ? `${last.path} → HTTP ${last.status}` : "no endpoint responded";
+    return {
+      ok: false,
+      testedAt: now,
+      proof: `${provider.label} Management API probe failed: ${detail}.`,
+      summary: `${provider.label} Management API probe failed: ${detail}.`,
+    };
+  }
+
+  if (fallbackBaseUrl && fallbackSecret) {
+    const headerName = clean(fallback.tokenHeaderName);
+    const paths = Array.isArray(fallback.paths) && fallback.paths.length ? fallback.paths : ["/"];
+    let last = null;
+    for (const path of paths) {
+      try {
+        const response = await fetchWithTimeout(safeUrl(fallbackBaseUrl, path), {
+          method: "GET",
+          headers: {
+            authorization: `Bearer ${fallbackSecret}`,
+            ...(headerName ? { [headerName]: fallbackSecret } : {}),
+            accept: "application/json",
+          },
+        });
+        last = { status: response.status, path };
+        if (response.ok) {
+          let host = fallbackBaseUrl;
+          try {
+            host = new URL(fallbackBaseUrl).host;
+          } catch { /* keep raw */ }
+          return {
+            ok: true,
+            testedAt: now,
+            proof: `${provider.label} project verified (GET ${path} → HTTP ${response.status}).`,
+            summary: `${provider.label} project binding verified via direct project probe (no management token).`,
+            resolvedEnv: resolvedEnvKeys([fallback.baseUrlEnv, fallback.tokenEnv]),
+            providerAccountOptions: [{ id: host, label: host, source: path }],
+            selectedProviderAccountId: host,
+            selectedProviderAccountLabel: host,
+            providerAccountSource: "project-probe",
+          };
+        }
+      } catch (err) {
+        last = { status: 0, path, error: err?.message || "network error" };
+      }
+    }
+    const detail = last ? `${last.path} → HTTP ${last.status}` : "no endpoint responded";
+    return {
+      ok: false,
+      testedAt: now,
+      proof: `${provider.label} project probe failed: ${detail}.`,
+      summary: `${provider.label} project probe failed: ${detail}.`,
+    };
+  }
+
+  const required = [probe.tokenEnv].filter(Boolean);
+  return {
+    ok: false,
+    syncStatus: "setup-required",
+    status: "draft",
+    missingEnv: required.filter((envKey) => !readEnvVar(envKey, process.env)),
+    resolvedEnv: resolvedEnvKeys(required),
+    testedAt: now,
+    proof: "",
+    summary: `${provider.label} needs a management access token, or a bound project URL and key, to show connected account details.`,
+  };
+}
+
 async function probeProviderAccount(provider, now) {
   const probe = provider.accountProbe;
+  if (clean(probe?.mode) === "bearer") {
+    return probeProviderAccountBearer(provider, now);
+  }
   if (!probe?.emailEnv || !probe?.keyEnv) {
     return { ok: false, syncStatus: "account-linked", testedAt: now };
   }

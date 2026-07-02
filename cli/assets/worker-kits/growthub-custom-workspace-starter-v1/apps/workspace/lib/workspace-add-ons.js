@@ -166,6 +166,71 @@ const UPSTASH_PRODUCTS = [
     regionOptions: UPSTASH_REGION_OPTIONS,
   },
 ];
+const SUPABASE_PROVIDER_INTEGRATION_ID = "supabase-provider";
+const SUPABASE_POSTGREST_INTEGRATION_ID = "supabase-postgrest";
+// Database-operations lane — provider-agnostic grouping for products that
+// expose governed external database read/write (mirrors how
+// "serverless-scheduler" groups scheduler products). Cockpits and the canvas
+// detect capability by THIS lane string, never by provider id.
+const WORKSPACE_DATA_LANE = "workspace-data";
+const SUPABASE_PRODUCTS = [
+  {
+    productId: "supabase-postgrest",
+    integrationId: SUPABASE_POSTGREST_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase Postgres (PostgREST)",
+    shortLabel: "Postgres",
+    icon: "S",
+    iconClass: "is-supabase",
+    iconSrc: "/integrations/supabase/postgrest.png",
+    connectorKind: "supabase-data",
+    endpoint: "/rest/v1/",
+    method: "GET",
+    description: "Supabase Postgres connection over PostgREST for governed workspace data objects. Secrets stay in env; this row stores only refs and routing metadata.",
+    subtitle: "Postgres for the governed workspace",
+    plans: "Free, Pro, Team plans",
+    entityTypes: "table,record,postgres",
+    capabilities: "database,workspace-data,two-way-sync,workflow",
+    executionLane: WORKSPACE_DATA_LANE,
+    requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+    optionalEnv: ["SUPABASE_ANON_KEY"],
+    consoleUrl: "https://supabase.com/dashboard",
+    resolverTemplateId: "supabase-postgrest",
+    probe: {
+      baseUrlEnv: "SUPABASE_URL",
+      tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+      // Supabase's gateway authenticates on the `apikey` header; Authorization
+      // Bearer carries the same key for PostgREST. probeJsonPaths sends both
+      // when tokenHeaderName is declared.
+      tokenHeaderName: "apikey",
+      paths: ["/rest/v1/"],
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/v1/projects"],
+      emptyLabel: "No Supabase projects returned for this account.",
+      createDividerLabel: "Or create a new Supabase project",
+      envFromResource: [
+        { envRef: "SUPABASE_URL", urlTemplate: "https://{id}.supabase.co" },
+        {
+          envRef: "SUPABASE_SERVICE_ROLE_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "service_role",
+          fieldCandidates: ["api_key", "apiKey"],
+        },
+        {
+          envRef: "SUPABASE_ANON_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "anon",
+          fieldCandidates: ["api_key", "apiKey"],
+          optional: true,
+        },
+      ],
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -218,6 +283,76 @@ const MARKETPLACE_PROVIDERS = [
     capabilities: "provider-account,env-provisioning,marketplace-products",
     executionLane: "workspace-provider",
     description: "Provider-level Upstash account binding for workspace add-ons. Product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "supabase",
+    integrationId: SUPABASE_PROVIDER_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase",
+    developer: "Supabase",
+    iconSrc: "/integrations/supabase/provider.png",
+    baseUrl: "https://api.supabase.com",
+    endpoint: "/v1/projects",
+    method: "GET",
+    // Provider/account-management lane (Management API): Bearer personal
+    // access token (sbp_…). Absence ⇒ account-linked, not verified — the
+    // product can still verify through SUPABASE_URL + service key directly.
+    accountProbe: {
+      mode: "bearer",
+      tokenEnv: "SUPABASE_ACCESS_TOKEN",
+      paths: ["/v1/projects"],
+      // Product-lane fallback probe when no management token is present:
+      // verify the project itself with the service key (apikey + Bearer).
+      fallback: {
+        baseUrlEnv: "SUPABASE_URL",
+        tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+        tokenHeaderName: "apikey",
+        paths: ["/rest/v1/"],
+      },
+    },
+    accountSetupFields: [
+      {
+        id: "accessToken",
+        label: "Personal access token (sbp_…)",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_ACCESS_TOKEN",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "projectUrl",
+        label: "Project URL (https://<ref>.supabase.co)",
+        type: "url",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_URL",
+        credentialRole: "baseUrl",
+      },
+      {
+        id: "serviceRoleKey",
+        label: "Service role key",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_SERVICE_ROLE_KEY",
+        credentialRole: "secret",
+      },
+    ],
+    consoleUrl: "https://supabase.com/dashboard",
+    accountSetupUrl: "https://supabase.com/dashboard/account/tokens",
+    supportUrl: "https://supabase.com/support",
+    websiteUrl: "https://supabase.com",
+    docsUrl: "https://supabase.com/docs",
+    termsUrl: "https://supabase.com/terms",
+    privacyUrl: "https://supabase.com/privacy",
+    providerProductsLabel: "Postgres Database (PostgREST, two-way sync)",
+    products: SUPABASE_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "supabase-provider",
+    capabilities: "provider-account,env-provisioning,marketplace-products",
+    executionLane: "workspace-provider",
+    description: "Provider-level Supabase account binding for workspace add-ons. Connect with a management token to discover projects, or bind one project directly with its URL and service key.",
   },
 ];
 
@@ -726,6 +861,91 @@ function makeUpstashSchedulerRow({ region, authReady }) {
   return makeUpstashProductRow({ productId: "upstash-qstash", region, authReady });
 }
 
+/**
+ * Provider-agnostic product registry row (the non-Upstash lane). Same column
+ * contract as makeUpstashProductRow minus the QStash region special-case, so
+ * every future first-party provider (Supabase today) installs through one
+ * builder instead of a per-provider fork.
+ */
+function makeMarketplaceProductRow({ providerId, productId, plan = "free", syncResult = null, authReady = false }) {
+  const product = getMarketplaceProduct(providerId, productId);
+  if (!product) return null;
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  return {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || "",
+    selectedResourceSource: syncResult?.selectedResourceSource || "",
+    baseUrl: syncResult?.baseUrl || "",
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Complete ${product.label} provider setup, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: product.resolverTemplateId || "",
+    schemaVersion: "growthub-marketplace-product-v1",
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || "",
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+  };
+}
+
+/** Upsert one already-built product row into the api-registry object. */
+function withRegistryProductRowUpsert(workspaceConfig, productRow) {
+  if (!productRow || !String(productRow.integrationId || "").trim()) return workspaceConfig;
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  const targetId = String(productRow.integrationId).trim();
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isApiRegistryObject(object) || found) return object;
+    found = true;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === targetId);
+    return {
+      ...object,
+      columns: apiRegistryColumns(object.columns),
+      rows: hasRow
+        ? rows.map((row) => String(row?.integrationId || "").trim() === targetId ? { ...row, ...productRow } : row)
+        : [productRow, ...rows],
+    };
+  });
+  if (!found) {
+    nextObjects.push({
+      id: "api-registry",
+      label: "API Registry",
+      name: "API Registry",
+      source: "API Registry",
+      objectType: "api-registry",
+      icon: "Code2",
+      columns: apiRegistryColumns(),
+      rows: [productRow],
+      binding: { mode: "manual", source: "API Registry" },
+      relations: [],
+    });
+  }
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
 function withUpstashProductRegistry(workspaceConfig, { productId = "upstash-qstash", region = "us-east-1", plan = "free", syncResult = null, authReady = false } = {}) {
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
@@ -766,7 +986,8 @@ function withMarketplaceProductRegistry(workspaceConfig, { providerId, productId
   if (providerId === "upstash") {
     return withUpstashProductRegistry(workspaceConfig, { productId, region, plan, syncResult, authReady });
   }
-  return workspaceConfig;
+  const productRow = makeMarketplaceProductRow({ providerId, productId, plan, syncResult, authReady });
+  return withRegistryProductRowUpsert(workspaceConfig, productRow);
 }
 
 function withMarketplaceProviderRegistry(workspaceConfig, { providerId, syncResult = null } = {}) {
@@ -897,6 +1118,18 @@ function findWorkspaceAddOnRows(workspaceConfig) {
   return rows;
 }
 
+/**
+ * Installed + verified products on the database-operations lane
+ * (executionLane === "workspace-data"). Provider-agnostic by design: any
+ * future first-party data provider whose product declares this lane becomes a
+ * /data cockpit + supabase-data-class capability with zero surface changes —
+ * the same lane grammar the scheduler cockpit uses for "serverless-scheduler".
+ */
+function listInstalledDataProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -905,6 +1138,9 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   // is what lets the canvas OFFER a bind; the per-workflow schedule itself is
   // created on bind and stored on the owning sandbox row, not here.
   const qstashScheduler = qstashWorkflow;
+  const supabaseProvider = findMarketplaceProviderRow(workspaceConfig, "supabase");
+  const dataProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+  const supabaseData = dataProducts.find((row) => row.productId === "supabase-postgrest") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -914,17 +1150,29 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     qstashWorkflow,
     qstashScheduler,
     hasQstashSchedulerCapability: Boolean(qstashWorkflow),
+    supabaseProvider,
+    hasSupabaseProvider: Boolean(supabaseProvider?.isConnectedProvider),
+    // Lane-derived database-operations capability (provider-agnostic).
+    dataProducts,
+    supabaseData,
+    hasSupabaseDataCapability: Boolean(supabaseData),
+    hasWorkspaceDataCapability: dataProducts.length > 0,
   };
 }
 
 export {
   MARKETPLACE_PROVIDERS,
+  SUPABASE_POSTGREST_INTEGRATION_ID,
+  SUPABASE_PRODUCTS,
+  SUPABASE_PROVIDER_INTEGRATION_ID,
   UPSTASH_AUTH_REF,
   UPSTASH_PRODUCTS,
   UPSTASH_PROVIDER_INTEGRATION_ID,
   UPSTASH_QSTASH_INTEGRATION_ID,
   UPSTASH_REGION_OPTIONS,
+  WORKSPACE_DATA_LANE,
   deriveWorkspaceAddOnsState,
+  listInstalledDataProducts,
   findMarketplaceProviderRow,
   findUpstashProviderRow,
   findInstalledWorkspaceAddOns,
@@ -945,12 +1193,14 @@ export {
   listProviderProductReadiness,
   listUpstashProductReadiness,
   withWorkflowServerlessBind,
+  makeMarketplaceProductRow,
   makeMarketplaceProviderRow,
   makeUpstashProductRow,
   makeUpstashProviderRow,
   makeUpstashSchedulerRow,
   withMarketplaceProductRegistry,
   withMarketplaceProviderRegistry,
+  withRegistryProductRowUpsert,
   withUpstashProductRegistry,
   withUpstashProviderRegistry,
   withUpstashSchedulerRegistry,

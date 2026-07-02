@@ -108,6 +108,63 @@ function deriveEnvUpdates(fields, credentials, body) {
     .filter(([, value]) => value));
 }
 
+/** Bearer account lane (e.g. Supabase Management API personal access token). */
+async function verifyProviderAccountBearer(provider, token) {
+  const paths = Array.isArray(provider.accountProbe?.paths) ? provider.accountProbe.paths : [];
+  let last = null;
+  for (const probePath of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, probePath), {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      });
+      last = { path: probePath, status: response.status };
+      if (!response.ok) continue;
+      const payload = await readJsonSafe(response);
+      return { ok: true, path: probePath, status: response.status, options: compactAccountOptions(payload, probePath, "") };
+    } catch (error) {
+      last = { path: probePath, status: 0, error: error?.message || "network error" };
+    }
+  }
+  return { ok: false, last };
+}
+
+/**
+ * Direct project probe fallback for bearer providers: no management token,
+ * but the product base URL + secret verify the bound project itself
+ * (accountProbe.fallback declares the header shape and paths).
+ */
+async function verifyProviderProjectFallback(provider, baseUrl, secret) {
+  const fallback = provider.accountProbe?.fallback || {};
+  const paths = Array.isArray(fallback.paths) && fallback.paths.length ? fallback.paths : ["/"];
+  const headerName = clean(fallback.tokenHeaderName);
+  let host = clean(baseUrl);
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    /* keep raw value */
+  }
+  let last = null;
+  for (const probePath of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(baseUrl, probePath), {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${secret}`,
+          ...(headerName ? { [headerName]: secret } : {}),
+          accept: "application/json",
+        },
+      });
+      last = { path: probePath, status: response.status };
+      if (!response.ok) continue;
+      return { ok: true, path: probePath, status: response.status, options: [{ id: host, label: host, source: probePath }] };
+    } catch (error) {
+      last = { path: probePath, status: 0, error: error?.message || "network error" };
+    }
+  }
+  return { ok: false, last };
+}
+
 async function verifyProviderAccount(provider, email, apiKey) {
   const authHeader = `Basic ${Buffer.from(`${email}:${apiKey}`).toString("base64")}`;
   const paths = ["/v2/teams", ...(Array.isArray(provider.accountProbe?.paths) ? provider.accountProbe.paths : [])];
@@ -201,6 +258,84 @@ async function POST(request, context) {
   const credentials = body && typeof body.credentials === "object" && !Array.isArray(body.credentials)
     ? body.credentials
     : {};
+
+  // Bearer-token providers (accountProbe.mode === "bearer") verify with a
+  // management token — or fall back to a direct project probe when the user
+  // pastes the project URL + secret instead. Same persistence tail as the
+  // basic-pair lane: env refs to .env.local, provider row via the registry
+  // merge, receipt to workspace:agent-outcomes.
+  if (clean(provider.accountProbe?.mode) === "bearer") {
+    const fields = getProviderSetupFields(provider);
+    const tokenField = fields.find((field) => field.credentialRole === "bearerToken");
+    const baseUrlField = fields.find((field) => field.credentialRole === "baseUrl");
+    const secretField = fields.find((field) => field.credentialRole === "secret");
+    const token = tokenField ? getCredentialValue(credentials, body, tokenField) : clean(credentials?.accessToken ?? body?.accessToken);
+    const projectUrl = baseUrlField ? getCredentialValue(credentials, body, baseUrlField) : "";
+    const projectSecret = secretField ? getCredentialValue(credentials, body, secretField) : "";
+    if (!token && !(projectUrl && projectSecret)) {
+      return jsonError(`${provider.label} needs a personal access token, or a project URL plus its service key`, 400, {
+        providerId: provider.providerId,
+        missingFields: [tokenField?.id, baseUrlField?.id, secretField?.id].filter(Boolean),
+      });
+    }
+
+    let verified = token ? await verifyProviderAccountBearer(provider, token) : null;
+    let accountSource = verified?.ok ? "management-api" : "";
+    if (!verified?.ok && projectUrl && projectSecret) {
+      verified = await verifyProviderProjectFallback(provider, projectUrl, projectSecret);
+      accountSource = verified?.ok ? "project-probe" : accountSource;
+    }
+    if (!verified?.ok) {
+      return jsonError(`${provider.label} account could not be verified`, 422, {
+        providerId: provider.providerId,
+        checked: verified?.last ? { path: verified.last.path, status: verified.last.status } : null,
+      });
+    }
+
+    const envToWrite = deriveEnvUpdates(fields, credentials, body);
+    await writeLocalEnv(envToWrite);
+    const resolvedEnv = Object.keys(envToWrite);
+    const selected = verified.options[0] || null;
+    const syncResult = {
+      ok: true,
+      syncStatus: "verified",
+      status: "connected",
+      testedAt: new Date().toISOString(),
+      proof: `${provider.label} ${accountSource === "management-api" ? "Management API account" : "project"} verified (GET ${verified.path} -> HTTP ${verified.status}).`,
+      summary: `${provider.label} provider ${accountSource === "management-api" ? "account" : "project binding"} verified and stored as local runtime env refs.`,
+      resolvedEnv,
+      providerAccountOptions: verified.options,
+      selectedProviderAccountId: selected?.id || "",
+      selectedProviderAccountLabel: selected?.label || "",
+      providerAccountSource: accountSource,
+    };
+    const currentConfig = await readWorkspaceConfig();
+    const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });
+    const persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+    const { receipt } = await appendOutcomeReceipt({
+      kind: "workspace-add-on-provider-credentials",
+      lane: "server-authoritative",
+      outcomeStatus: "published",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: provider.label }],
+      changedFields: ["dataModel.api-registry"],
+      policyVerdict: { ok: true },
+      schemaVerdict: { ok: true },
+      summary: syncResult.summary,
+      nextActions: [`Install ${provider.label} products from the marketplace page.`],
+    });
+
+    return NextResponse.json({
+      ok: true,
+      providerId: provider.providerId,
+      accountState: "verified",
+      workspaceConfig: persisted,
+      accountOptions: verified.options,
+      resolvedEnv,
+      receiptId: receipt.receiptId,
+    });
+  }
+
   const { fields, usernameField, passwordField, username: email, password: apiKey } = deriveBasicAuthCredentials(provider, credentials, body);
   const missingFields = fields
     .filter((field) => field.required && !getCredentialValue(credentials, body, field))

@@ -123,21 +123,44 @@ async function GET(request, context) {
   const product = getMarketplaceProduct(providerId, productId);
   if (!provider || !product) return jsonError("unknown provider product", 404, { providerId, productId });
 
-  const emailKey = provider.accountProbe?.emailEnv;
-  const apiKey = provider.accountProbe?.keyEnv;
-  const email = envValue(emailKey);
-  const key = envValue(apiKey);
-  if (!email || !key) {
-    return jsonError(`${provider.label} account auth is not connected`, 422, {
-      providerId,
-      productId,
-      missingEnv: [emailKey, apiKey].filter((name) => name && !readEnvVar(name, process.env)),
-      resolvedEnv: [emailKey, apiKey].filter((name) => name && readEnvVar(name, process.env)),
-      resources: [],
-    });
+  // Discovery auth mode comes from the product's resourceDiscovery contract:
+  // "provider-basic" (Upstash Developer API) or "provider-bearer" (Supabase
+  // Management API personal access token). Both resolve env server-side and
+  // surface key NAMES only.
+  const discoveryAuth = clean(product.resourceDiscovery?.auth) || "provider-basic";
+  let authHeader = "";
+  let authEnvKeys = [];
+  if (discoveryAuth === "provider-bearer") {
+    const tokenKey = provider.accountProbe?.tokenEnv;
+    const token = envValue(tokenKey);
+    authEnvKeys = [tokenKey].filter(Boolean);
+    if (!token) {
+      return jsonError(`${provider.label} account auth is not connected`, 422, {
+        providerId,
+        productId,
+        missingEnv: authEnvKeys.filter((name) => !readEnvVar(name, process.env)),
+        resolvedEnv: authEnvKeys.filter((name) => readEnvVar(name, process.env)),
+        resources: [],
+      });
+    }
+    authHeader = `Bearer ${token}`;
+  } else {
+    const emailKey = provider.accountProbe?.emailEnv;
+    const apiKey = provider.accountProbe?.keyEnv;
+    const email = envValue(emailKey);
+    const key = envValue(apiKey);
+    authEnvKeys = [emailKey, apiKey].filter(Boolean);
+    if (!email || !key) {
+      return jsonError(`${provider.label} account auth is not connected`, 422, {
+        providerId,
+        productId,
+        missingEnv: authEnvKeys.filter((name) => !readEnvVar(name, process.env)),
+        resolvedEnv: authEnvKeys.filter((name) => readEnvVar(name, process.env)),
+        resources: [],
+      });
+    }
+    authHeader = `Basic ${Buffer.from(`${email}:${key}`).toString("base64")}`;
   }
-
-  const authHeader = `Basic ${Buffer.from(`${email}:${key}`).toString("base64")}`;
   const resources = [];
   const failures = [];
   for (const path of resourcePaths(product)) {
@@ -166,7 +189,7 @@ async function GET(request, context) {
     productId: product.productId,
     resources,
     failures,
-    resolvedEnv: [emailKey, apiKey].filter((name) => name && readEnvVar(name, process.env)),
+    resolvedEnv: authEnvKeys.filter((name) => readEnvVar(name, process.env)),
   });
 }
 
