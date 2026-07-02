@@ -226,6 +226,13 @@ async function resolveProviderResource({ provider, product, selectedResourceId }
     const value = resourceFieldValue(selected.row, mapping);
     if (value) updates[envRef] = value;
   }
+  // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)
+  // so the canonical authRef candidate expansion resolves the product key.
+  for (const [alias, source] of Object.entries(provider.accountProbe?.aliasEnv || {})) {
+    if (!updates[alias] && (updates[source] || envValue(source))) {
+      updates[alias] = updates[source] || envValue(source);
+    }
+  }
   const writtenEnv = await writeLocalEnv(updates);
   return { writtenEnv, resource: selected, failures };
 }

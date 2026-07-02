@@ -222,6 +222,11 @@ async function handleBearerCredentials(request, provider, credentials, body) {
   const envToWrite = deriveEnvUpdates(fields, credentials, body);
   if (token) envToWrite[tokenEnv] = token;
   if (teamField?.envRef && teamId) envToWrite[teamField.envRef] = teamId;
+  // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)
+  // so the canonical authRef candidate expansion resolves the product key.
+  for (const [alias, source] of Object.entries(provider.accountProbe?.aliasEnv || {})) {
+    if (!envToWrite[alias] && envToWrite[source]) envToWrite[alias] = envToWrite[source];
+  }
   await writeLocalEnv(envToWrite);
 
   const selected = verified.options.find((option) => teamId && option.id === teamId) || verified.options[0] || null;

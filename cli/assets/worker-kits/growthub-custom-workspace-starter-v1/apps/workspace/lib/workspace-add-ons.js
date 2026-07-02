@@ -482,6 +482,11 @@ const MARKETPLACE_PROVIDERS = [
         tokenHeaderName: "apikey",
         paths: ["/rest/v1/"],
       },
+      // Alias writes so the canonical readServerSecret("SUPABASE") candidate
+      // expansion (SUPABASE / SUPABASE_API_KEY / SUPABASE_TOKEN) resolves the
+      // same key the product declares — generic HTTP lanes (test-api-record,
+      // api-registry-call, constructed resolvers) then authenticate too.
+      aliasEnv: { SUPABASE_API_KEY: "SUPABASE_SERVICE_ROLE_KEY" },
     },
     accountSetupFields: [
       {
@@ -1250,6 +1255,10 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     description: product.description,
     connectorKind: product.connectorKind,
     resolverTemplateId: product.resolverTemplateId || "",
+    // Single-header auth shape for the generic HTTP lanes (test-api-record,
+    // api-registry-call, constructed resolvers). Supabase's gateway accepts
+    // `apikey: <key>` alone; the dedicated executors additionally send Bearer.
+    ...(product.probe?.tokenHeaderName ? { authHeaderName: product.probe.tokenHeaderName } : {}),
     schemaVersion: providerId === "vercel" ? "growthub-marketplace-vercel-v1" : "growthub-marketplace-product-v1",
     capabilities: product.capabilities,
     executionLane: product.executionLane,
