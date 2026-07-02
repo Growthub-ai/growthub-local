@@ -40,9 +40,11 @@ test("envKeyCandidates — canonical family", () => {
   assert.deepEqual(envKeyCandidates(""), []);
 });
 
-test("collectReferencedRefs — auth + env refs, deduped", () => {
+test("collectReferencedRefs — auth + env refs, deduped, plus always-referenced native inbound refs", () => {
   const refs = collectReferencedRefs(cfg).sort();
-  assert.deepEqual(refs, ["ACME", "NANGO_SECRET_KEY", "STRIPE"]);
+  // Native inbound input methods (webhook / api-request) are workspace-level
+  // capabilities: their signing/invoke refs are always part of the signal.
+  assert.deepEqual(refs, ["ACME", "GROWTHUB_API_INVOKE_TOKEN", "GROWTHUB_WEBHOOK_SIGNING_SECRET", "NANGO_SECRET_KEY", "STRIPE"]);
 });
 
 test("computeConfiguredEnvRefs — only refs that resolve in env, slugs only", () => {
@@ -59,5 +61,6 @@ test("computeConfiguredEnvRefs — empty when nothing resolves", () => {
 test("never throws on partial input", () => {
   assert.doesNotThrow(() => collectReferencedRefs(undefined));
   assert.doesNotThrow(() => computeConfiguredEnvRefs(undefined, undefined));
-  assert.deepEqual(collectReferencedRefs({}), []);
+  // Even with no config, the native inbound refs remain referenced.
+  assert.deepEqual(collectReferencedRefs({}).sort(), ["GROWTHUB_API_INVOKE_TOKEN", "GROWTHUB_WEBHOOK_SIGNING_SECRET"]);
 });

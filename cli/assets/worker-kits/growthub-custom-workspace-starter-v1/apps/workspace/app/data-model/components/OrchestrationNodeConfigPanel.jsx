@@ -610,11 +610,12 @@ export function OrchestrationNodeConfigPanel({
     { value: "record", label: "Record", Icon: Database },
     { value: "source-record", label: "Source Record", Icon: ListTree },
     ...(schedulerAvailable ? [{ value: "serverless-schedule", label: "Serverless Schedule", Icon: CalendarClock }] : []),
-    // Inbound input methods — the exact mirror of the scheduler option: each
-    // appears only when its verified capability row is installed, and each
-    // binds through the same governed bind path (serverless execution).
-    ...(webhookTriggerAvailable ? [{ value: "webhook", label: "Webhook", Icon: Webhook }] : []),
-    ...(apiTriggerAvailable ? [{ value: "api-request", label: "API Request", Icon: KeyRound }] : []),
+    // Inbound input methods are workspace-NATIVE capabilities — no external
+    // account or marketplace install exists, so they are always offered. The
+    // real readiness gate (signing secret / invoke token env ref) lives in the
+    // trigger panel and on the server bind; both name the exact missing ref.
+    { value: "webhook", label: "Webhook", Icon: Webhook },
+    { value: "api-request", label: "API Request", Icon: KeyRound },
   ];
   const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
   const meta = config.requestHeadersMetadata || {};

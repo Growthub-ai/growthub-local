@@ -20,8 +20,8 @@ import {
   getMarketplaceProduct,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
-  withMarketplaceProductRegistry,
   withWorkflowServerlessBind,
+  withMarketplaceProductRegistry,
   withSandboxScheduledRunProof,
   readTriggerScheduleBinding,
   liveGraphField,
@@ -489,29 +489,43 @@ async function runInputMethodInstall(deps, { providerId, body = {}, requestOrigi
   }
   const triggerKind = triggerKindForLane(product.executionLane);
 
-  // Capability gate: for a BUILT-IN input method the capability IS the env
-  // proof — the signing secret / invoke token must resolve in this runtime,
-  // otherwise the destination route could never verify an invocation. There is
-  // no marketplace install step: binding from the canvas is the first-class
-  // path, and the verified capability record is written as part of THIS bind's
-  // one config write (so the cockpit, readiness scans, and the trigger panel
-  // read the same governed registry state as every other capability).
+  const config = await readConfig();
+
+  // Env gate — the REAL capability gate for workspace-NATIVE inbound methods:
+  // there is no external account to install, so the resolvable signing secret /
+  // invoke token IS the capability. Without it the destination route could
+  // never verify an invocation.
   const requiredEnv = resolveRequiredEnv(product.requiredEnv, env);
   if (!requiredEnv.ok) {
-    return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: requiredEnv.missing });
+    return err(422, `${product.label} runtime credentials are not connected`, { productId: product.productId, missingEnv: requiredEnv.missing, nextActions: [`Set ${requiredEnv.missing.join(", ")} in the workspace environment, then bind.`] });
   }
 
-  const config = withMarketplaceProductRegistry(await readConfig(), {
-    providerId: provider.providerId,
-    productId: product.productId,
-    authReady: true,
-  });
+  // Native capability row: registry LINEAGE, never a marketplace prerequisite.
+  // Provision (or re-verify) it inside the same governed write as the bind,
+  // carrying the env probe above as its verification proof.
+  const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
+  const installedRow = objects.flatMap((o) => (isApiRegistryObject(o) ? (o.rows || []) : [])).find((r) => clean(r?.integrationId) === product.integrationId);
+  const workingConfig = installedRow && clean(installedRow.syncStatus) === "verified"
+    ? config
+    : withMarketplaceProductRegistry(config, {
+        providerId: provider.providerId,
+        productId: product.productId,
+        syncResult: {
+          ok: true,
+          status: "connected",
+          syncStatus: "verified",
+          testedAt: now,
+          resolvedEnv: product.requiredEnv,
+          proof: `${(product.requiredEnv || []).join(", ")} resolved in runtime env.`,
+          summary: `${product.label} verified natively: env refs resolve in this runtime.`,
+        },
+      });
 
   const objectId = clean(body.objectId);
   const rowId = clean(body.rowId || body.name);
   if (!objectId || !rowId) return err(400, "objectId and rowId (workflow row) are required");
 
-  const eligible = findEligibleSandboxRow(config, objectId, rowId);
+  const eligible = findEligibleSandboxRow(workingConfig, objectId, rowId);
   if (!eligible.ok) return err(eligible.status, eligible.error, { providerId: provider.providerId, productId: product.productId });
   const targetRow = eligible.row;
 
@@ -520,7 +534,7 @@ async function runInputMethodInstall(deps, { providerId, body = {}, requestOrigi
   // serverless executions of the same published graph).
   const readiness = scanServerlessReadiness({
     row: targetRow,
-    workspaceConfig: config,
+    workspaceConfig: workingConfig,
     env,
     phase: "pre-bind",
     expected: {
@@ -555,7 +569,7 @@ async function runInputMethodInstall(deps, { providerId, body = {}, requestOrigi
   // ONE write: bind the owning row + sync its live trigger node (same atomic
   // writer as the scheduler; runLocality flips to serverless, adapter
   // normalizes, trigger node carries the method's triggerKind/inputMode).
-  const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(config, {
+  const { config: nextConfig, bound, liveField, triggerNodeId, changedFields } = withWorkflowServerlessBind(workingConfig, {
     objectId, rowId,
     schedulerRegistryId: product.integrationId,
     schedulerProviderId: provider.providerId,
