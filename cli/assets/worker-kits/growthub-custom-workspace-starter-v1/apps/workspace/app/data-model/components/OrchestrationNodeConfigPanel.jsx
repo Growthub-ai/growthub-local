@@ -13,6 +13,7 @@ import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+const SUPABASE_DATA_OPERATIONS = ["select", "insert", "update", "upsert", "delete", "rpc"];
 const MODEL_OPTIONS = ["Claude Opus 4.6", "Claude Sonnet 4.5", "GPT-5.2", "Local agent host"];
 const OUTPUT_TYPES = ["Text", "Number", "Boolean", "JSON", "Record ID"];
 const LOCAL_AGENT_ADAPTERS = [
@@ -72,12 +73,13 @@ function inferDeltaTagsForNode(node, config) {
   if (type === "thinAdapter") tags.push("model", "prompt", "routing");
   if (type === "ai-agent") tags.push("model", "prompt", "output");
   if (type === "data-action" || type === "data-trigger") tags.push("input", "output");
+  if (type === "supabase-data") tags.push("input", "output");
   if (type === "flow-control") tags.push("routing");
   if (type === "core-action") tags.push("runtime");
   if (type === "human-input") tags.push("input");
 
   if (action.includes("search") || action.includes("filter") || type === "transform-filter") tags.push("evaluation", "guardrail");
-  if (action.includes("delete") || config?.confirmationRequired) tags.push("guardrail");
+  if (action.includes("delete") || config?.operation === "update" || config?.operation === "delete" || config?.confirmationRequired) tags.push("guardrail");
   if (action.includes("http") || config?.url || config?.method) tags.push("routing", "input", "output");
   if (action.includes("email")) tags.push("input", "output");
   if (action.includes("delay") || config?.duration || config?.unit) tags.push("runtime");
@@ -644,7 +646,7 @@ export function OrchestrationNodeConfigPanel({
     return keys.some((k) => readinessFieldSet.has(k)) ? ` dm-field--readiness is-${readinessSeverity}` : "";
   }
 
-  const tabsForType = type === "api-registry-call" || type === "core-action"
+  const tabsForType = type === "api-registry-call" || type === "supabase-data" || type === "core-action"
     ? ["configuration", "test", "advanced"]
     : type === "input" || type === "transform-filter" || type === "data-action" || type === "data-trigger" || type === "ai-agent" || type === "flow-control" || type === "human-input"
       ? ["configuration", "advanced"]
@@ -653,6 +655,7 @@ export function OrchestrationNodeConfigPanel({
 
   const registryConnected = isApiRegistryTestSuccessful(registryRow);
   const responseMode = config.responseMode || config.mode || "json";
+  const supabaseOperation = String(config.operation || "select").trim().toLowerCase();
   const nodeAgentAuthDraft = type === "ai-agent" ? buildNodeAgentAuthDraft(sandboxRow, config) : null;
   const canPatchSandboxRow = typeof onSandboxRowPatch === "function";
   const sandboxBrowserOn = ["true", "1", "on", "yes"].includes(String(sandboxRow?.browserAccess || "").trim().toLowerCase());
@@ -815,6 +818,71 @@ export function OrchestrationNodeConfigPanel({
               })}
             />
           </label>
+        </div>
+      )}
+
+      {activeTab === "configuration" && type === "supabase-data" && (
+        <div className="dm-orchestration-config__pane">
+          {registryConnected && (
+            <span className="dm-orchestration-config__badge is-connected">Connected</span>
+          )}
+          <label className="dm-orchestration-config__field">
+            <span>Operation</span>
+            <select
+              value={supabaseOperation}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ operation: e.target.value })}
+            >
+              {SUPABASE_DATA_OPERATIONS.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
+          </label>
+          {supabaseOperation === "rpc" ? (
+            <label className={`dm-orchestration-config__field${flagFieldClass("rpcFunction")}`}>
+              <span>RPC function</span>
+              <input value={config.rpcFunction || ""} disabled={disabled} onChange={(e) => patchConfig({ rpcFunction: e.target.value })} />
+            </label>
+          ) : (
+            <label className={`dm-orchestration-config__field${flagFieldClass("table")}`}>
+              <span>Table</span>
+              <input value={config.table || ""} disabled={disabled} onChange={(e) => patchConfig({ table: e.target.value })} />
+            </label>
+          )}
+          <label className={`dm-orchestration-config__field${flagFieldClass("query")}`}>
+            <span>Query</span>
+            <input
+              value={config.query || ""}
+              placeholder="select=id,name&status=eq.live"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ query: e.target.value })}
+            />
+          </label>
+          <p className="dm-orchestration-config__hint">
+            PostgREST filter syntax (e.g. status=eq.live). Update and delete require a row filter here — the runner refuses filterless mutations.
+          </p>
+          {["insert", "upsert", "update", "rpc"].includes(supabaseOperation) && (
+            <>
+              <label className={`dm-orchestration-config__field${flagFieldClass("bodyTemplate")}`}>
+                <span>Body template</span>
+                <textarea rows={3} value={config.bodyTemplate || ""} disabled={disabled} onChange={(e) => patchConfig({ bodyTemplate: e.target.value })} />
+              </label>
+              <p className="dm-orchestration-config__hint">
+                JSON body. Bind values with {"{{input.key}}"} — substitution also works in table and query.
+              </p>
+            </>
+          )}
+          <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
+            <span>Registry ID</span>
+            <input value={config.registryId || "supabase-postgrest"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />
+          </label>
+          <WorkflowCheckbox
+            checked={config.returnRepresentation !== false}
+            disabled={disabled}
+            onChange={(checked) => patchConfig({ returnRepresentation: checked })}
+          >
+            Return representation
+          </WorkflowCheckbox>
         </div>
       )}
 
@@ -1480,6 +1548,17 @@ export function OrchestrationNodeConfigPanel({
                 />
               </label>
             </>
+          )}
+          {type === "supabase-data" && (
+            <label className="dm-orchestration-config__field">
+              <span>Timeout (ms)</span>
+              <input
+                type="number"
+                value={config.timeoutMs ?? 30000}
+                disabled={disabled}
+                onChange={(e) => patchConfig({ timeoutMs: Number(e.target.value) })}
+              />
+            </label>
           )}
           {type === "input" && (
             <>

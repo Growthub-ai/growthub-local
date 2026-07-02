@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Bot,
+  Database,
   Filter,
   Globe,
   Maximize2,
@@ -20,6 +21,7 @@ import { orderedGraphNodes, parseOrchestrationGraph } from "@/lib/orchestration-
 const NODE_TYPE_LABELS = {
   input: "Input",
   "api-registry-call": "API Registry",
+  "supabase-data": "Supabase",
   "transform-filter": "Transform",
   "normalize-output": "Transform",
   "tool-result": "Result",
@@ -35,6 +37,7 @@ const NODE_TYPE_LABELS = {
 const NODE_ICONS = {
   input: SlidersHorizontal,
   "api-registry-call": Globe,
+  "supabase-data": Database,
   "transform-filter": Filter,
   "normalize-output": Filter,
   "tool-result": Target,
@@ -71,6 +74,11 @@ function nodeSubtitle(node) {
     const endpoint = String(config.endpoint || "").trim();
     return endpoint ? `${id} · ${method} ${endpoint}` : id;
   }
+  if (node?.type === "supabase-data") {
+    const operation = String(config.operation || "select").trim().toLowerCase();
+    const target = String((operation === "rpc" ? config.rpcFunction : config.table) || "").trim();
+    return target ? `${operation} · ${target}` : operation;
+  }
   if (node?.type === "transform-filter" || node?.type === "normalize-output") {
     return "Map fields and filter rows";
   }
@@ -84,6 +92,7 @@ function hoverHint(node) {
   const type = String(node?.type || "");
   if (type === "input") return "Configure input";
   if (type === "api-registry-call") return "Configure API request";
+  if (type === "supabase-data") return "Configure Supabase operation";
   if (type === "transform-filter" || type === "normalize-output") return "Map response fields";
   if (type === "tool-result") return "Result settings";
   if (type === "thinAdapter") return "Configure agent step";
