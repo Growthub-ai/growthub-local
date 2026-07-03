@@ -175,11 +175,12 @@ async function probeBearerProviderAccount(provider, now) {
     };
   }
   const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
+  const probeBaseUrl = (probe.baseUrlEnv ? envValue(probe.baseUrlEnv) : "") || provider.baseUrl;
   let last = null;
   let accountOptions = [];
   for (const path of paths) {
     try {
-      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, path), {
+      const response = await fetchWithTimeout(safeUrl(probeBaseUrl, path), {
         method: "GET",
         headers: { authorization: account.header, accept: "application/json" },
       });

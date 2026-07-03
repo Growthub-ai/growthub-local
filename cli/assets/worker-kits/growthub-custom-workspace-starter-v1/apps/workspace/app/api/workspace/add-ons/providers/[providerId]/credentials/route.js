@@ -8,6 +8,7 @@ import {
   withMarketplaceProviderRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const PROBE_TIMEOUT_MS = 8000;
@@ -114,13 +115,13 @@ function deriveEnvUpdates(fields, credentials, body) {
 /** Bearer-token account verification (e.g. Vercel). Probe paths come from the
  * provider's accountProbe contract — no hardcoded provider endpoints here. */
 async function verifyBearerProviderAccount(provider, token) {
-  const paths = Array.isArray(provider.accountProbe?.paths) && provider.accountProbe.paths.length
-    ? provider.accountProbe.paths
-    : ["/v2/user"];
+  const probe = provider.accountProbe || {};
+  const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
+  const probeBaseUrl = (probe.baseUrlEnv ? clean(readEnvVar(probe.baseUrlEnv, process.env)?.value || "") : "") || provider.baseUrl;
   let last = null;
   for (const probePath of paths) {
     try {
-      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, probePath), {
+      const response = await fetchWithTimeout(safeUrl(probeBaseUrl, probePath), {
         method: "GET",
         headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       });

@@ -5,6 +5,7 @@ import {
   providerAccountAuthMode,
   resolveProviderAccountAuth,
 } from "@/lib/workspace-add-ons";
+import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const PROBE_TIMEOUT_MS = 8000;
@@ -139,11 +140,16 @@ async function GET(request, context) {
   const teamQuery = providerAccountAuthMode(provider) === "bearer" && account.teamId
     ? `${encodeURIComponent("teamId")}=${encodeURIComponent(account.teamId)}`
     : "";
+  // Honor the provider's account-probe base override (self-hosted proxies,
+  // offline QA smokes) — same contract as the product probe's baseUrlEnv.
+  const discoveryBaseUrl = (provider.accountProbe?.baseUrlEnv
+    ? clean(readEnvVar(provider.accountProbe.baseUrlEnv, process.env)?.value || "")
+    : "") || provider.baseUrl;
   const resources = [];
   const failures = [];
   for (const path of resourcePaths(product)) {
     try {
-      const url = safeUrl(provider.baseUrl, path);
+      const url = safeUrl(discoveryBaseUrl, path);
       const response = await fetchWithTimeout(teamQuery ? `${url}${url.includes("?") ? "&" : "?"}${teamQuery}` : url, {
         headers: { authorization: authHeader, accept: "application/json" },
       });

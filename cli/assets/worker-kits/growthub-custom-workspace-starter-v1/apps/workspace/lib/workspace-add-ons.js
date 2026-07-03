@@ -281,6 +281,9 @@ const MARKETPLACE_PROVIDERS = [
       authMode: "bearer",
       tokenEnv: "VERCEL_TOKEN",
       teamEnv: "VERCEL_TEAM_ID",
+      // Optional API-base override (self-hosted proxies, offline QA smokes) —
+      // same contract as the product probe's baseUrlEnv.
+      baseUrlEnv: "VERCEL_API_URL",
       paths: ["/v2/user", "/v2/teams"],
     },
     accountSetupFields: [

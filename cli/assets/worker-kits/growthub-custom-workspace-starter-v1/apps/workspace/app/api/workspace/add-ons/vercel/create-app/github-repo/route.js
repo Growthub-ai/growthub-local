@@ -18,6 +18,7 @@ import {
   buildGithubSeedRequest,
   normalizeGithubRepo,
   resolveGithubAccountAuth,
+  resolveGithubApiBaseUrl,
   starterAppFiles,
 } from "@/lib/workspace-add-on-create-app";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -84,7 +85,8 @@ async function POST(request) {
     return jsonError("GitHub account is not connected", 422, { missingEnv: account.missingEnv });
   }
 
-  const createRequest = buildGithubRepoCreateRequest({ name, org });
+  const githubBaseUrl = resolveGithubApiBaseUrl(process.env);
+  const createRequest = buildGithubRepoCreateRequest({ name, org, baseUrl: githubBaseUrl });
   if (!createRequest.ok) return jsonError(createRequest.reason, 400);
 
   let repo = null;
@@ -114,7 +116,7 @@ async function POST(request) {
   // Seed the starter page — required so the initial deployment serves a real
   // page. Atomic step contract: seed failure fails the whole step.
   for (const file of starterAppFiles({ appName: repo.name })) {
-    const seedRequest = buildGithubSeedRequest({ repoFullName: repo.fullName, file, branch: repo.defaultBranch });
+    const seedRequest = buildGithubSeedRequest({ repoFullName: repo.fullName, file, branch: repo.defaultBranch, baseUrl: githubBaseUrl });
     if (!seedRequest.ok) return jsonError(seedRequest.reason, 500, { step: "github-seed" });
     try {
       const response = await fetchWithTimeout(seedRequest.url, {

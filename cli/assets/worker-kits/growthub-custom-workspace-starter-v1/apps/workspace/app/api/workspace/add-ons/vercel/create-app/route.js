@@ -9,9 +9,9 @@
 
 import { NextResponse } from "next/server";
 import {
-  GITHUB_API_BASE_URL,
   deriveCreateAppChecklist,
   resolveGithubAccountAuth,
+  resolveGithubApiBaseUrl,
 } from "@/lib/workspace-add-on-create-app";
 import { resolveVercelAccountAuth } from "@/lib/workspace-add-on-deployments";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
@@ -40,7 +40,7 @@ async function GET(request) {
   let github = { connected: false, login: "", missingEnv: githubAuth.missingEnv };
   if (githubAuth.ready) {
     try {
-      const response = await fetchWithTimeout(`${GITHUB_API_BASE_URL}/user`, {
+      const response = await fetchWithTimeout(`${resolveGithubApiBaseUrl(process.env)}/user`, {
         headers: { authorization: githubAuth.header, accept: "application/vnd.github+json" },
       });
       const payload = await response.json().catch(() => null);

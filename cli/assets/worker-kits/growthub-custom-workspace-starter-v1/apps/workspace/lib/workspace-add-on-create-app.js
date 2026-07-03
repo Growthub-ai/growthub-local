@@ -20,9 +20,19 @@ import { readEnvVar } from "./server-secrets.js";
 
 const GITHUB_API_BASE_URL = "https://api.github.com";
 const GITHUB_TOKEN_ENV = "GITHUB_TOKEN";
+const GITHUB_API_URL_ENV = "GITHUB_API_URL";
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
+}
+
+/**
+ * Resolve the GitHub API base URL (env override → official base). Mirrors
+ * VERCEL_API_URL on the deployments adapter — used for GitHub Enterprise
+ * hosts and for offline QA smokes against a local mock provider.
+ */
+function resolveGithubApiBaseUrl(env = process.env) {
+  return clean(readEnvVar(GITHUB_API_URL_ENV, env)?.value || "").replace(/\/+$/, "") || GITHUB_API_BASE_URL;
 }
 
 /**
@@ -217,7 +227,9 @@ function deriveCreateAppChecklist({ github = {}, repo = null, vercel = {}, proje
 export {
   CREATE_APP_STEPS,
   GITHUB_API_BASE_URL,
+  GITHUB_API_URL_ENV,
   GITHUB_TOKEN_ENV,
+  resolveGithubApiBaseUrl,
   actionableGithubError,
   actionableVercelProjectError,
   buildGithubRepoCreateRequest,

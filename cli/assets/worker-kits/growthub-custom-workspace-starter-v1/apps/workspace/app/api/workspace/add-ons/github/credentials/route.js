@@ -14,10 +14,10 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import {
-  GITHUB_API_BASE_URL,
   GITHUB_TOKEN_ENV,
   actionableGithubError,
   resolveGithubAccountAuth,
+  resolveGithubApiBaseUrl,
 } from "@/lib/workspace-add-on-create-app";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
@@ -51,7 +51,7 @@ async function readJsonSafe(response) {
 }
 
 async function probeGithubUser(header) {
-  const response = await fetchWithTimeout(`${GITHUB_API_BASE_URL}/user`, {
+  const response = await fetchWithTimeout(`${resolveGithubApiBaseUrl(process.env)}/user`, {
     headers: { authorization: header, accept: "application/vnd.github+json" },
   });
   const payload = await readJsonSafe(response);
