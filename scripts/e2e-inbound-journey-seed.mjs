@@ -69,7 +69,15 @@ if (!sandbox.rows.some((r) => String(r?.Name || "") === "gap-workflow")) {
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
 const envPath = path.join(appDir, ".env.local");
-const port = String(process.env.E2E_PORT || "3777");
+const baseUrl = String(process.env.BASE_URL || "").trim();
+let port = String(process.env.E2E_PORT || "3777");
+if (!process.env.E2E_PORT && baseUrl) {
+  try {
+    port = new URL(baseUrl).port || port;
+  } catch {
+    // Keep the default local smoke port.
+  }
+}
 const envLines = [
   "GROWTHUB_WEBHOOK_SIGNING_SECRET=whsec_e2e_inbound_journey",
   "GROWTHUB_API_INVOKE_TOKEN=tok_e2e_inbound_journey",
@@ -82,7 +90,11 @@ const envLines = [
 let env = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
 for (const line of envLines) {
   const key = line.split("=")[0];
-  if (!env.includes(`${key}=`)) env += (env.endsWith("\n") || !env ? "" : "\n") + line + "\n";
+  if (env.includes(`${key}=`)) {
+    env = env.replace(new RegExp(`^${key}=.*$`, "m"), line);
+  } else {
+    env += (env.endsWith("\n") || !env ? "" : "\n") + line + "\n";
+  }
 }
 fs.writeFileSync(envPath, env);
 

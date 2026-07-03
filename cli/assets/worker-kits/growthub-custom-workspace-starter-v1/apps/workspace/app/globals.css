@@ -9847,5 +9847,17 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 
 /* Test-event modal editor — drag-resizable with the cockpit scroll pattern. */
 .dm-inbound-test-modal { width: min(560px, calc(100vw - 48px)); }
-.dm-inbound-test-modal .dm-inbound-body textarea { min-height: 180px; max-height: 50vh; resize: vertical; overflow-y: auto; scrollbar-gutter: stable; }
+.dm-inbound-test-modal .dm-inbound-body textarea {
+  min-height: 180px;
+  max-height: 50vh;
+  resize: vertical;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background: #fff;
+  color: var(--dm-ink);
+  border: 1px solid var(--dm-line);
+  border-radius: var(--dm-radius-sm);
+  padding: 10px;
+  box-sizing: border-box;
+}
 .dm-inbound-test-modal .dm-inbound-example .dm-json-tree { max-height: 180px; overflow-y: auto; scrollbar-gutter: stable; }

@@ -536,17 +536,17 @@ test("cockpit: bound binding with no receipt shows 'No receipt yet'; failed run 
   assert.equal(failedCard.lastRunFailed, true);
 });
 
-test("cockpit: a bound webhook workflow surfaces with the Webhook method chip and scheduled state", async () => {
+test("schedule cockpit stays scheduler-only; webhook binding does not masquerade as a schedule product", async () => {
   const h = makeHarness();
   await orchestration.runInputMethodInstall(h.deps, { providerId: "growthub", body: INSTALL_BODY });
   const vm = cockpit.deriveScheduleCockpit({ workspaceConfig: h.getStore(), configuredEnvRefs: [], receipts: [] });
-  assert.ok(vm.installedSchedulerProducts.some((p) => p.method === "inbound-webhook" && p.provider === "Webhook"), "webhook product detected as a binding capability");
+  assert.ok(!vm.installedSchedulerProducts.some((p) => p.method === "inbound-webhook" || p.provider === "Webhook"), "webhook is not a /schedule product");
   const card = vm.workflowCards.find((c) => c.name === "Flow A");
   assert.ok(card, "bound workflow has a cockpit card");
   assert.equal(card.locality, "serverless");
-  assert.equal(card.provider, "Webhook");
-  assert.ok(["scheduled", "drifted"].includes(card.state), `bound state is scheduled/drifted (got ${card.state})`);
-  assert.ok(vm.filters.some((f) => f.id === "webhook"), "Method: Webhook filter present");
+  assert.notEqual(card.provider, "Webhook");
+  assert.ok(["scheduled", "drifted"].includes(card.state), `bound state still reflects the row's serverless binding (got ${card.state})`);
+  assert.ok(!vm.filters.some((f) => f.id === "webhook"), "Method: Webhook filter is not present in /schedule");
 });
 
 /* ================= canvas UI release contract ================= */

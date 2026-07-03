@@ -144,13 +144,46 @@ Official marketplace plugins appear in these workspace surfaces:
   workflows
 - Agent Outcomes: receipt ledger for every governed action
 
+## Product Lane Dispatch
+
+The add-on route surface is shared, but product behavior is lane-specific. This
+keeps the route scalable for future provider and native products without making
+every product a scheduler.
+
+```mermaid
+flowchart LR
+  A["add-on product row"] --> B["executionLane"]
+  B --> C["serverless-scheduler"]
+  B --> D["inbound-webhook"]
+  B --> E["api-request"]
+  B --> F["future provider/native lane"]
+
+  C --> G["scheduler cores + provider adapter"]
+  D --> H["inbound invocation cores"]
+  E --> H
+  F --> I["lane-specific governed core"]
+```
+
+Current rules:
+
+- `serverless-scheduler` products, including QStash, use the existing scheduler
+  cores and provider adapters.
+- `inbound-webhook` and `api-request` products are native workflow input
+  methods. They use the inbound invocation cores and the workspace destination
+  door, not QStash scheduler controls.
+- `/schedule` remains a scheduler cockpit entry. Webhook and API Request belong
+  to the workflow sidecar's input-method flow.
+- Future add-ons should declare their lane and dispatch to a lane-specific
+  governed core instead of widening QStash-specific behavior.
+
 ## Governance Rules
 
 Marketplace plugins must obey the workspace mutation boundary:
 
 - config changes go through `PATCH /api/workspace`
 - serverless/sandbox execution goes through governed execution routes
-- schedule operations go through the existing add-on schedule route
+- schedule operations go through the existing add-on schedule route and remain
+  scheduler-lane behavior
 - receipts are written to `workspace:agent-outcomes`
 - secrets remain server-side
 - UI controls hand off to governed routes, not direct client-side config edits
