@@ -9,6 +9,7 @@ import {
   withMarketplaceProductRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { resolveEnvFromResourceMappings } from "@/lib/provider-resource-discovery";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
@@ -184,56 +185,24 @@ async function resolveProviderResource({ provider, product, selectedResourceId }
   }
   const selected = candidates.find((candidate) => candidate.id === selectedResourceId) || candidates[0] || null;
   if (!selected) return { writtenEnv: [], failures };
-  const updates = {};
-  for (const mapping of envFromResource) {
-    const envRef = clean(mapping.envRef);
-    if (!envRef) continue;
-    // Mapping shapes (all resolve server-side, values never leave this route):
-    //   urlTemplate — derive the value from the resource id ({id} substitution)
-    //   fromPath    — fetch a per-resource sub-path with the provider auth and
-    //                 pick the row matching matchField=matchValue
-    //   default     — read fieldCandidates straight off the resource row
-    if (mapping.urlTemplate) {
-      const value = clean(mapping.urlTemplate).replaceAll("{id}", selected.id);
-      if (value) updates[envRef] = value;
-      continue;
-    }
-    if (mapping.fromPath) {
-      const subPath = clean(mapping.fromPath).replaceAll("{id}", selected.id);
-      try {
-        const response = await fetchWithTimeout(safeUrl(provider.baseUrl, subPath), {
-          method: "GET",
-          headers: { authorization: authHeader, accept: "application/json" },
-        });
-        if (!response.ok) {
-          if (!mapping.optional) failures.push({ path: subPath, status: response.status });
-          continue;
-        }
-        const rows = pickArray(await readJsonSafe(response));
-        const matchField = clean(mapping.matchField);
-        const matchValue = clean(mapping.matchValue);
-        const hit = matchField
-          ? rows.find((row) => clean(row?.[matchField]) === matchValue)
-          : rows[0];
-        const value = hit ? resourceFieldValue(hit, mapping) : "";
-        if (value) updates[envRef] = value;
-        else if (!mapping.optional) failures.push({ path: subPath, status: 200, error: `no ${matchValue || "matching"} entry` });
-      } catch (error) {
-        if (!mapping.optional) failures.push({ path: subPath, status: 0, error: error?.message || "network error" });
-      }
-      continue;
-    }
-    const value = resourceFieldValue(selected.row, mapping);
-    if (value) updates[envRef] = value;
-  }
-  // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)
-  // so the canonical authRef candidate expansion resolves the product key.
-  for (const [alias, source] of Object.entries(provider.accountProbe?.aliasEnv || {})) {
-    if (!updates[alias] && (updates[source] || envValue(source))) {
-      updates[alias] = updates[source] || envValue(source);
-    }
-  }
-  const writtenEnv = await writeLocalEnv(updates);
+  // Mapping semantics (urlTemplate / fromPath / fieldCandidates + aliasEnv)
+  // live in the pure lib core — this route only supplies the provider-authed
+  // fetch and the .env.local write. Values never leave this route.
+  const mapped = await resolveEnvFromResourceMappings({
+    mappings: envFromResource,
+    resource: selected,
+    aliasEnv: provider.accountProbe?.aliasEnv,
+    readEnv: envValue,
+    fetchJson: async (subPath) => {
+      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, subPath), {
+        method: "GET",
+        headers: { authorization: authHeader, accept: "application/json" },
+      });
+      return { ok: response.ok, status: response.status, payload: await readJsonSafe(response) };
+    },
+  });
+  failures.push(...mapped.failures);
+  const writtenEnv = await writeLocalEnv(mapped.updates);
   return { writtenEnv, resource: selected, failures };
 }
 
