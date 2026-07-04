@@ -17,10 +17,12 @@ import {
 } from "lucide-react";
 import {
   MARKETPLACE_PROVIDERS,
+  findDiscoveredAddOnRows,
   findMarketplaceProviderRow,
   findInstalledWorkspaceAddOns,
   findWorkspaceAddOnRows,
   getMarketplaceProduct,
+  getProviderProductDiscovery,
 } from "@/lib/workspace-add-ons";
 import { VercelCreateAppFlow } from "./VercelCreateAppFlow.jsx";
 
@@ -169,9 +171,13 @@ function AddOnsSurface({
   const [resourceMessage, setResourceMessage] = useState("");
   const [installMode, setInstallMode] = useState("existing");
   const [providerCredentialValues, setProviderCredentialValues] = useState({});
+  const [discoveredProducts, setDiscoveredProducts] = useState([]);
+  const [discoveredLoading, setDiscoveredLoading] = useState(false);
+  const [discoveredMessage, setDiscoveredMessage] = useState("");
   const persistenceAdapters = Array.isArray(envSignals.persistenceAdapters) ? envSignals.persistenceAdapters : [];
   const installed = useMemo(() => findInstalledWorkspaceAddOns(workspaceConfig), [workspaceConfig]);
   const selectedMarketplaceProvider = MARKETPLACE_PROVIDERS.find((provider) => provider.providerId === selectedProvider) || null;
+  const providerProductDiscovery = getProviderProductDiscovery(selectedMarketplaceProvider);
   const providerProductReadiness = envSignals.providerProductReadiness || {};
   const productReadiness = selectedMarketplaceProvider && envSignals.providerProductReadiness?.[selectedMarketplaceProvider.providerId]
     ? envSignals.providerProductReadiness[selectedMarketplaceProvider.providerId]
@@ -196,21 +202,76 @@ function AddOnsSurface({
     return Boolean(String(providerCredentialValues[field.id] || "").trim());
   });
   const allAddOnRows = useMemo(() => findWorkspaceAddOnRows(workspaceConfig), [workspaceConfig]);
-  const providerProducts = selectedMarketplaceProvider?.products || [];
+  const staticProviderProducts = selectedMarketplaceProvider?.products || [];
+  // Installed discovered-product rows (live `productDiscovery` providers, e.g.
+  // Nango integrations) — governed api-registry rows, same proof rule.
+  const discoveredInstalledRows = useMemo(
+    () => (selectedMarketplaceProvider && providerProductDiscovery ? findDiscoveredAddOnRows(workspaceConfig, selectedMarketplaceProvider.providerId) : []),
+    [workspaceConfig, selectedMarketplaceProvider, providerProductDiscovery],
+  );
+  // Product-like fallback for an installed discovered row when the live list
+  // is not loaded yet (offline manage path) — row fields only, no invention.
+  const productLikeFromRow = (row) => ({
+    productId: String(row.productId || "").trim(),
+    integrationId: String(row.integrationId || "").trim(),
+    authRef: row.authRef || "",
+    label: row.Name || row.productId,
+    shortLabel: row.Name || row.productId,
+    iconClass: providerProductDiscovery?.productDefaults?.iconClass || "is-provider",
+    iconSrc: providerProductDiscovery?.productDefaults?.iconSrc || selectedMarketplaceProvider?.iconSrc || "",
+    subtitle: providerProductDiscovery?.productDefaults?.subtitle || "Governed integration",
+    plans: providerProductDiscovery?.productDefaults?.plans || "Included",
+    endpoint: row.endpoint || "",
+    method: row.method || "GET",
+    executionLane: row.executionLane || "",
+    requiredEnv: String(row.requiredEnv || "").split(",").map((key) => key.trim()).filter(Boolean),
+    optionalEnv: String(row.optionalEnv || "").split(",").map((key) => key.trim()).filter(Boolean),
+    consoleUrl: providerProductDiscovery?.productDefaults?.consoleUrl || selectedMarketplaceProvider?.consoleUrl || "",
+    discovered: true,
+  });
+  // Live-rendered install products: static products first, then the real-time
+  // discovered products (deduped by productId).
+  const providerProducts = useMemo(() => {
+    if (!providerProductDiscovery || !discoveredProducts.length) return staticProviderProducts;
+    const staticIds = new Set(staticProviderProducts.map((product) => product.productId));
+    return [...staticProviderProducts, ...discoveredProducts.filter((product) => !staticIds.has(product.productId))];
+  }, [staticProviderProducts, discoveredProducts, providerProductDiscovery]);
   const installedProviderRows = selectedMarketplaceProvider
-    ? installed.filter((row) => providerProducts.some((product) => product.productId === row.productId || product.integrationId === row.integrationId))
+    ? [
+        ...installed.filter((row) => staticProviderProducts.some((product) => product.productId === row.productId || product.integrationId === row.integrationId)),
+        ...discoveredInstalledRows.filter((row) => row.isVerifiedAddOn),
+      ]
     : [];
   const installedIds = new Set(installedProviderRows.map((row) => String(row.productId || "").trim()));
-  const activeProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) : null;
-  const managedProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) : null;
+  const findDiscoveredProduct = (productId) => {
+    if (!providerProductDiscovery || !productId) return null;
+    return discoveredProducts.find((product) => product.productId === productId)
+      || (discoveredInstalledRows.some((row) => row.productId === productId)
+        ? productLikeFromRow(discoveredInstalledRows.find((row) => row.productId === productId))
+        : null);
+  };
+  const activeProduct = selectedMarketplaceProvider
+    ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) || findDiscoveredProduct(installDrawer))
+    : null;
+  const managedProduct = selectedMarketplaceProvider
+    ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) || findDiscoveredProduct(manageDrawer))
+    : null;
   const managedSavedRow = managedProduct
-    ? allAddOnRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+    ? (allAddOnRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+      || discoveredInstalledRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+      || null)
     : null;
   const createResourceDividerLabel = activeProduct?.resourceDiscovery?.createDividerLabel || "";
   const hasExistingResources = providerConnected && resourceOptions.length > 0;
   const showCreateNewOptions = !hasExistingResources || installMode === "new";
-  const activeReadiness = productReadiness.find((item) => item.productId === activeProduct?.productId) || null;
-  const activeSavedRow = allAddOnRows.find((row) => row.productId === activeProduct?.productId) || null;
+  // Discovered products share the provider account's env contract, so their
+  // readiness falls back to the provider's static product signal.
+  const activeReadiness = productReadiness.find((item) => item.productId === activeProduct?.productId)
+    || (activeProduct?.discovered ? productReadiness.find((item) => (item.requiredEnv || []).join(",") === (activeProduct.requiredEnv || []).join(",")) : null)
+    || null;
+  const activeSavedRow = allAddOnRows.find((row) => row.productId === activeProduct?.productId)
+    || discoveredInstalledRows.find((row) => row.productId === activeProduct?.productId)
+    || null;
   const productInstalled = Boolean(activeSavedRow?.isVerifiedAddOn);
   const providerAccountLabel = providerRow?.Name || selectedMarketplaceProvider?.label || "Provider account";
   const providerAccountRef = providerRow?.authRef || selectedMarketplaceProvider?.authRef || selectedMarketplaceProvider?.providerId || "";
@@ -328,8 +389,50 @@ function AddOnsSurface({
     );
   }
 
+  // Real-time install products for live-discovery providers (e.g. Nango): the
+  // grid renders from a governed server fetch of the connected account — the
+  // browser never calls the provider API directly.
   useEffect(() => {
-    if (!selectedMarketplaceProvider || !activeProduct || !providerConnected) {
+    if (!selectedMarketplaceProvider || !providerProductDiscovery || !providerConnected) {
+      setDiscoveredProducts([]);
+      setDiscoveredMessage("");
+      return undefined;
+    }
+    let cancelled = false;
+    async function loadLiveProducts() {
+      setDiscoveredLoading(true);
+      setDiscoveredMessage("");
+      try {
+        const response = await fetch(`/api/workspace/add-ons/providers/${encodeURIComponent(selectedMarketplaceProvider.providerId)}/products/live`, {
+          method: "GET",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setDiscoveredProducts([]);
+          setDiscoveredMessage(payload?.error || "Live provider products could not be loaded.");
+          return;
+        }
+        const products = Array.isArray(payload.products) ? payload.products : [];
+        setDiscoveredProducts(products);
+        setDiscoveredMessage(products.length ? "" : (payload.emptyLabel || "No live products returned for this provider account."));
+      } catch (error) {
+        if (!cancelled) {
+          setDiscoveredProducts([]);
+          setDiscoveredMessage(error?.message || "Live provider products could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setDiscoveredLoading(false);
+      }
+    }
+    loadLiveProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMarketplaceProvider?.providerId, providerProductDiscovery, providerConnected]);
+
+  useEffect(() => {
+    if (!selectedMarketplaceProvider || !activeProduct || !providerConnected || !activeProduct.resourceDiscovery) {
       setResourceOptions([]);
       setSelectedResourceId("");
       setResourceMessage("");
@@ -549,7 +652,9 @@ function AddOnsSurface({
                       <h3>Installed Products</h3>
                       <div className="dm-marketplace-product-grid">
                         {installedProviderRows.map((row) => {
-                          const product = getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.productId) || getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.integrationId);
+                          const product = getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.productId)
+                            || getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.integrationId)
+                            || findDiscoveredProduct(row.productId);
                           if (!product) return null;
                           return (
                           <article className="dm-marketplace-product-card" key={row.integrationId}>
@@ -575,9 +680,17 @@ function AddOnsSurface({
 
                   {providerConnected ? <section className="dm-marketplace-products" aria-label="More Products">
                     <h3>More Products</h3>
+                    {providerProductDiscovery ? (
+                      <p className="dm-cockpit-step-hint">
+                        {discoveredLoading
+                          ? "Loading this account's available integrations live from the provider…"
+                          : discoveredMessage || "Products below render live from the connected account. Installing one lands a governed API Registry row you can run API requests through."}
+                      </p>
+                    ) : null}
                     <div className="dm-marketplace-product-grid">
                       {providerProducts.map((product) => {
-                        const readiness = productReadiness.find((item) => item.productId === product.productId);
+                        const readiness = productReadiness.find((item) => item.productId === product.productId)
+                          || (product.discovered ? productReadiness.find((item) => (item.requiredEnv || []).join(",") === (product.requiredEnv || []).join(",")) : null);
                         const isInstalled = installedIds.has(product.productId);
                         return (
                           <article className="dm-marketplace-product-card" key={product.productId}>

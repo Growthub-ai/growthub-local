@@ -78,6 +78,8 @@ function normalizeResource(item, index, source) {
       || item.indexId
       || item.index_name
       || item.indexName
+      || item.unique_key
+      || item.uniqueKey
       || item.name
       || item.endpoint
       || `resource-${index + 1}`
@@ -90,6 +92,9 @@ function normalizeResource(item, index, source) {
       || item.databaseId
       || item.index_name
       || item.indexName
+      || item.display_name
+      || item.displayName
+      || item.provider
       || item.slug
       || item.region
       || item.type

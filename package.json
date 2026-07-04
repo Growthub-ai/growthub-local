@@ -13,6 +13,7 @@
     "test:sandbox-serverless": "node --test ./scripts/unit-sandbox-serverless-flow.test.mjs",
     "test:add-ons-scheduler": "node --test ./scripts/unit-workspace-add-ons-scheduler.test.mjs",
     "test:add-ons-vercel": "node --test ./scripts/unit-workspace-add-ons-vercel.test.mjs",
+    "test:add-ons-nango": "node --test ./scripts/unit-workspace-add-ons-nango.test.mjs",
     "test:scheduler-orchestration": "node --test ./scripts/unit-scheduler-orchestration.test.mjs",
     "test:serverless-readiness": "node --test ./scripts/unit-serverless-readiness.test.mjs",
     "test:schedule-cockpit": "node --test ./scripts/unit-schedule-cockpit.test.mjs",
