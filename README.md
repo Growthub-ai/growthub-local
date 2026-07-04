@@ -175,6 +175,7 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 
 - [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md)
 - [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md)
+- [**AWaC Direction And Evolution V1**](./docs/AWAC_DIRECTION_AND_EVOLUTION_V1.md) — the release arc through 0.14.14 read as one trajectory: the loops that closed and the control-plane direction underway
 - [**Workspace CEO Primitive V1**](./docs/WORKSPACE_CEO_PRIMITIVE_V1.md)
 - [**Governed Agent Swarm Cockpit Value Map V1**](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [**Governed Sandbox Browser Access V1**](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md)
