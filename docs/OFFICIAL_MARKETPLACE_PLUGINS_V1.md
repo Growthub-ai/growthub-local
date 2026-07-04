@@ -347,6 +347,15 @@ Marketplace plugins must obey the workspace mutation boundary:
 - secrets remain server-side
 - UI controls hand off to governed routes, not direct client-side config edits
 
+## Adding the next provider
+
+The full agent playbook — source-truth recon, provider grammar, governed
+rows, icon standard, tests, and the mandatory real-browser closed-loop QA
+bar — lives in
+[`MARKETPLACE_PROVIDER_PLAYBOOK_V1.md`](./MARKETPLACE_PROVIDER_PLAYBOOK_V1.md)
+with a matching agent skill (`growthub-marketplace-provider`) in
+`.claude/skills/`.
+
 ## Coming Soon
 
 The V1 marketplace shape is provider-agnostic. The next expansion points are:
