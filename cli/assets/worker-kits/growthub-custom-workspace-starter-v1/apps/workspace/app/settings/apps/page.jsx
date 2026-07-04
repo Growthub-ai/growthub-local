@@ -2,7 +2,7 @@ import { SettingsShell } from "../settings-shell.jsx";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { VERCEL_PROJECTS_OBJECT_ID, listInstalledDataProducts } from "@/lib/workspace-add-ons";
+import { VERCEL_PROJECTS_OBJECT_ID, listInstalledDataProducts, listInstalledStorageProducts } from "@/lib/workspace-add-ons";
 import { AppsList } from "./apps-list.jsx";
 import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
@@ -227,6 +227,36 @@ function dataProductLink(row) {
   };
 }
 
+/**
+ * External storage/CDN link for an installed + verified storage-lane product
+ * row (executionLane === "workspace-storage"). Same governed-row derivation
+ * as the database link; the icon is the product's own storage badge and the
+ * link deep-links the provider's storage console for the bound project.
+ */
+function storageProductLink(row) {
+  const providerId = String(row?.integrationId || "").trim().split("-")[0] || "storage";
+  const projectUrl = ensureHttpsUrl(row?.baseUrl || row?.selectedResourceLabel);
+  let host = "";
+  try {
+    host = projectUrl ? new URL(projectUrl).host : "";
+  } catch {
+    host = "";
+  }
+  const supabaseRef = /\.supabase\.co$/i.test(host) ? host.split(".")[0] : "";
+  const href = supabaseRef
+    ? `https://supabase.com/dashboard/project/${supabaseRef}/storage/buckets`
+    : projectUrl;
+  if (!href) return null;
+  const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
+  return {
+    id: `${providerId}:${row.integrationId}:${host || href}`,
+    label: `${providerLabel} storage`,
+    detail: host || row?.Name || href,
+    href,
+    iconSrc: `/integrations/${providerId}/storage.png`,
+  };
+}
+
 function attachExternalAppLinks(apps, workspaceConfig) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const vercelObject = objects.find((object) => String(object?.id || "").trim() === VERCEL_PROJECTS_OBJECT_ID);
@@ -235,6 +265,7 @@ function attachExternalAppLinks(apps, workspaceConfig) {
   // the marketplace uses (findInstalledWorkspaceAddOns), lane-derived so any
   // future data provider joins with zero changes here.
   const dataProducts = listInstalledDataProducts(workspaceConfig);
+  const storageProducts = listInstalledStorageProducts(workspaceConfig);
   return apps.map((app) => {
     const externalLinks = linkFromAppRow(app);
     for (const project of projects) {
@@ -267,6 +298,10 @@ function attachExternalAppLinks(apps, workspaceConfig) {
     if (isWorkspaceApp || apps.length === 1) {
       for (const row of dataProducts) {
         const link = dataProductLink(row);
+        if (link) externalLinks.push(link);
+      }
+      for (const row of storageProducts) {
+        const link = storageProductLink(row);
         if (link) externalLinks.push(link);
       }
     }

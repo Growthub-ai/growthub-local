@@ -265,11 +265,16 @@ const VERCEL_PRODUCTS = [
 ];
 const SUPABASE_PROVIDER_INTEGRATION_ID = "supabase-provider";
 const SUPABASE_POSTGREST_INTEGRATION_ID = "supabase-postgrest";
+const SUPABASE_STORAGE_INTEGRATION_ID = "supabase-storage";
 // Database-operations lane — provider-agnostic grouping for products that
 // expose governed external database read/write (mirrors how
 // "serverless-scheduler" groups scheduler products). Cockpits and the canvas
 // detect capability by THIS lane string, never by provider id.
 const WORKSPACE_DATA_LANE = "workspace-data";
+// Storage/CDN lane — the second Supabase product class (buckets + global
+// CDN). Distinct lane so its capability, gating, and governed object stay
+// isolated from the database lane while riding the SAME provider account.
+const WORKSPACE_STORAGE_LANE = "workspace-storage";
 const SUPABASE_PRODUCTS = [
   {
     productId: "supabase-postgrest",
@@ -325,6 +330,39 @@ const SUPABASE_PRODUCTS = [
           optional: true,
         },
       ],
+    },
+  },
+  {
+    productId: "supabase-storage",
+    integrationId: SUPABASE_STORAGE_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase Storage (Global CDN)",
+    shortLabel: "Storage",
+    icon: "S",
+    iconClass: "is-supabase",
+    iconSrc: "/integrations/supabase/storage.png",
+    connectorKind: "supabase-storage",
+    endpoint: "/storage/v1/bucket",
+    method: "GET",
+    description: "Supabase Storage buckets served on the global CDN, managed as governed workspace records. Create and manage buckets no-code; each bucket correlates 1:1 to a governed data table. Requires a connected Supabase account and a linked data table. Secrets stay in env; rows store refs and routing metadata only.",
+    subtitle: "Buckets + global CDN for the governed workspace",
+    plans: "Free, Pro, Team plans",
+    entityTypes: "bucket,object,storage,cdn",
+    capabilities: "storage,cdn,buckets,workspace-storage",
+    executionLane: WORKSPACE_STORAGE_LANE,
+    // Same account credentials as the Postgres product — a second product on
+    // the SAME provider (Upstash multi-product mirror), not a new account.
+    requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+    optionalEnv: ["SUPABASE_ANON_KEY"],
+    consoleUrl: "https://supabase.com/dashboard/project/_/storage/buckets",
+    // Gated: install requires the provider connected AND a governed data
+    // table to link (deriveBucketProductState enforces this before create).
+    requiresProduct: "supabase-postgrest",
+    probe: {
+      baseUrlEnv: "SUPABASE_URL",
+      tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+      tokenHeaderName: "apikey",
+      paths: ["/storage/v1/bucket"],
     },
   },
 ];
@@ -1815,6 +1853,16 @@ function listInstalledDataProducts(workspaceConfig) {
     .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
 }
 
+/**
+ * Installed + verified products on the storage/CDN lane
+ * (executionLane === "workspace-storage"). Same lane-derived rule as the
+ * data products — a second capability class on the same provider account.
+ */
+function listInstalledStorageProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -1834,6 +1882,8 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const supabaseProvider = findMarketplaceProviderRow(workspaceConfig, "supabase");
   const dataProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
   const supabaseData = dataProducts.find((row) => row.productId === "supabase-postgrest") || null;
+  const storageProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
+  const supabaseStorage = storageProducts.find((row) => row.productId === "supabase-storage") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -1857,6 +1907,11 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     supabaseData,
     hasSupabaseDataCapability: Boolean(supabaseData),
     hasWorkspaceDataCapability: dataProducts.length > 0,
+    // Lane-derived storage/CDN capability — second Supabase product.
+    storageProducts,
+    supabaseStorage,
+    hasSupabaseStorageCapability: Boolean(supabaseStorage),
+    hasWorkspaceStorageCapability: storageProducts.length > 0,
   };
 }
 
@@ -1869,8 +1924,11 @@ export {
   INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
   SUPABASE_POSTGREST_INTEGRATION_ID,
+  SUPABASE_STORAGE_INTEGRATION_ID,
   SUPABASE_PRODUCTS,
   SUPABASE_PROVIDER_INTEGRATION_ID,
+  WORKSPACE_STORAGE_LANE,
+  listInstalledStorageProducts,
   VERCEL_API_BASE_URL,
   VERCEL_AUTH_REF,
   VERCEL_DEPLOYMENTS_INTEGRATION_ID,

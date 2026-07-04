@@ -21,6 +21,7 @@
     "test:supabase-data-node": "node --test ./scripts/unit-supabase-data-node.test.mjs",
     "test:external-sync": "node --test ./scripts/unit-workspace-external-sync.test.mjs",
     "test:external-data-causation": "node --test ./scripts/unit-external-data-causation.test.mjs",
+    "test:storage-buckets": "node --test ./scripts/unit-workspace-storage-buckets.test.mjs",
     "test:supabase-hardening": "node --test ./scripts/unit-supabase-provider-hardening.test.mjs",
     "smoke:serverless-readiness": "node ./scripts/smoke-serverless-readiness-localhost.mjs",
     "smoke:vercel-marketplace": "node ./scripts/smoke-vercel-marketplace-localhost.mjs",

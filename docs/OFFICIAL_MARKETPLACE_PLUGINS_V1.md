@@ -300,8 +300,52 @@ Validated V1 capability:
   unrelated derived UI state (backwards-compatibility is unit-proven), and
   externally-held records co-exist seamlessly with local rows.
 
+### Supabase Storage (Global CDN)
+
+The **second product** on the Supabase provider — the exact Upstash
+multi-product pattern (same account, distinct product row, distinct
+execution lane). No new provider account; it rides the connected Supabase
+credentials.
+
+Product identity:
+
+- `productId` / `integrationId`: `supabase-storage`
+- `authRef`: `SUPABASE`
+- execution lane: `workspace-storage` (isolated from the database lane)
+- connector kind: `supabase-storage`
+- required env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (same account)
+- `requiresProduct`: `supabase-postgrest` (a governed data table must exist
+  to link to)
+
+Gating (causation state, `deriveBucketProductState`): `provider-required →
+link-required → ready → active`. Bucket creation is refused (receipted
+`blocked`) until the provider is connected AND a governed data table is
+linked.
+
+Validated V1 capability (browser closed-loop proven, 17/17):
+
+- The storage product installs through the same marketplace product-sync
+  route + governed api-registry row as every other product.
+- `link-table` binds the governed buckets object (a `data-source` object on
+  the **dynamic integration binding** — `mode: "integration"`,
+  `integrationId: supabase-storage`, resolved through its api-registry row,
+  never a manual binding) to an existing governed data table.
+- No-code one-click **create-bucket** (BucketManager UI) calls the real
+  Supabase Storage API through the governed door
+  (`/api/workspace/add-ons/[providerId]/storage`), reads the bucket back,
+  and lands a governed record correlated 1:1 to the linked table — with the
+  user's mental model surfaced directly: bucket name (live-normalized to the
+  Supabase id), public/private access, MIME allowlist, file-size limit, and
+  the public CDN URL for public buckets.
+- `sync-buckets` reconciles the live inventory; `delete-bucket` removes the
+  bucket externally and from the governed object. Every action is receipted
+  (`workspace-add-on-storage`); the service key never enters a row, receipt,
+  or response.
+- `/settings/apps` derives a second Supabase icon (storage badge, deep-links
+  the buckets console) alongside the database icon, deduped by provider+URL.
+
 Deferred (explicit): scheduler-driven continuous sync (QStash → `pull`),
-Storage/Edge Function products, relationship import, and conflict
+signed-URL issuance and object upload UI, relationship import, and conflict
 auto-resolution policies.
 
 ## User Surfaces
