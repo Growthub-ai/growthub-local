@@ -257,6 +257,31 @@ function storageProductLink(row) {
   };
 }
 
+function listInstalledNangoProducts(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const registry = objects.find((object) => String(object?.id || "").trim() === "api-registry" || String(object?.objectType || "").trim() === "api-registry");
+  const rows = Array.isArray(registry?.rows) ? registry.rows : [];
+  return rows.filter((row) => String(row?.connectorKind || "").trim() === "nango"
+    && String(row?.syncStatus || "").trim() === "verified"
+    && String(row?.syncProof || "").trim()
+    && String(row?.syncCheckedAt || row?.lastTested || "").trim());
+}
+
+function nangoProductLink(row) {
+  const label = String(row?.Name || row?.selectedResourceLabel || row?.productId || "Nango integration").trim();
+  const providerConfigKey = String(row?.providerConfigKey || row?.selectedResourceId || row?.productId || "").trim();
+  const href = providerConfigKey
+    ? `https://app.nango.dev/integrations/${encodeURIComponent(providerConfigKey)}`
+    : "https://app.nango.dev";
+  return {
+    id: `nango:${row?.integrationId || row?.productId || providerConfigKey || label}`,
+    label: "Nango integration",
+    detail: label,
+    href,
+    iconSrc: "/integrations/nango/integrations.png",
+  };
+}
+
 function attachExternalAppLinks(apps, workspaceConfig) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const vercelObject = objects.find((object) => String(object?.id || "").trim() === VERCEL_PROJECTS_OBJECT_ID);
@@ -266,6 +291,7 @@ function attachExternalAppLinks(apps, workspaceConfig) {
   // future data provider joins with zero changes here.
   const dataProducts = listInstalledDataProducts(workspaceConfig);
   const storageProducts = listInstalledStorageProducts(workspaceConfig);
+  const nangoProducts = listInstalledNangoProducts(workspaceConfig);
   return apps.map((app) => {
     const externalLinks = linkFromAppRow(app);
     for (const project of projects) {
@@ -302,6 +328,10 @@ function attachExternalAppLinks(apps, workspaceConfig) {
       }
       for (const row of storageProducts) {
         const link = storageProductLink(row);
+        if (link) externalLinks.push(link);
+      }
+      for (const row of nangoProducts) {
+        const link = nangoProductLink(row);
         if (link) externalLinks.push(link);
       }
     }

@@ -77,8 +77,8 @@ function compactAccountOptions(payload, source) {
   return rawItems
     .map((item, index) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.slug || item.username || item.name || `account-${index + 1}`);
-      const label = clean(item.name || item.team_name || item.teamName || item.username || item.email || item.slug || id);
+      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.unique_key || item.uniqueKey || item.slug || item.username || item.name || `account-${index + 1}`);
+      const label = clean(item.name || item.team_name || item.teamName || item.display_name || item.displayName || item.username || item.email || item.provider || item.slug || id);
       if (!id || !label) return null;
       return {
         id,

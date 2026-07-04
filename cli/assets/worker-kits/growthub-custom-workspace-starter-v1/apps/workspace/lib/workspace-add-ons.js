@@ -372,6 +372,53 @@ const SUPABASE_PRODUCTS = [
     },
   },
 ];
+const NANGO_PROVIDER_INTEGRATION_ID = "nango-marketplace-provider";
+const NANGO_INTEGRATIONS_INTEGRATION_ID = "nango-integrations";
+const NANGO_AUTH_REF = "NANGO";
+// The Nango adapter contract (lib/adapters/integrations/nango) reads a
+// connectorKind:"nango" row's `authRef` as the secret ENV NAME, so discovered
+// integration rows carry the concrete env key — never a credential value.
+const NANGO_SECRET_ENV = "NANGO_SECRET_KEY";
+const NANGO_API_BASE_URL = "https://api.nango.dev";
+const NANGO_PRODUCTS = [
+  {
+    productId: NANGO_INTEGRATIONS_INTEGRATION_ID,
+    integrationId: NANGO_INTEGRATIONS_INTEGRATION_ID,
+    authRef: NANGO_AUTH_REF,
+    label: "Nango Integrations",
+    shortLabel: "Integrations",
+    icon: "N",
+    iconClass: "is-nango",
+    iconSrc: "/integrations/nango/integrations.png",
+    connectorKind: "nango-integrations",
+    endpoint: "/integrations",
+    method: "GET",
+    description: "Real-time directory of the connected Nango account's integrations. Verifies the Nango API lane server-side; per-integration installs convert each available integration into a governed API Registry row. Secrets stay in env; rows store only refs and routing metadata.",
+    subtitle: "One API for all your integrations",
+    plans: "Free, Growth, Enterprise",
+    entityTypes: "integration,connection,api",
+    capabilities: "integration-directory,governed-api-requests,credential-vault",
+    executionLane: "workspace-integrations",
+    requiredEnv: [NANGO_SECRET_ENV],
+    optionalEnv: ["NANGO_HOST_URL", "NANGO_ENVIRONMENT", "NANGO_MODE"],
+    consoleUrl: "https://app.nango.dev",
+    probe: {
+      baseUrlEnv: "NANGO_HOST_URL",
+      tokenEnv: NANGO_SECRET_ENV,
+      paths: ["/integrations"],
+      fallbackBaseUrl: NANGO_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/integrations"],
+      emptyLabel: "No integrations returned for this Nango account yet.",
+      createDividerLabel: "Or create a new integration from the Nango dashboard",
+      // The account secret key already authorizes every integration in the
+      // Nango environment; selecting a resource binds the row, never writes env.
+      envFromResource: [],
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -576,6 +623,94 @@ const MARKETPLACE_PROVIDERS = [
     executionLane: "workspace-provider",
     description: "Provider-level Supabase account binding for workspace add-ons. Connect with a management token to discover projects, or bind one project directly with its URL and service key.",
   },
+  {
+    providerId: "nango",
+    integrationId: NANGO_PROVIDER_INTEGRATION_ID,
+    authRef: NANGO_AUTH_REF,
+    label: "Nango",
+    developer: "Nango",
+    iconSrc: "/integrations/nango/provider.png",
+    baseUrl: NANGO_API_BASE_URL,
+    endpoint: "/integrations",
+    method: "GET",
+    // Provider/account-management lane (Nango API): Authorization Bearer with
+    // the environment secret key. One secret authorizes integrations,
+    // connections, and proxy requests for the environment — there is no
+    // separate per-product credential. NANGO_HOST_URL overrides the base for
+    // self-hosted Nango (same env key the runtime adapter honors).
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: NANGO_SECRET_ENV,
+      baseUrlEnv: "NANGO_HOST_URL",
+      paths: ["/integrations", "/connections"],
+    },
+    accountSetupFields: [
+      {
+        id: "secretKey",
+        label: "Nango secret key",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: NANGO_SECRET_ENV,
+        credentialRole: "bearerToken",
+      },
+    ],
+    // Live product discovery: this provider's install products render
+    // DYNAMICALLY from a real-time Nango fetch (the account's available
+    // integrations), then install as governed connectorKind:"nango" API
+    // Registry rows the existing config-driven resolver lane executes as
+    // API requests. Declared contract keys only — the generic provider
+    // routes interpret this block; no per-provider route forks.
+    productDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/integrations"],
+      payloadKeys: ["data", "configs", "integrations"],
+      idFields: ["unique_key", "uniqueKey"],
+      labelFields: ["display_name", "displayName", "provider", "unique_key"],
+      detailFields: ["provider"],
+      emptyLabel: "No integrations returned for this Nango account yet. Create one in the Nango dashboard, then reopen this provider.",
+      productDefaults: {
+        productIdPrefix: "nango-",
+        connectorKind: "nango",
+        resolverTemplateId: "nango",
+        authRef: NANGO_SECRET_ENV,
+        bindingField: "providerConfigKey",
+        executionLane: "workspace-integrations",
+        requiredEnv: [NANGO_SECRET_ENV],
+        optionalEnv: ["NANGO_HOST_URL", "NANGO_ENVIRONMENT", "NANGO_MODE"],
+        iconClass: "is-nango",
+        iconSrc: "/integrations/nango/integrations.png",
+        method: "GET",
+        endpoint: "",
+        probe: {
+          baseUrlEnv: "NANGO_HOST_URL",
+          tokenEnv: NANGO_SECRET_ENV,
+          pathTemplate: "/integrations/{resourceId}",
+          fallbackBaseUrl: NANGO_API_BASE_URL,
+        },
+        subtitle: "Governed API requests through Nango",
+        plans: "Included with the connected Nango account",
+        entityTypes: "integration,connection,api",
+        capabilities: "governed-api-requests,integration-credentials,nango-proxy",
+        consoleUrl: "https://app.nango.dev",
+        schemaVersion: "growthub-marketplace-nango-v1",
+      },
+    },
+    consoleUrl: "https://app.nango.dev",
+    accountSetupUrl: "https://app.nango.dev/dev/environment-settings",
+    supportUrl: "https://nango.dev/slack",
+    websiteUrl: "https://www.nango.dev",
+    docsUrl: "https://docs.nango.dev",
+    termsUrl: "https://www.nango.dev/terms",
+    privacyUrl: "https://www.nango.dev/privacy-policy",
+    providerProductsLabel: "Integrations (governed API requests via Nango)",
+    products: NANGO_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "nango-provider",
+    capabilities: "provider-account,marketplace-products,integrations",
+    executionLane: "workspace-provider",
+    description: "Provider-level Nango account binding for workspace add-ons. The secret key stays in runtime env; available integrations render live and install as governed API Registry rows.",
+  },
 ];
 
 function apiRegistryColumns(existing = []) {
@@ -614,6 +749,11 @@ function apiRegistryColumns(existing = []) {
     "selectedProviderAccountId",
     "selectedProviderAccountLabel",
     "providerAccountSource",
+    // Config-driven integration binding columns (connectorKind:"nango" rows,
+    // validated by workspace-schema): the discovered-product install writes
+    // providerConfigKey; the existing connection panel binds connectionIds.
+    "providerConfigKey",
+    "connectionIds",
     ...existing,
   ]));
 }
@@ -1132,6 +1272,176 @@ function getMarketplaceProduct(providerId, productId) {
   const provider = getMarketplaceProvider(providerId);
   if (!provider) return null;
   return provider.products.find((product) => product.productId === productId || product.integrationId === productId) || null;
+}
+
+/**
+ * Live product-discovery contract declared on a provider entry (`productDiscovery`).
+ * Providers whose install products render DYNAMICALLY from a real-time account
+ * fetch (e.g. Nango: one product per available integration) declare payload
+ * field candidates + product defaults here; the generic provider routes and
+ * the marketplace surface interpret the contract — no per-provider forks.
+ */
+function getProviderProductDiscovery(provider) {
+  const discovery = provider?.productDiscovery;
+  if (!discovery || typeof discovery !== "object") return null;
+  if (!Array.isArray(discovery.paths) || !discovery.paths.length) return null;
+  if (!Array.isArray(discovery.idFields) || !discovery.idFields.length) return null;
+  return discovery;
+}
+
+function pickDiscoveryField(item, fields) {
+  for (const field of Array.isArray(fields) ? fields : []) {
+    const value = String(item?.[field] == null ? "" : item[field]).trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+/**
+ * Pure mapping from one live provider payload item (e.g. a Nango integration
+ * `{ unique_key, provider, display_name }`) to a full marketplace product
+ * definition, driven ONLY by the provider's declared `productDiscovery`
+ * contract. Returns null when the item carries no usable identity.
+ */
+function makeDiscoveredMarketplaceProduct(provider, item = {}) {
+  const discovery = getProviderProductDiscovery(provider);
+  if (!discovery) return null;
+  const defaults = discovery.productDefaults || {};
+  const resourceId = pickDiscoveryField(item, discovery.idFields);
+  if (!resourceId) return null;
+  const label = pickDiscoveryField(item, discovery.labelFields) || resourceId;
+  const detail = pickDiscoveryField(item, discovery.detailFields);
+  const productId = `${defaults.productIdPrefix || `${provider.providerId}-`}${resourceId}`;
+  const probeContract = defaults.probe || {};
+  const probe = probeContract.pathTemplate && probeContract.tokenEnv
+    ? {
+        baseUrlEnv: probeContract.baseUrlEnv || "",
+        tokenEnv: probeContract.tokenEnv,
+        paths: [probeContract.pathTemplate.split("{resourceId}").join(encodeURIComponent(resourceId))],
+        fallbackBaseUrl: probeContract.fallbackBaseUrl || provider.baseUrl,
+      }
+    : null;
+  return {
+    productId,
+    integrationId: productId,
+    authRef: defaults.authRef || provider.authRef,
+    label,
+    shortLabel: label,
+    icon: label.slice(0, 1).toUpperCase(),
+    iconClass: defaults.iconClass || "is-provider",
+    iconSrc: defaults.iconSrc || provider.iconSrc || "",
+    connectorKind: defaults.connectorKind || "",
+    resolverTemplateId: defaults.resolverTemplateId || "",
+    endpoint: defaults.endpoint || "",
+    method: defaults.method || "GET",
+    description: `Governed API Registry binding for the ${label} integration on the connected ${provider.label} account. Requests execute server-side through the existing ${provider.label} lane; this row stores only refs and routing metadata.`,
+    subtitle: detail && detail !== label ? `${defaults.subtitle || "Governed integration"} · ${detail}` : (defaults.subtitle || "Governed integration"),
+    plans: defaults.plans || "Included",
+    entityTypes: defaults.entityTypes || "integration",
+    capabilities: defaults.capabilities || "integration",
+    executionLane: defaults.executionLane || "workspace-integrations",
+    requiredEnv: Array.isArray(defaults.requiredEnv) ? [...defaults.requiredEnv] : [],
+    optionalEnv: Array.isArray(defaults.optionalEnv) ? [...defaults.optionalEnv] : [],
+    consoleUrl: defaults.consoleUrl || provider.consoleUrl || "",
+    probe,
+    discovered: true,
+    discoveredResourceId: resourceId,
+    discoveredDetail: detail,
+    bindingField: defaults.bindingField || "",
+    schemaVersion: defaults.schemaVersion || "growthub-marketplace-product-v1",
+  };
+}
+
+/**
+ * Registry row for an installed discovered product. Mirrors
+ * makeMarketplaceProductRow, plus the declared binding column (e.g.
+ * `providerConfigKey` for connectorKind:"nango" rows) so the existing
+ * config-driven resolver lane picks the row up as an executable API request
+ * with zero new detection keys. Deliberately NEVER writes `connectionIds`:
+ * connection binding belongs to the existing connection panel and a re-sync
+ * must not clobber it.
+ */
+function makeDiscoveredMarketplaceProductRow({ product, plan = "included", syncResult = null, authReady = false } = {}) {
+  if (!product?.productId || !product?.integrationId) return null;
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  const row = {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || product.discoveredResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || product.label,
+    selectedResourceSource: syncResult?.selectedResourceSource || "provider-live-discovery",
+    baseUrl: syncResult?.baseUrl || "",
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Complete ${product.label} provider setup, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: product.resolverTemplateId || "",
+    schemaVersion: product.schemaVersion || "growthub-marketplace-product-v1",
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || "",
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+  };
+  if (product.bindingField && product.discoveredResourceId) {
+    row[product.bindingField] = product.discoveredResourceId;
+  }
+  return row;
+}
+
+function withDiscoveredMarketplaceProductRegistry(workspaceConfig, { providerId, product, plan = "included", syncResult = null, authReady = false } = {}) {
+  const provider = getMarketplaceProvider(providerId);
+  if (!provider || !getProviderProductDiscovery(provider) || !product?.discovered) return workspaceConfig;
+  const productRow = makeDiscoveredMarketplaceProductRow({ product, plan, syncResult, authReady });
+  return withRegistryProductRowUpsert(workspaceConfig, productRow);
+}
+
+/**
+ * Installed discovered-product rows for a provider (rows written by
+ * withDiscoveredMarketplaceProductRegistry — carry a productId under the
+ * declared prefix + the declared connectorKind, excluding the provider's
+ * static products). Same verified proof rule as findWorkspaceAddOnRows.
+ */
+function findDiscoveredAddOnRows(workspaceConfig, providerId) {
+  const provider = getMarketplaceProvider(providerId);
+  const discovery = getProviderProductDiscovery(provider);
+  if (!discovery) return [];
+  const defaults = discovery.productDefaults || {};
+  const prefix = defaults.productIdPrefix || `${provider.providerId}-`;
+  const staticIds = new Set(provider.products.map((product) => product.integrationId));
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const rows = [];
+  for (const object of objects) {
+    if (!isApiRegistryObject(object)) continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      const productId = String(row?.productId || "").trim();
+      const integrationId = String(row?.integrationId || "").trim();
+      if (!productId || !productId.startsWith(prefix) || staticIds.has(integrationId)) continue;
+      if (defaults.connectorKind && String(row?.connectorKind || "").trim() !== defaults.connectorKind) continue;
+      const verified = Boolean(String(row?.syncStatus || "").trim() === "verified"
+        && String(row?.syncProof || "").trim()
+        && String(row?.syncCheckedAt || "").trim());
+      rows.push({ ...row, productId, isVerifiedAddOn: verified });
+    }
+  }
+  return rows;
 }
 
 function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
@@ -1929,6 +2239,12 @@ export {
   GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
   INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
+  NANGO_API_BASE_URL,
+  NANGO_AUTH_REF,
+  NANGO_INTEGRATIONS_INTEGRATION_ID,
+  NANGO_PRODUCTS,
+  NANGO_PROVIDER_INTEGRATION_ID,
+  NANGO_SECRET_ENV,
   SUPABASE_POSTGREST_INTEGRATION_ID,
   SUPABASE_STORAGE_INTEGRATION_ID,
   SUPABASE_PRODUCTS,
@@ -1971,8 +2287,12 @@ export {
   findWorkspaceAddOnRows,
   getMarketplaceProvider,
   getMarketplaceProduct,
+  getProviderProductDiscovery,
   getUpstashProduct,
+  makeDiscoveredMarketplaceProduct,
+  makeDiscoveredMarketplaceProductRow,
   findRegistryRowByIntegrationId,
+  findDiscoveredAddOnRows,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
   withSandboxScheduledRunProof,
@@ -1995,6 +2315,7 @@ export {
   makeUpstashSchedulerRow,
   withMarketplaceProductRegistry,
   withMarketplaceProviderRegistry,
+  withDiscoveredMarketplaceProductRegistry,
   withRegistryProductRowUpsert,
   withUpstashProductRegistry,
   withUpstashProviderRegistry,

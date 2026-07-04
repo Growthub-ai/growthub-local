@@ -62,6 +62,11 @@ jobs:
           node --test scripts/unit-external-data-causation.test.mjs
           node --test scripts/unit-workspace-storage-buckets.test.mjs
 
+      - name: Validate marketplace provider suites
+        run: |
+          npm run test:add-ons-vercel
+          npm run test:add-ons-nango
+
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs
 
