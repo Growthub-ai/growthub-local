@@ -344,8 +344,10 @@ Validated V1 capability (browser closed-loop proven, 17/17):
   bucket externally and from the governed object. Every action is receipted
   (`workspace-add-on-storage`); the service key never enters a row, receipt,
   or response.
-- `/settings/apps` derives a second Supabase icon (storage badge, deep-links
-  the buckets console) alongside the database icon, deduped by provider+URL.
+- `/settings/apps` derives a second Supabase product link (deep-linking the
+  buckets console) alongside the database link. The app card intentionally
+  uses the same Supabase product icon for both links so the paired products
+  read as one provider family, deduped by provider+URL.
 
 Deferred (explicit): scheduler-driven continuous sync (QStash → `pull`),
 signed-URL issuance and object upload UI, relationship import, and conflict

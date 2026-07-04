@@ -339,7 +339,7 @@ const SUPABASE_PRODUCTS = [
     shortLabel: "Storage",
     icon: "S",
     iconClass: "is-supabase",
-    iconSrc: "/integrations/supabase/storage.png",
+    iconSrc: "/integrations/supabase/postgrest.png",
     connectorKind: "supabase-storage",
     endpoint: "/storage/v1/bucket",
     method: "GET",

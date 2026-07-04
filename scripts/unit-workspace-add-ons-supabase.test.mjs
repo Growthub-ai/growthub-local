@@ -251,10 +251,16 @@ test("settings/apps derives the data-lane external link from governed rows", asy
     path.join(kitLib, "..", "app/settings/apps/page.jsx"),
     "utf8",
   );
+  const appsListSource = readFileSync(
+    path.join(kitLib, "..", "app/settings/apps/apps-list.jsx"),
+    "utf8",
+  );
   assert.ok(appsPageSource.includes("listInstalledDataProducts(workspaceConfig)"), "installed+verified rule reused from the marketplace lane");
+  assert.ok(appsPageSource.includes("listInstalledStorageProducts(workspaceConfig)"), "storage products join the same governed app link lane");
   assert.ok(appsPageSource.includes("dataProductLink"), "data-lane link builder present");
-  assert.ok(appsPageSource.includes("deriveExternalSyncFreshness"), "app links include external-table causation proof state");
+  assert.ok(appsPageSource.includes("storageProductLink"), "storage-lane link builder present");
   assert.ok(appsPageSource.includes("supabase.com/dashboard/project/"), "Supabase console deep-link from the bound project ref");
-  assert.ok(appsPageSource.includes("/integrations/${providerId}/postgrest.png"), "database product icon derives from the row");
+  assert.ok((appsPageSource.match(/postgrest\.png/g) || []).length >= 2, "database and storage product links share the Supabase product icon");
+  assert.ok(!appsListSource.includes("workspace-app-proof-chip"), "apps row does not render standalone proof pills");
   assert.ok(!appsPageSource.includes("SUPABASE_SERVICE_ROLE_KEY"), "no secret env names hardcoded into the page");
 });

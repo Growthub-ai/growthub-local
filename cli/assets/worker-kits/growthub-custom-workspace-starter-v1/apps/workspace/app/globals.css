@@ -3671,54 +3671,6 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   display: block;
   object-fit: contain;
 }
-.workspace-app-proof-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.workspace-app-proof-chip {
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  border: 1px solid #dadada;
-  border-radius: 6px;
-  background: #fff;
-  color: #404040;
-  font-size: 11px;
-  line-height: 1;
-}
-.workspace-app-proof-chip.synced {
-  border-color: #a7f3d0;
-  background: #ecfdf5;
-  color: #065f46;
-}
-.workspace-app-proof-chip.ready {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-.workspace-app-proof-chip.stale,
-.workspace-app-proof-chip.drifted,
-.workspace-app-proof-chip.conflict,
-.workspace-app-proof-chip.never-synced {
-  border-color: #fde68a;
-  background: #fffbeb;
-  color: #92400e;
-}
-.workspace-app-proof-chip b,
-.workspace-app-proof-chip em {
-  display: inline;
-  color: inherit;
-  font-size: 11px;
-  font-style: normal;
-  white-space: nowrap;
-}
-.workspace-app-proof-chip em {
-  opacity: 0.8;
-}
 .workspace-app-link-popover {
   position: absolute;
   left: 0;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Database, HardDrive, LayoutGrid } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
@@ -50,15 +50,6 @@ function AppsList({ apps }) {
             <a className="workspace-app-deploy-action" href={item.deploymentSetupHref}>
               Deploy
             </a>
-          ) : null}
-          {Array.isArray(item.dataProofs) && item.dataProofs.length ? (
-            <div className="workspace-app-proof-chips" aria-label="External data causation proofs">
-              {item.dataProofs.map((proof) => <span className={`workspace-app-proof-chip ${proof.state}`} key={proof.objectId}>
-                {proof.kind === "storage" ? <HardDrive size={12} /> : <Database size={12} />}
-                <b>{proof.label}</b>
-                <em>{proof.detail}</em>
-              </span>)}
-            </div>
           ) : null}
         </div>
         <span className={`workspace-integration-status ${item.status || "available"}`}>{item.status || "available"}</span>
