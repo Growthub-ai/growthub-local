@@ -1172,14 +1172,20 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
               workspaceConfig={workspaceConfig}
               onConfigRefresh={refreshWorkspaceConfig}
               onOpenArtifact={(artifact) => { if (artifact) handleOpenArtifact(artifact); }}
-              onSeedProposal={(seedPrompt) => {
+              onSeedProposal={(seedPrompt, seedIntent) => {
                 setActiveView("chat");
+                // Pin the intent the seed promises (create_object for the
+                // policy object, swarm for the pulse workflow) — same rule as
+                // the CEO/Schedule onSeedSwarm wiring; otherwise the seeded
+                // prompt would submit under whatever stale intent is active.
+                if (seedIntent) onPickIntent(seedIntent);
                 setPrompt(
                   typeof seedPrompt === "string" && seedPrompt.trim()
                     ? `${seedPrompt.trim()} `
                     : "Propose a governed loop: "
                 );
               }}
+              onOpenCeo={() => setActiveView("ceo")}
               onOpenSetup={() => setActiveTab("setup")}
             />
           </div>

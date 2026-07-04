@@ -34,10 +34,16 @@ changes, no route changes.
 
 ## Heartbeat sensing (serverless watchdog, projected over governed proof)
 
-The destination door executes published graphs with a **60s budget**
-(`workflows/[providerId]/route.js` → `timeoutMs: 60000`) and writes
-`lastScheduledRunAttemptedAt` at dispatch, then a success/failure timestamp at
-completion. The sensor (`senseRunHeartbeat`) classifies each workflow row:
+The destination door executes published graphs within
+`SERVERLESS_RUN_BUDGET_MS` (a shared constant exported by
+`workspace-add-on-scheduler.js` and used by the route's `timeoutMs`, so the
+sensor can never drift from the real budget) and **stamps
+`lastScheduledRunAttemptedAt` BEFORE executing the graph** — this pre-run
+stamp is the heartbeat premise: a run that hangs, exhausts the budget, or dies
+mid-graph leaves a dangling attempt the sensor can see; without it a stuck run
+would leave no trace and read healthy forever. Completion then writes the
+success/failure timestamp. The sensor (`senseRunHeartbeat`) classifies each
+workflow row:
 
 | State | Rule |
 | --- | --- |
@@ -58,19 +64,21 @@ Determinism rule: the deriver **never reads the clock**. Callers pass `nowMs`;
 with no clock the sensor reports `running (no-clock)` — conservative, never a
 false stall alarm — and every unit test pins fixed timestamps.
 
-### Recovery (the "never stuck" contract)
+### Recovery (the "never stuck" contract — binding-aware)
 
 Every `stalled`/`failed` heartbeat carries a `recovery` hand-off to an existing
-governed surface — the pulse never mutates:
+governed surface, chosen by what the row is actually bound to — the pulse
+never targets a provider route the row isn't bound to:
 
-| Situation | Recovery | Route |
+| Binding | Recovery | Surface |
 | --- | --- | --- |
-| Stalled run | readiness rescan (read-only), chaining `resume` when paused | `POST /api/workspace/add-ons/[providerId]/schedule` |
-| Failed scheduler run | readiness rescan to name the blocking node | same route |
-| Failed inbound (webhook / api-request) binding | fresh test event through the sidecar; publish stays proof-gated | workflow sidecar |
+| Scheduler-bound (scheduleId + provider) | readiness rescan (read-only); paused+stalled chains `resume`, explicitly marked `mutating: true` | `POST /api/workspace/add-ons/[providerId]/schedule` (with the same defaultProvider fallback ScheduleCockpit uses) |
+| Inbound-bound (webhook / api-request) | fresh test event; publish stays proof-gated | workflow sidecar |
+| Unbound | open the canvas to re-run or bind | workflow canvas |
 
 Resume re-verifies readiness server-side (existing behavior), so recovery can
-never re-arm a drifted binding.
+never re-arm a drifted binding. Recovery HTTP failures are surfaced, never
+swallowed — a scan that didn't run is reported as exactly that.
 
 ---
 
@@ -93,19 +101,31 @@ Rule kinds V1: `max-stalled-runs`, `max-failed-runs`, `max-blocked-workflows`,
 reported as a finding — a policy the workspace cannot evaluate is itself a
 governance signal, never silently ignored.
 
-`pulse-cadence-minutes` is the watchdog-of-the-watchdog: it flags a stale or
-absent heartbeat workflow (conventional row name `workspace-pulse`) and its
-`nextAction` seeds a governed `/loop` proposal to create one — the pulse hires
+`pulse-cadence-minutes` is the watchdog-of-the-watchdog: **only a successful
+beat counts** — a heartbeat workflow failing on schedule is stale, not fresh.
+A stale beat hands to a readiness rescan; an absent `workspace-pulse` workflow
+seeds a governed proposal (intent-pinned) to create one — the pulse hires
 itself through the same proposal gate as everything else.
 
 ### The auto-approve clamp (trust boundary)
 
-A policy row may declare `autoApprove`, but the deriver **clamps** it: only
-recovery kinds in `SAFE_AUTO_RECOVERY_KINDS` (`readiness` — read-only rescans)
-may auto-run. Any row attempting to auto-approve a mutating hand-off is marked
-`autoApproveClamped` and stays manual. Autonomy inherits the security model; it
-never bypasses it. This mirrors `.growthub-fork/policy.json → autoApprove`
-in spirit while keeping V1 scope to read-only recovery.
+A policy row may declare `autoApprove`, but the deriver **clamps** it twice:
+
+1. **Kind clamp** — only recovery kinds in `SAFE_AUTO_RECOVERY_KINDS`
+   (`readiness` — read-only rescans) may auto-run. Rows attempting to
+   auto-approve a mutating hand-off are marked `autoApproveClamped` and stay
+   manual. The paused-card `resume` chain is a mutation and is **never**
+   auto-run — it exists only behind the per-card human click.
+2. **Scope clamp** — auto-recovery executes exactly
+   `model.autoRecoveryTargets`: the union of `targetCardIds` on the breached
+   auto-approved findings, restricted to cards whose recovery is the safe
+   kind. The button's count is the work it does; it can never run wider than
+   what the findings authorize, and every per-card outcome (including
+   failures) is aggregated, never masked.
+
+Autonomy inherits the security model; it never bypasses it. This mirrors
+`.growthub-fork/policy.json → autoApprove` in spirit while keeping V1 scope to
+read-only recovery.
 
 ---
 

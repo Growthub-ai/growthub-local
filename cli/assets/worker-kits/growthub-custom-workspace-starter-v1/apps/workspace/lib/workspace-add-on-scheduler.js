@@ -31,6 +31,10 @@ const SERVERLESS_SCHEDULER_LANE = "serverless-scheduler";
 const SCHEDULE_ID_NAMESPACE = "growthub";
 // Clock skew tolerance for signed-callback exp/nbf checks (QStash Receiver default).
 const SIGNATURE_CLOCK_TOLERANCE_S = 10;
+// The destination door's synchronous graph execution budget. Shared so the
+// pulse heartbeat sensor's stall math can never drift from the route's actual
+// timeout (autonomic-pulse-console.js imports this).
+const SERVERLESS_RUN_BUDGET_MS = 60_000;
 const MAX_BODY_PREVIEW_CHARS = 240;
 
 function clean(value) {
@@ -505,6 +509,7 @@ function evaluateCallbackScheduleMatch({ rowScheduleId, parsedScheduleId } = {})
 }
 
 export {
+  SERVERLESS_RUN_BUDGET_MS,
   SERVERLESS_SCHEDULER_LANE,
   SIGNATURE_CLOCK_TOLERANCE_S,
   deriveScheduleId,

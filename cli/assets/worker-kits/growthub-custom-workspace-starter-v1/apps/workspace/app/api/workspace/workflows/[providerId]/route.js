@@ -40,6 +40,7 @@ import {
   isSchedulerProduct,
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
+  SERVERLESS_RUN_BUDGET_MS,
 } from "@/lib/workspace-add-on-scheduler";
 import {
   evaluateBindingMatch,
@@ -297,12 +298,30 @@ async function POST(request, context) {
   }
 
   const runId = scheduleId ? `sched_${scheduleId}_${Date.now().toString(36)}` : `sched_${Date.now().toString(36)}`;
+
+  // Heartbeat stamp BEFORE execution: a run that hangs, exhausts the budget,
+  // or dies mid-graph leaves a dangling attempt (attemptedAt newer than any
+  // completion timestamp), which is exactly what the pulse stall sensor keys
+  // on. Without this pre-run write, a stuck run leaves no trace at all and
+  // reads as healthy forever. Best-effort: a read-only bundle without a
+  // persistence adapter skips the stamp the same way completion proof does.
+  try {
+    const { config: attemptConfig, found: attemptFound } = withSandboxScheduledRunProof(workspaceConfig, {
+      objectId,
+      rowId,
+      patch: { lastScheduledRunAttemptedAt: new Date().toISOString() },
+    });
+    if (attemptFound) await writeWorkspaceConfig({ dataModel: attemptConfig.dataModel });
+  } catch {
+    // Non-fatal: execution proceeds; completion proof still lands below.
+  }
+
   let result;
   try {
     result = await runOrchestrationGraphIfPresent({
       workspaceConfig,
       row,
-      timeoutMs: 60000,
+      timeoutMs: SERVERLESS_RUN_BUDGET_MS,
       runInputs,
       executionContext: { runId, ranAt: new Date().toISOString(), sandboxName: row.Name },
     });
