@@ -154,10 +154,35 @@ tool over this same deriver is the natural Phase B follow-up in
 ## Automated gates
 
 ```bash
-pnpm test:autonomic-pulse        # 15 contract tests (repo root)
+pnpm test:autonomic-pulse        # 18 contract tests (repo root)
 pnpm test:schedule-cockpit       # regression: shared sidecar + command registry
 node --test scripts/unit-helper-command-registry.test.mjs
 ```
+
+## Real-browser e2e — the closed behavior loop (17/17 at freeze)
+
+`scripts/e2e-pulse-journey-seed.mjs` + `scripts/e2e-pulse-journey-playwright.mjs`
+drive the daily habitual loop against a temp workspace export (never the repo
+tree), mirroring the PR #263 inbound journey's proof bar:
+
+```
+CUE     rail "Ask helper" → "/pulse" → 1 stalled workflow holds attention;
+        no-stalls policy finding fires (critical); beat policy flags the
+        missing workspace-pulse workflow with an intent-pinned seed action.
+ACTION  the stalled card's binding-aware recovery opens the canvas → bind the
+        native API Request method → send a REAL test event → Verified 200.
+REALITY external bearer domain hit (canvas closed) → 200, proofPersisted,
+        fresh completion proof; tampered auth → 401, nothing executes.
+REWARD  /pulse re-derives: card healthy, 0 stalled, the no-stalls finding
+        clears itself, the beat finding persists until the heartbeat exists.
+```
+
+Observed at freeze: 17/17 checks, 4 screenshots. Operational note surfaced by
+this journey: a workflow canvas left open can adopt the server-synced trigger
+graph and its client PATCH races the door's proof write (last-writer-wins on
+config) — the e2e's REALITY phase therefore invokes with the canvas closed,
+which is also the true serverless posture. Durable fix belongs to the config
+write layer (compare-and-set or field-scoped merges), out of scope here.
 
 Locked invariants: `/pulse` is read-only view command; sidecar mount source-scan;
 NO `workspace-policy` preset may exist (policy resolves from a governed custom
