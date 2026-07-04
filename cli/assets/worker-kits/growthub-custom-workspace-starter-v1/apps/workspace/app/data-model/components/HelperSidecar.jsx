@@ -988,6 +988,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // Schedule cockpit shares the same sidecar shell (read-only operations surface
   // over the existing schedule routes). Same precedent as the CEO view.
   const inScheduleView = activeView === "schedule";
+  // Data cockpit shares the same sidecar shell (read-only operations surface
+  // over the existing add-ons /data route). Same precedent as the schedule view.
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1046,8 +1048,8 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   : inScheduleView
                     ? "Schedule Cockpit"
                     : threadActive
-                      ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                      : "Workspace Helper"}
+                        ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                        : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">

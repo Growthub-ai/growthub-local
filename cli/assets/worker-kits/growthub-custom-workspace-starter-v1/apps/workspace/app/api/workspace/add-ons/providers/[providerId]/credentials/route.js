@@ -45,6 +45,21 @@ function safeUrl(baseUrl, pathName) {
   return `${base}${suffix}`;
 }
 
+function normalizeSupabaseProjectUrl(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    url.hostname = url.hostname.replace(/\.supabase\.com$/i, ".supabase.co");
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return raw.replace(/\.supabase\.com(\/)?$/i, ".supabase.co");
+  }
+}
+
 function compactAccountOptions(payload, source, fallbackEmail) {
   const rawItems = Array.isArray(payload)
     ? payload
@@ -60,8 +75,8 @@ function compactAccountOptions(payload, source, fallbackEmail) {
   const options = rawItems
     .map((item, index) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.slug || item.username || item.name || `account-${index + 1}`);
-      const label = clean(item.name || item.team_name || item.teamName || item.username || item.email || item.slug || id);
+      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.unique_key || item.uniqueKey || item.slug || item.username || item.name || `account-${index + 1}`);
+      const label = clean(item.name || item.team_name || item.teamName || item.display_name || item.displayName || item.username || item.email || item.provider || item.slug || id);
       if (!id || !label) return null;
       return {
         id,
@@ -112,8 +127,13 @@ function deriveEnvUpdates(fields, credentials, body) {
     .filter(([, value]) => value));
 }
 
-/** Bearer-token account verification (e.g. Vercel). Probe paths come from the
- * provider's accountProbe contract — no hardcoded provider endpoints here. */
+function looksLikeSupabasePublishableKey(value) {
+  return /^sb_publishable_/i.test(clean(value));
+}
+
+/** Bearer-token account verification (e.g. Vercel REST API, Supabase
+ * Management API). Probe paths come from the provider's accountProbe
+ * contract — no hardcoded provider endpoints here. */
 async function verifyBearerProviderAccount(provider, token) {
   const probe = provider.accountProbe || {};
   const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
@@ -137,31 +157,148 @@ async function verifyBearerProviderAccount(provider, token) {
   return { ok: false, last };
 }
 
+/**
+ * Direct project probe fallback for bearer providers: no management token,
+ * but the product base URL + secret verify the bound project itself
+ * (accountProbe.fallback declares the header shape and paths).
+ */
+async function verifyProviderProjectFallback(provider, baseUrl, secret) {
+  const fallback = provider.accountProbe?.fallback || {};
+  const paths = Array.isArray(fallback.paths) && fallback.paths.length ? fallback.paths : ["/"];
+  const headerName = clean(fallback.tokenHeaderName);
+  let host = clean(baseUrl);
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    /* keep raw value */
+  }
+  let last = null;
+  for (const probePath of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(baseUrl, probePath), {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${secret}`,
+          ...(headerName ? { [headerName]: secret } : {}),
+          accept: "application/json",
+        },
+      });
+      last = { path: probePath, status: response.status };
+      if (!response.ok) continue;
+      return { ok: true, path: probePath, status: response.status, options: [{ id: host, label: host, source: probePath }] };
+    } catch (error) {
+      last = { path: probePath, status: 0, error: error?.message || "network error" };
+    }
+  }
+  return { ok: false, last };
+}
+
+async function verifySupabasePublicProject(baseUrl, key) {
+  if (!key) return { ok: false, last: null };
+  const projectUrl = normalizeSupabaseProjectUrl(baseUrl);
+  try {
+    const response = await fetchWithTimeout(safeUrl(projectUrl, "/auth/v1/health"), {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${key}`,
+        apikey: key,
+        accept: "application/json",
+      },
+    });
+    if (response.ok) {
+      let host = projectUrl;
+      try {
+        host = new URL(projectUrl).host;
+      } catch {
+        /* keep raw value */
+      }
+      return { ok: true, path: "/auth/v1/health", status: response.status, options: [{ id: host, label: host, source: "/auth/v1/health" }] };
+    }
+    return { ok: false, last: { path: "/auth/v1/health", status: response.status } };
+  } catch (error) {
+    return { ok: false, last: { path: "/auth/v1/health", status: 0, error: error?.message || "network error" } };
+  }
+}
+
 async function handleBearerCredentials(request, provider, credentials, body) {
   const fields = getProviderSetupFields(provider);
   const tokenField = fields.find((field) => field.credentialRole === "bearerToken");
   const teamField = fields.find((field) => field.credentialRole === "teamScope");
+  const baseUrlField = fields.find((field) => field.credentialRole === "baseUrl");
+  const secretField = fields.find((field) => field.credentialRole === "secret");
   const tokenEnv = tokenField?.envRef || provider.accountProbe?.tokenEnv;
   if (!tokenField || !tokenEnv) return jsonError("provider does not support account credential setup", 400);
   const token = getCredentialValue(credentials, body, tokenField);
   const teamId = teamField ? getCredentialValue(credentials, body, teamField) : "";
-  if (!token) {
-    return jsonError(`${provider.label} account credentials are required`, 400, {
+  const projectUrl = baseUrlField ? normalizeSupabaseProjectUrl(getCredentialValue(credentials, body, baseUrlField)) : "";
+  const projectSecret = secretField ? getCredentialValue(credentials, body, secretField) : "";
+  const publishableField = fields.find((field) => field.credentialRole === "publishableKey");
+  const publishableKey = publishableField ? getCredentialValue(credentials, body, publishableField) : "";
+  if (token && looksLikeSupabasePublishableKey(token)) {
+    return jsonError(
+      `${provider.label} publishable key was entered as a personal access token. Use an sbp_ personal access token for account discovery, or bind directly with the project URL plus service role key.`,
+      422,
+      {
+        providerId: provider.providerId,
+        code: "publishable_key_in_access_token",
+        repairPlan: [
+          "Move the sb_publishable_ key to the optional publishable key field.",
+          "Enter a Supabase personal access token that starts with sbp_, or enter the project URL and service role key.",
+        ],
+      },
+    );
+  }
+  // Providers that declare accountProbe.fallback (e.g. Supabase) can verify a
+  // single bound project with its URL + secret when no management token is
+  // supplied — same persistence tail either way.
+  const hasProjectFallback = Boolean(provider.accountProbe?.fallback && baseUrlField && secretField);
+  if (!token && !(hasProjectFallback && projectUrl && projectSecret)) {
+    return jsonError(
+      hasProjectFallback
+        ? `${provider.label} needs a personal access token, or a project URL plus its service key`
+        : `${provider.label} account credentials are required`,
+      400,
+      {
+        providerId: provider.providerId,
+        missingFields: hasProjectFallback
+          ? [tokenField.id, baseUrlField.id, secretField.id]
+          : [tokenField.id],
+      },
+    );
+  }
+
+  let verified = token ? await verifyBearerProviderAccount(provider, token) : null;
+  let accountSource = verified?.ok ? "management-api" : "";
+  if (!verified?.ok && hasProjectFallback && projectUrl && projectSecret) {
+    const fallbackVerified = await verifyProviderProjectFallback(provider, projectUrl, projectSecret);
+    if (fallbackVerified.ok || !verified) verified = fallbackVerified;
+    if (fallbackVerified.ok) accountSource = "project-probe";
+  }
+  if (!verified?.ok && provider.providerId === "supabase" && projectUrl && (publishableKey || projectSecret)) {
+    const publicVerified = await verifySupabasePublicProject(projectUrl, publishableKey || projectSecret);
+    if (publicVerified.ok || !verified) verified = publicVerified;
+    if (publicVerified.ok) accountSource = "project-probe";
+  }
+  if (!verified?.ok) {
+    return jsonError(`${provider.label} ${token ? "access token" : "project binding"} could not be verified`, 422, {
       providerId: provider.providerId,
-      missingFields: [tokenField.id],
+      checked: verified?.last ? { path: verified.last.path, status: verified.last.status } : null,
     });
   }
 
-  const verified = await verifyBearerProviderAccount(provider, token);
-  if (!verified.ok) {
-    return jsonError(`${provider.label} access token could not be verified`, 422, {
-      providerId: provider.providerId,
-      checked: verified.last ? { path: verified.last.path, status: verified.last.status } : null,
-    });
+  const envToWrite = deriveEnvUpdates(fields, credentials, body);
+  if (accountSource === "project-probe" && provider.providerId === "supabase" && (publishableKey || projectSecret)) {
+    envToWrite.SUPABASE_URL = projectUrl;
+    envToWrite.SUPABASE_ANON_KEY = publishableKey || projectSecret;
+    if (!publishableKey && envToWrite.SUPABASE_SERVICE_ROLE_KEY === projectSecret) delete envToWrite.SUPABASE_SERVICE_ROLE_KEY;
   }
-
-  const envToWrite = { [tokenEnv]: token };
+  if (token) envToWrite[tokenEnv] = token;
   if (teamField?.envRef && teamId) envToWrite[teamField.envRef] = teamId;
+  // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)
+  // so the canonical authRef candidate expansion resolves the product key.
+  for (const [alias, source] of Object.entries(provider.accountProbe?.aliasEnv || {})) {
+    if (!envToWrite[alias] && envToWrite[source]) envToWrite[alias] = envToWrite[source];
+  }
   await writeLocalEnv(envToWrite);
 
   const selected = verified.options.find((option) => teamId && option.id === teamId) || verified.options[0] || null;
@@ -171,13 +308,17 @@ async function handleBearerCredentials(request, provider, credentials, body) {
     syncStatus: "verified",
     status: "connected",
     testedAt: now,
-    proof: `${provider.label} REST API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
-    summary: `${provider.label} provider account verified and stored as local runtime env refs.`,
+    proof: accountSource === "project-probe"
+      ? `${provider.label} project verified (GET ${verified.path} -> HTTP ${verified.status}).`
+      : `${provider.label} REST API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
+    summary: accountSource === "project-probe"
+      ? `${provider.label} provider project binding verified and stored as local runtime env refs.`
+      : `${provider.label} provider account verified and stored as local runtime env refs.`,
     resolvedEnv: Object.keys(envToWrite),
     providerAccountOptions: verified.options,
     selectedProviderAccountId: selected?.id || teamId || "",
     selectedProviderAccountLabel: selected?.label || "",
-    providerAccountSource: verified.path,
+    providerAccountSource: accountSource === "project-probe" ? "project-probe" : verified.path,
   };
   const currentConfig = await readWorkspaceConfig();
   const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });

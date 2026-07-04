@@ -263,6 +263,162 @@ const VERCEL_PRODUCTS = [
     },
   },
 ];
+const SUPABASE_PROVIDER_INTEGRATION_ID = "supabase-provider";
+const SUPABASE_POSTGREST_INTEGRATION_ID = "supabase-postgrest";
+const SUPABASE_STORAGE_INTEGRATION_ID = "supabase-storage";
+// Database-operations lane — provider-agnostic grouping for products that
+// expose governed external database read/write (mirrors how
+// "serverless-scheduler" groups scheduler products). Cockpits and the canvas
+// detect capability by THIS lane string, never by provider id.
+const WORKSPACE_DATA_LANE = "workspace-data";
+// Storage/CDN lane — the second Supabase product class (buckets + global
+// CDN). Distinct lane so its capability, gating, and governed object stay
+// isolated from the database lane while riding the SAME provider account.
+const WORKSPACE_STORAGE_LANE = "workspace-storage";
+const SUPABASE_PRODUCTS = [
+  {
+    productId: "supabase-postgrest",
+    integrationId: SUPABASE_POSTGREST_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase Postgres (PostgREST)",
+    shortLabel: "Postgres",
+    icon: "S",
+    iconClass: "is-supabase",
+    iconSrc: "/integrations/supabase/postgrest.png",
+    connectorKind: "supabase-data",
+    endpoint: "/rest/v1/",
+    method: "GET",
+    description: "Supabase Postgres connection over PostgREST for governed workspace data objects. Secrets stay in env; this row stores only refs and routing metadata.",
+    subtitle: "Postgres for the governed workspace",
+    plans: "Free, Pro, Team plans",
+    entityTypes: "table,record,postgres",
+    capabilities: "database,workspace-data,two-way-sync,workflow,realtime",
+    executionLane: WORKSPACE_DATA_LANE,
+    requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+    optionalEnv: ["SUPABASE_ANON_KEY"],
+    consoleUrl: "https://supabase.com/dashboard",
+    resolverTemplateId: "supabase-postgrest",
+    probe: {
+      baseUrlEnv: "SUPABASE_URL",
+      tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+      // Supabase's gateway authenticates on the `apikey` header; Authorization
+      // Bearer carries the same key for PostgREST. probeJsonPaths sends both
+      // when tokenHeaderName is declared.
+      tokenHeaderName: "apikey",
+      paths: ["/auth/v1/health"],
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/v1/projects"],
+      emptyLabel: "No Supabase projects returned for this account.",
+      envFromResource: [
+        { envRef: "SUPABASE_URL", urlTemplate: "https://{id}.supabase.co" },
+        {
+          envRef: "SUPABASE_SERVICE_ROLE_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "service_role",
+          fieldCandidates: ["api_key", "apiKey"],
+        },
+        {
+          envRef: "SUPABASE_ANON_KEY",
+          fromPath: "/v1/projects/{id}/api-keys",
+          matchField: "name",
+          matchValue: "anon",
+          fieldCandidates: ["api_key", "apiKey"],
+          optional: true,
+        },
+      ],
+    },
+  },
+  {
+    productId: "supabase-storage",
+    integrationId: SUPABASE_STORAGE_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase Storage (Global CDN)",
+    shortLabel: "Storage",
+    icon: "S",
+    iconClass: "is-supabase",
+    iconSrc: "/integrations/supabase/postgrest.png",
+    connectorKind: "supabase-storage",
+    endpoint: "/storage/v1/bucket",
+    method: "GET",
+    description: "Supabase Storage buckets served on the global CDN, managed as governed workspace records. Create and manage buckets no-code; each bucket correlates 1:1 to a governed data table. Requires a connected Supabase account and a linked data table. Secrets stay in env; rows store refs and routing metadata only.",
+    subtitle: "Buckets + global CDN for the governed workspace",
+    plans: "Free, Pro, Team plans",
+    entityTypes: "bucket,object,storage,cdn",
+    capabilities: "storage,cdn,buckets,workspace-storage",
+    executionLane: WORKSPACE_STORAGE_LANE,
+    // Same account credentials as the Postgres product — a second product on
+    // the SAME provider (Upstash multi-product mirror), not a new account.
+    requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+    optionalEnv: ["SUPABASE_ANON_KEY"],
+    consoleUrl: "https://supabase.com/dashboard/project/_/storage/buckets",
+    // Gated: install requires the provider connected AND a governed data
+    // table to link (deriveBucketProductState enforces this before create).
+    requiresProduct: "supabase-postgrest",
+    probe: {
+      baseUrlEnv: "SUPABASE_URL",
+      tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+      tokenHeaderName: "apikey",
+      paths: ["/storage/v1/bucket"],
+      requireNonEmptyArray: true,
+    },
+    resourceDiscovery: {
+      auth: "product-probe",
+      paths: ["/storage/v1/bucket"],
+      emptyLabel: "No Supabase Storage buckets returned for this project.",
+      requiresExistingResource: true,
+    },
+  },
+];
+const NANGO_PROVIDER_INTEGRATION_ID = "nango-marketplace-provider";
+const NANGO_INTEGRATIONS_INTEGRATION_ID = "nango-integrations";
+const NANGO_AUTH_REF = "NANGO";
+// The Nango adapter contract (lib/adapters/integrations/nango) reads a
+// connectorKind:"nango" row's `authRef` as the secret ENV NAME, so discovered
+// integration rows carry the concrete env key — never a credential value.
+const NANGO_SECRET_ENV = "NANGO_SECRET_KEY";
+const NANGO_API_BASE_URL = "https://api.nango.dev";
+const NANGO_PRODUCTS = [
+  {
+    productId: NANGO_INTEGRATIONS_INTEGRATION_ID,
+    integrationId: NANGO_INTEGRATIONS_INTEGRATION_ID,
+    authRef: NANGO_AUTH_REF,
+    label: "Nango Integrations",
+    shortLabel: "Integrations",
+    icon: "N",
+    iconClass: "is-nango",
+    iconSrc: "/integrations/nango/integrations.png",
+    connectorKind: "nango-integrations",
+    endpoint: "/integrations",
+    method: "GET",
+    description: "Real-time directory of the connected Nango account's integrations. Verifies the Nango API lane server-side; per-integration installs convert each available integration into a governed API Registry row. Secrets stay in env; rows store only refs and routing metadata.",
+    subtitle: "One API for all your integrations",
+    plans: "Free, Growth, Enterprise",
+    entityTypes: "integration,connection,api",
+    capabilities: "integration-directory,governed-api-requests,credential-vault",
+    executionLane: "workspace-integrations",
+    requiredEnv: [NANGO_SECRET_ENV],
+    optionalEnv: ["NANGO_HOST_URL", "NANGO_ENVIRONMENT", "NANGO_MODE"],
+    consoleUrl: "https://app.nango.dev",
+    probe: {
+      baseUrlEnv: "NANGO_HOST_URL",
+      tokenEnv: NANGO_SECRET_ENV,
+      paths: ["/integrations"],
+      fallbackBaseUrl: NANGO_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/integrations"],
+      emptyLabel: "No integrations returned for this Nango account yet.",
+      createDividerLabel: "Or create a new integration from the Nango dashboard",
+      // The account secret key already authorizes every integration in the
+      // Nango environment; selecting a resource binds the row, never writes env.
+      envFromResource: [],
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -391,6 +547,170 @@ const MARKETPLACE_PROVIDERS = [
     executionLane: "workspace-provider",
     description: "Provider-level Vercel account binding for workspace add-ons. Product rows are installed after this account is verified.",
   },
+  {
+    providerId: "supabase",
+    integrationId: SUPABASE_PROVIDER_INTEGRATION_ID,
+    authRef: "SUPABASE",
+    label: "Supabase",
+    developer: "Supabase",
+    iconSrc: "/integrations/supabase/provider.png",
+    baseUrl: "https://api.supabase.com",
+    endpoint: "/v1/projects",
+    method: "GET",
+    // Provider/account-management lane (Management API): Bearer personal
+    // access token (sbp_…). Absence ⇒ account-linked, not verified — the
+    // product can still verify through SUPABASE_URL + service key directly.
+    // Same authMode grammar as the Vercel provider row.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "SUPABASE_ACCESS_TOKEN",
+      paths: ["/v1/projects"],
+      // Product-lane fallback probe when no management token is present:
+      // verify the project itself with the service key (apikey + Bearer).
+      fallback: {
+        baseUrlEnv: "SUPABASE_URL",
+        tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
+        tokenHeaderName: "apikey",
+        paths: ["/rest/v1/"],
+      },
+      // Alias writes so the canonical readServerSecret("SUPABASE") candidate
+      // expansion (SUPABASE / SUPABASE_API_KEY / SUPABASE_TOKEN) resolves the
+      // same key the product declares — generic HTTP lanes (test-api-record,
+      // api-registry-call, constructed resolvers) then authenticate too.
+      aliasEnv: { SUPABASE_API_KEY: "SUPABASE_SERVICE_ROLE_KEY" },
+    },
+    accountSetupFields: [
+      {
+        id: "accessToken",
+        label: "Personal access token (sbp_…)",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_ACCESS_TOKEN",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "projectUrl",
+        label: "Project URL (https://<ref>.supabase.co)",
+        type: "url",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_URL",
+        credentialRole: "baseUrl",
+      },
+      {
+        id: "serviceRoleKey",
+        label: "Service role key",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "SUPABASE_SERVICE_ROLE_KEY",
+        credentialRole: "secret",
+      },
+    ],
+    consoleUrl: "https://supabase.com/dashboard",
+    accountSetupUrl: "https://supabase.com/dashboard/account/tokens",
+    supportUrl: "https://supabase.com/support",
+    websiteUrl: "https://supabase.com",
+    docsUrl: "https://supabase.com/docs",
+    termsUrl: "https://supabase.com/terms",
+    privacyUrl: "https://supabase.com/privacy",
+    providerProductsLabel: "Postgres Database (PostgREST, two-way sync)",
+    products: SUPABASE_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "supabase-provider",
+    capabilities: "provider-account,env-provisioning,marketplace-products",
+    executionLane: "workspace-provider",
+    description: "Provider-level Supabase account binding for workspace add-ons. Connect with a management token to discover projects, or bind one project directly with its URL and service key.",
+  },
+  {
+    providerId: "nango",
+    integrationId: NANGO_PROVIDER_INTEGRATION_ID,
+    authRef: NANGO_AUTH_REF,
+    label: "Nango",
+    developer: "Nango",
+    iconSrc: "/integrations/nango/provider.png",
+    baseUrl: NANGO_API_BASE_URL,
+    endpoint: "/integrations",
+    method: "GET",
+    // Provider/account-management lane (Nango API): Authorization Bearer with
+    // the environment secret key. One secret authorizes integrations,
+    // connections, and proxy requests for the environment — there is no
+    // separate per-product credential. NANGO_HOST_URL overrides the base for
+    // self-hosted Nango (same env key the runtime adapter honors).
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: NANGO_SECRET_ENV,
+      baseUrlEnv: "NANGO_HOST_URL",
+      paths: ["/integrations", "/connections"],
+    },
+    accountSetupFields: [
+      {
+        id: "secretKey",
+        label: "Nango secret key",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: NANGO_SECRET_ENV,
+        credentialRole: "bearerToken",
+      },
+    ],
+    // Live product discovery: this provider's install products render
+    // DYNAMICALLY from a real-time Nango fetch (the account's available
+    // integrations), then install as governed connectorKind:"nango" API
+    // Registry rows the existing config-driven resolver lane executes as
+    // API requests. Declared contract keys only — the generic provider
+    // routes interpret this block; no per-provider route forks.
+    productDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/integrations"],
+      payloadKeys: ["data", "configs", "integrations"],
+      idFields: ["unique_key", "uniqueKey"],
+      labelFields: ["display_name", "displayName", "provider", "unique_key"],
+      detailFields: ["provider"],
+      emptyLabel: "No integrations returned for this Nango account yet. Create one in the Nango dashboard, then reopen this provider.",
+      productDefaults: {
+        productIdPrefix: "nango-",
+        connectorKind: "nango",
+        resolverTemplateId: "nango",
+        authRef: NANGO_SECRET_ENV,
+        bindingField: "providerConfigKey",
+        executionLane: "workspace-integrations",
+        requiredEnv: [NANGO_SECRET_ENV],
+        optionalEnv: ["NANGO_HOST_URL", "NANGO_ENVIRONMENT", "NANGO_MODE"],
+        iconClass: "is-nango",
+        iconSrc: "/integrations/nango/integrations.png",
+        method: "GET",
+        endpoint: "",
+        probe: {
+          baseUrlEnv: "NANGO_HOST_URL",
+          tokenEnv: NANGO_SECRET_ENV,
+          pathTemplate: "/integrations/{resourceId}",
+          fallbackBaseUrl: NANGO_API_BASE_URL,
+        },
+        subtitle: "Governed API requests through Nango",
+        plans: "Included with the connected Nango account",
+        entityTypes: "integration,connection,api",
+        capabilities: "governed-api-requests,integration-credentials,nango-proxy",
+        consoleUrl: "https://app.nango.dev",
+        schemaVersion: "growthub-marketplace-nango-v1",
+      },
+    },
+    consoleUrl: "https://app.nango.dev",
+    accountSetupUrl: "https://app.nango.dev/dev/environment-settings",
+    supportUrl: "https://nango.dev/slack",
+    websiteUrl: "https://www.nango.dev",
+    docsUrl: "https://docs.nango.dev",
+    termsUrl: "https://www.nango.dev/terms",
+    privacyUrl: "https://www.nango.dev/privacy-policy",
+    providerProductsLabel: "Integrations (governed API requests via Nango)",
+    products: NANGO_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "nango-provider",
+    capabilities: "provider-account,marketplace-products,integrations",
+    executionLane: "workspace-provider",
+    description: "Provider-level Nango account binding for workspace add-ons. The secret key stays in runtime env; available integrations render live and install as governed API Registry rows.",
+  },
 ];
 
 function apiRegistryColumns(existing = []) {
@@ -429,6 +749,11 @@ function apiRegistryColumns(existing = []) {
     "selectedProviderAccountId",
     "selectedProviderAccountLabel",
     "providerAccountSource",
+    // Config-driven integration binding columns (connectorKind:"nango" rows,
+    // validated by workspace-schema): the discovered-product install writes
+    // providerConfigKey; the existing connection panel binds connectionIds.
+    "providerConfigKey",
+    "connectionIds",
     ...existing,
   ]));
 }
@@ -949,6 +1274,176 @@ function getMarketplaceProduct(providerId, productId) {
   return provider.products.find((product) => product.productId === productId || product.integrationId === productId) || null;
 }
 
+/**
+ * Live product-discovery contract declared on a provider entry (`productDiscovery`).
+ * Providers whose install products render DYNAMICALLY from a real-time account
+ * fetch (e.g. Nango: one product per available integration) declare payload
+ * field candidates + product defaults here; the generic provider routes and
+ * the marketplace surface interpret the contract — no per-provider forks.
+ */
+function getProviderProductDiscovery(provider) {
+  const discovery = provider?.productDiscovery;
+  if (!discovery || typeof discovery !== "object") return null;
+  if (!Array.isArray(discovery.paths) || !discovery.paths.length) return null;
+  if (!Array.isArray(discovery.idFields) || !discovery.idFields.length) return null;
+  return discovery;
+}
+
+function pickDiscoveryField(item, fields) {
+  for (const field of Array.isArray(fields) ? fields : []) {
+    const value = String(item?.[field] == null ? "" : item[field]).trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+/**
+ * Pure mapping from one live provider payload item (e.g. a Nango integration
+ * `{ unique_key, provider, display_name }`) to a full marketplace product
+ * definition, driven ONLY by the provider's declared `productDiscovery`
+ * contract. Returns null when the item carries no usable identity.
+ */
+function makeDiscoveredMarketplaceProduct(provider, item = {}) {
+  const discovery = getProviderProductDiscovery(provider);
+  if (!discovery) return null;
+  const defaults = discovery.productDefaults || {};
+  const resourceId = pickDiscoveryField(item, discovery.idFields);
+  if (!resourceId) return null;
+  const label = pickDiscoveryField(item, discovery.labelFields) || resourceId;
+  const detail = pickDiscoveryField(item, discovery.detailFields);
+  const productId = `${defaults.productIdPrefix || `${provider.providerId}-`}${resourceId}`;
+  const probeContract = defaults.probe || {};
+  const probe = probeContract.pathTemplate && probeContract.tokenEnv
+    ? {
+        baseUrlEnv: probeContract.baseUrlEnv || "",
+        tokenEnv: probeContract.tokenEnv,
+        paths: [probeContract.pathTemplate.split("{resourceId}").join(encodeURIComponent(resourceId))],
+        fallbackBaseUrl: probeContract.fallbackBaseUrl || provider.baseUrl,
+      }
+    : null;
+  return {
+    productId,
+    integrationId: productId,
+    authRef: defaults.authRef || provider.authRef,
+    label,
+    shortLabel: label,
+    icon: label.slice(0, 1).toUpperCase(),
+    iconClass: defaults.iconClass || "is-provider",
+    iconSrc: defaults.iconSrc || provider.iconSrc || "",
+    connectorKind: defaults.connectorKind || "",
+    resolverTemplateId: defaults.resolverTemplateId || "",
+    endpoint: defaults.endpoint || "",
+    method: defaults.method || "GET",
+    description: `Governed API Registry binding for the ${label} integration on the connected ${provider.label} account. Requests execute server-side through the existing ${provider.label} lane; this row stores only refs and routing metadata.`,
+    subtitle: detail && detail !== label ? `${defaults.subtitle || "Governed integration"} · ${detail}` : (defaults.subtitle || "Governed integration"),
+    plans: defaults.plans || "Included",
+    entityTypes: defaults.entityTypes || "integration",
+    capabilities: defaults.capabilities || "integration",
+    executionLane: defaults.executionLane || "workspace-integrations",
+    requiredEnv: Array.isArray(defaults.requiredEnv) ? [...defaults.requiredEnv] : [],
+    optionalEnv: Array.isArray(defaults.optionalEnv) ? [...defaults.optionalEnv] : [],
+    consoleUrl: defaults.consoleUrl || provider.consoleUrl || "",
+    probe,
+    discovered: true,
+    discoveredResourceId: resourceId,
+    discoveredDetail: detail,
+    bindingField: defaults.bindingField || "",
+    schemaVersion: defaults.schemaVersion || "growthub-marketplace-product-v1",
+  };
+}
+
+/**
+ * Registry row for an installed discovered product. Mirrors
+ * makeMarketplaceProductRow, plus the declared binding column (e.g.
+ * `providerConfigKey` for connectorKind:"nango" rows) so the existing
+ * config-driven resolver lane picks the row up as an executable API request
+ * with zero new detection keys. Deliberately NEVER writes `connectionIds`:
+ * connection binding belongs to the existing connection panel and a re-sync
+ * must not clobber it.
+ */
+function makeDiscoveredMarketplaceProductRow({ product, plan = "included", syncResult = null, authReady = false } = {}) {
+  if (!product?.productId || !product?.integrationId) return null;
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  const row = {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || product.discoveredResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || product.label,
+    selectedResourceSource: syncResult?.selectedResourceSource || "provider-live-discovery",
+    baseUrl: syncResult?.baseUrl || "",
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Complete ${product.label} provider setup, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: product.resolverTemplateId || "",
+    schemaVersion: product.schemaVersion || "growthub-marketplace-product-v1",
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || "",
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+  };
+  if (product.bindingField && product.discoveredResourceId) {
+    row[product.bindingField] = product.discoveredResourceId;
+  }
+  return row;
+}
+
+function withDiscoveredMarketplaceProductRegistry(workspaceConfig, { providerId, product, plan = "included", syncResult = null, authReady = false } = {}) {
+  const provider = getMarketplaceProvider(providerId);
+  if (!provider || !getProviderProductDiscovery(provider) || !product?.discovered) return workspaceConfig;
+  const productRow = makeDiscoveredMarketplaceProductRow({ product, plan, syncResult, authReady });
+  return withRegistryProductRowUpsert(workspaceConfig, productRow);
+}
+
+/**
+ * Installed discovered-product rows for a provider (rows written by
+ * withDiscoveredMarketplaceProductRegistry — carry a productId under the
+ * declared prefix + the declared connectorKind, excluding the provider's
+ * static products). Same verified proof rule as findWorkspaceAddOnRows.
+ */
+function findDiscoveredAddOnRows(workspaceConfig, providerId) {
+  const provider = getMarketplaceProvider(providerId);
+  const discovery = getProviderProductDiscovery(provider);
+  if (!discovery) return [];
+  const defaults = discovery.productDefaults || {};
+  const prefix = defaults.productIdPrefix || `${provider.providerId}-`;
+  const staticIds = new Set(provider.products.map((product) => product.integrationId));
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const rows = [];
+  for (const object of objects) {
+    if (!isApiRegistryObject(object)) continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      const productId = String(row?.productId || "").trim();
+      const integrationId = String(row?.integrationId || "").trim();
+      if (!productId || !productId.startsWith(prefix) || staticIds.has(integrationId)) continue;
+      if (defaults.connectorKind && String(row?.connectorKind || "").trim() !== defaults.connectorKind) continue;
+      const verified = Boolean(String(row?.syncStatus || "").trim() === "verified"
+        && String(row?.syncProof || "").trim()
+        && String(row?.syncCheckedAt || "").trim());
+      rows.push({ ...row, productId, isVerifiedAddOn: verified });
+    }
+  }
+  return rows;
+}
+
 function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
   const provider = getMarketplaceProvider(providerId);
   if (!provider) return null;
@@ -1080,8 +1575,9 @@ function makeUpstashSchedulerRow({ region, authReady }) {
 /**
  * Provider-agnostic product row (mirror of makeUpstashProductRow for products
  * with no region/remote-resource semantics — e.g. the workspace-native inbound
- * trigger products). Verified = the product's env refs resolve in this runtime
- * (same proof rule the scheduler product uses; secrets never persisted).
+ * trigger products and data providers like Supabase). Verified = the product's
+ * env refs resolve in this runtime (same proof rule the scheduler product
+ * uses; secrets never persisted).
  */
 function makeMarketplaceProductRow({ providerId, productId, plan = "included", syncResult = null, authReady = false } = {}) {
   if (providerId === "upstash") return makeUpstashProductRow({ productId, plan, syncResult, authReady });
@@ -1112,7 +1608,11 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     entityTypes: product.entityTypes,
     description: product.description,
     connectorKind: product.connectorKind,
-    resolverTemplateId: "",
+    resolverTemplateId: product.resolverTemplateId || "",
+    // Single-header auth shape for the generic HTTP lanes (test-api-record,
+    // api-registry-call, constructed resolvers). Supabase's gateway accepts
+    // `apikey: <key>` alone; the dedicated executors additionally send Bearer.
+    ...(product.probe?.tokenHeaderName ? { authHeaderName: product.probe.tokenHeaderName } : {}),
     schemaVersion: providerId === "vercel" ? "growthub-marketplace-vercel-v1" : "growthub-marketplace-product-v1",
     capabilities: product.capabilities,
     executionLane: product.executionLane,
@@ -1173,7 +1673,7 @@ function makeVercelProductRow({ productId = "vercel-deployments", plan = "hobby"
 
 /** Upsert one product row into the api-registry object (shared shape). */
 function withRegistryProductRowUpsert(workspaceConfig, productRow) {
-  if (!productRow) return workspaceConfig;
+  if (!productRow || !String(productRow.integrationId || "").trim()) return workspaceConfig;
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
   let found = false;
@@ -1656,6 +2156,29 @@ function resolveInboundMethodProducts(workspaceConfig) {
   return methods;
 }
 
+/**
+ * Installed + verified products on the database-operations lane
+ * (executionLane === "workspace-data"). Provider-agnostic by design: any
+ * future first-party data provider whose product declares this lane surfaces
+ * as a governed /settings/apps link + supabase-data-class capability with
+ * zero surface changes — the same lane grammar the scheduler cockpit uses
+ * for "serverless-scheduler".
+ */
+function listInstalledDataProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+}
+
+/**
+ * Installed + verified products on the storage/CDN lane
+ * (executionLane === "workspace-storage"). Same lane-derived rule as the
+ * data products — a second capability class on the same provider account.
+ */
+function listInstalledStorageProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -1672,6 +2195,11 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const apiMethod = inboundMethods.find((method) => method.inputMode === "api-request") || null;
   const webhookTrigger = webhookMethod?.row || null;
   const apiTrigger = apiMethod?.row || null;
+  const supabaseProvider = findMarketplaceProviderRow(workspaceConfig, "supabase");
+  const dataProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_DATA_LANE);
+  const supabaseData = dataProducts.find((row) => row.productId === "supabase-postgrest") || null;
+  const storageProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
+  const supabaseStorage = storageProducts.find((row) => row.productId === "supabase-storage") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -1688,6 +2216,18 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     hasWebhookTriggerCapability: Boolean(webhookTrigger),
     apiTrigger,
     hasApiTriggerCapability: Boolean(apiTrigger),
+    supabaseProvider,
+    hasSupabaseProvider: Boolean(supabaseProvider?.isConnectedProvider),
+    // Lane-derived database-operations capability (provider-agnostic).
+    dataProducts,
+    supabaseData,
+    hasSupabaseDataCapability: Boolean(supabaseData),
+    hasWorkspaceDataCapability: dataProducts.length > 0,
+    // Lane-derived storage/CDN capability — second Supabase product.
+    storageProducts,
+    supabaseStorage,
+    hasSupabaseStorageCapability: Boolean(supabaseStorage),
+    hasWorkspaceStorageCapability: storageProducts.length > 0,
   };
 }
 
@@ -1699,6 +2239,18 @@ export {
   GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
   INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
+  NANGO_API_BASE_URL,
+  NANGO_AUTH_REF,
+  NANGO_INTEGRATIONS_INTEGRATION_ID,
+  NANGO_PRODUCTS,
+  NANGO_PROVIDER_INTEGRATION_ID,
+  NANGO_SECRET_ENV,
+  SUPABASE_POSTGREST_INTEGRATION_ID,
+  SUPABASE_STORAGE_INTEGRATION_ID,
+  SUPABASE_PRODUCTS,
+  SUPABASE_PROVIDER_INTEGRATION_ID,
+  WORKSPACE_STORAGE_LANE,
+  listInstalledStorageProducts,
   VERCEL_API_BASE_URL,
   VERCEL_AUTH_REF,
   VERCEL_DEPLOYMENTS_INTEGRATION_ID,
@@ -1725,16 +2277,22 @@ export {
   UPSTASH_PROVIDER_INTEGRATION_ID,
   UPSTASH_QSTASH_INTEGRATION_ID,
   UPSTASH_REGION_OPTIONS,
+  WORKSPACE_DATA_LANE,
   deriveWorkspaceAddOnsState,
   resolveInboundMethodProducts,
+  listInstalledDataProducts,
   findMarketplaceProviderRow,
   findUpstashProviderRow,
   findInstalledWorkspaceAddOns,
   findWorkspaceAddOnRows,
   getMarketplaceProvider,
   getMarketplaceProduct,
+  getProviderProductDiscovery,
   getUpstashProduct,
+  makeDiscoveredMarketplaceProduct,
+  makeDiscoveredMarketplaceProductRow,
   findRegistryRowByIntegrationId,
+  findDiscoveredAddOnRows,
   findEligibleSandboxRow,
   findSandboxRowByScheduleId,
   withSandboxScheduledRunProof,
@@ -1749,14 +2307,16 @@ export {
   listProviderProductReadiness,
   listUpstashProductReadiness,
   withWorkflowServerlessBind,
-  makeMarketplaceProviderRow,
   makeMarketplaceProductRow,
+  makeMarketplaceProviderRow,
   normalizeTriggerKind,
   makeUpstashProductRow,
   makeUpstashProviderRow,
   makeUpstashSchedulerRow,
   withMarketplaceProductRegistry,
   withMarketplaceProviderRegistry,
+  withDiscoveredMarketplaceProductRegistry,
+  withRegistryProductRowUpsert,
   withUpstashProductRegistry,
   withUpstashProviderRegistry,
   withUpstashSchedulerRegistry,

@@ -149,6 +149,28 @@ function AddOnsSettingsClient({ initialWorkspaceConfig, envSignals }) {
     }
   }
 
+  async function runStorageAction(payload = {}) {
+    setActiveAction("storage-action");
+    setErrorMessage("");
+    try {
+      const method = payload.method || "POST";
+      const response = await fetch("/api/workspace/add-ons/supabase/storage", {
+        method,
+        headers: { "content-type": "application/json" },
+        ...(method === "GET" ? {} : { body: JSON.stringify(payload.body || {}) }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) return { error: body?.error || `Storage action failed (HTTP ${response.status})`, payload: body };
+      if (body.workspaceConfig) setWorkspaceConfig(body.workspaceConfig);
+      return body;
+    } catch (error) {
+      console.warn(error);
+      return { error: error?.message || "Storage action failed." };
+    } finally {
+      setActiveAction("");
+    }
+  }
+
   async function linkVercelProject({ projectId, all = false } = {}) {
     if (!projectId && !all) return { error: "projectId is required" };
     setErrorMessage("");
@@ -231,6 +253,7 @@ function AddOnsSettingsClient({ initialWorkspaceConfig, envSignals }) {
         onSyncProvider={syncProvider}
         onSaveProviderCredentials={saveProviderCredentials}
         onSyncProduct={syncProduct}
+        onStorageAction={runStorageAction}
         onLinkVercelProject={linkVercelProject}
         onDeployVercelProject={deployVercelProject}
         onCustomSetup={() => router.push("/settings/apis-webhooks")}

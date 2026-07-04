@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LayoutGrid } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
@@ -17,7 +18,9 @@ function AppsList({ apps }) {
   return <div className="workspace-paginated-list">
     <div className="workspace-app-list bounded">
       {visibleApps.map((item, index) => <article className="workspace-app-row" key={item.id || index}>
-        <span className="workspace-provider-mark">{item.icon || item.label?.slice(0, 1) || item.name?.slice(0, 1) || "A"}</span>
+        <span className="workspace-provider-mark workspace-app-mark" aria-hidden>
+          <LayoutGrid size={16} />
+        </span>
         <div>
           <strong>{item.label || item.name || item.id}</strong>
           <p>{item.description || "Workspace app metadata from the active config."}</p>
@@ -32,6 +35,7 @@ function AppsList({ apps }) {
                 className="workspace-app-external-link"
                 href={link.href}
                 key={link.id || link.href}
+                aria-label={`${link.label}: ${link.detail || link.href}`}
                 rel="noreferrer"
                 target="_blank"
               >

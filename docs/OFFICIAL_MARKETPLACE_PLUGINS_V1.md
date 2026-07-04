@@ -219,6 +219,197 @@ Journey contract:
   (token scope, name conflicts, GitHub App missing, deploy failures) with
   actionable next steps
 
+## V1 Provider: Supabase
+
+Supabase is the third official marketplace provider, the first on the
+database-operations lane (`workspace-data`), and the first to ship **two
+products on one account** (the Upstash multi-product pattern): Supabase
+Postgres (PostgREST) on the `workspace-data` lane and Supabase Storage
+(Global CDN) on the `workspace-storage` lane.
+
+Provider:
+
+- `providerId`: `supabase`
+- provider account lane: Supabase Management API (Bearer personal access
+  token), with a direct project-probe fallback (project URL + service key)
+  when no management token is present
+- setup fields: personal access token, or project URL + service role key
+- setup surface: Add-ons Marketplace / provider setup
+- persisted truth: provider row and product rows in the API Registry
+- secret rule: identical to Upstash — no token or key is persisted into
+  config, receipts, browser payloads, or row output; `.env.local` holds
+  values, rows hold env-ref names only (including the `SUPABASE_API_KEY`
+  alias write that lets the canonical `authRef` expansion resolve the key)
+
+### Supabase Postgres (PostgREST)
+
+Product identity:
+
+- `productId`: `supabase-postgrest`
+- `integrationId`: `supabase-postgrest`
+- `authRef`: `SUPABASE`
+- execution lane: `workspace-data`
+- connector kind: `supabase-data`
+- required env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- optional env: `SUPABASE_ANON_KEY`
+- auth shape: key on the `apikey` header (gateway) plus `Authorization:
+  Bearer` on the dedicated executors
+
+Validated V1 capability:
+
+- Resource discovery lists the account's projects over the Management API
+  (`provider-bearer` mode) and binds the selected project's URL and keys to
+  env refs (`urlTemplate` / `fromPath` mappings against
+  `/v1/projects/{ref}/api-keys`).
+- Product sync verifies the bound project with a read-only PostgREST probe.
+- The `supabase-data` Workflow Canvas node executes governed database
+  operations (select / insert / update / upsert / delete / rpc) through
+  `POST /api/workspace/sandbox-run` with the same result envelope, node
+  trace, and receipts as `api-registry-call`; filterless update/delete are
+  refused before any request.
+- External tables install as governed `data-source` Data Model objects, and
+  the `/api/workspace/add-ons/[providerId]/data` route performs receipted
+  pull / push (push verifies with a pull-merge round-trip) / bind / unbind —
+  any governed object, the `workspace-app-registry` fleet table included,
+  can bind to an external table.
+- A tested `supabase-postgrest` row constructs a governed resolver through
+  the Unified Resolver Registry (top-level PostgREST arrays profile clean),
+  addressable at `/api/resolvers/supabase-postgrest`.
+- `/settings/apps` derives a Supabase external link for the workspace app
+  from the governed registry rows (same icon + popover + dedupe mechanism as
+  the GitHub repository and Vercel deployment links), provider-agnostic over
+  the `workspace-data` lane.
+- Receipts (`workspace-add-on-data-sync` and the standard provider/product
+  kinds) record the full lifecycle.
+- **Live hydration (governed, power-when-present):** while a user views an
+  externally-bound `data-source` object in the Data Model table, the
+  `ExternalSyncHydrator` keeps it fresh. When the product declares a
+  publishable key (`SUPABASE_ANON_KEY`) the governed GET serves it (service
+  secret withheld) and the client opens a **Supabase Realtime**
+  `postgres_changes` WebSocket; every external change triggers the SAME
+  receipted `pull` action on the governed door. When Realtime is absent or
+  the socket fails, it falls back to a **watch poll** against the GET's
+  read-only drift lane (`?watch=<objectId>`), which compares the live
+  external fingerprint with the object's stamped `lastSyncFingerprint` and
+  pulls only on measured drift — no client-side merge, no client-held
+  service credentials, no receipt spam.
+- **Causation-state derivation:** `deriveExternalSyncfreshness` (in
+  `workspace-external-sync.js`) reads the governed stamps
+  (binding → sync stamp → receipt → fingerprint) into an evidence-ordered
+  state — `unbound / never-synced / drifted / conflict / stale / synced` —
+  with a `causeChain`. Every derived surface consumes it: the `/data` GET
+  per object, the Data Model table hydrator pill, and the Workspace Lens
+  "External tables" observability stat. Binding a table externally moves NO
+  unrelated derived UI state (backwards-compatibility is unit-proven), and
+  externally-held records co-exist seamlessly with local rows.
+
+### Supabase Storage (Global CDN)
+
+The **second product** on the Supabase provider — the exact Upstash
+multi-product pattern (same account, distinct product row, distinct
+execution lane). No new provider account; it rides the connected Supabase
+credentials.
+
+Product identity:
+
+- `productId` / `integrationId`: `supabase-storage`
+- `authRef`: `SUPABASE`
+- execution lane: `workspace-storage` (isolated from the database lane)
+- connector kind: `supabase-storage`
+- required env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (same account)
+- `requiresProduct`: `supabase-postgrest` (a governed data table must exist
+  to link to)
+
+Gating (causation state, `deriveBucketProductState`): `provider-required →
+link-required → ready → active`. Bucket creation is refused (receipted
+`blocked`) until the provider is connected AND a governed data table is
+linked.
+
+Validated V1 capability (browser closed-loop proven, 17/17):
+
+- The storage product installs through the same marketplace product-sync
+  route + governed api-registry row as every other product.
+- `link-table` binds the governed buckets object (a `data-source` object on
+  the **dynamic integration binding** — `mode: "integration"`,
+  `integrationId: supabase-storage`, resolved through its api-registry row,
+  never a manual binding) to an existing governed data table.
+- No-code one-click **create-bucket** (BucketManager UI) calls the real
+  Supabase Storage API through the governed door
+  (`/api/workspace/add-ons/[providerId]/storage`), reads the bucket back,
+  and lands a governed record correlated 1:1 to the linked table — with the
+  user's mental model surfaced directly: bucket name (live-normalized to the
+  Supabase id), public/private access, MIME allowlist, file-size limit, and
+  the public CDN URL for public buckets.
+- `sync-buckets` reconciles the live inventory; `delete-bucket` removes the
+  bucket externally and from the governed object. Every action is receipted
+  (`workspace-add-on-storage`); the service key never enters a row, receipt,
+  or response.
+- `/settings/apps` derives a second Supabase product link (deep-linking the
+  buckets console) alongside the database link. The app card intentionally
+  uses the same Supabase product icon for both links so the paired products
+  read as one provider family, deduped by provider+URL.
+
+Deferred (explicit): scheduler-driven continuous sync (QStash → `pull`),
+signed-URL issuance and object upload UI, relationship import, and conflict
+auto-resolution policies.
+
+## V1 Provider: Nango
+
+Nango is the fourth official marketplace provider and the first provider whose
+installable products are discovered live from the connected account. It adds a
+governed integrations lane without changing the Supabase, Vercel, Upstash, or
+native inbound lanes.
+
+Provider:
+
+- `providerId`: `nango`
+- provider account lane: Nango REST API bearer auth with `NANGO_SECRET_KEY`
+- setup field: Nango secret key
+- setup surface: Add-ons Marketplace / provider setup
+- persisted truth: provider row and discovered integration product rows in
+  the API Registry
+- secret rule: identical to other official providers — no key is persisted
+  into config, receipts, browser payloads, or row output; `.env.local` holds
+  values, rows hold env-ref names only
+
+### Nango Live Integration Products
+
+Nango declares a `productDiscovery` contract instead of relying on a fixed
+catalog of installable products. The static `Nango Integrations` entry is the
+discovery contract and must not render as a fake install card beside live
+integrations.
+
+Product identity:
+
+- `productId` / `integrationId`: `nango-<providerConfigKey>`
+- `authRef`: `NANGO_SECRET_KEY`
+- execution lane: `workspace-integrations`
+- connector kind: `nango`
+- resolver template: `nango`
+- binding field: `providerConfigKey`
+- required env: `NANGO_SECRET_KEY`
+- optional env: `NANGO_HOST_URL`, `NANGO_ENVIRONMENT`, `NANGO_MODE`
+
+Validated V1 capability:
+
+- Live discovery reads the connected account's Nango integrations through
+  `GET /api/workspace/add-ons/providers/nango/products/live`.
+- Discovery is read-only, operator-gated, provider-contract-driven, and never
+  writes workspace config.
+- Product install re-fetches and re-verifies the selected integration
+  server-side through the product sync route before writing a governed
+  `connectorKind: "nango"` API Registry row.
+- Missing `NANGO_SECRET_KEY` produces an honest blocked/needs-setup outcome
+  and does not delete existing provider or product rows.
+- Installed Nango rows feed the existing config-driven Nango resolver loader
+  and become governed API requests through the Unified API Resolver Registry.
+- `/settings/apps` derives the Nango app icon only after a verified governed
+  Nango product row exists.
+- Every product-sync outcome, including blocked discovery/install states, is
+  receipted.
+
+Reference: [`NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md`](./NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md).
+
 ## User Surfaces
 
 Official marketplace plugins appear in these workspace surfaces:
@@ -233,6 +424,9 @@ Official marketplace plugins appear in these workspace surfaces:
 - Workspace Helper: `/schedule` command entry point
 - Schedule Cockpit: fleet view for scheduled, ready, blocked, and drifted
   workflows
+- Settings / Apps: governed external links (GitHub repository, Vercel
+  deployment, Supabase database/storage, Nango integration) derived from
+  registry rows, deduped by provider URL, with hover popovers
 - Agent Outcomes: receipt ledger for every governed action
 
 ## Product Lane Dispatch
@@ -247,11 +441,15 @@ flowchart LR
   B --> C["serverless-scheduler"]
   B --> D["inbound-webhook"]
   B --> E["api-request"]
+  B --> J["workspace-data"]
+  B --> K["workspace-storage"]
   B --> F["future provider/native lane"]
 
   C --> G["scheduler cores + provider adapter"]
   D --> H["inbound invocation cores"]
   E --> H
+  J --> L["governed data door (/data) + external-sync core"]
+  K --> M["governed storage door (/storage) + buckets core"]
   F --> I["lane-specific governed core"]
 ```
 
@@ -262,6 +460,11 @@ Current rules:
 - `inbound-webhook` and `api-request` products are native workflow input
   methods. They use the inbound invocation cores and the workspace destination
   door, not QStash scheduler controls.
+- `workspace-data` products (Supabase Postgres) use the governed data door
+  (`/api/workspace/add-ons/[providerId]/data`) and the external-sync core.
+- `workspace-storage` products (Supabase Storage) use the governed storage
+  door (`/api/workspace/add-ons/[providerId]/storage`) and the buckets core,
+  gated on a connected provider + a linked `workspace-data` table.
 - `/schedule` remains a scheduler cockpit entry. Webhook and API Request belong
   to the workflow sidecar's input-method flow.
 - Future add-ons should declare their lane and dispatch to a lane-specific
@@ -276,9 +479,20 @@ Marketplace plugins must obey the workspace mutation boundary:
 - schedule operations go through the existing add-on schedule route and remain
   scheduler-lane behavior
 - deployment operations go through the governed add-on deploy route
+- data-sync operations go through the governed add-on data route
+- storage/bucket operations go through the governed add-on storage route
 - receipts are written to `workspace:agent-outcomes`
 - secrets remain server-side
 - UI controls hand off to governed routes, not direct client-side config edits
+
+## Adding the next provider
+
+The full agent playbook — source-truth recon, provider grammar, governed
+rows, icon standard, tests, and the mandatory real-browser closed-loop QA
+bar — lives in
+[`MARKETPLACE_PROVIDER_PLAYBOOK_V1.md`](./MARKETPLACE_PROVIDER_PLAYBOOK_V1.md)
+with a matching agent skill (`growthub-marketplace-provider`) in
+`.claude/skills/`.
 
 ## Coming Soon
 
@@ -289,7 +503,9 @@ The V1 marketplace shape is provider-agnostic. The next expansion points are:
 - marketplace-backed API Registry resource discovery
 - hosted provider account authority when a workspace needs it
 - richer Add-ons Marketplace install receipts and rollback surfaces
-- plugin-specific cockpit lenses for data, retrieval, queue, and cache products
+- more products per provider on their own lanes (the Supabase two-product
+  shape generalizes) surfaced through the governed `/settings/apps` links and
+  Workspace Lens derivation — not per-product cockpits
 
 The invariant stays the same: plugins extend the governed workspace universe;
 they do not bypass it.

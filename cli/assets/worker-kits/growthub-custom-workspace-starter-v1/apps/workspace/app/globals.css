@@ -1092,6 +1092,10 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   font-size: 12px;
   font-weight: 800;
 }
+.workspace-app-mark {
+  background: #ffffff;
+  color: #1f2937;
+}
 .workspace-integration-main {
   min-width: 0;
 }

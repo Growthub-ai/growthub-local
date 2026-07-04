@@ -17,10 +17,12 @@ import {
 } from "lucide-react";
 import {
   MARKETPLACE_PROVIDERS,
+  findDiscoveredAddOnRows,
   findMarketplaceProviderRow,
   findInstalledWorkspaceAddOns,
   findWorkspaceAddOnRows,
   getMarketplaceProduct,
+  getProviderProductDiscovery,
 } from "@/lib/workspace-add-ons";
 import { VercelCreateAppFlow } from "./VercelCreateAppFlow.jsx";
 
@@ -142,6 +144,7 @@ function AddOnsSurface({
   onSyncProvider,
   onSaveProviderCredentials,
   onSyncProduct,
+  onStorageAction,
   onLinkVercelProject,
   onDeployVercelProject,
   onCustomSetup,
@@ -169,9 +172,20 @@ function AddOnsSurface({
   const [resourceMessage, setResourceMessage] = useState("");
   const [installMode, setInstallMode] = useState("existing");
   const [providerCredentialValues, setProviderCredentialValues] = useState({});
+  const [storageState, setStorageState] = useState(null);
+  const [storageMessage, setStorageMessage] = useState("");
+  const [selectedLinkedTableId, setSelectedLinkedTableId] = useState("");
+  const [bucketName, setBucketName] = useState("workspace-assets");
+  const [bucketAccess, setBucketAccess] = useState("private");
+  const [bucketMimeTypes, setBucketMimeTypes] = useState("");
+  const [bucketSizeLimit, setBucketSizeLimit] = useState("50MB");
+  const [discoveredProducts, setDiscoveredProducts] = useState([]);
+  const [discoveredLoading, setDiscoveredLoading] = useState(false);
+  const [discoveredMessage, setDiscoveredMessage] = useState("");
   const persistenceAdapters = Array.isArray(envSignals.persistenceAdapters) ? envSignals.persistenceAdapters : [];
   const installed = useMemo(() => findInstalledWorkspaceAddOns(workspaceConfig), [workspaceConfig]);
   const selectedMarketplaceProvider = MARKETPLACE_PROVIDERS.find((provider) => provider.providerId === selectedProvider) || null;
+  const providerProductDiscovery = getProviderProductDiscovery(selectedMarketplaceProvider);
   const providerProductReadiness = envSignals.providerProductReadiness || {};
   const productReadiness = selectedMarketplaceProvider && envSignals.providerProductReadiness?.[selectedMarketplaceProvider.providerId]
     ? envSignals.providerProductReadiness[selectedMarketplaceProvider.providerId]
@@ -191,26 +205,97 @@ function AddOnsSurface({
     ? selectedMarketplaceProvider.accountSetupFields
     : [];
   const providerSetupNeedsCredentials = !providerConnected && providerSetupFields.length > 0;
-  const providerSetupReady = providerSetupFields.every((field) => {
+  const providerSetupHasBearerToken = providerSetupFields.some((field) => field.credentialRole === "bearerToken" && String(providerCredentialValues[field.id] || "").trim());
+  const providerSetupHasDirectProject = providerSetupFields.some((field) => field.credentialRole === "baseUrl" && String(providerCredentialValues[field.id] || "").trim())
+    && providerSetupFields.some((field) => field.credentialRole === "secret" && String(providerCredentialValues[field.id] || "").trim());
+  const providerSetupRequiredFieldsReady = providerSetupFields.every((field) => {
     if (!field?.required) return true;
     return Boolean(String(providerCredentialValues[field.id] || "").trim());
   });
+  const providerSetupReady = providerSetupRequiredFieldsReady
+    // Providers with only-optional fields (e.g. Supabase: token OR url+key)
+    // still need at least one value before the credentials route can verify.
+    && (providerSetupFields.some((field) => field?.required)
+      || providerSetupHasBearerToken
+      || providerSetupHasDirectProject);
   const allAddOnRows = useMemo(() => findWorkspaceAddOnRows(workspaceConfig), [workspaceConfig]);
-  const providerProducts = selectedMarketplaceProvider?.products || [];
+  const staticProviderProducts = selectedMarketplaceProvider?.products || [];
+  // Installed discovered-product rows (live `productDiscovery` providers, e.g.
+  // Nango integrations) — governed api-registry rows, same proof rule.
+  const discoveredInstalledRows = useMemo(
+    () => (selectedMarketplaceProvider && providerProductDiscovery ? findDiscoveredAddOnRows(workspaceConfig, selectedMarketplaceProvider.providerId) : []),
+    [workspaceConfig, selectedMarketplaceProvider, providerProductDiscovery],
+  );
+  // Product-like fallback for an installed discovered row when the live list
+  // is not loaded yet (offline manage path) — row fields only, no invention.
+  const productLikeFromRow = (row) => ({
+    productId: String(row.productId || "").trim(),
+    integrationId: String(row.integrationId || "").trim(),
+    authRef: row.authRef || "",
+    label: row.Name || row.productId,
+    shortLabel: row.Name || row.productId,
+    iconClass: providerProductDiscovery?.productDefaults?.iconClass || "is-provider",
+    iconSrc: providerProductDiscovery?.productDefaults?.iconSrc || selectedMarketplaceProvider?.iconSrc || "",
+    subtitle: providerProductDiscovery?.productDefaults?.subtitle || "Governed integration",
+    plans: providerProductDiscovery?.productDefaults?.plans || "Included",
+    endpoint: row.endpoint || "",
+    method: row.method || "GET",
+    executionLane: row.executionLane || "",
+    requiredEnv: String(row.requiredEnv || "").split(",").map((key) => key.trim()).filter(Boolean),
+    optionalEnv: String(row.optionalEnv || "").split(",").map((key) => key.trim()).filter(Boolean),
+    consoleUrl: providerProductDiscovery?.productDefaults?.consoleUrl || selectedMarketplaceProvider?.consoleUrl || "",
+    discovered: true,
+  });
+  // Live-discovery providers render the account's real products only. Their
+  // static product definition is the discovery contract, not an install card.
+  const providerProducts = useMemo(() => {
+    if (providerProductDiscovery) return discoveredProducts;
+    return staticProviderProducts;
+  }, [staticProviderProducts, discoveredProducts, providerProductDiscovery]);
   const installedProviderRows = selectedMarketplaceProvider
-    ? installed.filter((row) => providerProducts.some((product) => product.productId === row.productId || product.integrationId === row.integrationId))
+    ? [
+        ...installed.filter((row) => staticProviderProducts.some((product) => product.productId === row.productId || product.integrationId === row.integrationId)),
+        ...discoveredInstalledRows.filter((row) => row.isVerifiedAddOn),
+      ]
     : [];
+  const installedCountForProvider = (provider) => {
+    const staticCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId || product.integrationId === installedRow.integrationId)).length;
+    const discovery = getProviderProductDiscovery(provider);
+    if (!discovery) return staticCount;
+    return staticCount + findDiscoveredAddOnRows(workspaceConfig, provider.providerId).filter((row) => row.isVerifiedAddOn).length;
+  };
   const installedIds = new Set(installedProviderRows.map((row) => String(row.productId || "").trim()));
-  const activeProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) : null;
-  const managedProduct = selectedMarketplaceProvider ? getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) : null;
+  const findDiscoveredProduct = (productId) => {
+    if (!providerProductDiscovery || !productId) return null;
+    return discoveredProducts.find((product) => product.productId === productId)
+      || (discoveredInstalledRows.some((row) => row.productId === productId)
+        ? productLikeFromRow(discoveredInstalledRows.find((row) => row.productId === productId))
+        : null);
+  };
+  const activeProduct = selectedMarketplaceProvider
+    ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) || findDiscoveredProduct(installDrawer))
+    : null;
+  const activeProductIsStorage = activeProduct?.connectorKind === "supabase-storage";
+  const managedProduct = selectedMarketplaceProvider
+    ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) || findDiscoveredProduct(manageDrawer))
+    : null;
   const managedSavedRow = managedProduct
-    ? allAddOnRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+    ? (discoveredInstalledRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+      || allAddOnRows.find((row) => row.productId === managedProduct.productId || row.integrationId === managedProduct.integrationId)
+      || null)
     : null;
   const createResourceDividerLabel = activeProduct?.resourceDiscovery?.createDividerLabel || "";
   const hasExistingResources = providerConnected && resourceOptions.length > 0;
-  const showCreateNewOptions = !hasExistingResources || installMode === "new";
-  const activeReadiness = productReadiness.find((item) => item.productId === activeProduct?.productId) || null;
-  const activeSavedRow = allAddOnRows.find((row) => row.productId === activeProduct?.productId) || null;
+  const activeProductIsDiscovered = Boolean(activeProduct?.discovered);
+  const showCreateNewOptions = !activeProductIsStorage && !activeProductIsDiscovered && (!hasExistingResources || installMode === "new");
+  // Discovered products share the provider account's env contract, so their
+  // readiness falls back to the provider's static product signal.
+  const activeReadiness = productReadiness.find((item) => item.productId === activeProduct?.productId)
+    || (activeProduct?.discovered ? productReadiness.find((item) => (item.requiredEnv || []).join(",") === (activeProduct.requiredEnv || []).join(",")) : null)
+    || null;
+  const activeSavedRow = discoveredInstalledRows.find((row) => row.productId === activeProduct?.productId)
+    || allAddOnRows.find((row) => row.productId === activeProduct?.productId)
+    || null;
   const productInstalled = Boolean(activeSavedRow?.isVerifiedAddOn);
   const providerAccountLabel = providerRow?.Name || selectedMarketplaceProvider?.label || "Provider account";
   const providerAccountRef = providerRow?.authRef || selectedMarketplaceProvider?.authRef || selectedMarketplaceProvider?.providerId || "";
@@ -233,13 +318,16 @@ function AddOnsSurface({
   const currentSectionLabel = activePath === "custom" ? "Custom" : "Plugins";
   const selectedProviderLabel = selectedProvider === "custom" ? "Custom Plugin" : (selectedMarketplaceProvider?.label || "Provider");
   const canSyncProduct = Boolean(onSyncProduct);
+  const canRunStorageAction = Boolean(onStorageAction);
   const canConnectProvider = Boolean(onConnectProvider);
   const canSyncProvider = Boolean(onSyncProvider);
   const canSaveProviderCredentials = Boolean(onSaveProviderCredentials);
   const inModal = shell === "modal";
   const appDeployIntent = initialIntent === "deploy" && initialProviderId === "vercel" && initialAppId;
+  const storageLinkableTables = Array.isArray(storageState?.linkableTables) ? storageState.linkableTables : [];
+  const storageCanCreateBucket = Boolean(providerConnected && activeProductIsStorage && canRunStorageAction && String(bucketName || "").trim().length >= 3);
   const details = [
-    ["Installed products", String(installed.filter((row) => !selectedMarketplaceProvider || providerProducts.some((product) => product.productId === row.productId)).length)],
+    ["Installed products", String(installedProviderRows.length)],
     ["Developer", selectedMarketplaceProvider?.developer || "Provider"],
     ["Website", selectedMarketplaceProvider?.websiteUrl || ""],
     ["Documentation", "Read"],
@@ -254,11 +342,81 @@ function AddOnsSurface({
     onSyncProduct?.({
       providerId: selectedMarketplaceProvider.providerId,
       productId: activeProduct.productId,
-      region: installMode === "existing" ? selectedResource?.region || region : region,
-      plan: installMode === "existing" ? selectedResource?.type || plan : plan,
-      selectedResourceId: installMode === "existing" ? selectedResource?.id || "" : "",
-      selectedResourceLabel: installMode === "existing" ? selectedResource?.label || "" : "",
-      selectedResourceSource: installMode === "existing" ? selectedResource?.source || "" : "",
+      region: activeProductIsDiscovered ? "" : installMode === "existing" ? selectedResource?.region || region : region,
+      plan: activeProductIsDiscovered ? "included" : installMode === "existing" ? selectedResource?.type || plan : plan,
+      selectedResourceId: activeProductIsDiscovered ? activeProduct.discoveredResourceId || "" : installMode === "existing" ? selectedResource?.id || "" : "",
+      selectedResourceLabel: activeProductIsDiscovered ? activeProduct.label || "" : installMode === "existing" ? selectedResource?.label || "" : "",
+      selectedResourceSource: activeProductIsDiscovered ? "provider-live-discovery" : installMode === "existing" ? selectedResource?.source || "" : "",
+    });
+  }
+
+  async function refreshStorageState() {
+    if (!activeProductIsStorage || !onStorageAction) return null;
+    setStorageMessage("");
+    const result = await onStorageAction({ method: "GET" });
+    if (result?.error) {
+      setStorageMessage(result.error);
+      return null;
+    }
+    setStorageState(result || null);
+    const linked = result?.linkedTableObjectId || result?.linkableTables?.[0]?.objectId || "";
+    if (linked) setSelectedLinkedTableId((current) => current || linked);
+    return result || null;
+  }
+
+  async function createStorageBucketAndInstall() {
+    if (!selectedMarketplaceProvider || !activeProduct || !activeProductIsStorage) return;
+    setStorageMessage("");
+    let state = storageState || await refreshStorageState();
+    if (!state) return;
+    let linkedTableObjectId = state.linkedTableObjectId || selectedLinkedTableId;
+    if (!linkedTableObjectId) {
+      const createdTable = await onStorageAction?.({ body: { action: "create-linked-table" } });
+      if (createdTable?.error) {
+        setStorageMessage(createdTable.error);
+        return;
+      }
+      linkedTableObjectId = createdTable.linkedTableObjectId || "";
+      state = {
+        ...state,
+        linkedTableObjectId,
+        linkedTableLabel: createdTable.linkedTableLabel || linkedTableObjectId,
+      };
+      setStorageState(state);
+      if (linkedTableObjectId) setSelectedLinkedTableId(linkedTableObjectId);
+    }
+    if (!linkedTableObjectId) {
+      setStorageMessage("Storage table setup failed.");
+      return;
+    }
+    if (!state.linkedTableObjectId) {
+      const linked = await onStorageAction?.({ body: { action: "link-table", linkedTableObjectId } });
+      if (linked?.error) {
+        setStorageMessage(linked.error);
+        return;
+      }
+    }
+    const created = await onStorageAction?.({
+      body: {
+        action: "create-bucket",
+        name: bucketName,
+        access: bucketAccess,
+        allowedMimeTypes: bucketMimeTypes,
+        fileSizeLimit: bucketSizeLimit,
+      },
+    });
+    if (created?.error) {
+      setStorageMessage(created.error);
+      return;
+    }
+    setStorageMessage(created?.summary || `Bucket ${created?.bucketId || bucketName} created.`);
+    onSyncProduct?.({
+      providerId: selectedMarketplaceProvider.providerId,
+      productId: activeProduct.productId,
+      plan: bucketAccess,
+      selectedResourceId: created?.bucketId || "",
+      selectedResourceLabel: created?.bucketId || bucketName,
+      selectedResourceSource: "/storage/v1/bucket",
     });
   }
 
@@ -328,6 +486,49 @@ function AddOnsSurface({
     );
   }
 
+  // Real-time install products for live-discovery providers (e.g. Nango): the
+  // browser still talks only to the governed workspace route, never directly
+  // to the provider API.
+  useEffect(() => {
+    if (!selectedMarketplaceProvider || !providerProductDiscovery || !providerConnected) {
+      setDiscoveredProducts([]);
+      setDiscoveredMessage("");
+      setDiscoveredLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    async function loadDiscoveredProducts() {
+      setDiscoveredLoading(true);
+      setDiscoveredMessage("");
+      try {
+        const response = await fetch(`/api/workspace/add-ons/providers/${encodeURIComponent(selectedMarketplaceProvider.providerId)}/products/live`, {
+          method: "GET",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setDiscoveredProducts([]);
+          setDiscoveredMessage(payload?.error || "Live products could not be loaded.");
+          return;
+        }
+        const products = Array.isArray(payload.products) ? payload.products : [];
+        setDiscoveredProducts(products);
+        setDiscoveredMessage(products.length ? "" : (payload.emptyLabel || "No live products returned for this provider account."));
+      } catch (error) {
+        if (!cancelled) {
+          setDiscoveredProducts([]);
+          setDiscoveredMessage(error?.message || "Live products could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setDiscoveredLoading(false);
+      }
+    }
+    loadDiscoveredProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMarketplaceProvider?.providerId, providerProductDiscovery, providerConnected]);
+
   useEffect(() => {
     if (!selectedMarketplaceProvider || !activeProduct || !providerConnected) {
       setResourceOptions([]);
@@ -375,6 +576,15 @@ function AddOnsSurface({
   useEffect(() => {
     setProviderCredentialValues({});
   }, [selectedMarketplaceProvider?.providerId]);
+
+  useEffect(() => {
+    if (!activeProductIsStorage || !providerConnected) {
+      setStorageState(null);
+      setStorageMessage("");
+      return;
+    }
+    refreshStorageState();
+  }, [activeProductIsStorage, providerConnected]);
 
   useEffect(() => {
     if (!initialProviderId || selectedProvider) return;
@@ -470,7 +680,7 @@ function AddOnsSurface({
                       const connected = Boolean(row?.isConnectedProvider);
                       const verified = Boolean(row?.isVerifiedProvider);
                       const setupStarted = Boolean(row?.isSetupPendingProvider);
-                      const installedCount = installed.filter((installedRow) => provider.products.some((product) => product.productId === installedRow.productId)).length;
+                      const installedCount = installedCountForProvider(provider);
                       const stateLabel = verified ? "Verified" : setupStarted ? "Setup opened" : "Provider setup required";
                       return (
                         <button type="button" className="dm-marketplace-provider-card" key={provider.providerId} onClick={() => openProvider(provider.providerId)}>
@@ -549,7 +759,9 @@ function AddOnsSurface({
                       <h3>Installed Products</h3>
                       <div className="dm-marketplace-product-grid">
                         {installedProviderRows.map((row) => {
-                          const product = getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.productId) || getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.integrationId);
+                          const product = getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.productId)
+                            || getMarketplaceProduct(selectedMarketplaceProvider.providerId, row.integrationId)
+                            || productLikeFromRow(row);
                           if (!product) return null;
                           return (
                           <article className="dm-marketplace-product-card" key={row.integrationId}>
@@ -557,6 +769,13 @@ function AddOnsSurface({
                             <div>
                               <strong title={row.Name || product.label}>{row.Name || product.label}</strong>
                               <p title={`${row.selectedResourceLabel || row.status || "draft"} / ${row.syncCheckedAt || row.lastTested || "not synced"}`}>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
+                              {/* Installed rows are verified by construction
+                                  (findInstalledWorkspaceAddOns) — data-lane
+                                  products surface on /settings/apps like
+                                  GitHub/Vercel governed links. */}
+                              {product.executionLane === "workspace-data" ? (
+                                <small><a href="/settings/apps">View in workspace apps</a></small>
+                              ) : null}
                             </div>
                             <div className="dm-marketplace-card-actions">
                               <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Manage ${product.label}`} onClick={() => {
@@ -575,9 +794,17 @@ function AddOnsSurface({
 
                   {providerConnected ? <section className="dm-marketplace-products" aria-label="More Products">
                     <h3>More Products</h3>
+                    {providerProductDiscovery ? (
+                      <p className="dm-cockpit-step-hint">
+                        {discoveredLoading
+                          ? "Loading this account's available integrations live from the provider…"
+                          : discoveredMessage || "Products below render live from the connected account. Installing one lands a governed API Registry row you can run API requests through."}
+                      </p>
+                    ) : null}
                     <div className="dm-marketplace-product-grid">
                       {providerProducts.map((product) => {
-                        const readiness = productReadiness.find((item) => item.productId === product.productId);
+                        const readiness = productReadiness.find((item) => item.productId === product.productId)
+                          || (product.discovered ? productReadiness.find((item) => (item.requiredEnv || []).join(",") === (product.requiredEnv || []).join(",")) : null);
                         const isInstalled = installedIds.has(product.productId);
                         return (
                           <article className="dm-marketplace-product-card" key={product.productId}>
@@ -784,6 +1011,9 @@ function AddOnsSurface({
               />
             ) : null}
             <footer className="dm-marketplace-actions">
+              {managedSavedRow?.isVerifiedAddOn && managedProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/settings/apps">
+                View in workspace apps
+              </a> : null}
               {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
               </a> : null}
@@ -813,8 +1043,47 @@ function AddOnsSurface({
               </div>
             </div>
             <div className="dm-marketplace-config">
-              <p className="dm-marketplace-section-title"><Server size={14} /> Configuration and Plan</p>
-              {regionOptions.length ? (
+              <p className="dm-marketplace-section-title"><Server size={14} /> {activeProductIsStorage ? "Bucket Configuration" : "Configuration and Plan"}</p>
+              {activeProductIsStorage ? (
+                <>
+                  {storageState?.linkedTableObjectId || storageLinkableTables.length ? (
+                    <label className="dm-marketplace-field">
+                      <span>File records table</span>
+                      <select
+                        value={storageState?.linkedTableObjectId || selectedLinkedTableId}
+                        onChange={(event) => setSelectedLinkedTableId(event.target.value)}
+                        disabled={Boolean(storageState?.linkedTableObjectId) || !storageLinkableTables.length}
+                      >
+                        {storageState?.linkedTableObjectId ? (
+                          <option value={storageState.linkedTableObjectId}>{storageState.linkedTableLabel || storageState.linkedTableObjectId}</option>
+                        ) : storageLinkableTables.map((table) => (
+                          <option key={table.objectId} value={table.objectId}>{table.label || table.objectId}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="dm-marketplace-field">
+                    <span>Bucket name</span>
+                    <input value={bucketName} onChange={(event) => setBucketName(event.target.value)} placeholder="workspace-assets" />
+                  </label>
+                  <label className="dm-marketplace-field">
+                    <span>Access</span>
+                    <select value={bucketAccess} onChange={(event) => setBucketAccess(event.target.value)}>
+                      <option value="private">Private</option>
+                      <option value="public">Public CDN</option>
+                    </select>
+                  </label>
+                  <label className="dm-marketplace-field">
+                    <span>Allowed MIME types</span>
+                    <input value={bucketMimeTypes} onChange={(event) => setBucketMimeTypes(event.target.value)} placeholder="image/png, image/*" />
+                  </label>
+                  <label className="dm-marketplace-field">
+                    <span>File size limit</span>
+                    <input value={bucketSizeLimit} onChange={(event) => setBucketSizeLimit(event.target.value)} placeholder="50MB" />
+                  </label>
+                  {storageMessage ? <p className="dm-cockpit-step-hint">{storageMessage}</p> : null}
+                </>
+              ) : regionOptions.length ? (
                 <>
                   <label className="dm-marketplace-field">
                     <span>Primary Region</span>
@@ -827,12 +1096,7 @@ function AddOnsSurface({
               ) : (
                 <p className="dm-cockpit-step-hint">Sync registers the workspace row after the provider account is connected.</p>
               )}
-              <label className="dm-marketplace-toggle">
-                <input type="checkbox" disabled />
-                <span>Prod Pack (+$200 per month)</span>
-              </label>
-              <p className="dm-cockpit-step-hint">Recommended for production. Configure paid plan changes in the provider account.</p>
-              {providerConnected ? (
+              {providerConnected && !activeProductIsStorage ? (
                 providerAccountOptions.length ? (
                   <label className="dm-marketplace-field">
                     <span>Connected {selectedMarketplaceProvider?.label || "provider"} account</span>
@@ -851,7 +1115,7 @@ function AddOnsSurface({
                   </div>
                 )
               ) : null}
-              {providerConnected ? (
+              {providerConnected && !activeProductIsStorage && !activeProductIsDiscovered ? (
                 <div className="dm-marketplace-install-choice">
                   <div>
                     <strong>Use existing provider resource</strong>
@@ -872,8 +1136,8 @@ function AddOnsSurface({
                   </label>
                 </div>
               ) : null}
-              {providerConnected && resourceMessage ? <p className="dm-cockpit-step-hint">{resourceMessage}</p> : null}
-              {providerConnected && createResourceDividerLabel ? (
+              {providerConnected && !activeProductIsStorage && !activeProductIsDiscovered && resourceMessage ? <p className="dm-cockpit-step-hint">{resourceMessage}</p> : null}
+              {providerConnected && !activeProductIsStorage && !activeProductIsDiscovered && createResourceDividerLabel ? (
                 <div className="dm-marketplace-resource-divider" role="separator" aria-label={createResourceDividerLabel}>
                   <span>{createResourceDividerLabel}</span>
                 </div>
@@ -894,14 +1158,14 @@ function AddOnsSurface({
                     </button>
                   ))}
                 </div>
-              ) : (
+              ) : activeProductIsStorage || activeProductIsDiscovered ? null : (
                 <button type="button" className="dm-btn-outline dm-marketplace-create-new-btn" onClick={() => setInstallMode("new")}>
                   Configure new resource
                 </button>
               )}
-              <div className={activeReadiness?.configured ? "dm-marketplace-env is-ready" : "dm-marketplace-env is-setup"}>
-                <span>{activeSavedRow?.isVerifiedAddOn ? "Product installed" : providerConnected ? "Ready to install product" : "Provider setup required"}</span>
-                <code>{installMode === "existing" && selectedResourceId ? (resourceOptions.find((item) => item.id === selectedResourceId)?.label || selectedResourceId) : regionOptions.length ? `${selectedRegion.label} / ${plan}` : `${activeProduct.shortLabel || activeProduct.label} / ${plan}`}</code>
+              <div className={activeProductIsStorage ? (storageCanCreateBucket ? "dm-marketplace-env is-ready" : "dm-marketplace-env is-setup") : (activeReadiness?.configured ? "dm-marketplace-env is-ready" : "dm-marketplace-env is-setup")}>
+                <span>{activeSavedRow?.isVerifiedAddOn ? "Product installed" : activeProductIsStorage ? (storageCanCreateBucket ? "Ready to create bucket" : "Bucket setup required") : activeProductIsDiscovered ? "Ready to install integration" : providerConnected ? "Ready to install product" : "Provider setup required"}</span>
+                <code>{activeProductIsStorage ? `${activeProduct.shortLabel || activeProduct.label} / ${bucketAccess}` : activeProductIsDiscovered ? `${activeProduct.label || activeProduct.productId} / governed API Registry` : installMode === "existing" && selectedResourceId ? (resourceOptions.find((item) => item.id === selectedResourceId)?.label || selectedResourceId) : regionOptions.length ? `${selectedRegion.label} / ${plan}` : `${activeProduct.shortLabel || activeProduct.label} / ${plan}`}</code>
               </div>
               {activeSavedRow ? (
                 <div className="dm-marketplace-config-summary">
@@ -914,28 +1178,39 @@ function AddOnsSurface({
               ) : null}
               <div className="dm-cockpit-step-hint">
                 {providerConnected
-                  ? "Install calls the product sync route, validates the product credentials server-side, and writes the product API Registry row into workspace config."
+                  ? activeProductIsStorage
+                    ? "Create bucket calls the governed storage route, creates or binds the file records table, creates the Supabase bucket, reads it back, and records the storage product."
+                    : activeProductIsDiscovered
+                      ? "Install re-reads the live provider integration server-side, validates it with the connected account, and writes a governed API Registry row for this integration."
+                      : "Install calls the product sync route, validates the product credentials server-side, and writes the product API Registry row into workspace config."
                     : "Set up the provider account first. Return here after provider setup, then Sync provider to unlock product install."}
               </div>
             </div>
-            <div className="dm-marketplace-provision-steps">
-              <div className={`${providerConnected ? "is-complete" : "is-active"} dm-marketplace-step-action-row`}>
-                <span>Provider account</span>
-                {!providerConnected ? (
+            {!providerConnected ? (
+              <div className="dm-marketplace-provision-steps">
+                <div className="is-active dm-marketplace-step-action-row">
+                  <span>Provider account</span>
                   <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
                     {activeAction === "connect" ? "Opening..." : "Set up provider account"}
                   </button>
-                ) : null}
+                </div>
               </div>
-              <div className={productInstalled ? "is-complete" : providerConnected ? "is-active" : ""}>Product install</div>
-            </div>
+            ) : null}
             <footer className="dm-marketplace-actions">
+              {activeSavedRow?.isVerifiedAddOn && activeProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/settings/apps">
+                View in workspace apps
+              </a> : null}
               {activeSavedRow?.isVerifiedAddOn && activeProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={activeProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
               </a> : null}
               <button type="button" className="dm-btn-outline" onClick={() => setInstallDrawer("")}>Cancel</button>
-              <button type="button" className="dm-btn-primary-sm" disabled={installing || !providerConnected || !canSyncProduct} onClick={syncProduct}>
-                {activeAction === "sync-product" ? "Installing..." : activeSavedRow ? "Resync product" : "Install product"}
+              <button
+                type="button"
+                className="dm-btn-primary-sm"
+                disabled={installing || !providerConnected || (activeProductIsStorage ? !storageCanCreateBucket : !canSyncProduct)}
+                onClick={activeProductIsStorage ? createStorageBucketAndInstall : syncProduct}
+              >
+                {activeAction === "sync-product" || activeAction === "storage-action" ? "Installing..." : activeSavedRow ? "Resync product" : activeProductIsStorage ? "Create bucket and install" : "Install product"}
               </button>
             </footer>
           </section>

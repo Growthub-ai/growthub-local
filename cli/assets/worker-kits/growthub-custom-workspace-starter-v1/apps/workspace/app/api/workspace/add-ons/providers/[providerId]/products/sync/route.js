@@ -5,10 +5,15 @@ import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-confi
 import {
   getMarketplaceProvider,
   getMarketplaceProduct,
+  getProviderProductDiscovery,
   listProviderProductReadiness,
+  makeDiscoveredMarketplaceProduct,
+  resolveProviderAccountAuth,
+  withDiscoveredMarketplaceProductRegistry,
   withMarketplaceProductRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { resolveEnvFromResourceMappings } from "@/lib/provider-resource-discovery";
 import { readEnvVar, resolveRequiredEnv } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
@@ -138,17 +143,31 @@ function resourceFieldValue(row, mapping) {
   return "";
 }
 
-async function resolveProviderResource({ provider, product, selectedResourceId }) {
-  const discovery = product?.resourceDiscovery || {};
-  const envFromResource = Array.isArray(discovery.envFromResource) ? discovery.envFromResource : [];
-  if (!selectedResourceId || discovery.auth !== "provider-basic" || !envFromResource.length) return { writtenEnv: [] };
+function providerDiscoveryAuthHeader(provider, discoveryAuth) {
+  if (discoveryAuth === "provider-bearer") {
+    const tokenKey = provider.accountProbe?.tokenEnv;
+    const token = envValue(tokenKey);
+    if (!token) return { missingProviderEnv: [tokenKey].filter(Boolean) };
+    return { authHeader: `Bearer ${token}` };
+  }
   const emailKey = provider.accountProbe?.emailEnv;
   const apiKey = provider.accountProbe?.keyEnv;
   const email = envValue(emailKey);
   const apiKeyValue = envValue(apiKey);
-  if (!email || !apiKeyValue) return { writtenEnv: [], missingProviderEnv: [emailKey, apiKey].filter(Boolean) };
+  if (!email || !apiKeyValue) return { missingProviderEnv: [emailKey, apiKey].filter(Boolean) };
+  return { authHeader: `Basic ${Buffer.from(`${email}:${apiKeyValue}`).toString("base64")}` };
+}
 
-  const authHeader = `Basic ${Buffer.from(`${email}:${apiKeyValue}`).toString("base64")}`;
+async function resolveProviderResource({ provider, product, selectedResourceId }) {
+  const discovery = product?.resourceDiscovery || {};
+  const envFromResource = Array.isArray(discovery.envFromResource) ? discovery.envFromResource : [];
+  const discoveryAuth = clean(discovery.auth);
+  if (!selectedResourceId || !envFromResource.length) return { writtenEnv: [] };
+  if (discoveryAuth !== "provider-basic" && discoveryAuth !== "provider-bearer") return { writtenEnv: [] };
+  const resolvedAuth = providerDiscoveryAuthHeader(provider, discoveryAuth);
+  if (!resolvedAuth.authHeader) return { writtenEnv: [], missingProviderEnv: resolvedAuth.missingProviderEnv || [] };
+
+  const authHeader = resolvedAuth.authHeader;
   const paths = Array.isArray(discovery.paths) ? discovery.paths : [];
   const candidates = [];
   const failures = [];
@@ -170,24 +189,43 @@ async function resolveProviderResource({ provider, product, selectedResourceId }
   }
   const selected = candidates.find((candidate) => candidate.id === selectedResourceId) || candidates[0] || null;
   if (!selected) return { writtenEnv: [], failures };
-  const updates = {};
-  for (const mapping of envFromResource) {
-    const envRef = clean(mapping.envRef);
-    const value = resourceFieldValue(selected.row, mapping);
-    if (envRef && value) updates[envRef] = value;
-  }
-  const writtenEnv = await writeLocalEnv(updates);
+  // Mapping semantics (urlTemplate / fromPath / fieldCandidates + aliasEnv)
+  // live in the pure lib core — this route only supplies the provider-authed
+  // fetch and the .env.local write. Values never leave this route.
+  const mapped = await resolveEnvFromResourceMappings({
+    mappings: envFromResource,
+    resource: selected,
+    aliasEnv: provider.accountProbe?.aliasEnv,
+    readEnv: envValue,
+    fetchJson: async (subPath) => {
+      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, subPath), {
+        method: "GET",
+        headers: { authorization: authHeader, accept: "application/json" },
+      });
+      return { ok: response.ok, status: response.status, payload: await readJsonSafe(response) };
+    },
+  });
+  failures.push(...mapped.failures);
+  const writtenEnv = await writeLocalEnv(mapped.updates);
   return { writtenEnv, resource: selected, failures };
 }
 
-async function probeJsonPaths({ baseUrl, token, paths, label, query = "" }) {
+async function probeJsonPaths({ baseUrl, token, paths, label, query = "", tokenHeaderName = "" }) {
   let last = null;
   for (const path of paths) {
     const base = safeUrl(baseUrl, path);
     const url = query ? `${base}${base.includes("?") ? "&" : "?"}${query}` : base;
+    // Default probe auth is a Bearer token. When the product declares
+    // probe.tokenHeaderName (Supabase: "apikey"), send the token on that
+    // header AND as Bearer — the gateway reads the named header, PostgREST
+    // reads Authorization.
+    const headerName = clean(tokenHeaderName);
     const response = await fetchWithTimeout(url, {
       method: "GET",
-      headers: { authorization: `Bearer ${token}` },
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(headerName ? { [headerName]: token } : {}),
+      },
     });
     const text = await readProbeText(response);
     last = { status: response.status, path, text };
@@ -245,6 +283,98 @@ async function probeProviderProduct({ providerId, productId, region }) {
     paths: probe.paths,
     label: product.label,
     query: teamId ? `teamId=${encodeURIComponent(teamId)}` : "",
+    tokenHeaderName: probe.tokenHeaderName,
+  });
+  return {
+    ...result,
+    resolvedEnv: requiredEnv.resolvedKeys,
+  };
+}
+
+function pickDiscoveryPayloadArray(payload, payloadKeys) {
+  if (Array.isArray(payload)) return payload;
+  for (const key of Array.isArray(payloadKeys) && payloadKeys.length ? payloadKeys : ["data", "items"]) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  return [];
+}
+
+/**
+ * Server-authoritative resolution of a DISCOVERED product (providers with a
+ * declared `productDiscovery` contract, e.g. Nango integrations). The install
+ * re-fetches the live account listing and only matches products that really
+ * exist on the connected account — the browser payload is never trusted.
+ */
+async function resolveDiscoveredProduct(provider, productId) {
+  const discovery = getProviderProductDiscovery(provider);
+  if (!discovery) return { ok: false, status: 400, error: "unknown provider product" };
+  const prefix = discovery.productDefaults?.productIdPrefix || `${provider.providerId}-`;
+  if (!productId.startsWith(prefix)) return { ok: false, status: 400, error: "unknown provider product" };
+  const account = resolveProviderAccountAuth(provider, process.env);
+  if (!account.ready) {
+    return {
+      ok: false,
+      status: 422,
+      error: `${provider.label} provider credentials are not connected`,
+      missingEnv: account.missingEnv,
+      summary: `${provider.label} provider credentials are not connected. Complete provider setup, then sync again.`,
+    };
+  }
+  const discoveryBaseUrl = (provider.accountProbe?.baseUrlEnv ? envValue(provider.accountProbe.baseUrlEnv) : "") || provider.baseUrl;
+  let last = null;
+  for (const path of discovery.paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(discoveryBaseUrl, path), {
+        headers: { authorization: account.header, accept: "application/json" },
+      });
+      last = { path, status: response.status };
+      if (!response.ok) continue;
+      const items = pickDiscoveryPayloadArray(await readJsonSafe(response), discovery.payloadKeys);
+      for (const item of items) {
+        const product = makeDiscoveredMarketplaceProduct(provider, item);
+        if (product?.productId === productId) return { ok: true, product, account };
+      }
+      return {
+        ok: false,
+        status: 404,
+        error: `${provider.label} live discovery did not return ${productId} for the connected account`,
+        summary: `${productId} is not available on the connected ${provider.label} account. Refresh the provider page and install an available integration.`,
+      };
+    } catch (error) {
+      last = { path, status: 0, error: error?.message || "network error" };
+    }
+  }
+  const detail = last ? `${last.path} returned HTTP ${last.status}` : "no discovery endpoint responded";
+  return {
+    ok: false,
+    status: 502,
+    error: `${provider.label} live product discovery failed`,
+    summary: `${provider.label} live product discovery failed: ${detail}.`,
+  };
+}
+
+async function probeDiscoveredProduct(product) {
+  const requiredEnv = resolveRequiredEnv(product.requiredEnv, process.env);
+  if (!requiredEnv.ok) {
+    return {
+      ok: false,
+      status: 422,
+      error: `${product.label} provider credentials are not connected`,
+      missingEnv: requiredEnv.missing,
+      resolvedEnv: requiredEnv.resolvedKeys,
+      summary: `${product.label} provider credentials are not connected. Complete provider setup, then sync again.`,
+    };
+  }
+  const probe = product.probe || {};
+  if (!probe.tokenEnv || !Array.isArray(probe.paths) || !probe.paths.length) {
+    return { ok: false, status: 400, error: "unsupported provider product probe" };
+  }
+  const configuredUrl = (probe.baseUrlEnv ? envValue(probe.baseUrlEnv) : "") || clean(probe.fallbackBaseUrl || "");
+  const result = await probeJsonPaths({
+    baseUrl: configuredUrl,
+    token: envValue(probe.tokenEnv),
+    paths: probe.paths,
+    label: product.label,
   });
   return {
     ...result,
@@ -274,7 +404,71 @@ async function POST(request, context) {
   const selectedResourceId = clean(body.selectedResourceId);
   const selectedResourceLabel = clean(body.selectedResourceLabel);
   const selectedResourceSource = clean(body.selectedResourceSource);
-  const product = getMarketplaceProduct(provider.providerId, productId);
+  let product = getMarketplaceProduct(provider.providerId, productId);
+  if (!product && getProviderProductDiscovery(provider)) {
+    // Discovered-product install lane (live `productDiscovery` providers):
+    // resolve the product from a real-time account fetch, probe it, then land
+    // the governed row through the shared discovered-product upsert.
+    const resolution = await resolveDiscoveredProduct(provider, productId);
+    const discoveredSync = resolution.ok ? await probeDiscoveredProduct(resolution.product) : resolution;
+    if (clean(body.selectedResourceLabel) && discoveredSync.ok) {
+      discoveredSync.selectedResourceLabel = clean(body.selectedResourceLabel);
+    }
+    const discoveredLabel = resolution.product?.label || productId;
+    if (!discoveredSync.ok) {
+      await appendOutcomeReceipt({
+        kind: "workspace-add-on-sync",
+        lane: "server-authoritative",
+        outcomeStatus: "blocked",
+        actor: "workspace-marketplace",
+        objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: discoveredLabel }],
+        summary: discoveredSync.summary || discoveredSync.error || `${discoveredLabel} sync failed`,
+        policyVerdict: { ok: false, violationCodes: [discoveredSync.missingEnv?.length ? "provider_product_not_connected" : "provider_probe_failed"] },
+        nextActions: discoveredSync.missingEnv?.length
+          ? [`Complete ${provider.label} provider setup from the marketplace flow, then sync again.`]
+          : [`Open the ${provider.label} dashboard, verify the integration exists on the connected account, then retry sync.`],
+      });
+      return jsonError(discoveredSync.error || discoveredSync.summary || "Provider product sync failed", discoveredSync.status || 502, {
+        providerId: provider.providerId,
+        productId,
+        missingEnv: discoveredSync.missingEnv || [],
+        sync: { ok: false, proof: discoveredSync.proof || "", summary: discoveredSync.summary || "" },
+      });
+    }
+    const currentConfig = await readWorkspaceConfig();
+    const nextConfig = withDiscoveredMarketplaceProductRegistry(currentConfig, {
+      providerId: provider.providerId,
+      product: resolution.product,
+      plan,
+      syncResult: discoveredSync,
+    });
+    const persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+    const { receipt } = await appendOutcomeReceipt({
+      kind: "workspace-add-on-sync",
+      lane: "server-authoritative",
+      outcomeStatus: "published",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: discoveredLabel }],
+      changedFields: ["dataModel.api-registry"],
+      policyVerdict: { ok: true },
+      schemaVerdict: { ok: true },
+      summary: `${discoveredLabel} installed from live ${provider.label} discovery after provider sync probe.`,
+      nextActions: [`Bind a connection to the ${discoveredLabel} registry row from the Data Model connection panel, then run governed API requests through it.`],
+    });
+    return NextResponse.json({
+      ok: true,
+      providerId: provider.providerId,
+      productId,
+      workspaceConfig: persisted,
+      sync: {
+        ok: true,
+        proof: discoveredSync.proof,
+        summary: discoveredSync.summary,
+        testedAt: discoveredSync.testedAt,
+      },
+      receiptId: receipt.receiptId,
+    });
+  }
   if (!product) return jsonError("unknown provider product", 400, { providerId: provider.providerId, productId });
 
   const resourceResolution = await resolveProviderResource({ provider, product, selectedResourceId });

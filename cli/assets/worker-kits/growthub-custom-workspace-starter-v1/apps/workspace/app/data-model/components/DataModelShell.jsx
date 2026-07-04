@@ -49,6 +49,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HelperSidecar } from "./HelperSidecar.jsx";
+import { ExternalSyncHydrator } from "./ExternalSyncHydrator.jsx";
+import { BucketManager } from "./BucketManager.jsx";
 import { WorkspaceRail } from "../../workspace-rail.jsx";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -3437,6 +3439,16 @@ export default function DataModelShell() {
   );
 
   const selectedTable = tables.find((t) => t.source === selectedSource) || tables[0] || null;
+  // Externally-bound data-source object behind the selected table (the table
+  // mapping drops object-level binding fields, so read the raw object).
+  const selectedRawObject = (() => {
+    if (!selectedTable?.objectId || !workspaceConfig?.dataModel?.objects) return null;
+    return workspaceConfig.dataModel.objects.find((o) => o?.id === selectedTable.objectId) || null;
+  })();
+  const selectedExternalObject = selectedRawObject?.externalTable && selectedRawObject?.externalRegistryId ? selectedRawObject : null;
+  // Governed Supabase Storage buckets object (second product) — carries a
+  // storageProduct binding rather than an externalTable one.
+  const selectedStorageObject = selectedRawObject?.storageProduct ? selectedRawObject : null;
   const selectedTableKey = selectedTable
     ? String(selectedTable.objectId || selectedTable.id || selectedTable.source || "")
     : "";
@@ -3808,6 +3820,16 @@ export default function DataModelShell() {
                 {(selectedTable.columns?.length || 0)} {(selectedTable.columns?.length || 0) === 1 ? "Field" : "Fields"}
                 {" · "}
                 {(selectedTable.rows?.length || 0)} {(selectedTable.rows?.length || 0) === 1 ? "Record" : "Records"}
+                {selectedExternalObject ? (
+                  <> {" · "}
+                    <ExternalSyncHydrator object={selectedExternalObject} onWorkspaceConfig={setWorkspaceConfig} />
+                  </>
+                ) : null}
+                {selectedStorageObject ? (
+                  <> {" · "}
+                    <BucketManager object={selectedStorageObject} onWorkspaceConfig={setWorkspaceConfig} />
+                  </>
+                ) : null}
               </p>
             </div>
           ) : (
