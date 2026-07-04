@@ -50,6 +50,7 @@ import {
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import { CeoCockpit } from "./CeoCockpit.jsx";
 import { ScheduleCockpit } from "./ScheduleCockpit.jsx";
+import { PulseCockpit } from "./PulseCockpit.jsx";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
 import { parseSlashInput } from "./helper-commands.js";
 import {
@@ -988,6 +989,9 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   // Schedule cockpit shares the same sidecar shell (read-only operations surface
   // over the existing schedule routes). Same precedent as the CEO view.
   const inScheduleView = activeView === "schedule";
+  // Pulse cockpit shares the same sidecar shell (heartbeat sensors + policy
+  // findings with governed recovery hand-offs). Same precedent again.
+  const inPulseView = activeView === "pulse";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1022,7 +1026,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {(inSwarmView || inCeoView || inScheduleView) && (
+            {(inSwarmView || inCeoView || inScheduleView || inPulseView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1045,9 +1049,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   ? "CEO Cockpit"
                   : inScheduleView
                     ? "Schedule Cockpit"
-                    : threadActive
-                      ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
-                      : "Workspace Helper"}
+                    : inPulseView
+                      ? "Pulse Cockpit"
+                      : threadActive
+                        ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
+                        : "Workspace Helper"}
             </span>
           </div>
           <div className="dm-sidecar-header-right">
@@ -1154,11 +1160,36 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
+        {/* Pulse cockpit view — the autonomic heartbeat surface. Same sidecar
+            shell, read-only with respect to mutation: heartbeat recovery hands
+            off to the EXISTING governed schedule route (readiness/resume),
+            findings hand off to existing surfaces, and policy/pulse creation
+            seeds a governed helper proposal. No new route, no client-side
+            PATCH, no second runtime. */}
+        {activeTab === "assistant" && inPulseView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-pulse-view={activeView}>
+            <PulseCockpit
+              workspaceConfig={workspaceConfig}
+              onConfigRefresh={refreshWorkspaceConfig}
+              onOpenArtifact={(artifact) => { if (artifact) handleOpenArtifact(artifact); }}
+              onSeedProposal={(seedPrompt) => {
+                setActiveView("chat");
+                setPrompt(
+                  typeof seedPrompt === "string" && seedPrompt.trim()
+                    ? `${seedPrompt.trim()} `
+                    : "Propose a governed loop: "
+                );
+              }}
+              onOpenSetup={() => setActiveTab("setup")}
+            />
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inScheduleView && (
+        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inScheduleView && !inPulseView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble

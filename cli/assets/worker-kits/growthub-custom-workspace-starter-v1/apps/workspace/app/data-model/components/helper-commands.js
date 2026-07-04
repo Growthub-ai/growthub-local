@@ -66,6 +66,14 @@ export const HELPER_COMMANDS = [
     view: "schedule"
   },
   {
+    name: "/pulse",
+    label: "Pulse",
+    description: "Open the autonomic pulse cockpit — heartbeat sensors, stall/failure recovery, and policy findings (read-only)",
+    scope: "workspace",
+    mutates: false,
+    view: "pulse"
+  },
+  {
     name: "/register-api",
     label: "Register API",
     description: "Draft an API Registry entry as a reviewable proposal",
