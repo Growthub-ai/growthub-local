@@ -67,6 +67,10 @@ function toMs(value) {
   return Number.isFinite(t) ? t : null;
 }
 
+function safeReceiptsOf(receipts) {
+  return Array.isArray(receipts) ? receipts.filter(Boolean) : [];
+}
+
 /** Canonical slug — same transform the data-model layer applies to labels
  * (lowercase, any non-alphanumeric run → "-", trimmed), so a policy object
  * named "Workspace Policy!" or "Workspace_Policy" still resolves. */
@@ -104,6 +108,21 @@ export const PULSE_SENSOR_TAGS = {
 /** Recovery kinds a policy row's autoApprove MAY authorize. Everything else —
  * including the resume chain on a paused card — keeps the human gate. */
 export const SAFE_AUTO_RECOVERY_KINDS = ["readiness"];
+
+/** Human status labels — the ONLY status vocabulary the cockpit renders.
+ * Real states, real capitalization, no synthetic chips. */
+export const HEARTBEAT_STATUS_LABEL = {
+  idle: "Idle",
+  running: "Running",
+  healthy: "Healthy",
+  failed: "Failed",
+  stalled: "Stalled",
+};
+
+function truncate(text, max = 96) {
+  const s = clean(text);
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
 
 /* ------------------------------------------------------------------ */
 /* Heartbeat sensors                                                    */
@@ -392,6 +411,76 @@ export function evaluatePulsePolicies({ packet, policyRows = [] } = {}) {
   return findings;
 }
 
+/** Plain-language copy per rule kind — what the check IS, why it fired, what
+ * the action DOES, and what outcome to expect. No-code users read this; the
+ * rule-kind slug is metadata, never the message. */
+function plainCopyFor(finding) {
+  const { ruleKind, observed, expected, goal } = finding;
+  const goalLine = goal ? ` Your goal: ${truncate(goal, 80)}` : "";
+  const COPY = {
+    "max-stalled-runs": {
+      title: "Runs are sitting stuck",
+      why: `${observed} workflow run${observed === 1 ? "" : "s"} started but never finished within the runtime budget (you allow ${clean(String(expected)).replace("<= ", "up to ")}).${goalLine}`,
+      actionDoes: "Runs a read-only check on each affected workflow and names exactly what is blocking it.",
+      actionOutcome: "Each workflow reports Ready or names its blocker. Nothing changes without you.",
+    },
+    "max-failed-runs": {
+      title: "Runs are failing",
+      why: `${observed} workflow run${observed === 1 ? "" : "s"} ended in failure (you allow ${clean(String(expected)).replace("<= ", "up to ")}).${goalLine}`,
+      actionDoes: "Runs a read-only check on each failing workflow to name the broken piece.",
+      actionOutcome: "You see the exact blocker per workflow, with a fix path.",
+    },
+    "max-blocked-workflows": {
+      title: "Workflows are blocked",
+      why: `${observed} workflow${observed === 1 ? " is" : "s are"} blocked from running (you allow ${clean(String(expected)).replace("<= ", "up to ")}).${goalLine}`,
+      actionDoes: "Re-checks readiness on each blocked workflow.",
+      actionOutcome: "Each blocked workflow names what it needs to run.",
+    },
+    "max-drifted-workflows": {
+      title: "Schedules drifted from their workflows",
+      why: `${observed} scheduled workflow${observed === 1 ? " no longer matches" : "s no longer match"} the schedule that runs ${observed === 1 ? "it" : "them"}.${goalLine}`,
+      actionDoes: "Re-checks each drifted binding.",
+      actionOutcome: "You see what changed and how to re-align it.",
+    },
+    "max-blocked-attempts": {
+      title: "Governance blocked some attempts",
+      why: `${observed} action${observed === 1 ? " was" : "s were"} blocked by workspace rules and should be reviewed.${goalLine}`,
+      actionDoes: "Opens the CEO cockpit, which folds the audit trail of blocked attempts.",
+      actionOutcome: "You see who tried what, and why it was blocked.",
+    },
+    "max-missing-secrets": {
+      title: "Credentials are missing",
+      why: `${observed} workflow${observed === 1 ? " references a credential" : "s reference credentials"} that ${observed === 1 ? "is" : "are"} not configured.${goalLine}`,
+      actionDoes: "Opens workspace settings where credentials are configured (server-side only).",
+      actionOutcome: "Once the credential resolves, the affected workflows unblock on the next pulse.",
+    },
+    "require-deployment-live": {
+      title: "No live deployment",
+      why: `This workspace should be live, but no deployment shows live evidence yet.${goalLine}`,
+      actionDoes: "Opens /settings/apps to review and redeploy through the governed deploy flow.",
+      actionOutcome: "A successful deploy writes proof the pulse reads on its next beat.",
+    },
+    "pulse-cadence-minutes": {
+      title: "The workspace heartbeat is silent",
+      why: finding.nextAction?.kind === "seed-proposal"
+        ? `No heartbeat workflow exists yet, so the workspace cannot check on itself.${goalLine}`
+        : `The heartbeat workflow has no fresh successful beat.${goalLine}`,
+      actionDoes: finding.nextAction?.kind === "seed-proposal"
+        ? "Drafts a governed proposal that creates the heartbeat workflow — you review it before anything runs."
+        : "Runs a read-only check on the heartbeat workflow's binding.",
+      actionOutcome: finding.nextAction?.kind === "seed-proposal"
+        ? "After you approve, the workspace checks on itself on a schedule."
+        : "The heartbeat reports Ready or names its blocker.",
+    },
+  };
+  return COPY[ruleKind] || {
+    title: "A policy rule can't be evaluated",
+    why: `The rule kind "${truncate(String(observed), 40)}" is not one the pulse understands.`,
+    actionDoes: "Opens the policy table so you can correct the rule.",
+    actionOutcome: "The rule evaluates on the next pulse.",
+  };
+}
+
 /** Exported list of evaluable rule kinds (tests + docs). */
 export const PULSE_RULE_KINDS = Object.keys(RULE_TABLE).concat(["require-deployment-live", "pulse-cadence-minutes"]);
 
@@ -468,8 +557,20 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
       scheduleId: card.scheduleId,
       triggerKind: clean(row?.schedulerTriggerKind),
       heartbeat,
+      statusLabel: HEARTBEAT_STATUS_LABEL[heartbeat.state] || "Idle",
+      // One truncated, stable reason line — cards never grow with payload size.
+      reasonLine: heartbeat.reason && heartbeat.reason !== "no-clock" ? truncate(heartbeat.reason, 72) : "",
       sensorTags,
       recovery,
+      // Personalized delegation: heal this workflow through the existing
+      // governed agent-swarm lane (proposal-gated; CEO cockpit oversees runs).
+      delegate: (heartbeat.state === "stalled" || heartbeat.state === "failed")
+        ? {
+          label: "Delegate to agents",
+          seedIntent: "swarm",
+          seedPrompt: `Propose a governed agent swarm to heal the workflow "${card.name}": diagnose why its last run ${heartbeat.state === "stalled" ? "never completed" : "failed"}${heartbeat.reason && heartbeat.reason !== "no-clock" ? ` (${truncate(heartbeat.reason, 60)})` : ""}, fix the graph or its inputs, and finish only when a fresh test run returns verified 200:`,
+        }
+        : null,
       artifact: card.artifact,
     };
   });
@@ -509,7 +610,7 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
       pulse: cardIdsWhere((h) => h.name === WORKSPACE_PULSE_WORKFLOW_NAME),
     },
   };
-  const findings = evaluatePulsePolicies({ packet, policyRows });
+  const findings = evaluatePulsePolicies({ packet, policyRows }).map((f) => ({ ...f, plain: plainCopyFor(f) }));
 
   // Auto-recovery scope: exactly the union of target cards on auto-approvable
   // findings, restricted to cards whose recovery is the safe read-only kind —
@@ -519,13 +620,32 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
     findings.filter((f) => f.autoApprovable).flatMap((f) => f.nextAction?.targetCardIds || []),
   )].map((id) => heartbeatById.get(id)).filter((h) => h && h.recovery?.kind === "readiness");
 
-  // Attention: worst heartbeat first (stalled → failed), then worst finding.
+  // Attention: worst heartbeat first (stalled → failed), then worst finding —
+  // always carrying causation-derived, personalized one-click actions.
   const stalledOrFailed = heartbeats.find((h) => h.heartbeat.state === "stalled")
     || heartbeats.find((h) => h.heartbeat.state === "failed");
   const attention = stalledOrFailed
-    ? { kind: "heartbeat", heartbeat: stalledOrFailed }
+    ? {
+      kind: "heartbeat",
+      heartbeat: stalledOrFailed,
+      headline: `"${stalledOrFailed.name}" is ${HEARTBEAT_STATUS_LABEL[stalledOrFailed.heartbeat.state].toLowerCase()}`,
+      explain: stalledOrFailed.recovery?.explain || "",
+      oneClick: stalledOrFailed.recovery
+        ? { label: stalledOrFailed.recovery.label, does: stalledOrFailed.recovery.explain }
+        : null,
+      delegate: stalledOrFailed.delegate,
+    }
     : findings.length > 0
-      ? { kind: "finding", finding: findings[0] }
+      ? {
+        kind: "finding",
+        finding: findings[0],
+        headline: findings[0].plain.title,
+        explain: findings[0].plain.why,
+        oneClick: findings[0].nextAction
+          ? { label: findings[0].nextAction.label, does: findings[0].plain.actionDoes }
+          : null,
+        delegate: null,
+      }
       : null;
 
   const filters = [
@@ -536,6 +656,78 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
     { id: "healthy", label: "Healthy", count: counts.healthy },
     { id: "blocked", label: "Blocked", count: counts.blocked + counts.drifted },
   ].filter((f) => f.id === "all" || f.count > 0);
+
+  // ---- Daily report: a pure causation digest of the last 24 hours ----
+  const dayAgoMs = nowMs != null ? nowMs - 24 * 3600_000 : null;
+  const inWindow = (r) => {
+    if (dayAgoMs == null) return true;
+    const t = toMs(r?.at || r?.createdAt || r?.timestamp);
+    return t == null ? true : t >= dayAgoMs;
+  };
+  const runReceipts = safeReceiptsOf(receipts).filter((r) => clean(r?.kind).includes("run")).filter(inWindow);
+  const runsOk = runReceipts.filter((r) => r?.outcomeStatus === "published").length;
+  const runsFailed = runReceipts.filter((r) => ["failed", "blocked"].includes(clean(r?.outcomeStatus))).length;
+
+  const insights = [];
+  if (counts.stalled > 0) insights.push(`${counts.stalled} run${counts.stalled === 1 ? "" : "s"} sitting stuck — the one-click check names each blocker.`);
+  if (counts.failed > 0) insights.push(`${counts.failed} workflow${counts.failed === 1 ? "" : "s"} failing — delegate to agents to diagnose and heal.`);
+  if (runsFailed === 0 && runReceipts.length > 0) insights.push(`All ${runReceipts.length} recorded run${runReceipts.length === 1 ? "" : "s"} in the last day succeeded.`);
+  if (governance.blockedAttempts > 0) insights.push(`${governance.blockedAttempts} action${governance.blockedAttempts === 1 ? " was" : "s were"} blocked by workspace rules — review in the CEO cockpit.`);
+  if (deployment.projects > 0 && !deployment.anyLive) insights.push("No deployment shows live evidence — the workspace may not be reachable externally.");
+  if (insights.length === 0) insights.push("Everything the pulse watches is healthy. Add or tighten policies to watch more.");
+
+  // Self-run readiness: what stands between this workspace and running itself.
+  // Every incomplete step carries a governed one-click seed or hand-off.
+  const ruleKindsPresent = new Set(policyRows.map((p) => p.ruleKind));
+  const selfRun = [
+    {
+      id: "policies",
+      label: "Rules & goal recorded",
+      done: policyRows.length > 0,
+      explain: "Your thresholds and use-case goal live as rows the pulse evaluates every beat.",
+      action: policyRows.length > 0 ? null : { kind: "seed-proposal", label: "Propose policy object", seedIntent: "create_object", seedPrompt: "Create a custom business object named \"workspace-policy\" with columns ruleKind, threshold, severity, autoApprove, enabled, goal, description — rows will hold my pulse rules and use-case goal:" },
+    },
+    {
+      id: "heartbeat",
+      label: "Heartbeat workflow exists",
+      done: pulseProof.workflowFound,
+      explain: "A scheduler-bound workflow that beats on a cadence, so the workspace checks on itself with no one watching.",
+      action: pulseProof.workflowFound ? null : { kind: "seed-proposal", label: "Propose heartbeat", seedIntent: "swarm", seedPrompt: `Propose a governed loop: create a scheduler-bound "${WORKSPACE_PULSE_WORKFLOW_NAME}" heartbeat workflow that reads workspace readiness and outcome receipts each beat, so stalled or failed runs surface with governed recovery:` },
+    },
+    {
+      id: "coverage",
+      label: "Stall & failure rules active",
+      done: ruleKindsPresent.has("max-stalled-runs") && ruleKindsPresent.has("max-failed-runs"),
+      explain: "With both rules on, no run can go bad silently.",
+      action: null,
+    },
+    {
+      id: "auto-recovery",
+      label: "Safe auto-recovery enabled",
+      done: policyRows.some((p) => p.autoApprove),
+      explain: "Read-only recovery checks run themselves; anything that mutates still waits for you.",
+      action: null,
+    },
+    {
+      id: "beat-fresh",
+      label: "Heartbeat beating",
+      done: pulseProof.workflowFound && pulseProof.state === "healthy",
+      explain: "The last beat succeeded — the loop is alive.",
+      action: null,
+    },
+  ];
+
+  const report = {
+    windowLabel: "Last 24 hours",
+    runsOk,
+    runsFailed,
+    blockedAttempts: governance.blockedAttempts,
+    deploymentsLive: deployment.live,
+    insights,
+    selfRun,
+    selfRunComplete: selfRun.filter((s) => s.done).length,
+    selfRunTotal: selfRun.length,
+  };
 
   return {
     title: "Pulse Cockpit",
@@ -551,6 +743,8 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
     governance,
     deployment,
     pulseProof,
+    report,
+    policyRows,
     targets: packet.targets,
     generatedFromReceipts: fleet.generatedFromReceipts,
   };

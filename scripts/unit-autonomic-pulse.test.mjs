@@ -428,6 +428,82 @@ test("derivePulseCockpit: deterministic packet, targeted findings, readiness-onl
   for (const f of a.findings) assert.ok(HANDOFFS.includes(f.nextAction.handoff));
 });
 
+/* ================= UX contracts: plain language, real status, report ================= */
+test("findings carry plain-language copy (what/why/does/outcome) — never just slugs", () => {
+  const model = derivePulseCockpit({
+    configuredEnvRefs: CONFIGURED,
+    nowMs: NOW,
+    workspaceConfig: cfg({
+      rows: [wfRow("loose-stuck", { lastScheduledRunAttemptedAt: iso(NOW - STALL_AGE) })],
+      policyRows: [{ Name: "no-stalls", ruleKind: "max-stalled-runs", threshold: 0, severity: "critical", autoApprove: "true", enabled: "true", goal: "keep automations flowing" }],
+    }),
+  });
+  const f = model.findings[0];
+  assert.ok(f.plain, "plain copy present");
+  assert.equal(f.plain.title, "Runs are sitting stuck");
+  assert.match(f.plain.why, /started but never finished/);
+  assert.match(f.plain.why, /keep automations flowing/, "the user's goal is woven into the why");
+  assert.match(f.plain.actionDoes, /read-only/i);
+  assert.ok(f.plain.actionOutcome.length > 0);
+});
+
+test("heartbeats carry real capitalized status labels and a truncated stable reason line", () => {
+  const longReason = "x".repeat(300);
+  const model = derivePulseCockpit({
+    configuredEnvRefs: CONFIGURED,
+    nowMs: NOW,
+    workspaceConfig: cfg({ rows: [
+      wfRow("bad", { lastScheduledRunAttemptedAt: iso(NOW - 90_000), lastScheduledRunFailedAt: iso(NOW - 60_000), lastScheduledRunStatus: "500", lastScheduledRunFailureReason: longReason }),
+      wfRow("fine", { lastScheduledRunAttemptedAt: iso(NOW - 90_000), lastScheduledRunSucceededAt: iso(NOW - 60_000), lastScheduledRunStatus: "200" }),
+    ] }),
+  });
+  const bad = model.heartbeats.find((h) => h.name === "bad");
+  assert.equal(bad.statusLabel, "Failed");
+  assert.ok(bad.reasonLine.length <= 72, "reason line is truncated to a stable length");
+  assert.equal(model.heartbeats.find((h) => h.name === "fine").statusLabel, "Healthy");
+  // Delegation to the governed swarm lane exists for bad heartbeats only.
+  assert.equal(bad.delegate.seedIntent, "swarm");
+  assert.match(bad.delegate.seedPrompt, /heal the workflow "bad"/);
+  assert.equal(model.heartbeats.find((h) => h.name === "fine").delegate, null);
+});
+
+test("attention carries a personalized headline and one-click action", () => {
+  const model = derivePulseCockpit({
+    configuredEnvRefs: CONFIGURED,
+    nowMs: NOW,
+    workspaceConfig: cfg({ rows: [wfRow("loose-stuck", { lastScheduledRunAttemptedAt: iso(NOW - STALL_AGE) })] }),
+  });
+  assert.equal(model.attention.headline, '"loose-stuck" is stalled');
+  assert.ok(model.attention.oneClick, "one-click action present");
+  assert.equal(model.attention.oneClick.label, "Open & re-run");
+  assert.ok(model.attention.delegate, "delegation available from attention");
+});
+
+test("report derives the daily digest and the self-run checklist with governed seeds", () => {
+  const model = derivePulseCockpit({
+    configuredEnvRefs: CONFIGURED,
+    nowMs: NOW,
+    receipts: [
+      { kind: "workspace-invoked-run", outcomeStatus: "published", at: iso(NOW - 3600_000) },
+      { kind: "workspace-scheduled-run", outcomeStatus: "failed", at: iso(NOW - 7200_000) },
+      { kind: "workspace-invoked-run", outcomeStatus: "published", at: iso(NOW - 30 * 3600_000) }, // outside window
+    ],
+    workspaceConfig: cfg({
+      rows: [wfRow("Flow A")],
+      policyRows: [{ Name: "no-stalls", ruleKind: "max-stalled-runs", threshold: 0, severity: "critical", autoApprove: "true", enabled: "true" }],
+    }),
+  });
+  assert.equal(model.report.runsOk, 1, "24h window excludes older receipts");
+  assert.equal(model.report.runsFailed, 1);
+  assert.ok(model.report.insights.length > 0);
+  assert.equal(model.report.selfRunTotal, 5);
+  const heartbeatStep = model.report.selfRun.find((s) => s.id === "heartbeat");
+  assert.equal(heartbeatStep.done, false);
+  assert.equal(heartbeatStep.action.seedIntent, "swarm", "missing heartbeat seeds the governed swarm/loop lane");
+  assert.equal(model.report.selfRun.find((s) => s.id === "policies").done, true);
+  assert.equal(model.report.selfRun.find((s) => s.id === "auto-recovery").done, true);
+});
+
 test("no policies → sensing still runs, setup state names the gap", () => {
   const model = derivePulseCockpit({ workspaceConfig: cfg({ rows: [wfRow("Flow A")] }), configuredEnvRefs: CONFIGURED, nowMs: NOW });
   assert.equal(model.policySetupState, "none");

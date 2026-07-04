@@ -3,28 +3,34 @@
 /**
  * PulseCockpit — the governed "/pulse" autonomic heartbeat surface inside the
  * Workspace Helper sidecar (GOVERNED_COCKPIT_ENTRY_POINT_PATTERN_V1, same
- * primitive class as CeoCockpit and ScheduleCockpit).
+ * primitive class as CeoCockpit and ScheduleCockpit — including its TAB
+ * condensation pattern).
  *
- *   workspace pulse cockpit =
- *     heartbeat sensors (derivePulseCockpit — stall/timeout/failure detection)
- *   + policy findings (workspace-policy rows = the human objective function)
- *   + governed recovery hand-offs over the EXISTING schedule routes
+ * Four tabs, one job each:
+ *   Attention — the single most valuable next move, plain language, with
+ *               causation-derived one-click actions (fix / open / delegate).
+ *   Checks    — the heartbeat fleet at any scale: search + real-state filters,
+ *               fixed-shape truncated cards, windowed list.
+ *   Policies  — the human rules table, edited in a sub-panel whose Save
+ *               writes the SAME atomic workspace-policy rows through the
+ *               existing governed PATCH lane (no side store, no new route).
+ *   Report    — the daily digest: last-24h outcomes, insights, and the
+ *               self-run checklist (heartbeat, coverage, auto-recovery) with
+ *               governed one-click seeds for every missing step.
  *
- * Read-only with respect to config: every recovery hands off to an existing
- * governed route (readiness rescan / resume via the add-ons schedule route),
- * the workflow canvas, /settings surfaces, the CEO cockpit, or seeds a helper
- * proposal with a pinned intent. No client-side dataModel PATCH, no new
- * route, no new visual grammar beyond the existing dm-* primitives.
+ * Status language: real states with real capitalization (Stalled, Failed,
+ * Running, Healthy, Idle) — no synthetic chips, no slug pills. Cards keep a
+ * fixed shape regardless of content length (single truncated reason line).
  *
- * Auto-recovery boundary: the one-click pass runs ONLY the read-only
- * readiness rescans on the exact cards the breached auto-approved findings
- * cover (model.autoRecoveryTargets). It never chains resume or any other
- * mutation — those stay behind per-card human clicks.
+ * Mutation boundary: recovery = existing schedule route (read-only readiness;
+ * resume only on the per-card human click); delegation/creation = seeded
+ * helper proposals; policy edits = PATCH /api/workspace {dataModel} — the
+ * exact lane the canvas uses. No new route, no client-side side state.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowUpRight } from "lucide-react";
-import { derivePulseCockpit } from "@/lib/autonomic-pulse-console";
+import { ArrowUpRight, Search, Settings2 } from "lucide-react";
+import { derivePulseCockpit, PULSE_RULE_KINDS, WORKSPACE_POLICY_OBJECT_ID } from "@/lib/autonomic-pulse-console";
 
 const HEARTBEAT_VARIANT = {
   healthy: "ok",
@@ -34,11 +40,9 @@ const HEARTBEAT_VARIANT = {
   stalled: "canceled",
 };
 
-const SEVERITY_TONE = { critical: "alert", warn: "alert", info: "neutral" };
-
-function openWorkflowCanvas(card) {
-  if (!card?.objectId || !card?.name) return;
-  const params = new URLSearchParams({ object: card.objectId, row: card.name, field: "orchestrationConfig" });
+function openWorkflowCanvas(entry) {
+  if (!entry?.objectId || !entry?.name) return;
+  const params = new URLSearchParams({ object: entry.objectId, row: entry.name, field: "orchestrationConfig" });
   window.location.assign(`/workflows?${params.toString()}`);
 }
 
@@ -56,18 +60,19 @@ function matchesFilter(entry, filter) {
 
 const PULSE_VISIBLE_CAP = 60;
 
-function HeartbeatCard({ entry, onRecover, busy, onOpen }) {
-  const hb = entry.heartbeat;
+/* ---------------- Checks tab: fixed-shape heartbeat card ---------------- */
+
+function HeartbeatCard({ entry, onRecover, busy, onOpen, onDelegate }) {
   const viaScheduleRoute = entry.recovery?.handoff === "add-ons-schedule-route";
   return (
     <div
-      className="dm-helper-toolcall dm-swarm-card"
+      className="dm-helper-toolcall dm-swarm-card dm-pulse-card"
       data-pulse-card={entry.name}
-      data-pulse-state={hb.state}
+      data-pulse-state={entry.heartbeat.state}
     >
       <div className="dm-swarm-card-head">
-        <span className="dm-run-console__tree-dot" data-variant={HEARTBEAT_VARIANT[hb.state] || "pending"} />
-        <span className="dm-helper-toolcall-title dm-swarm-card-title">{entry.name}</span>
+        <span className="dm-run-console__tree-dot" data-variant={HEARTBEAT_VARIANT[entry.heartbeat.state] || "pending"} />
+        <span className="dm-helper-toolcall-title dm-swarm-card-title dm-pulse-truncate">{entry.name}</span>
         <button
           type="button"
           className="dm-btn-ghost dm-swarm-card-action"
@@ -80,33 +85,114 @@ function HeartbeatCard({ entry, onRecover, busy, onOpen }) {
       </div>
 
       <div className="dm-swarm-card-meta">
-        <span className="dm-run-console__hint dm-swarm-card-kind">{hb.state}</span>
+        <span className="dm-run-console__hint dm-swarm-card-kind">{entry.statusLabel}</span>
         {entry.triggerKind && <span className="dm-run-console__hint">{entry.triggerKind}</span>}
-        {hb.reason && hb.reason !== "no-clock" && <span className="dm-run-console__hint">{hb.reason}</span>}
       </div>
 
-      {entry.sensorTags.length > 0 && (
-        <div className="dm-schedule-tags">
-          {entry.sensorTags.map((tag) => (
-            <span key={tag} className="dm-schedule-tag" data-tag-tone={["stalled-run", "run-failed", "missing-server-secret"].includes(tag) ? "alert" : "neutral"}>
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+      {entry.reasonLine && <div className="dm-run-console__hint dm-pulse-truncate">{entry.reasonLine}</div>}
 
-      {entry.recovery && (
-        <>
-          <div className="dm-helper-stream dm-swarm-card-desc">{entry.recovery.explain}</div>
-          <div className="dm-schedule-card-actions">
+      {(entry.recovery || entry.delegate) && (
+        <div className="dm-schedule-card-actions">
+          {entry.recovery && (
             <button
               type="button"
               className="dm-btn-ghost"
               onClick={() => (viaScheduleRoute ? onRecover(entry, { chain: true }) : onOpen(entry))}
               disabled={busy}
+              title={entry.recovery.explain}
             >
               {entry.recovery.label}
             </button>
+          )}
+          {entry.delegate && (
+            <button
+              type="button"
+              className="dm-btn-ghost"
+              onClick={() => onDelegate(entry.delegate)}
+              disabled={busy}
+              title="Draft a governed agent-swarm proposal to diagnose and heal this workflow — you review it before anything runs"
+            >
+              {entry.delegate.label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Attention tab: headline + plain-language findings ---------------- */
+
+function AttentionView({ model, busyId, onRecover, onOpen, onDelegate, onRecoverFinding, onSeed }) {
+  const a = model.attention;
+  return (
+    <div className="dm-pulse-section">
+      {a ? (
+        <div
+          className="dm-helper-toolcall dm-swarm-card dm-pulse-card"
+          data-pulse-attention=""
+          data-pulse-card={a.kind === "heartbeat" ? a.heartbeat.name : undefined}
+          data-pulse-state={a.kind === "heartbeat" ? a.heartbeat.heartbeat.state : undefined}
+        >
+          <div className="dm-swarm-card-head">
+            <span className="dm-run-console__tree-dot" data-variant="fail" />
+            <span className="dm-helper-toolcall-title dm-swarm-card-title dm-pulse-truncate">{a.headline}</span>
+          </div>
+          {a.explain && <div className="dm-helper-stream dm-swarm-card-desc dm-pulse-clamp">{a.explain}</div>}
+          <div className="dm-schedule-card-actions">
+            {a.kind === "heartbeat" && a.oneClick && (
+              a.heartbeat.recovery?.handoff === "add-ons-schedule-route" ? (
+                <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} title={a.oneClick.does} onClick={() => onRecover(a.heartbeat, { chain: true })}>
+                  {a.oneClick.label}
+                </button>
+              ) : (
+                <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} title={a.oneClick.does} onClick={() => onOpen(a.heartbeat)}>
+                  {a.oneClick.label}
+                </button>
+              )
+            )}
+            {a.kind === "heartbeat" && a.delegate && (
+              <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} onClick={() => onDelegate(a.delegate)}>
+                {a.delegate.label}
+              </button>
+            )}
+            {a.kind === "finding" && a.oneClick && (
+              <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} title={a.oneClick.does} onClick={() => (a.finding.nextAction?.kind === "seed-proposal" ? onSeed(a.finding.nextAction) : onRecoverFinding(a.finding))}>
+                {a.oneClick.label}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="dm-run-console__hint">Nothing needs you right now. The pulse keeps watching.</p>
+      )}
+
+      {model.findings.length > 0 && (
+        <>
+          <span className="dm-field-label">Rule checks that fired</span>
+          <div className="dm-ceo-report-list" data-pulse-findings="">
+            {model.findings.map((finding) => (
+              <div key={`${finding.policyId}::${finding.ruleKind}`} className="dm-helper-toolcall dm-swarm-card dm-pulse-card" data-pulse-finding={finding.policyId} data-pulse-severity={finding.severity}>
+                <div className="dm-swarm-card-head">
+                  <span className="dm-run-console__tree-dot" data-variant={finding.severity === "critical" ? "fail" : "pending"} />
+                  <span className="dm-helper-toolcall-title dm-swarm-card-title dm-pulse-truncate">{finding.plain.title}</span>
+                  {finding.severity === "critical" && <span className="dm-run-console__hint">Critical</span>}
+                </div>
+                <div className="dm-helper-stream dm-swarm-card-desc dm-pulse-clamp">{finding.plain.why}</div>
+                <div className="dm-schedule-card-actions">
+                  {finding.nextAction?.kind === "seed-proposal" ? (
+                    <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} title={finding.plain.actionDoes} onClick={() => onSeed(finding.nextAction)}>
+                      {finding.nextAction.label}
+                    </button>
+                  ) : (
+                    <button type="button" className="dm-btn-ghost" disabled={Boolean(busyId)} title={finding.plain.actionDoes} onClick={() => onRecoverFinding(finding)}>
+                      {finding.nextAction?.label || "Review"}
+                    </button>
+                  )}
+                  <span className="dm-run-console__hint dm-pulse-truncate" title={finding.plain.actionOutcome}>{finding.plain.actionDoes}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </>
       )}
@@ -114,50 +200,212 @@ function HeartbeatCard({ entry, onRecover, busy, onOpen }) {
   );
 }
 
-function FindingCard({ finding, onRecoverFinding, onSeed, busy }) {
+/* ---------------- Policies tab: atomic-table editor sub-panel ---------------- */
+
+const EMPTY_DRAFT = { Name: "", ruleKind: "max-failed-runs", threshold: "0", severity: "warn", autoApprove: "false", enabled: "true", goal: "", description: "" };
+
+function PoliciesView({ model, workspaceConfig, onConfigRefresh, onSeed }) {
+  const [editing, setEditing] = useState(null); // draft row object or null
+  const [editingIndex, setEditingIndex] = useState(-1); // -1 = new row
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const policyObject = useMemo(() => {
+    const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+    return objects.find((o) => String(o?.id || "") === WORKSPACE_POLICY_OBJECT_ID
+      || String(o?.label || o?.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") === WORKSPACE_POLICY_OBJECT_ID) || null;
+  }, [workspaceConfig]);
+
+  // Save writes the SAME atomic rows through the governed PATCH lane the
+  // canvas uses: clone dataModel, replace/append the row, PATCH, re-derive.
+  const saveDraft = useCallback(async () => {
+    if (!policyObject || !editing) return;
+    if (!String(editing.Name || "").trim()) { setError("Give the rule a name."); return; }
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const dataModel = JSON.parse(JSON.stringify(workspaceConfig.dataModel));
+      const obj = (dataModel.objects || []).find((o) => String(o?.id || "") === String(policyObject.id));
+      if (!obj) throw new Error("Policy table not found.");
+      obj.rows = Array.isArray(obj.rows) ? obj.rows : [];
+      if (editingIndex >= 0 && editingIndex < obj.rows.length) obj.rows[editingIndex] = { ...obj.rows[editingIndex], ...editing };
+      else obj.rows.push({ ...editing });
+      const res = await fetch("/api/workspace", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dataModel }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload.workspaceConfig) throw new Error(payload?.error || "Save was blocked by workspace policy.");
+      setNotice(`Saved "${editing.Name}" — the pulse evaluates it on the next beat.`);
+      setEditing(null);
+      setEditingIndex(-1);
+      if (typeof onConfigRefresh === "function") onConfigRefresh();
+    } catch (err) {
+      setError(err?.message || "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }, [policyObject, editing, editingIndex, workspaceConfig, onConfigRefresh]);
+
+  if (!policyObject) {
+    return (
+      <div className="dm-pulse-section">
+        <div className="dm-helper-toolcall dm-swarm-card dm-pulse-card">
+          <div className="dm-swarm-card-head">
+            <span className="dm-run-console__tree-dot" data-variant="pending" />
+            <span className="dm-helper-toolcall-title dm-swarm-card-title">No rules table yet</span>
+          </div>
+          <div className="dm-helper-stream dm-swarm-card-desc">
+            Your rules and use-case goal live as ordinary rows in a business object you own.
+            Create it once; every rule you add is evaluated on each pulse beat.
+          </div>
+          <div className="dm-schedule-card-actions">
+            <button
+              type="button"
+              className="dm-btn-ghost"
+              onClick={() => onSeed({ seedIntent: "create_object", seedPrompt: "Create a custom business object named \"workspace-policy\" with columns ruleKind, threshold, severity, autoApprove, enabled, goal, description — rows will hold my pulse rules and use-case goal:" })}
+            >
+              Create rules table
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const rows = Array.isArray(policyObject.rows) ? policyObject.rows : [];
+
   return (
-    <div className="dm-helper-toolcall dm-swarm-card" data-pulse-finding={finding.policyId} data-pulse-severity={finding.severity}>
-      <div className="dm-swarm-card-head">
-        <span className="dm-run-console__tree-dot" data-variant={finding.severity === "info" ? "pending" : "fail"} />
-        <span className="dm-helper-toolcall-title dm-swarm-card-title">{finding.policyId}</span>
-      </div>
-      <div className="dm-swarm-card-meta">
-        <span className="dm-run-console__hint">{finding.ruleKind}</span>
-        <span className="dm-run-console__hint">{`observed ${finding.observed} · expected ${finding.expected}`}</span>
-      </div>
-      <div className="dm-schedule-tags">
-        <span className="dm-schedule-tag" data-tag-tone={SEVERITY_TONE[finding.severity] || "neutral"}>{finding.severity}</span>
-        <span className="dm-schedule-tag" data-tag-tone="neutral">{finding.sensorTag}</span>
-        {finding.autoApprovable && <span className="dm-schedule-tag" data-tag-tone="ok">auto-recovery</span>}
-        {finding.autoApproveClamped && <span className="dm-schedule-tag" data-tag-tone="alert">auto-approve clamped</span>}
-      </div>
-      <div className="dm-helper-stream dm-swarm-card-desc">{finding.message}</div>
-      {finding.goal && <div className="dm-helper-stream dm-swarm-card-desc">{`Goal: ${finding.goal}`}</div>}
-      <div className="dm-schedule-card-actions">
-        {finding.nextAction?.kind === "seed-proposal" ? (
-          <button type="button" className="dm-btn-ghost" onClick={() => onSeed(finding.nextAction)} disabled={busy}>
-            {finding.nextAction.label}
-          </button>
-        ) : (
-          <button type="button" className="dm-btn-ghost" onClick={() => onRecoverFinding(finding)} disabled={busy}>
-            {finding.nextAction?.label || "Review"}
-          </button>
-        )}
+    <div className="dm-pulse-section" data-pulse-policies="">
+      {error && <div className="dm-helper-error" role="alert"><span>{error}</span></div>}
+      {notice && !error && <p className="dm-run-console__hint">{notice}</p>}
+
+      {editing ? (
+        <div className="dm-helper-toolcall dm-swarm-card dm-pulse-card" data-pulse-policy-editor="">
+          <div className="dm-swarm-card-head">
+            <span className="dm-helper-toolcall-title dm-swarm-card-title">{editingIndex >= 0 ? `Edit "${editing.Name}"` : "New rule"}</span>
+          </div>
+          <div className="dm-pulse-editor-grid">
+            <label>Name<input value={editing.Name} onChange={(e) => setEditing({ ...editing, Name: e.target.value })} placeholder="e.g. no-stalls" /></label>
+            <label>Rule
+              <select value={editing.ruleKind} onChange={(e) => setEditing({ ...editing, ruleKind: e.target.value })}>
+                {PULSE_RULE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </label>
+            <label>Threshold<input type="number" value={editing.threshold} onChange={(e) => setEditing({ ...editing, threshold: e.target.value })} /></label>
+            <label>Severity
+              <select value={editing.severity} onChange={(e) => setEditing({ ...editing, severity: e.target.value })}>
+                <option value="info">info</option><option value="warn">warn</option><option value="critical">critical</option>
+              </select>
+            </label>
+            <label className="dm-pulse-editor-wide">Goal<input value={editing.goal} onChange={(e) => setEditing({ ...editing, goal: e.target.value })} placeholder="What outcome does this rule protect?" /></label>
+            <label>Enabled
+              <select value={editing.enabled} onChange={(e) => setEditing({ ...editing, enabled: e.target.value })}>
+                <option value="true">true</option><option value="false">false</option>
+              </select>
+            </label>
+            <label>Auto-recovery
+              <select value={editing.autoApprove} onChange={(e) => setEditing({ ...editing, autoApprove: e.target.value })}>
+                <option value="false">off</option><option value="true">safe checks only</option>
+              </select>
+            </label>
+          </div>
+          <div className="dm-schedule-card-actions">
+            <button type="button" className="dm-btn-ghost" onClick={saveDraft} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
+            <button type="button" className="dm-btn-ghost" onClick={() => { setEditing(null); setEditingIndex(-1); }} disabled={saving}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="dm-schedule-card-actions">
+          <button type="button" className="dm-btn-ghost" onClick={() => { setEditing({ ...EMPTY_DRAFT }); setEditingIndex(-1); }}>New rule</button>
+        </div>
+      )}
+
+      <div className="dm-ceo-report-list">
+        {rows.map((row, index) => (
+          <div key={`${row?.Name || "rule"}-${index}`} className="dm-helper-toolcall dm-swarm-card dm-pulse-card" data-pulse-policy={row?.Name || ""}>
+            <div className="dm-swarm-card-head">
+              <span className="dm-run-console__tree-dot" data-variant={String(row?.enabled) === "false" ? "pending" : "ok"} />
+              <span className="dm-helper-toolcall-title dm-swarm-card-title dm-pulse-truncate">{row?.Name || "(unnamed)"}</span>
+              <button
+                type="button"
+                className="dm-btn-ghost dm-swarm-card-action"
+                onClick={() => { setEditing({ ...EMPTY_DRAFT, ...row }); setEditingIndex(index); }}
+                aria-label={`Edit rule ${row?.Name || index}`}
+                title="Edit rule"
+              >
+                <Settings2 size={12} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="dm-swarm-card-meta">
+              <span className="dm-run-console__hint">{String(row?.ruleKind || "")}</span>
+              <span className="dm-run-console__hint">{`limit ${String(row?.threshold ?? "0")}`}</span>
+              <span className="dm-run-console__hint">{String(row?.severity || "warn")}</span>
+              {String(row?.enabled) === "false" && <span className="dm-run-console__hint">Off</span>}
+            </div>
+            {row?.goal && <div className="dm-run-console__hint dm-pulse-truncate">{`Goal: ${row.goal}`}</div>}
+          </div>
+        ))}
+        {rows.length === 0 && <p className="dm-run-console__hint">No rules yet — add your first with New rule.</p>}
       </div>
     </div>
   );
 }
 
+/* ---------------- Report tab: daily digest + self-run checklist ---------------- */
+
+function ReportView({ model, onSeed }) {
+  const r = model.report;
+  return (
+    <div className="dm-pulse-section" data-pulse-report="">
+      <div className="dm-swarm-section-row">
+        <span className="dm-run-console__hint">{r.windowLabel}</span>
+        <span className="dm-run-console__hint">{`${r.runsOk} run${r.runsOk === 1 ? "" : "s"} ok · ${r.runsFailed} failed`}</span>
+      </div>
+      <div className="dm-ceo-report-list">
+        {r.insights.map((line) => (
+          <div key={line} className="dm-helper-toolcall dm-swarm-card dm-pulse-card">
+            <div className="dm-helper-stream dm-swarm-card-desc dm-pulse-clamp">{line}</div>
+          </div>
+        ))}
+      </div>
+
+      <span className="dm-field-label">{`Self-running workspace — ${r.selfRunComplete}/${r.selfRunTotal}`}</span>
+      <div className="dm-ceo-report-list">
+        {r.selfRun.map((step) => (
+          <div key={step.id} className="dm-helper-toolcall dm-swarm-card dm-pulse-card" data-pulse-selfrun={step.id}>
+            <div className="dm-swarm-card-head">
+              <span className="dm-run-console__tree-dot" data-variant={step.done ? "ok" : "pending"} />
+              <span className="dm-helper-toolcall-title dm-swarm-card-title dm-pulse-truncate">{step.label}</span>
+            </div>
+            <div className="dm-run-console__hint dm-pulse-clamp">{step.explain}</div>
+            {!step.done && step.action && (
+              <div className="dm-schedule-card-actions">
+                <button type="button" className="dm-btn-ghost" onClick={() => onSeed(step.action)}>{step.action.label}</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- The cockpit shell ---------------- */
+
 export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact, onSeedProposal, onOpenCeo, onOpenSetup }) {
   const [configuredEnvRefs, setConfiguredEnvRefs] = useState([]);
   const [receipts, setReceipts] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
+  const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  // Bumped after recovery passes so age math re-reads the clock even when the
-  // config object identity is unchanged.
   const [deriveTick, setDeriveTick] = useState(0);
+  const [activeTab, setActiveTab] = useState(null); // resolved after first derive
 
   useEffect(() => {
     let cancelled = false;
@@ -181,15 +429,12 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
   }, []);
 
   const model = useMemo(
-    // One clock read PER DERIVE (deriver purity is preserved — the clock is a
-    // caller input), so stall ages can never freeze at mount time.
     () => derivePulseCockpit({ workspaceConfig, configuredEnvRefs, receipts, nowMs: Date.now() }),
     [workspaceConfig, configuredEnvRefs, receipts, deriveTick],
   );
 
-  // Recovery hands off to the EXISTING governed schedule route with the SAME
-  // provider/product fallback ScheduleCockpit uses. Returns a result string;
-  // callers own notice/error aggregation so batch passes can't mask failures.
+  const tab = activeTab || (model.attention || model.findings.length ? "attention" : "checks");
+
   const runRecoveryPass = useCallback(async (entry, { chain = false } = {}) => {
     const providerId = entry.providerId || model.defaultProvider?.providerId || "upstash";
     const productId = entry.productId || model.defaultProvider?.productId || "upstash-qstash";
@@ -204,8 +449,6 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     if (!r.ok) {
       return { ok: false, message: `${entry.name}: blocked — ${(r.blockingNodes?.[0]?.helperAction) || (r.deltaTags || []).join(", ")}` };
     }
-    // The resume chain is a MUTATION — only the per-card human click passes
-    // chain:true; the auto-recovery pass never does.
     if (chain && entry.recovery?.then === "resume") {
       const resume = await fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, action: "resume" }) });
       const resumeData = await resume.json().catch(() => ({}));
@@ -234,9 +477,6 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     }
   }, [runRecoveryPass, onConfigRefresh]);
 
-  // Auto-recovery: exactly model.autoRecoveryTargets (the cards the breached
-  // auto-approved findings cover), readiness-only, sequential (a governed
-  // pass, not a burst), aggregating every outcome so no failure is masked.
   const runAutoRecovery = useCallback(async () => {
     setError("");
     setNotice("");
@@ -250,7 +490,7 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
       const failed = outcomes.filter((o) => !o.ok);
       if (failed.length) setError(failed.map((o) => o.message).join(" · "));
       const passed = outcomes.filter((o) => o.ok);
-      if (passed.length) setNotice(`${passed.length}/${outcomes.length} readiness rescans complete.`);
+      if (passed.length) setNotice(`${passed.length}/${outcomes.length} readiness checks complete.`);
       setDeriveTick((t) => t + 1);
       if (typeof onConfigRefresh === "function") onConfigRefresh();
     } finally {
@@ -262,14 +502,13 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     const action = finding.nextAction || {};
     if (action.handoff === "settings-apps") { window.location.assign("/settings/apps"); return; }
     if (action.handoff === "settings-env") { window.location.assign("/settings"); return; }
-    if (action.handoff === "data-model") { window.location.assign("/data-model"); return; }
+    if (action.handoff === "data-model") { setActiveTab("policies"); return; }
     if (action.handoff === "ceo-cockpit" && typeof onOpenCeo === "function") { onOpenCeo(); return; }
     if (action.handoff === "add-ons-schedule-route") {
-      // Run the promised read-only rescans over the finding's own targets.
       const targets = (action.targetCardIds || [])
         .map((id) => model.heartbeats.find((h) => h.cardId === id))
         .filter(Boolean);
-      if (!targets.length) { setNotice(`${finding.policyId}: no affected workflow cards to rescan.`); return; }
+      if (!targets.length) { setNotice(`${finding.policyId}: no affected workflows to check.`); return; }
       setError("");
       setNotice("");
       setBusyId(finding.policyId);
@@ -281,7 +520,7 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
         }
         const failed = outcomes.filter((o) => !o.ok);
         if (failed.length) setError(failed.map((o) => o.message).join(" · "));
-        else setNotice(`${finding.policyId}: ${outcomes.length} readiness rescan${outcomes.length === 1 ? "" : "s"} complete.`);
+        else setNotice(`${finding.policyId}: ${outcomes.length} readiness check${outcomes.length === 1 ? "" : "s"} complete.`);
         setDeriveTick((t) => t + 1);
         if (typeof onConfigRefresh === "function") onConfigRefresh();
       } finally {
@@ -289,7 +528,7 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
       }
       return;
     }
-    setNotice(action.explain || finding.message);
+    setNotice(finding.plain?.actionOutcome || finding.message);
   }, [model.heartbeats, runRecoveryPass, onConfigRefresh, onOpenCeo]);
 
   const seedFromAction = useCallback((action) => {
@@ -302,11 +541,20 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     openWorkflowCanvas(entry);
   }, [onOpenArtifact]);
 
-  const filtered = model.heartbeats.filter((h) => matchesFilter(h, activeFilter));
-  const attentionEntry = model.attention?.kind === "heartbeat" ? model.attention.heartbeat : null;
-  const others = attentionEntry ? filtered.filter((h) => h.cardId !== attentionEntry.cardId) : filtered;
-  const visible = others.slice(0, PULSE_VISIBLE_CAP);
-  const overflow = others.length - visible.length;
+  const text = search.trim().toLowerCase();
+  const filtered = model.heartbeats.filter(
+    (h) => matchesFilter(h, activeFilter)
+      && (!text || h.name.toLowerCase().includes(text) || h.statusLabel.toLowerCase().includes(text) || h.triggerKind.toLowerCase().includes(text)),
+  );
+  const visible = filtered.slice(0, PULSE_VISIBLE_CAP);
+  const overflow = filtered.length - visible.length;
+
+  const TABS = [
+    { id: "attention", label: model.findings.length > 0 || model.attention ? "Attention" : "Attention" },
+    { id: "checks", label: "Checks" },
+    { id: "policies", label: "Policies" },
+    { id: "report", label: "Report" },
+  ];
 
   return (
     <div className="dm-swarm-cockpit" data-pulse-cockpit="" data-pulse-mode={model.policySetupState === "none" ? "no-policy" : "operational"}>
@@ -314,37 +562,23 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
         <span className="dm-run-console__hint">
           {`${model.counts.workflows} workflow${model.counts.workflows === 1 ? "" : "s"} · ${model.counts.stalled} stalled · ${model.counts.failed} failed · ${model.counts.healthy} healthy`}
         </span>
-        {model.governance.blockedAttempts > 0 && (
-          <span className="dm-run-console__hint" title="Blocked governance attempts in the outcome stream">
-            {`${model.governance.blockedAttempts} blocked attempt${model.governance.blockedAttempts === 1 ? "" : "s"}`}
-          </span>
-        )}
-      </div>
-
-      <div className="dm-swarm-section-row">
         <span className="dm-run-console__hint" data-pulse-proof="">
-          {model.pulseProof.workflowFound
-            ? `Pulse beat: ${model.pulseProof.lastBeatAt || "no successful beat yet"} (${model.pulseProof.state})`
-            : "No workspace-pulse heartbeat workflow yet."}
+          {model.pulseProof.workflowFound ? `Heartbeat: ${model.pulseProof.state}` : "No heartbeat yet"}
         </span>
-        {model.deployment.projects > 0 && (
-          <span className="dm-run-console__hint">
-            {`${model.deployment.live} live deployment${model.deployment.live === 1 ? "" : "s"}${model.deployment.errored ? ` · ${model.deployment.errored} errored` : ""}`}
-          </span>
-        )}
       </div>
 
-      <div className="dm-schedule-filters" role="tablist" aria-label="Pulse filters">
-        {model.filters.map((f) => (
+      <div className="dm-ceo-tabs dm-pulse-tabs" role="tablist" aria-label="Pulse cockpit sections">
+        {TABS.map((t) => (
           <button
-            key={f.id}
+            key={t.id}
             type="button"
             role="tab"
-            aria-selected={activeFilter === f.id}
-            className={`dm-schedule-filter${activeFilter === f.id ? " is-active" : ""}`}
-            onClick={() => setActiveFilter(f.id)}
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "is-active" : ""}
+            data-pulse-tab={t.id}
+            onClick={() => setActiveTab(t.id)}
           >
-            {`${f.label} ${f.count}`}
+            {t.label}
           </button>
         ))}
       </div>
@@ -352,79 +586,69 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
       {error && <div className="dm-helper-error" role="alert"><span>{error}</span></div>}
       {notice && !error && <p className="dm-run-console__hint" data-pulse-notice="">{notice}</p>}
 
-      {model.policySetupState === "none" && (
-        <div className="dm-helper-toolcall dm-swarm-card">
-          <div className="dm-swarm-card-head">
-            <span className="dm-run-console__tree-dot" data-variant="pending" />
-            <span className="dm-helper-toolcall-title dm-swarm-card-title">No workspace policies yet</span>
-          </div>
-          <div className="dm-helper-stream dm-swarm-card-desc">
-            Heartbeat sensing runs without setup. Add rows to a custom
-            &quot;workspace-policy&quot; object (rules, thresholds, your use-case goal)
-            to turn sensing into governed findings — autoApprove may only
-            authorize safe read-only recovery.
-          </div>
-          <div className="dm-schedule-card-actions">
-            {typeof onSeedProposal === "function" && (
-              <button
-                type="button"
-                className="dm-btn-ghost"
-                onClick={() => onSeedProposal("Create a custom business object named \"workspace-policy\" with columns ruleKind, threshold, severity, autoApprove, enabled, goal, description — rows will hold my pulse rules and use-case goal:", "create_object")}
-              >
-                Propose policy object
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {model.autoRecoveryTargets.length > 0 && (
-        <div className="dm-schedule-card-actions">
-          <button type="button" className="dm-btn-ghost" onClick={runAutoRecovery} disabled={Boolean(busyId)} title="Read-only readiness rescans over the cards your auto-approved policies cover — never resumes or mutates">
-            {`Run safe auto-recovery (${model.autoRecoveryTargets.length})`}
-          </button>
-        </div>
-      )}
-
-      {model.findings.length > 0 && (
+      {tab === "attention" && (
         <>
-          <span className="dm-field-label">Policy findings</span>
-          <div className="dm-ceo-report-list" data-pulse-findings="">
-            {model.findings.map((finding) => (
-              <FindingCard
-                key={`${finding.policyId}::${finding.ruleKind}`}
-                finding={finding}
-                onRecoverFinding={recoverFinding}
-                onSeed={seedFromAction}
-                busy={Boolean(busyId)}
-              />
+          {model.autoRecoveryTargets.length > 0 && (
+            <div className="dm-schedule-card-actions">
+              <button type="button" className="dm-btn-ghost" onClick={runAutoRecovery} disabled={Boolean(busyId)} title="Read-only readiness checks over the workflows your auto-approved rules cover — never resumes or mutates">
+                {`Run safe auto-recovery (${model.autoRecoveryTargets.length})`}
+              </button>
+            </div>
+          )}
+          <AttentionView
+            model={model}
+            busyId={busyId}
+            onRecover={recoverHeartbeat}
+            onOpen={onOpen}
+            onDelegate={seedFromAction}
+            onRecoverFinding={recoverFinding}
+            onSeed={seedFromAction}
+          />
+        </>
+      )}
+
+      {tab === "checks" && (
+        <div className="dm-pulse-section">
+          <div className="dm-schedule-search">
+            <Search size={13} aria-hidden="true" />
+            <input
+              value={search}
+              placeholder="Search workflows or status"
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search pulse checks"
+            />
+          </div>
+          <div className="dm-schedule-filters" role="tablist" aria-label="Pulse filters">
+            {model.filters.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={activeFilter === f.id}
+                className={`dm-schedule-filter${activeFilter === f.id ? " is-active" : ""}`}
+                onClick={() => setActiveFilter(f.id)}
+              >
+                {`${f.label} ${f.count}`}
+              </button>
             ))}
           </div>
-        </>
-      )}
-
-      {attentionEntry && (
-        <>
-          <span className="dm-field-label">Needs your attention</span>
-          <HeartbeatCard entry={attentionEntry} onRecover={recoverHeartbeat} busy={busyId === attentionEntry.cardId} onOpen={onOpen} />
-        </>
-      )}
-
-      {others.length > 0 ? (
-        <>
-          <span className="dm-run-console__hint">Heartbeats</span>
           <div className="dm-ceo-report-list" data-pulse-list="">
             {visible.map((entry) => (
-              <HeartbeatCard key={entry.cardId} entry={entry} onRecover={recoverHeartbeat} busy={busyId === entry.cardId} onOpen={onOpen} />
+              <HeartbeatCard key={entry.cardId} entry={entry} onRecover={recoverHeartbeat} busy={busyId === entry.cardId} onOpen={onOpen} onDelegate={seedFromAction} />
             ))}
           </div>
           {overflow > 0 && (
-            <span className="dm-run-console__hint">{`Showing ${visible.length} of ${others.length} — refine with filters.`}</span>
+            <span className="dm-run-console__hint">{`Showing ${visible.length} of ${filtered.length} — refine with search or filters.`}</span>
           )}
-        </>
-      ) : (
-        !attentionEntry && <p className="dm-run-console__hint">No workflows match this filter.</p>
+          {filtered.length === 0 && <p className="dm-run-console__hint">No workflows match.</p>}
+        </div>
       )}
+
+      {tab === "policies" && (
+        <PoliciesView model={model} workspaceConfig={workspaceConfig} onConfigRefresh={onConfigRefresh} onSeed={seedFromAction} />
+      )}
+
+      {tab === "report" && <ReportView model={model} onSeed={seedFromAction} />}
     </div>
   );
 }

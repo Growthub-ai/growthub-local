@@ -178,12 +178,7 @@ try {
   record("reality: tampered auth is rejected (401), nothing executes", bad.status === 401, `HTTP ${bad.status}`);
 
   /* ---------------- REWARD: the loop closes green ---------------- */
-  await openPulseCockpit(page, "04-pulse-reward-healthy.png");
-
-  const recovered = page.locator('[data-pulse-card="stuck-workflow"]');
-  record("reward: the recovered workflow reads healthy in the pulse",
-    (await recovered.count()) > 0 && (await recovered.first().getAttribute("data-pulse-state")) === "healthy",
-    String(await recovered.first().getAttribute("data-pulse-state")));
+  await openPulseCockpit(page, null);
 
   const countsAfter = await page.locator("[data-pulse-cockpit] .dm-run-console__hint").first().innerText();
   record("reward: stalled count returns to 0", countsAfter.includes("0 stalled"), countsAfter);
@@ -193,6 +188,44 @@ try {
 
   record("reward: the beat finding persists (the pulse still wants its heartbeat workflow)",
     (await page.locator('[data-pulse-finding="beat"]').count()) === 1);
+
+  // The fleet lives on the Checks tab — search + real-state filters at scale.
+  await page.locator('[data-pulse-tab="checks"]').click();
+  await page.waitForSelector("[data-pulse-list]", { timeout: 10000 });
+  const recovered = page.locator('[data-pulse-list] [data-pulse-card="stuck-workflow"]');
+  record("reward: the recovered workflow reads Healthy in Checks",
+    (await recovered.count()) > 0 && (await recovered.first().getAttribute("data-pulse-state")) === "healthy",
+    String(await recovered.first().getAttribute("data-pulse-state")));
+  await page.locator(".dm-schedule-search input").fill("stuck");
+  record("reward: search narrows the fleet to the matching workflow",
+    (await page.locator("[data-pulse-list] [data-pulse-card]").count()) === 1);
+  await shot(page, "04-pulse-reward-healthy.png");
+
+  // Policies tab: the rules table is the atomic workspace-policy object.
+  await page.locator('[data-pulse-tab="policies"]').click();
+  await page.waitForSelector("[data-pulse-policies]", { timeout: 10000 });
+  record("policies: the human rules render from the atomic policy rows",
+    (await page.locator('[data-pulse-policy="no-stalls"]').count()) === 1
+    && (await page.getByRole("button", { name: "New rule" }).count()) === 1);
+
+  // Gear editor → Save writes the SAME atomic workspace-policy row through
+  // the governed PATCH lane (no side store).
+  await page.locator('[data-pulse-policy="no-stalls"] .dm-swarm-card-action').click();
+  await page.waitForSelector("[data-pulse-policy-editor]", { timeout: 10000 });
+  await page.locator('[data-pulse-policy-editor] input[type="number"]').fill("0");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.waitForFunction(() => document.body.innerText.includes("evaluates it on the next beat"), null, { timeout: 15000 });
+  record("policies: gear editor saves drafts to the atomic policy row via the governed PATCH lane", true);
+  await shot(page, "05-pulse-policies-table.png");
+
+  // Report tab: daily digest + the self-run checklist with governed seeds.
+  await page.locator('[data-pulse-tab="report"]').click();
+  await page.waitForSelector("[data-pulse-report]", { timeout: 10000 });
+  const selfRunSteps = await page.locator("[data-pulse-selfrun]").count();
+  record("report: daily digest renders the self-run checklist", selfRunSteps === 5, `${selfRunSteps} steps`);
+  record("report: the missing heartbeat step offers its governed seed",
+    (await page.locator('[data-pulse-selfrun="heartbeat"] button', { hasText: "Propose heartbeat" }).count()) === 1);
+  await shot(page, "06-pulse-report-selfrun.png");
 } finally {
   await browser.close();
 }

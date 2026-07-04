@@ -9965,3 +9965,14 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   box-sizing: border-box;
 }
 .dm-inbound-test-modal .dm-inbound-example .dm-json-tree { max-height: 180px; overflow-y: auto; scrollbar-gutter: stable; }
+
+/* ---- Pulse cockpit (governed /pulse view) — scoped, reuses dm-* tokens ---- */
+.dm-pulse-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dm-pulse-section { display: flex; flex-direction: column; gap: 8px; }
+.dm-pulse-card { overflow: hidden; }
+.dm-pulse-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dm-pulse-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dm-pulse-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dm-pulse-editor-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 600; color: #6b7280; min-width: 0; }
+.dm-pulse-editor-grid input, .dm-pulse-editor-grid select { min-height: 28px; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 12px; color: #111827; background: #fff; }
+.dm-pulse-editor-wide { grid-column: 1 / -1; }
