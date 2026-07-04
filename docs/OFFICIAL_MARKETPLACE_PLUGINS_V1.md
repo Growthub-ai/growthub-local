@@ -221,8 +221,11 @@ Journey contract:
 
 ## V1 Provider: Supabase
 
-Supabase is the third official marketplace provider and the first on the
-database-operations lane (`workspace-data`).
+Supabase is the third official marketplace provider, the first on the
+database-operations lane (`workspace-data`), and the first to ship **two
+products on one account** (the Upstash multi-product pattern): Supabase
+Postgres (PostgREST) on the `workspace-data` lane and Supabase Storage
+(Global CDN) on the `workspace-storage` lane.
 
 Provider:
 
@@ -379,11 +382,15 @@ flowchart LR
   B --> C["serverless-scheduler"]
   B --> D["inbound-webhook"]
   B --> E["api-request"]
+  B --> J["workspace-data"]
+  B --> K["workspace-storage"]
   B --> F["future provider/native lane"]
 
   C --> G["scheduler cores + provider adapter"]
   D --> H["inbound invocation cores"]
   E --> H
+  J --> L["governed data door (/data) + external-sync core"]
+  K --> M["governed storage door (/storage) + buckets core"]
   F --> I["lane-specific governed core"]
 ```
 
@@ -394,6 +401,11 @@ Current rules:
 - `inbound-webhook` and `api-request` products are native workflow input
   methods. They use the inbound invocation cores and the workspace destination
   door, not QStash scheduler controls.
+- `workspace-data` products (Supabase Postgres) use the governed data door
+  (`/api/workspace/add-ons/[providerId]/data`) and the external-sync core.
+- `workspace-storage` products (Supabase Storage) use the governed storage
+  door (`/api/workspace/add-ons/[providerId]/storage`) and the buckets core,
+  gated on a connected provider + a linked `workspace-data` table.
 - `/schedule` remains a scheduler cockpit entry. Webhook and API Request belong
   to the workflow sidecar's input-method flow.
 - Future add-ons should declare their lane and dispatch to a lane-specific
@@ -408,6 +420,8 @@ Marketplace plugins must obey the workspace mutation boundary:
 - schedule operations go through the existing add-on schedule route and remain
   scheduler-lane behavior
 - deployment operations go through the governed add-on deploy route
+- data-sync operations go through the governed add-on data route
+- storage/bucket operations go through the governed add-on storage route
 - receipts are written to `workspace:agent-outcomes`
 - secrets remain server-side
 - UI controls hand off to governed routes, not direct client-side config edits
@@ -430,7 +444,9 @@ The V1 marketplace shape is provider-agnostic. The next expansion points are:
 - marketplace-backed API Registry resource discovery
 - hosted provider account authority when a workspace needs it
 - richer Add-ons Marketplace install receipts and rollback surfaces
-- plugin-specific cockpit lenses for data, retrieval, queue, and cache products
+- more products per provider on their own lanes (the Supabase two-product
+  shape generalizes) surfaced through the governed `/settings/apps` links and
+  Workspace Lens derivation — not per-product cockpits
 
 The invariant stays the same: plugins extend the governed workspace universe;
 they do not bypass it.
