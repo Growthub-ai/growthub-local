@@ -1,0 +1,606 @@
+#!/usr/bin/env node
+/**
+ * Unit coverage for the official Vercel marketplace provider + one-click
+ * deployment product:
+ *   - provider registration shape (bearer account lane, single source of truth)
+ *   - provider account auth resolution (mode, env keys, header, no leakage)
+ *   - product readiness via the canonical readEnvVar contract
+ *   - provider/product registry row shape (env REFS only, never values)
+ *   - project normalization from the /v9/projects payload (non-secret)
+ *   - governed vercel-projects Data Model directory (upsert idempotency,
+ *     extras preservation, relations, schema validity — zero contract change)
+ *   - one-click deploy request builder (git-source lane, redeploy lane,
+ *     actionable failure) and deploy-proof patch merge
+ *   - Upstash regression: the second provider changes nothing for the first
+ *
+ * Pure / offline — no network or runtime dependency.
+ *
+ * Run with:  node --test scripts/unit-workspace-add-ons-vercel.test.mjs
+ */
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const kitLib = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib",
+);
+const kitApp = path.join(
+  here,
+  "..",
+  "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app",
+);
+
+const addOns = await import(pathToFileURL(path.join(kitLib, "workspace-add-ons.js")).href);
+const deployments = await import(pathToFileURL(path.join(kitLib, "workspace-add-on-deployments.js")).href);
+const createApp = await import(pathToFileURL(path.join(kitLib, "workspace-add-on-create-app.js")).href);
+const schema = await import(pathToFileURL(path.join(kitLib, "workspace-schema.js")).href);
+
+const {
+  MARKETPLACE_PROVIDERS,
+  VERCEL_DEPLOYMENTS_INTEGRATION_ID,
+  VERCEL_PROJECTS_OBJECT_ID,
+  findVercelProjectRow,
+  findVercelProjectRowByGitRepo,
+  findVercelProjectsObject,
+  getMarketplaceProvider,
+  getVercelProduct,
+  listProviderProductReadiness,
+  makeMarketplaceProviderRow,
+  makeVercelProductRow,
+  makeVercelProjectRow,
+  providerAccountAuthMode,
+  providerAccountEnvKeys,
+  resolveProviderAccountAuth,
+  withMarketplaceProductRegistry,
+  withMarketplaceProviderRegistry,
+  withVercelProjectPatch,
+  withVercelProjectsDirectory,
+} = addOns;
+
+const {
+  buildVercelDeployRequest,
+  normalizeVercelDeployment,
+  normalizeVercelProject,
+  pickVercelProjects,
+  resolveVercelAccountAuth,
+  resolveVercelApiBaseUrl,
+  vercelDeployProofPatch,
+  withVercelQuery,
+} = deployments;
+
+const SAMPLE_PROJECT_PAYLOAD = {
+  projects: [
+    {
+      id: "prj_123",
+      name: "marketing-site",
+      framework: "nextjs",
+      link: { type: "github", repoId: 4242, org: "acme", repo: "marketing-site", productionBranch: "main" },
+      latestDeployments: [{ uid: "dpl_9", url: "marketing-site-abc.vercel.app", readyState: "READY" }],
+    },
+    { id: "prj_456", name: "docs", framework: "astro", latestDeployments: [] },
+  ],
+};
+
+/* ---------- provider registration shape ---------- */
+test("vercel provider is registered parallel to upstash with a bearer account lane", () => {
+  const vercel = getMarketplaceProvider("vercel");
+  assert.ok(vercel, "vercel provider missing from MARKETPLACE_PROVIDERS");
+  assert.equal(vercel.integrationId, "vercel-provider");
+  assert.equal(providerAccountAuthMode(vercel), "bearer");
+  assert.deepEqual(providerAccountEnvKeys(vercel), ["VERCEL_TOKEN"]);
+  assert.equal(vercel.baseUrl, "https://api.vercel.com");
+  const tokenField = vercel.accountSetupFields.find((field) => field.credentialRole === "bearerToken");
+  assert.ok(tokenField, "bearer token setup field missing");
+  assert.equal(tokenField.envRef, "VERCEL_TOKEN");
+  assert.equal(tokenField.type, "password");
+  // upstash keeps its basic lane untouched
+  assert.equal(providerAccountAuthMode(getMarketplaceProvider("upstash")), "basic");
+  assert.deepEqual(providerAccountEnvKeys(getMarketplaceProvider("upstash")), ["UPSTASH_EMAIL", "UPSTASH_API_KEY"]);
+});
+
+test("external marketplace providers resolve a usable account auth mode; native providers may be accountless", () => {
+  for (const provider of MARKETPLACE_PROVIDERS) {
+    if (provider.executionLane === "workspace-provider" && provider.connectorKind === "growthub-inbound-provider") {
+      assert.equal(providerAccountAuthMode(provider), "none", `${provider.providerId} is workspace-native`);
+      continue;
+    }
+    assert.notEqual(providerAccountAuthMode(provider), "none", `${provider.providerId} has no account lane`);
+  }
+});
+
+/* ---------- account auth resolution ---------- */
+test("resolveProviderAccountAuth resolves the bearer lane without leaking beyond the header", () => {
+  const vercel = getMarketplaceProvider("vercel");
+  const missing = resolveProviderAccountAuth(vercel, {});
+  assert.equal(missing.ready, false);
+  assert.deepEqual(missing.missingEnv, ["VERCEL_TOKEN"]);
+  assert.equal(missing.header, null);
+
+  const ready = resolveProviderAccountAuth(vercel, { VERCEL_TOKEN: "tok_secret", VERCEL_TEAM_ID: "team_1" });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.mode, "bearer");
+  assert.equal(ready.header, "Bearer tok_secret");
+  assert.equal(ready.teamId, "team_1");
+  assert.deepEqual(ready.resolvedEnv, ["VERCEL_TOKEN"]);
+  // secret appears ONLY in header — the serializable evidence fields are key names
+  for (const value of [...ready.requiredEnv, ...ready.resolvedEnv, ...ready.missingEnv]) {
+    assert.ok(!String(value).includes("tok_secret"));
+  }
+});
+
+test("resolveVercelAccountAuth mirrors the provider contract from concrete env keys", () => {
+  const auth = resolveVercelAccountAuth({ VERCEL_TOKEN: "abc", VERCEL_TEAM_ID: "team_9" });
+  assert.equal(auth.ready, true);
+  assert.equal(auth.header, "Bearer abc");
+  assert.equal(auth.teamId, "team_9");
+  assert.deepEqual(resolveVercelAccountAuth({}).missingEnv, ["VERCEL_TOKEN"]);
+});
+
+/* ---------- product readiness ---------- */
+test("vercel product readiness resolves through the canonical env contract", () => {
+  const notReady = listProviderProductReadiness("vercel", {});
+  assert.equal(notReady.length, 1);
+  assert.equal(notReady[0].productId, "vercel-deployments");
+  assert.equal(notReady[0].configured, false);
+  assert.deepEqual(notReady[0].missingEnv, ["VERCEL_TOKEN"]);
+
+  const ready = listProviderProductReadiness("vercel", { VERCEL_TOKEN: "x", VERCEL_TEAM_ID: "t" });
+  assert.equal(ready[0].configured, true);
+  assert.deepEqual(ready[0].configuredOptionalEnv, ["VERCEL_TEAM_ID"]);
+});
+
+test("vercel product probe declares a static base fallback and bearer token env", () => {
+  const product = getVercelProduct("vercel-deployments");
+  assert.equal(product.probe.tokenEnv, "VERCEL_TOKEN");
+  assert.equal(product.probe.fallbackBaseUrl, "https://api.vercel.com");
+  assert.deepEqual(product.probe.paths, ["/v9/projects"]);
+  assert.equal(product.resourceDiscovery.auth, "provider-bearer");
+  assert.deepEqual(product.resourceDiscovery.envFromResource, []);
+});
+
+/* ---------- registry rows: refs only, never values ---------- */
+test("provider and product registry rows persist env refs only", () => {
+  const providerRow = makeMarketplaceProviderRow("vercel", {
+    syncResult: { ok: true, testedAt: "2026-07-02T00:00:00Z", proof: "probe ok", resolvedEnv: ["VERCEL_TOKEN"] },
+  });
+  assert.equal(providerRow.integrationId, "vercel-provider");
+  assert.equal(providerRow.requiredEnv, "VERCEL_TOKEN");
+  assert.equal(providerRow.providerAccountRequiredEnv, "VERCEL_TOKEN");
+  assert.equal(providerRow.syncStatus, "verified");
+
+  const productRow = makeVercelProductRow({ syncResult: { ok: true, testedAt: "t", proof: "p" } });
+  assert.equal(productRow.integrationId, VERCEL_DEPLOYMENTS_INTEGRATION_ID);
+  assert.equal(productRow.requiredEnv, "VERCEL_TOKEN");
+  assert.equal(productRow.schemaVersion, "growthub-marketplace-vercel-v1");
+  assert.equal(productRow.baseUrl, "https://api.vercel.com");
+  const serialized = JSON.stringify({ providerRow, productRow });
+  assert.ok(!serialized.includes("tok_secret"));
+});
+
+test("withMarketplaceProductRegistry routes vercel installs and preserves upstash behavior", () => {
+  let config = { dataModel: { objects: [] } };
+  config = withMarketplaceProviderRegistry(config, { providerId: "vercel", syncResult: { ok: true, testedAt: "t", proof: "p" } });
+  config = withMarketplaceProductRegistry(config, { providerId: "vercel", productId: "vercel-deployments", syncResult: { ok: true, testedAt: "t", proof: "p" } });
+  const registry = config.dataModel.objects.find((object) => object.id === "api-registry");
+  const integrationIds = registry.rows.map((row) => row.integrationId);
+  assert.ok(integrationIds.includes("vercel-provider"));
+  assert.ok(integrationIds.includes("vercel-deployments"));
+  // idempotent re-sync updates in place, no duplicate rows
+  const again = withMarketplaceProductRegistry(config, { providerId: "vercel", productId: "vercel-deployments", syncResult: { ok: true, testedAt: "t2", proof: "p2" } });
+  const rows = again.dataModel.objects.find((object) => object.id === "api-registry").rows
+    .filter((row) => row.integrationId === "vercel-deployments");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].syncCheckedAt, "t2");
+  // unknown provider unchanged (existing contract)
+  const unchanged = withMarketplaceProductRegistry(config, { providerId: "other", productId: "x" });
+  assert.deepEqual(unchanged, config);
+});
+
+/* ---------- project normalization ---------- */
+test("normalizeVercelProject keeps non-secret routing metadata only", () => {
+  const [raw] = pickVercelProjects(SAMPLE_PROJECT_PAYLOAD);
+  const project = normalizeVercelProject(raw);
+  assert.equal(project.id, "prj_123");
+  assert.equal(project.gitProvider, "github");
+  assert.equal(project.gitRepo, "acme/marketing-site");
+  assert.equal(project.gitRepoId, "4242");
+  assert.equal(project.gitBranch, "main");
+  assert.equal(project.latestDeploymentId, "dpl_9");
+  assert.equal(project.latestDeploymentUrl, "https://marketing-site-abc.vercel.app");
+  assert.equal(project.latestDeploymentState, "READY");
+  assert.equal(normalizeVercelProject(null), null);
+  assert.equal(normalizeVercelProject({}), null);
+});
+
+test("withVercelQuery appends params deterministically and skips blanks", () => {
+  assert.equal(withVercelQuery("https://api.vercel.com/v9/projects", { teamId: "" }), "https://api.vercel.com/v9/projects");
+  assert.equal(withVercelQuery("https://api.vercel.com/v9/projects", { teamId: "t 1" }), "https://api.vercel.com/v9/projects?teamId=t%201");
+  assert.equal(withVercelQuery("https://x/y?a=1", { b: "2" }), "https://x/y?a=1&b=2");
+  assert.equal(resolveVercelApiBaseUrl({ VERCEL_API_URL: "https://proxy.example.com/" }), "https://proxy.example.com");
+  assert.equal(resolveVercelApiBaseUrl({}), "https://api.vercel.com");
+});
+
+/* ---------- governed vercel-projects directory ---------- */
+function linkedConfig() {
+  const projects = pickVercelProjects(SAMPLE_PROJECT_PAYLOAD).map((item) => normalizeVercelProject(item));
+  return withVercelProjectsDirectory({ dataModel: { objects: [] } }, { projects, linkedAt: "2026-07-02T00:00:00Z" });
+}
+
+test("withVercelProjectsDirectory creates one atomic custom-object row per project", () => {
+  const config = linkedConfig();
+  const object = findVercelProjectsObject(config);
+  assert.ok(object, "vercel-projects object missing");
+  assert.equal(object.objectType, "custom");
+  assert.equal(object.rows.length, 2);
+  const row = findVercelProjectRow(config, "prj_123");
+  assert.equal(row.Name, "marketing-site");
+  assert.equal(row.registryId, VERCEL_DEPLOYMENTS_INTEGRATION_ID);
+  assert.equal(row.connectorKind, "vercel-project");
+  assert.equal(row.linkedAt, "2026-07-02T00:00:00Z");
+  // relations reuse the existing reference primitive
+  const relationTargets = object.relations.map((relation) => relation.targetObjectType).sort();
+  assert.deepEqual(relationTargets, ["api-registry", "sandbox-environment"]);
+  const workflowRelation = object.relations.find((relation) => relation.targetObjectType === "sandbox-environment");
+  assert.equal(workflowRelation.field, "linkedWorkflowRef");
+});
+
+test("guided create-app repo step creates the same governed row before Vercel project exists", () => {
+  let config = withVercelProjectsDirectory({ dataModel: { objects: [] } }, {
+    linkedAt: "2026-07-03T00:00:00Z",
+    projects: [{
+      name: "growthub-workspace-app",
+      gitProvider: "github",
+      gitRepo: "antonioromero1220/growthub-workspace-app",
+      gitRepoId: 12345,
+      gitBranch: "main",
+      gitRepoUrl: "https://github.com/antonioromero1220/growthub-workspace-app",
+    }],
+  });
+  let row = findVercelProjectRowByGitRepo(config, "antonioromero1220/growthub-workspace-app");
+  assert.equal(row.status, "repo-created");
+  assert.equal(row.projectId, "");
+  assert.equal(row.gitRepoUrl, "https://github.com/antonioromero1220/growthub-workspace-app");
+
+  config = withVercelProjectsDirectory(config, {
+    linkedAt: "2026-07-03T00:01:00Z",
+    projects: [{
+      id: "prj_new",
+      name: "growthub-workspace-app",
+      gitProvider: "github",
+      gitRepo: "antonioromero1220/growthub-workspace-app",
+      gitRepoId: 12345,
+      gitBranch: "main",
+    }],
+  });
+  row = findVercelProjectRow(config, "prj_new");
+  assert.equal(row.gitRepo, "antonioromero1220/growthub-workspace-app");
+  assert.equal(findVercelProjectsObject(config).rows.length, 1);
+});
+
+test("directory upsert is idempotent and preserves operator extras + deploy proof", () => {
+  let config = linkedConfig();
+  // operator links a workflow + a deploy lands proof on the row
+  config = withVercelProjectPatch(config, {
+    projectId: "prj_123",
+    patch: { linkedWorkflowRef: "My Flow", lastDeployStatus: "READY", lastDeployProof: "Deployment dpl_9 created." },
+  }).config;
+  // re-link (marketplace refresh) must NOT clobber those fields
+  const refreshed = withVercelProjectsDirectory(config, {
+    projects: [normalizeVercelProject(pickVercelProjects(SAMPLE_PROJECT_PAYLOAD)[0])],
+    linkedAt: "2026-07-03T00:00:00Z",
+  });
+  const row = findVercelProjectRow(refreshed, "prj_123");
+  assert.equal(row.linkedWorkflowRef, "My Flow");
+  assert.equal(row.lastDeployStatus, "READY");
+  assert.equal(row.lastDeployProof, "Deployment dpl_9 created.");
+  assert.equal(row.linkedAt, "2026-07-02T00:00:00Z");
+  assert.equal(findVercelProjectsObject(refreshed).rows.length, 2);
+});
+
+test("linked directory + registry rows validate against the untouched workspace schema", () => {
+  let config = { dataModel: { objects: [] } };
+  config = withMarketplaceProviderRegistry(config, { providerId: "vercel", syncResult: { ok: true, testedAt: "t", proof: "p" } });
+  config = withMarketplaceProductRegistry(config, { providerId: "vercel", productId: "vercel-deployments", syncResult: { ok: true, testedAt: "t", proof: "p" } });
+  config = withVercelProjectsDirectory(config, {
+    projects: pickVercelProjects(SAMPLE_PROJECT_PAYLOAD).map((item) => normalizeVercelProject(item)),
+    linkedAt: "2026-07-02T00:00:00Z",
+  });
+  // validateWorkspaceConfig throws with error.details on any violation.
+  assert.doesNotThrow(() => schema.validateWorkspaceConfig({ dataModel: config.dataModel }));
+});
+
+/* ---------- one-click deploy request ---------- */
+test("buildVercelDeployRequest prefers the git-source lane with numeric repoId", () => {
+  const project = normalizeVercelProject(pickVercelProjects(SAMPLE_PROJECT_PAYLOAD)[0]);
+  const request = buildVercelDeployRequest({ project, teamId: "team_1" });
+  assert.equal(request.ok, true);
+  assert.equal(request.lane, "git-source");
+  assert.equal(request.url, "https://api.vercel.com/v13/deployments?teamId=team_1&forceNew=1&skipAutoDetectionConfirmation=1");
+  assert.deepEqual(request.body, {
+    name: "marketing-site",
+    project: "prj_123",
+    target: "production",
+    gitSource: { type: "github", repoId: 4242, ref: "main" },
+  });
+});
+
+test("buildVercelDeployRequest falls back to the redeploy lane, then fails actionably", () => {
+  const redeploy = buildVercelDeployRequest({
+    project: { id: "prj_456", name: "docs", latestDeploymentId: "dpl_77" },
+  });
+  assert.equal(redeploy.ok, true);
+  assert.equal(redeploy.lane, "redeploy");
+  assert.deepEqual(redeploy.body, { name: "docs", deploymentId: "dpl_77", target: "production" });
+
+  const blocked = buildVercelDeployRequest({ project: { id: "prj_456", name: "docs" } });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.reason, /git repository|previous deployment/);
+
+  const invalid = buildVercelDeployRequest({ project: {} });
+  assert.equal(invalid.ok, false);
+});
+
+test("deploy proof normalization + patch stay non-secret and merge onto the row", () => {
+  const deployment = normalizeVercelDeployment({ id: "dpl_100", url: "docs-xyz.vercel.app", readyState: "QUEUED", createdAt: 1751414400000 });
+  assert.equal(deployment.deploymentId, "dpl_100");
+  assert.equal(deployment.url, "https://docs-xyz.vercel.app");
+  assert.equal(deployment.createdAt, "2025-07-02T00:00:00.000Z");
+  assert.equal(normalizeVercelDeployment({}), null);
+
+  const patch = vercelDeployProofPatch(deployment, "2026-07-02T00:00:01Z");
+  assert.equal(patch.lastDeployStatus, "QUEUED");
+  assert.equal(patch.latestDeploymentId, "dpl_100");
+  assert.match(patch.lastDeployProof, /dpl_100/);
+
+  const config = linkedConfig();
+  const { config: patched, found } = withVercelProjectPatch(config, { projectId: "prj_456", patch });
+  assert.equal(found, true);
+  assert.equal(findVercelProjectRow(patched, "prj_456").latestDeploymentId, "dpl_100");
+  assert.equal(withVercelProjectPatch(config, { projectId: "missing", patch }).found, false);
+});
+
+/* ---------- source-truth: governed mutation lane (adversarial-review proof) ----------
+ * The canonical lane, identical to the QStash schedule + provider/product sync
+ * routes: readWorkspaceConfig → pure lib helper → writeWorkspaceConfig (the
+ * schema-validating governed write in lib/workspace-config) →
+ * appendOutcomeReceipt. Routes orchestrate only — no side-channel persistence.
+ */
+const VERCEL_ROUTE_FILES = {
+  link: path.join(kitApp, "api/workspace/add-ons/vercel/projects/link/route.js"),
+  deploy: path.join(kitApp, "api/workspace/add-ons/vercel/deploy/route.js"),
+  projects: path.join(kitApp, "api/workspace/add-ons/vercel/projects/route.js"),
+};
+
+test("vercel mutation routes use ONLY the governed workspace-config write lane", () => {
+  for (const key of ["link", "deploy"]) {
+    const source = readFileSync(VERCEL_ROUTE_FILES[key], "utf8");
+    // governed write + receipt lane
+    assert.match(source, /import\s*\{[^}]*readWorkspaceConfig[^}]*writeWorkspaceConfig[^}]*\}\s*from\s*"@\/lib\/workspace-config"/, `${key}: must import the governed config read/write`);
+    assert.match(source, /appendOutcomeReceipt/, `${key}: must emit outcome receipts`);
+    assert.match(source, /requireWorkspaceOperator/, `${key}: must gate on the operator auth contract`);
+    // no side-channel persistence: no fs access, no raw config file writes
+    assert.ok(!/node:fs/.test(source), `${key}: routes must not touch the filesystem directly`);
+    assert.ok(!/growthub\.config\.json/.test(source), `${key}: routes must not name the config file`);
+  }
+});
+
+test("vercel-projects rows are created ONLY through the canonical pure helpers", () => {
+  const link = readFileSync(VERCEL_ROUTE_FILES.link, "utf8");
+  const deploy = readFileSync(VERCEL_ROUTE_FILES.deploy, "utf8");
+  // creation/patch goes through lib/workspace-add-ons helpers — the same
+  // module that owns api-registry row creation for Upstash
+  assert.match(link, /withVercelProjectsDirectory/);
+  assert.match(deploy, /withVercelProjectsDirectory/);
+  assert.match(deploy, /withVercelProjectPatch/);
+  // neither route hand-builds a Data Model object literal (columns/rows
+  // construction lives ONLY in the pure lib helpers); receipt objectRefs
+  // naming objectType are fine — they reference, they don't create
+  for (const [key, source] of Object.entries({ link, deploy })) {
+    assert.ok(!/columns:\s*\[/.test(source), `${key}: must not hand-roll Data Model columns in the route`);
+    assert.ok(!/rows:\s*\[/.test(source), `${key}: must not hand-roll Data Model rows in the route`);
+    assert.ok(!/binding:\s*\{/.test(source), `${key}: must not construct object bindings inline`);
+    assert.ok(!/dataModel:\s*\{/.test(source), `${key}: must not construct dataModel shapes inline`);
+  }
+});
+
+test("blocked outcomes carry actionable nextActions in both mutation routes", () => {
+  for (const key of ["link", "deploy"]) {
+    const source = readFileSync(VERCEL_ROUTE_FILES[key], "utf8");
+    assert.match(source, /outcomeStatus:\s*"blocked"/, `${key}: blocked receipts missing`);
+    assert.match(source, /nextActions:\s*\[nextAction\]/, `${key}: blocked receipts must carry next-step guidance`);
+    assert.match(source, /policyVerdict:\s*\{\s*ok:\s*false/, `${key}: blocked receipts must carry a policy verdict`);
+  }
+  // the 409 no-deploy-lane case tells the user exactly how to unblock
+  const deploy = readFileSync(VERCEL_ROUTE_FILES.deploy, "utf8");
+  assert.match(deploy, /Deploy the project once from the Vercel dashboard or CLI/);
+});
+
+test("browser surfaces never call the Vercel API directly", () => {
+  const uiFiles = [
+    path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"),
+    path.join(kitApp, "settings/add-ons/add-ons-client.jsx"),
+    path.join(kitApp, "data-model/components/VercelDeployPanel.jsx"),
+  ];
+  for (const file of uiFiles) {
+    const source = readFileSync(file, "utf8");
+    const fetchTargets = [...source.matchAll(/fetch\(\s*[`"']([^`"']+)/g)].map((match) => match[1]);
+    assert.ok(fetchTargets.length > 0 || !file.endsWith("VercelDeployPanel.jsx"), `${file}: expected at least one governed fetch`);
+    for (const target of fetchTargets) {
+      assert.ok(target.startsWith("/api/workspace/"), `${path.basename(file)}: non-governed fetch target ${target}`);
+    }
+    assert.ok(!/api\.vercel\.com/.test(source), `${path.basename(file)}: must not reference the Vercel API host`);
+  }
+});
+
+test("project discovery never truncates silently (hasMore surfaced)", () => {
+  const projects = readFileSync(VERCEL_ROUTE_FILES.projects, "utf8");
+  const link = readFileSync(VERCEL_ROUTE_FILES.link, "utf8");
+  assert.match(projects, /hasMore/);
+  assert.match(link, /hasMore/);
+  const marketplace = readFileSync(path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"), "utf8");
+  assert.match(marketplace, /hasMore/);
+});
+
+/* ---------- guided create-app: pure helpers ---------- */
+const {
+  actionableGithubError,
+  actionableVercelProjectError,
+  buildGithubRepoCreateRequest,
+  buildGithubSeedRequest,
+  buildVercelProjectCreateRequest,
+  deriveCreateAppChecklist,
+  normalizeGithubRepo,
+  resolveGithubAccountAuth,
+  slugifyRepoName,
+  starterAppFiles,
+} = createApp;
+
+test("github account auth resolves the env ref without leaking beyond the header", () => {
+  const missing = resolveGithubAccountAuth({});
+  assert.equal(missing.ready, false);
+  assert.deepEqual(missing.missingEnv, ["GITHUB_TOKEN"]);
+  assert.equal(missing.header, null);
+  const ready = resolveGithubAccountAuth({ GITHUB_TOKEN: "ghp_secret" });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.header, "Bearer ghp_secret");
+  for (const value of [...ready.requiredEnv, ...ready.resolvedEnv]) {
+    assert.ok(!String(value).includes("ghp_secret"));
+  }
+});
+
+test("repo create request is private-by-default and slug-safe, org optional", () => {
+  const personal = buildGithubRepoCreateRequest({ name: "My Production App!" });
+  assert.equal(personal.ok, true);
+  assert.equal(personal.url, "https://api.github.com/user/repos");
+  assert.equal(personal.body.name, "my-production-app");
+  assert.equal(personal.body.private, true);
+  assert.equal(personal.body.auto_init, true);
+  const org = buildGithubRepoCreateRequest({ name: "app", org: "acme-inc" });
+  assert.equal(org.url, "https://api.github.com/orgs/acme-inc/repos");
+  assert.equal(buildGithubRepoCreateRequest({ name: "  " }).ok, false);
+  assert.equal(slugifyRepoName("Hello World v2"), "hello-world-v2");
+});
+
+test("starter files seed a real page and the seed request targets the contents API", () => {
+  const files = starterAppFiles({ appName: "My App" });
+  assert.equal(files.length, 1);
+  assert.equal(files[0].path, "index.html");
+  const html = Buffer.from(files[0].contentBase64, "base64").toString("utf8");
+  assert.match(html, /<!doctype html>/);
+  assert.match(html, /My App/);
+  const seed = buildGithubSeedRequest({ repoFullName: "acme/app", file: files[0], branch: "main" });
+  assert.equal(seed.ok, true);
+  assert.equal(seed.url, "https://api.github.com/repos/acme/app/contents/index.html");
+  assert.equal(seed.body.branch, "main");
+  assert.equal(seed.body.content, files[0].contentBase64);
+});
+
+test("vercel project create request links the repo at creation (POST /v11/projects)", () => {
+  const request = buildVercelProjectCreateRequest({ name: "My App", repoFullName: "acme/app", teamId: "team_1" });
+  assert.equal(request.ok, true);
+  assert.equal(request.url, "https://api.vercel.com/v11/projects?teamId=team_1");
+  assert.deepEqual(request.body, {
+    name: "my-app",
+    gitRepository: { type: "github", repo: "acme/app" },
+  });
+  assert.equal(buildVercelProjectCreateRequest({ name: "x" }).ok, false);
+});
+
+test("normalizeGithubRepo keeps non-secret routing metadata only", () => {
+  const repo = normalizeGithubRepo({ id: 4242, full_name: "acme/app", name: "app", owner: { login: "acme" }, html_url: "https://github.com/acme/app", default_branch: "main", private: true });
+  assert.deepEqual(repo, { id: 4242, fullName: "acme/app", name: "app", owner: "acme", htmlUrl: "https://github.com/acme/app", defaultBranch: "main", private: true });
+  assert.equal(normalizeGithubRepo({}), null);
+});
+
+test("failure mapping produces specific actionable guidance, never bare status codes", () => {
+  assert.match(actionableGithubError(403, {}), /repo scope|Contents \+ Administration/);
+  assert.match(actionableGithubError(422, { message: "name already exists on this account" }), /different name/);
+  assert.match(actionableVercelProjectError(403, { error: { message: "git repository access denied" } }), /Vercel GitHub App/);
+  assert.match(actionableVercelProjectError(409, { error: { message: "project already exists" } }), /different name/);
+});
+
+test("checklist derivation is green ONLY on real proof and orders the journey", () => {
+  const empty = deriveCreateAppChecklist({});
+  assert.equal(empty.complete, false);
+  assert.equal(empty.nextStep, "github-account");
+  assert.equal(empty.steps.length, 6);
+  const mid = deriveCreateAppChecklist({
+    github: { connected: true, login: "octocat" },
+    repo: { fullName: "acme/app" },
+    vercel: { connected: true },
+  });
+  assert.equal(mid.nextStep, "vercel-project");
+  const done = deriveCreateAppChecklist({
+    github: { connected: true, login: "octocat" },
+    repo: { fullName: "acme/app" },
+    vercel: { connected: true },
+    project: { id: "prj_1", name: "app" },
+    deployment: { deploymentId: "dpl_1", readyState: "READY", url: "https://app.vercel.app" },
+    published: true,
+  });
+  assert.equal(done.complete, true);
+  // no optimistic states: a claimed-but-proofless deployment stays pending
+  const fake = deriveCreateAppChecklist({ github: { connected: true }, vercel: { connected: true }, deployment: {} });
+  assert.equal(fake.steps.find((step) => step.id === "initial-deploy").done, false);
+});
+
+/* ---------- guided create-app: validation gate (source truth) ---------- */
+const CREATE_APP_ROUTE_FILES = {
+  githubCredentials: path.join(kitApp, "api/workspace/add-ons/github/credentials/route.js"),
+  preflight: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/route.js"),
+  githubRepo: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/github-repo/route.js"),
+  project: path.join(kitApp, "api/workspace/add-ons/vercel/create-app/project/route.js"),
+};
+
+test("creation steps use the governed Data Model row and keep operator auth + receipts", () => {
+  for (const [key, file] of Object.entries(CREATE_APP_ROUTE_FILES)) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /requireWorkspaceOperator/, `${key}: must gate on the operator auth contract`);
+  }
+  for (const key of ["githubRepo", "project"]) {
+    const source = readFileSync(CREATE_APP_ROUTE_FILES[key], "utf8");
+    assert.match(source, /writeWorkspaceConfig/, `${key}: must persist governed row state`);
+    assert.match(source, /withVercelProjectsDirectory/, `${key}: must use the canonical vercel-projects helper`);
+  }
+  assert.match(readFileSync(CREATE_APP_ROUTE_FILES.preflight, "utf8"), /findVercelProjectsObject/, "preflight must hydrate from the governed row");
+  // mutation steps are receipted; the read-only preflight is not a mutation
+  for (const key of ["githubCredentials", "githubRepo", "project"]) {
+    const source = readFileSync(CREATE_APP_ROUTE_FILES[key], "utf8");
+    assert.match(source, /appendOutcomeReceipt/, `${key}: mutation steps must emit receipts`);
+  }
+  for (const key of ["githubRepo", "project"]) {
+    const source = readFileSync(CREATE_APP_ROUTE_FILES[key], "utf8");
+    assert.match(source, /outcomeStatus:\s*"blocked"/, `${key}: blocked outcomes must be receipted`);
+    assert.match(source, /nextActions:\s*\[nextAction\]/, `${key}: blocked receipts must carry next-step guidance`);
+  }
+});
+
+test("guided flow UI is governed end-to-end (no direct GitHub/Vercel calls, shared checklist)", () => {
+  const source = readFileSync(path.join(kitApp, "components/VercelCreateAppFlow.jsx"), "utf8");
+  const fetchTargets = [...source.matchAll(/(?:fetch|postJson)\(\s*[`"']([^`"']+)/g)].map((match) => match[1]);
+  assert.ok(fetchTargets.length >= 4, "guided flow should call the governed routes");
+  for (const target of fetchTargets) {
+    assert.ok(target.startsWith("/api/workspace/"), `non-governed fetch target ${target}`);
+  }
+  assert.ok(!/api\.vercel\.com|api\.github\.com/.test(source), "must not reference provider API hosts");
+  // progress derives from the pure helper — no hand-rolled optimistic checklist
+  assert.match(source, /deriveCreateAppChecklist/);
+  // the atomic publish gate is the existing governed deploy handler
+  assert.match(source, /onDeployProject/);
+});
+
+/* ---------- upstash regression ---------- */
+test("upstash provider row + readiness are unchanged by the second provider", () => {
+  const row = makeMarketplaceProviderRow("upstash", { syncResult: null });
+  assert.equal(row.requiredEnv, "UPSTASH_EMAIL,UPSTASH_API_KEY");
+  assert.equal(row.providerAccountRequiredEnv, "UPSTASH_EMAIL,UPSTASH_API_KEY");
+  const readiness = listProviderProductReadiness("upstash", { QSTASH_TOKEN: "x" });
+  const qstash = readiness.find((item) => item.productId === "upstash-qstash");
+  assert.equal(qstash.configured, true);
+});

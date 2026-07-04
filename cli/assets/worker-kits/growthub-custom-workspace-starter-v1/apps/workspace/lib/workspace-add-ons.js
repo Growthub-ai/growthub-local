@@ -218,6 +218,51 @@ const GROWTHUB_INBOUND_PRODUCTS = [
     optionalEnv: [],
   },
 ];
+const VERCEL_PROVIDER_INTEGRATION_ID = "vercel-provider";
+const VERCEL_DEPLOYMENTS_INTEGRATION_ID = "vercel-deployments";
+const VERCEL_AUTH_REF = "VERCEL";
+const VERCEL_API_BASE_URL = "https://api.vercel.com";
+const VERCEL_PROJECTS_OBJECT_ID = "vercel-projects";
+const VERCEL_PRODUCTS = [
+  {
+    productId: "vercel-deployments",
+    integrationId: VERCEL_DEPLOYMENTS_INTEGRATION_ID,
+    authRef: VERCEL_AUTH_REF,
+    label: "Vercel Deployments",
+    shortLabel: "Deployments",
+    icon: "▲",
+    iconClass: "is-vercel",
+    iconSrc: "/integrations/vercel/deployments.png",
+    connectorKind: "vercel-deployments",
+    endpoint: "/v13/deployments",
+    method: "POST",
+    description: "One-click Vercel project deployment and management for the governed workspace. Projects register as governed Data Model records; deploys run server-side and write receipt-backed proof onto the owning project row. Secrets stay in env; this row stores only refs and routing metadata.",
+    subtitle: "One-Click Deployment & Management",
+    plans: "Hobby, Pro, Enterprise",
+    entityTypes: "deployment,project,hosting",
+    capabilities: "deployments,project-directory,hosting",
+    executionLane: "workspace-deployments",
+    requiredEnv: ["VERCEL_TOKEN"],
+    optionalEnv: ["VERCEL_TEAM_ID", "VERCEL_API_URL"],
+    consoleUrl: "https://vercel.com/dashboard",
+    probe: {
+      baseUrlEnv: "VERCEL_API_URL",
+      tokenEnv: "VERCEL_TOKEN",
+      teamEnv: "VERCEL_TEAM_ID",
+      paths: ["/v9/projects"],
+      fallbackBaseUrl: VERCEL_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/v9/projects"],
+      emptyLabel: "No Vercel projects returned for this account.",
+      createDividerLabel: "Or create a new project from the Vercel dashboard",
+      // No envFromResource: the account token already authorizes every
+      // project; selecting a resource binds the row, it never writes env.
+      envFromResource: [],
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -288,6 +333,63 @@ const MARKETPLACE_PROVIDERS = [
     capabilities: "provider-account,inbound-invocation,marketplace-products",
     executionLane: "workspace-provider",
     description: "Workspace-native inbound input methods for published governed workflows. No external account: products verify by resolving their signing/invoke env refs in this runtime.",
+  },
+  {
+    providerId: "vercel",
+    integrationId: VERCEL_PROVIDER_INTEGRATION_ID,
+    authRef: VERCEL_AUTH_REF,
+    label: "Vercel",
+    developer: "Vercel",
+    iconSrc: "/integrations/vercel/provider.png",
+    baseUrl: VERCEL_API_BASE_URL,
+    endpoint: "/v9/projects",
+    method: "GET",
+    // Provider/account-management lane (REST API): Authorization Bearer token.
+    // One personal or team access token authorizes account, projects, and
+    // deployments — there is no separate per-product credential.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "VERCEL_TOKEN",
+      teamEnv: "VERCEL_TEAM_ID",
+      // Optional API-base override (self-hosted proxies, offline QA smokes) —
+      // same contract as the product probe's baseUrlEnv.
+      baseUrlEnv: "VERCEL_API_URL",
+      paths: ["/v2/user", "/v2/teams"],
+    },
+    accountSetupFields: [
+      {
+        id: "apiToken",
+        label: "Vercel access token",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "VERCEL_TOKEN",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "teamId",
+        label: "Team ID (optional, for team-scoped tokens)",
+        type: "text",
+        autocomplete: "off",
+        required: false,
+        envRef: "VERCEL_TEAM_ID",
+        credentialRole: "teamScope",
+      },
+    ],
+    consoleUrl: "https://vercel.com/dashboard",
+    accountSetupUrl: "https://vercel.com/account/settings/tokens",
+    supportUrl: "https://vercel.com/help",
+    websiteUrl: "https://vercel.com",
+    docsUrl: "https://vercel.com/docs/rest-api",
+    termsUrl: "https://vercel.com/legal/terms",
+    privacyUrl: "https://vercel.com/legal/privacy-policy",
+    providerProductsLabel: "Deployments (One-Click Deploy, Projects)",
+    products: VERCEL_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "vercel-provider",
+    capabilities: "provider-account,marketplace-products,deployments",
+    executionLane: "workspace-provider",
+    description: "Provider-level Vercel account binding for workspace add-ons. Product rows are installed after this account is verified.",
   },
 ];
 
@@ -782,6 +884,61 @@ function getMarketplaceProvider(providerId) {
   return MARKETPLACE_PROVIDERS.find((provider) => provider.providerId === providerId || provider.integrationId === providerId) || null;
 }
 
+/**
+ * Provider account auth mode: `basic` (email + key, Upstash Developer API) or
+ * `bearer` (single access token, Vercel REST API). Declared on `accountProbe`
+ * so every route resolves the account lane from ONE contract.
+ */
+function providerAccountAuthMode(provider) {
+  const probe = provider?.accountProbe || {};
+  if (probe.authMode === "bearer" && probe.tokenEnv) return "bearer";
+  if (probe.emailEnv && probe.keyEnv) return "basic";
+  return "none";
+}
+
+/** Concrete env keys the provider ACCOUNT lane requires (names only). */
+function providerAccountEnvKeys(provider) {
+  const probe = provider?.accountProbe || {};
+  const mode = providerAccountAuthMode(provider);
+  if (mode === "bearer") return [probe.tokenEnv];
+  if (mode === "basic") return [probe.emailEnv, probe.keyEnv];
+  return [];
+}
+
+/**
+ * Resolve the provider account credential from the run env (server-side only —
+ * `header` carries the secret and must never be persisted or echoed).
+ * Returns { mode, ready, requiredEnv, missingEnv, resolvedEnv, header, teamId }.
+ */
+function resolveProviderAccountAuth(provider, env = process.env) {
+  const source = env && typeof env === "object" ? env : {};
+  const probe = provider?.accountProbe || {};
+  const mode = providerAccountAuthMode(provider);
+  const requiredEnv = providerAccountEnvKeys(provider);
+  const missingEnv = requiredEnv.filter((key) => !readEnvVar(key, source));
+  const resolvedEnv = requiredEnv.filter((key) => Boolean(readEnvVar(key, source)));
+  const teamId = probe.teamEnv ? String(readEnvVar(probe.teamEnv, source)?.value || "").trim() : "";
+  if (mode === "none" || missingEnv.length) {
+    return { mode, ready: false, requiredEnv, missingEnv, resolvedEnv, header: null, teamId };
+  }
+  if (mode === "bearer") {
+    const token = String(readEnvVar(probe.tokenEnv, source)?.value || "").trim();
+    return { mode, ready: Boolean(token), requiredEnv, missingEnv, resolvedEnv, header: token ? `Bearer ${token}` : null, teamId };
+  }
+  const email = String(readEnvVar(probe.emailEnv, source)?.value || "").trim();
+  const key = String(readEnvVar(probe.keyEnv, source)?.value || "").trim();
+  const ready = Boolean(email && key);
+  return {
+    mode,
+    ready,
+    requiredEnv,
+    missingEnv,
+    resolvedEnv,
+    header: ready ? `Basic ${Buffer.from(`${email}:${key}`).toString("base64")}` : null,
+    teamId,
+  };
+}
+
 function listMarketplaceProducts() {
   return MARKETPLACE_PROVIDERS.flatMap((provider) => provider.products.map((product) => ({ ...product, providerId: provider.providerId })));
 }
@@ -802,13 +959,12 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
   // account metadata or a verified probe is persisted.
   const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "setup-required");
   const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const accountEnvKeys = providerAccountEnvKeys(provider);
   return {
     Name: provider.label,
     integrationId: provider.integrationId,
     authRef: provider.authRef,
-    requiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
-      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
-      : "",
+    requiredEnv: accountEnvKeys.join(","),
     optionalEnv: "",
     resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
     baseUrl: provider.baseUrl,
@@ -831,9 +987,7 @@ function makeMarketplaceProviderRow(providerId, { syncResult = null } = {}) {
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
-    providerAccountRequiredEnv: provider.accountProbe?.emailEnv && provider.accountProbe?.keyEnv
-      ? [provider.accountProbe.emailEnv, provider.accountProbe.keyEnv].join(",")
-      : "",
+    providerAccountRequiredEnv: accountEnvKeys.join(","),
     providerAccountOptions: Array.isArray(syncResult?.providerAccountOptions) ? JSON.stringify(syncResult.providerAccountOptions) : "",
     selectedProviderAccountId: syncResult?.selectedProviderAccountId || "",
     selectedProviderAccountLabel: syncResult?.selectedProviderAccountLabel || "",
@@ -944,9 +1098,9 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
     optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
     resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
-    selectedResourceId: "",
-    selectedResourceLabel: "",
-    selectedResourceSource: "",
+    selectedResourceId: syncResult?.selectedResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || "",
+    selectedResourceSource: syncResult?.selectedResourceSource || "",
     baseUrl: syncResult?.baseUrl || "",
     endpoint: product.endpoint,
     method: product.method,
@@ -959,7 +1113,7 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     description: product.description,
     connectorKind: product.connectorKind,
     resolverTemplateId: "",
-    schemaVersion: "growthub-marketplace-product-v1",
+    schemaVersion: providerId === "vercel" ? "growthub-marketplace-vercel-v1" : "growthub-marketplace-product-v1",
     capabilities: product.capabilities,
     executionLane: product.executionLane,
     region: "",
@@ -968,6 +1122,51 @@ function makeMarketplaceProductRow({ providerId, productId, plan = "included", s
     syncStatus,
     syncCheckedAt: testedAt,
     syncProof: syncResult?.proof || (authReady ? `${(product.requiredEnv || []).join(", ")} resolved in runtime env.` : ""),
+    missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
+  };
+}
+
+function getVercelProduct(productId) {
+  return getMarketplaceProduct("vercel", productId);
+}
+
+function makeVercelProductRow({ productId = "vercel-deployments", plan = "hobby", syncResult = null, authReady = false } = {}) {
+  const product = getVercelProduct(productId) || getVercelProduct("vercel-deployments");
+  const testedAt = syncResult?.testedAt || "";
+  const isConnected = syncResult?.ok === true || authReady;
+  const status = syncResult?.status || (isConnected ? "connected" : "draft");
+  const syncStatus = syncResult?.syncStatus || (isConnected ? "verified" : "missing-env");
+  return {
+    Name: product.label,
+    integrationId: product.integrationId,
+    authRef: product.authRef,
+    requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
+    optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
+    selectedResourceId: syncResult?.selectedResourceId || "",
+    selectedResourceLabel: syncResult?.selectedResourceLabel || "",
+    selectedResourceSource: syncResult?.selectedResourceSource || "",
+    baseUrl: syncResult?.baseUrl || VERCEL_API_BASE_URL,
+    endpoint: product.endpoint,
+    method: product.method,
+    status,
+    lastTested: testedAt || (authReady ? "env-ready" : ""),
+    lastResponse: syncResult?.summary || (authReady
+      ? `${product.label} env ref resolves in this runtime.`
+      : `Complete ${product.label} provider setup, then retry sync.`),
+    entityTypes: product.entityTypes,
+    description: product.description,
+    connectorKind: product.connectorKind,
+    resolverTemplateId: "",
+    schemaVersion: "growthub-marketplace-vercel-v1",
+    capabilities: product.capabilities,
+    executionLane: product.executionLane,
+    region: "",
+    productId: product.productId,
+    plan,
+    syncStatus,
+    syncCheckedAt: testedAt,
+    syncProof: syncResult?.proof || "",
     missingEnv: Array.isArray(syncResult?.missingEnv) ? syncResult.missingEnv.join(",") : "",
   };
 }
@@ -1044,9 +1243,47 @@ function withUpstashProductRegistry(workspaceConfig, { productId = "upstash-qsta
   return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
 }
 
+function withVercelProductRegistry(workspaceConfig, { productId = "vercel-deployments", plan = "hobby", syncResult = null, authReady = false } = {}) {
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  const productRow = makeVercelProductRow({ productId, plan, syncResult, authReady });
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isApiRegistryObject(object) || found) return object;
+    found = true;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const hasRow = rows.some((row) => String(row?.integrationId || "").trim() === productRow.integrationId);
+    return {
+      ...object,
+      columns: apiRegistryColumns(object.columns),
+      rows: hasRow
+        ? rows.map((row) => String(row?.integrationId || "").trim() === productRow.integrationId ? { ...row, ...productRow } : row)
+        : [productRow, ...rows],
+    };
+  });
+  if (!found) {
+    nextObjects.push({
+      id: "api-registry",
+      label: "API Registry",
+      name: "API Registry",
+      source: "API Registry",
+      objectType: "api-registry",
+      icon: "Code2",
+      columns: apiRegistryColumns(),
+      rows: [productRow],
+      binding: { mode: "manual", source: "API Registry" },
+      relations: [],
+    });
+  }
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
 function withMarketplaceProductRegistry(workspaceConfig, { providerId, productId, region = "us-east-1", plan = "free", syncResult = null, authReady = false } = {}) {
   if (providerId === "upstash") {
     return withUpstashProductRegistry(workspaceConfig, { productId, region, plan, syncResult, authReady });
+  }
+  if (providerId === "vercel") {
+    return withVercelProductRegistry(workspaceConfig, { productId, plan, syncResult, authReady });
   }
   const productRow = makeMarketplaceProductRow({ providerId, productId, plan, syncResult, authReady });
   return withRegistryProductRowUpsert(workspaceConfig, productRow);
@@ -1095,6 +1332,210 @@ function withUpstashProviderRegistry(workspaceConfig, options = {}) {
 
 function withUpstashSchedulerRegistry(workspaceConfig, { region = "us-east-1", authReady = false } = {}) {
   return withUpstashProductRegistry(workspaceConfig, { productId: "upstash-qstash", region, authReady });
+}
+
+/**
+ * Governed Vercel project directory — one atomic Data Model record per linked
+ * Vercel project, under the EXISTING custom business-object primitive
+ * (objectType `custom`: no schema/contract change; rows carry only non-secret
+ * routing metadata + deploy proof). Relations reuse the existing reference
+ * primitive: `registryId` → the installed Vercel product row (api-registry),
+ * `linkedWorkflowRef` → an owning workflow row (sandbox-environment).
+ */
+const VERCEL_PROJECT_COLUMNS = [
+  "Name",
+  "projectId",
+  "framework",
+  "gitProvider",
+  "gitRepo",
+  "gitRepoId",
+  "gitBranch",
+  "gitRepoUrl",
+  "latestDeploymentId",
+  "latestDeploymentUrl",
+  "latestDeploymentState",
+  "lastDeployRequestedAt",
+  "lastDeployStatus",
+  "lastDeployProof",
+  "dashboardUrl",
+  "registryId",
+  "linkedWorkflowRef",
+  "status",
+  "connectorKind",
+  "linkedAt",
+  "updatedAt",
+  "description",
+];
+
+const VERCEL_PROJECT_RELATIONS = [
+  {
+    id: "vercel-product-binding",
+    name: "Vercel product",
+    field: "registryId",
+    targetObjectType: "api-registry",
+    type: "belongs-to",
+    description: "The installed Vercel Deployments product row (API Registry) whose server-side env refs authorize deploys for this project.",
+    valueField: "integrationId",
+    labelField: "Name",
+    secondaryLabelField: "endpoint",
+    statusField: "status",
+    searchable: true,
+    pageSize: 25,
+  },
+  {
+    id: "vercel-workflow-link",
+    name: "Linked workflow",
+    field: "linkedWorkflowRef",
+    targetObjectType: "sandbox-environment",
+    type: "belongs-to",
+    description: "Optional owning workflow for this project. Link a workflow row to trigger or observe deploys from the same governed record.",
+    valueField: "Name",
+    labelField: "Name",
+    statusField: "status",
+    searchable: true,
+    pageSize: 25,
+  },
+];
+
+/** Pure row mapping from a normalized (non-secret) Vercel project payload. */
+function makeVercelProjectRow(project = {}, extras = {}) {
+  const projectId = String(project.id || project.projectId || "").trim();
+  const name = String(project.name || projectId).trim();
+  return {
+    Name: name,
+    projectId,
+    framework: String(project.framework || "").trim(),
+    gitProvider: String(project.gitProvider || project.link?.type || "").trim(),
+    gitRepo: String(project.gitRepo || (project.link?.org && project.link?.repo ? `${project.link.org}/${project.link.repo}` : "")).trim(),
+    gitRepoId: String(project.gitRepoId ?? project.link?.repoId ?? "").trim(),
+    gitBranch: String(project.gitBranch || project.link?.productionBranch || "").trim(),
+    gitRepoUrl: String(project.gitRepoUrl || project.htmlUrl || "").trim(),
+    latestDeploymentId: String(project.latestDeploymentId || "").trim(),
+    latestDeploymentUrl: String(project.latestDeploymentUrl || "").trim(),
+    latestDeploymentState: String(project.latestDeploymentState || "").trim(),
+    lastDeployRequestedAt: String(extras.lastDeployRequestedAt || "").trim(),
+    lastDeployStatus: String(extras.lastDeployStatus || "").trim(),
+    lastDeployProof: String(extras.lastDeployProof || "").trim(),
+    dashboardUrl: String(project.dashboardUrl || "").trim(),
+    registryId: VERCEL_DEPLOYMENTS_INTEGRATION_ID,
+    linkedWorkflowRef: String(extras.linkedWorkflowRef || "").trim(),
+    status: String(extras.status || (projectId ? "linked" : "repo-created")).trim(),
+    connectorKind: "vercel-project",
+    linkedAt: String(extras.linkedAt || "").trim(),
+    updatedAt: String(extras.updatedAt || "").trim(),
+    description: `Governed Vercel project record. Deploys run through the workspace's server-side deploy route; this row stores only refs, routing metadata, and receipt-backed proof.`,
+  };
+}
+
+function isVercelProjectsObject(object) {
+  return String(object?.id || "").trim() === VERCEL_PROJECTS_OBJECT_ID;
+}
+
+function vercelProjectRowKey(row = {}) {
+  return String(row?.projectId || row?.gitRepo || row?.Name || "").trim();
+}
+
+/**
+ * Upsert linked Vercel projects into the governed directory object. Rows merge
+ * by `projectId`, then `gitRepo`, then `Name`. That keeps the guided
+ * create-app lane on one Data Model row: GitHub repo first, Vercel project
+ * next, deployment proof last.
+ */
+function withVercelProjectsDirectory(workspaceConfig, { projects = [], linkedAt = "" } = {}) {
+  const incoming = (Array.isArray(projects) ? projects : [projects])
+    .map((project) => makeVercelProjectRow(project, { linkedAt, updatedAt: linkedAt }))
+    .filter((row) => vercelProjectRowKey(row));
+  if (!incoming.length) return workspaceConfig;
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isVercelProjectsObject(object) || found) return object;
+    found = true;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const byId = new Map(rows.map((row) => [vercelProjectRowKey(row), row]).filter(([key]) => key));
+    for (const row of incoming) {
+      const key = vercelProjectRowKey(row);
+      const existing = byId.get(key) || (row.gitRepo
+        ? Array.from(byId.values()).find((item) => String(item?.gitRepo || "").trim() === row.gitRepo)
+        : null);
+      if (existing && vercelProjectRowKey(existing) !== key) byId.delete(vercelProjectRowKey(existing));
+      byId.set(key, existing
+        ? {
+            ...existing,
+            ...row,
+            linkedWorkflowRef: existing.linkedWorkflowRef || row.linkedWorkflowRef,
+            lastDeployRequestedAt: existing.lastDeployRequestedAt || row.lastDeployRequestedAt,
+            lastDeployStatus: existing.lastDeployStatus || row.lastDeployStatus,
+            lastDeployProof: existing.lastDeployProof || row.lastDeployProof,
+            linkedAt: existing.linkedAt || row.linkedAt,
+          }
+        : row);
+    }
+    return {
+      ...object,
+      columns: Array.from(new Set([...(Array.isArray(object.columns) ? object.columns : []), ...VERCEL_PROJECT_COLUMNS])),
+      rows: Array.from(byId.values()),
+    };
+  });
+  if (!found) {
+    nextObjects.push({
+      id: VERCEL_PROJECTS_OBJECT_ID,
+      label: "Vercel Projects",
+      name: "Vercel Projects",
+      source: "Vercel Projects",
+      objectType: "custom",
+      icon: "Rocket",
+      columns: [...VERCEL_PROJECT_COLUMNS],
+      rows: incoming,
+      binding: { mode: "manual", source: "Vercel Projects" },
+      relations: VERCEL_PROJECT_RELATIONS.map((relation) => ({ ...relation })),
+    });
+  }
+  return { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } };
+}
+
+function findVercelProjectsObject(workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  return objects.find((object) => isVercelProjectsObject(object)) || null;
+}
+
+function findVercelProjectRow(workspaceConfig, projectId) {
+  const target = String(projectId || "").trim();
+  if (!target) return null;
+  const object = findVercelProjectsObject(workspaceConfig);
+  if (!object) return null;
+  return (Array.isArray(object.rows) ? object.rows : []).find((row) => String(row?.projectId || "").trim() === target) || null;
+}
+
+function findVercelProjectRowByGitRepo(workspaceConfig, gitRepo) {
+  const target = String(gitRepo || "").trim();
+  if (!target) return null;
+  const object = findVercelProjectsObject(workspaceConfig);
+  if (!object) return null;
+  return (Array.isArray(object.rows) ? object.rows : []).find((row) => String(row?.gitRepo || "").trim() === target) || null;
+}
+
+/** Merge a non-secret deploy-proof patch onto the owning project row. */
+function withVercelProjectPatch(workspaceConfig, { projectId, patch } = {}) {
+  const target = String(projectId || "").trim();
+  const safe = patch && typeof patch === "object" ? patch : {};
+  if (!target) return { config: workspaceConfig, found: false };
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let found = false;
+  const nextObjects = objects.map((object) => {
+    if (!isVercelProjectsObject(object)) return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.projectId || "").trim() !== target) return row;
+      found = true;
+      return { ...row, ...safe };
+    });
+    return { ...object, rows: nextRows };
+  });
+  if (!found) return { config: workspaceConfig, found: false };
+  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, found: true };
 }
 
 function findMarketplaceProviderRow(workspaceConfig, providerId) {
@@ -1258,6 +1699,27 @@ export {
   GROWTHUB_WEBHOOK_TRIGGER_INTEGRATION_ID,
   INPUT_MODE_BY_TRIGGER_KIND,
   MARKETPLACE_PROVIDERS,
+  VERCEL_API_BASE_URL,
+  VERCEL_AUTH_REF,
+  VERCEL_DEPLOYMENTS_INTEGRATION_ID,
+  VERCEL_PRODUCTS,
+  VERCEL_PROJECTS_OBJECT_ID,
+  VERCEL_PROJECT_COLUMNS,
+  VERCEL_PROJECT_RELATIONS,
+  VERCEL_PROVIDER_INTEGRATION_ID,
+  findVercelProjectRow,
+  findVercelProjectRowByGitRepo,
+  findVercelProjectsObject,
+  getVercelProduct,
+  isVercelProjectsObject,
+  makeVercelProductRow,
+  makeVercelProjectRow,
+  providerAccountAuthMode,
+  providerAccountEnvKeys,
+  resolveProviderAccountAuth,
+  withVercelProductRegistry,
+  withVercelProjectPatch,
+  withVercelProjectsDirectory,
   UPSTASH_AUTH_REF,
   UPSTASH_PRODUCTS,
   UPSTASH_PROVIDER_INTEGRATION_ID,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
 import {
   getMarketplaceProvider,
+  providerAccountEnvKeys,
   withMarketplaceProviderRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -30,7 +31,7 @@ async function POST(request, context) {
   if (!auth.ok) return jsonError(auth.error, auth.status);
 
   const connectUrl = provider.accountSetupUrl || provider.consoleUrl;
-  const requiredEnv = [provider.accountProbe?.emailEnv, provider.accountProbe?.keyEnv].filter(Boolean);
+  const requiredEnv = providerAccountEnvKeys(provider);
   const resolvedEnv = resolvedEnvKeys(requiredEnv);
   const now = new Date().toISOString();
   const syncResult = {

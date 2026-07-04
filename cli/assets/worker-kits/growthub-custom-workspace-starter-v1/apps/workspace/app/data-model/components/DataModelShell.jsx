@@ -78,6 +78,8 @@ import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { StatusPill } from "./StatusPill.jsx";
 import { SegmentedToggle, ToggleField } from "./ToggleField.jsx";
 import { SourceTestPanel } from "./SourceTestPanel.jsx";
+import { VercelDeployPanel } from "./VercelDeployPanel.jsx";
+import { VERCEL_PROJECTS_OBJECT_ID } from "@/lib/workspace-add-ons";
 import { OrchestrationRunTracePanel } from "./OrchestrationRunTracePanel.jsx";
 import { ApiRegistryCreationCockpit } from "./ApiRegistryCreationCockpit.jsx";
 import { deriveApiRegistryCreationState } from "@/lib/api-registry-creation-flow";
@@ -2111,6 +2113,13 @@ function DataModelRecordDrawer({
             testMessage={testMessage}
             disabled={saving}
             onTest={testApiRecord}
+          />
+        )}
+        {table.objectId === VERCEL_PROJECTS_OBJECT_ID && (
+          <VercelDeployPanel
+            row={draft}
+            disabled={saving}
+            onPatchDraft={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           />
         )}
         <div className="dm-record-scroll" ref={drawerScrollRef}>

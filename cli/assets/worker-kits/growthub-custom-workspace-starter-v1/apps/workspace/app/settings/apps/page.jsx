@@ -2,6 +2,7 @@ import { SettingsShell } from "../settings-shell.jsx";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { VERCEL_PROJECTS_OBJECT_ID } from "@/lib/workspace-add-ons";
 import { AppsList } from "./apps-list.jsx";
 import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
@@ -70,13 +71,34 @@ async function AppsSettingsPage() {
   const fork = await readForkMetadata();
   const directoryApps = await readWorkspaceDirectoryApps();
   const configApps = Array.isArray(workspaceConfig.apps) ? workspaceConfig.apps : [];
+  const appRegistryObject = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+    .find((object) => String(object?.id || "").trim() === "workspace-app-registry" || String(object?.objectType || "").trim() === "app-surface");
+  const registryApps = Array.isArray(appRegistryObject?.rows)
+    ? appRegistryObject.rows.map((row) => ({
+        id: String(row.appId || row.Name || "").trim(),
+        name: String(row.Name || row.appId || "").trim(),
+        description: String(row.description || "").trim(),
+        provider: String(row.packageName || row.framework || "workspace").trim(),
+        source: String(row.surfacePath || "").trim(),
+        authority: "data-model",
+        status: String(row.status || "available").trim(),
+        githubRepo: row.githubRepo,
+        githubRepoUrl: row.githubRepoUrl,
+        repositoryUrl: row.repositoryUrl,
+        vercelProjectUrl: row.vercelProjectUrl,
+        deploymentUrl: row.deploymentUrl,
+      })).filter((row) => row.id)
+    : [];
   const appsById = new Map(directoryApps.map((item) => [item.id, item]));
   for (const item of configApps) {
     const id = item.id || item.name;
     if (!id) continue;
     appsById.set(id, { ...(appsById.get(id) || {}), ...item });
   }
-  const apps = Array.from(appsById.values());
+  for (const item of registryApps) {
+    appsById.set(item.id, { ...(appsById.get(item.id) || {}), ...item });
+  }
+  const apps = withDeploymentSetupActions(attachExternalAppLinks(Array.from(appsById.values()), workspaceConfig));
   const bridge = workspaceConfig.bridge && typeof workspaceConfig.bridge === "object" ? workspaceConfig.bridge : null;
 
   return <SettingsShell active="/settings/apps" eyebrow="Settings" title="Apps">
@@ -119,6 +141,108 @@ async function AppsSettingsPage() {
       </SettingsAccordionGroup>
     </section>
   </SettingsShell>;
+}
+
+function ensureHttpsUrl(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  return /^https?:\/\//i.test(clean) ? clean : `https://${clean.replace(/^\/+/, "")}`;
+}
+
+function githubRepoUrl(value) {
+  const repo = String(value || "").trim().replace(/^https?:\/\/github\.com\//i, "");
+  if (!repo || !repo.includes("/")) return "";
+  return `https://github.com/${repo.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function linkFromAppRow(app) {
+  const externalLinks = [];
+  const repoValue = app.githubRepo || app.githubRepoUrl || app.repositoryUrl;
+  const repoHref = githubRepoUrl(repoValue);
+  if (repoHref) {
+    const repoDetail = String(app.githubRepo || repoValue).trim().replace(/^https?:\/\/github\.com\//i, "");
+    externalLinks.push({
+      id: `github:${repoDetail}`,
+      label: "GitHub repository",
+      detail: repoDetail,
+      href: repoHref,
+      iconSrc: "/integrations/github/provider.png",
+    });
+  }
+  const deploymentHref = ensureHttpsUrl(app.deploymentUrl || app.vercelDeploymentUrl || app.vercelProjectUrl);
+  if (deploymentHref) {
+    externalLinks.push({
+      id: `vercel:${deploymentHref}`,
+      label: app.deploymentUrl || app.vercelDeploymentUrl ? "Vercel deployment" : "Vercel project",
+      detail: deploymentHref,
+      href: deploymentHref,
+      iconSrc: "/integrations/vercel/provider.png",
+    });
+  }
+  return externalLinks;
+}
+
+function appMatchesProject(app, project, appCount) {
+  if (appCount === 1) return true;
+  const source = String(app?.source || "").trim().toLowerCase();
+  const appId = String(app?.id || app?.name || "").trim().toLowerCase();
+  const name = String(project?.Name || "").trim().toLowerCase();
+  const repo = String(project?.gitRepo || "").trim().toLowerCase();
+  return Boolean((source && repo.includes(source))
+    || (appId && (name === appId || repo.endsWith(`/${appId}`) || repo.includes(`/${appId}-`))));
+}
+
+function attachExternalAppLinks(apps, workspaceConfig) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const vercelObject = objects.find((object) => String(object?.id || "").trim() === VERCEL_PROJECTS_OBJECT_ID);
+  const projects = Array.isArray(vercelObject?.rows) ? vercelObject.rows : [];
+  return apps.map((app) => {
+    const externalLinks = linkFromAppRow(app);
+    for (const project of projects) {
+      if (!appMatchesProject(app, project, apps.length)) continue;
+      const repoHref = githubRepoUrl(project.gitRepo);
+      if (repoHref) {
+        externalLinks.push({
+          id: `github:${project.projectId || project.gitRepo}`,
+          label: "GitHub repository",
+          detail: project.gitRepo,
+          href: repoHref,
+          iconSrc: "/integrations/github/provider.png",
+        });
+      }
+      const deploymentHref = ensureHttpsUrl(project.latestDeploymentUrl || project.dashboardUrl);
+      if (deploymentHref) {
+        externalLinks.push({
+          id: `vercel:${project.projectId || project.latestDeploymentUrl}`,
+          label: project.latestDeploymentUrl ? "Vercel deployment" : "Vercel project",
+          detail: project.latestDeploymentUrl || project.Name,
+          href: deploymentHref,
+          iconSrc: "/integrations/vercel/provider.png",
+        });
+      }
+    }
+    const deduped = Array.from(new Map(externalLinks.map((link) => {
+      const stableHref = String(link.href || "").trim().replace(/\/+$/g, "");
+      const stableProvider = String(link.iconSrc || link.label || "").trim();
+      return [`${stableProvider}:${stableHref}`, link];
+    })).values());
+    return deduped.length ? { ...app, externalLinks: deduped } : app;
+  });
+}
+
+function withDeploymentSetupActions(apps) {
+  return apps.map((app) => {
+    if (Array.isArray(app.externalLinks) && app.externalLinks.length) return app;
+    const appId = String(app.id || app.name || "").trim();
+    if (!appId || String(app.authority || "").trim() !== "directory") return app;
+    const params = new URLSearchParams({
+      provider: "vercel",
+      intent: "deploy",
+      app: appId,
+      source: String(app.source || "").trim(),
+    });
+    return { ...app, deploymentSetupHref: `/settings/add-ons?${params.toString()}` };
+  });
 }
 
 export {

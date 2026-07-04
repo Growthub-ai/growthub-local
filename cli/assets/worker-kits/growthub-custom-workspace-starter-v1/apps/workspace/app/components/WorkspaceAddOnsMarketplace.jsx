@@ -7,7 +7,9 @@ import {
   Database,
   ExternalLink,
   Headphones,
+  Link2,
   PlugZap,
+  Rocket,
   Search,
   Server,
   Settings,
@@ -20,17 +22,136 @@ import {
   findWorkspaceAddOnRows,
   getMarketplaceProduct,
 } from "@/lib/workspace-add-ons";
+import { VercelCreateAppFlow } from "./VercelCreateAppFlow.jsx";
+
+/**
+ * One-click deploy cockpit for the installed Vercel Deployments product.
+ * Reads the governed server discovery route (the browser never calls the
+ * Vercel API) and hands every mutation — link, deploy — to the governed
+ * handlers wired in add-ons-client, so workspace config state and receipts
+ * stay authoritative.
+ */
+function VercelProjectsCockpit({ onLinkProject, onDeployProject, disabled = false }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [busyProject, setBusyProject] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProjects() {
+      setLoading(true);
+      try {
+        const response = await fetch("/api/workspace/add-ons/vercel/projects", { method: "GET" });
+        const payload = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!response.ok) {
+          setProjects([]);
+          setMessage(payload?.error || "Vercel projects could not be loaded.");
+          return;
+        }
+        const rows = Array.isArray(payload.projects) ? payload.projects : [];
+        setProjects(rows);
+        setMessage(rows.length
+          ? (payload.hasMore ? "Showing the first 100 projects — the account has more." : "")
+          : "No Vercel projects returned for this account.");
+      } catch (error) {
+        if (!cancelled) {
+          setProjects([]);
+          setMessage(error?.message || "Vercel projects could not be loaded.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  async function runAction(projectId, action) {
+    setBusyProject(`${action}:${projectId}`);
+    setMessage("");
+    try {
+      const payload = action === "deploy"
+        ? await onDeployProject?.({ projectId })
+        : await onLinkProject?.({ projectId });
+      if (payload?.error) {
+        setMessage(payload.error);
+        return;
+      }
+      if (action === "deploy" && payload?.deployment) {
+        setMessage(`Deployment ${payload.deployment.deploymentId || ""} ${payload.deployment.readyState || "QUEUED"}${payload.deployment.url ? ` → ${payload.deployment.url}` : ""}`.trim());
+      }
+      setRefreshKey((key) => key + 1);
+    } catch (error) {
+      setMessage(error?.message || `Project ${action} failed.`);
+    } finally {
+      setBusyProject("");
+    }
+  }
+
+  return (
+    <div className="dm-marketplace-config" aria-label="Vercel projects">
+      <p className="dm-marketplace-section-title"><Rocket size={14} /> Your Vercel Projects</p>
+      {loading ? <p className="dm-cockpit-step-hint">Loading projects…</p> : null}
+      {!loading && projects.map((project) => (
+        <div className="dm-marketplace-adapter" key={project.id}>
+          <div>
+            <strong>{project.name}</strong>
+            <span>
+              {[project.framework, project.gitRepo, project.linked ? "linked" : "not linked", project.lastDeployStatus || project.latestDeploymentState]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+          <div className="dm-marketplace-card-actions">
+            {!project.linked ? (
+              <button
+                type="button"
+                className="dm-btn-outline"
+                disabled={disabled || Boolean(busyProject)}
+                onClick={() => runAction(project.id, "link")}
+              >
+                {busyProject === `link:${project.id}` ? "Linking…" : (<><Link2 size={12} aria-hidden /> Link</>)}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="dm-btn-primary-sm"
+              disabled={disabled || Boolean(busyProject)}
+              onClick={() => runAction(project.id, "deploy")}
+            >
+              {busyProject === `deploy:${project.id}` ? "Deploying…" : (<><Rocket size={12} aria-hidden /> Deploy</>)}
+            </button>
+          </div>
+        </div>
+      ))}
+      {message ? <p className="dm-cockpit-step-hint">{message}</p> : null}
+      <p className="dm-cockpit-step-hint">
+        Deploy auto-links the project as a governed Data Model record (Vercel Projects object) with receipt-backed proof — manage config, redeploy, or link it to workflows from that record.
+      </p>
+    </div>
+  );
+}
 
 function AddOnsSurface({
   onConnectProvider,
   onSyncProvider,
   onSaveProviderCredentials,
   onSyncProduct,
+  onLinkVercelProject,
+  onDeployVercelProject,
   onCustomSetup,
   installing = false,
   activeAction = "",
   errorMessage = "",
   setupMessage = "",
+  initialProviderId = "",
+  initialIntent = "",
+  initialAppId = "",
   envSignals = {},
   workspaceConfig = {},
   onClose,
@@ -56,6 +177,10 @@ function AddOnsSurface({
     ? envSignals.providerProductReadiness[selectedMarketplaceProvider.providerId]
     : [];
   const providerRows = useMemo(() => Object.fromEntries(MARKETPLACE_PROVIDERS.map((provider) => [provider.providerId, findMarketplaceProviderRow(workspaceConfig, provider.providerId)])), [workspaceConfig]);
+  const visibleMarketplaceProviders = useMemo(
+    () => MARKETPLACE_PROVIDERS.filter((provider) => provider.connectorKind !== "growthub-inbound-provider"),
+    [],
+  );
   const providerRow = selectedMarketplaceProvider ? providerRows[selectedMarketplaceProvider.providerId] : null;
   const providerConnected = Boolean(providerRow?.isConnectedProvider);
   const providerVerified = Boolean(providerRow?.isVerifiedProvider);
@@ -65,7 +190,7 @@ function AddOnsSurface({
   const providerSetupFields = Array.isArray(selectedMarketplaceProvider?.accountSetupFields)
     ? selectedMarketplaceProvider.accountSetupFields
     : [];
-  const providerSetupNeedsCredentials = providerSetupOpen && providerSetupFields.length > 0;
+  const providerSetupNeedsCredentials = !providerConnected && providerSetupFields.length > 0;
   const providerSetupReady = providerSetupFields.every((field) => {
     if (!field?.required) return true;
     return Boolean(String(providerCredentialValues[field.id] || "").trim());
@@ -112,6 +237,7 @@ function AddOnsSurface({
   const canSyncProvider = Boolean(onSyncProvider);
   const canSaveProviderCredentials = Boolean(onSaveProviderCredentials);
   const inModal = shell === "modal";
+  const appDeployIntent = initialIntent === "deploy" && initialProviderId === "vercel" && initialAppId;
   const details = [
     ["Installed products", String(installed.filter((row) => !selectedMarketplaceProvider || providerProducts.some((product) => product.productId === row.productId)).length)],
     ["Developer", selectedMarketplaceProvider?.developer || "Provider"],
@@ -156,6 +282,7 @@ function AddOnsSurface({
 
   function connectProvider() {
     if (!selectedMarketplaceProvider) return;
+    if (providerSetupFields.length) return;
     const setupUrl = selectedMarketplaceProvider.accountSetupUrl || selectedMarketplaceProvider.consoleUrl;
     if (setupUrl) window.open(setupUrl, `${selectedMarketplaceProvider.providerId}-provider-setup`, "popup,width=1160,height=820");
     onConnectProvider?.({ providerId: selectedMarketplaceProvider.providerId, openedExternally: Boolean(setupUrl) });
@@ -249,6 +376,13 @@ function AddOnsSurface({
     setProviderCredentialValues({});
   }, [selectedMarketplaceProvider?.providerId]);
 
+  useEffect(() => {
+    if (!initialProviderId || selectedProvider) return;
+    if (!MARKETPLACE_PROVIDERS.some((provider) => provider.providerId === initialProviderId)) return;
+    setActivePath("plugins");
+    setSelectedProvider(initialProviderId);
+  }, [initialProviderId, selectedProvider]);
+
   return (
     <section className={inModal ? "dm-marketplace-modal" : "dm-marketplace-page"} role={inModal ? "dialog" : undefined} aria-modal={inModal ? "true" : undefined} aria-labelledby="workspace-marketplace-title">
       <header className="dm-marketplace-header">
@@ -271,7 +405,7 @@ function AddOnsSurface({
               {selectedProvider === "custom" ? <span className="dm-marketplace-product-icon is-custom"><Database size={18} /></span> : <ProductIcon provider />}
               <div>
                 <h2 id="workspace-marketplace-title">{selectedProviderLabel}</h2>
-                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : "Serverless DB (Redis, Vector, Queue, Search)"}</p>
+                <p>{selectedProvider === "custom" ? "Governed custom plugins and thin adapters" : (selectedMarketplaceProvider?.providerProductsLabel || selectedMarketplaceProvider?.description || "Provider plugins")}</p>
               </div>
             </div>
           ) : (
@@ -312,6 +446,11 @@ function AddOnsSurface({
         </aside>
         <div className="dm-marketplace-content">
           {errorMessage ? <div className="dm-marketplace-error" role="alert">{errorMessage}</div> : null}
+          {selectedProvider === "vercel" && appDeployIntent ? (
+            <div className="dm-marketplace-error is-info" role="status">
+              Deploying workspace app <strong>{initialAppId}</strong>: connect Vercel, install Deployments, then choose or create the Vercel project for this app.
+            </div>
+          ) : null}
           {activePath === "plugins" ? (
             <>
               {!selectedProvider ? (
@@ -326,7 +465,7 @@ function AddOnsSurface({
                 <section className="dm-marketplace-products" aria-label="Plugin providers">
                   <h3>Plugin Providers</h3>
                   <div className="dm-marketplace-provider-grid">
-                    {MARKETPLACE_PROVIDERS.map((provider) => {
+                    {visibleMarketplaceProviders.map((provider) => {
                       const row = providerRows[provider.providerId];
                       const connected = Boolean(row?.isConnectedProvider);
                       const verified = Boolean(row?.isVerifiedProvider);
@@ -388,18 +527,17 @@ function AddOnsSurface({
                         ) : null}
                       </div>
                       <div className="dm-marketplace-provision-steps">
-                        <div className="is-active dm-marketplace-step-action-row">
-                          <span>Install provider</span>
-                          <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
-                            {activeAction === "connect" ? "Opening..." : `Set up ${selectedMarketplaceProvider?.label || "provider"}`}
-                          </button>
-                        </div>
-                        {providerSetupNeedsCredentials ? <div className="dm-marketplace-step-action-row">
+                        {providerSetupNeedsCredentials ? <div className="is-active dm-marketplace-step-action-row">
                           <span>Account setup</span>
                           <button type="button" className="dm-btn-primary-sm" disabled={installing || !canSaveProviderCredentials || !providerSetupReady} onClick={saveProviderCredentials}>
                             {activeAction === "save-provider" ? "Verifying..." : "Verify and save account"}
                           </button>
-                        </div> : <div>Account setup</div>}
+                        </div> : <div className="is-active dm-marketplace-step-action-row">
+                          <span>Install provider</span>
+                          <button type="button" className="dm-btn-primary-sm" disabled={installing || !canConnectProvider} onClick={connectProvider}>
+                            {activeAction === "connect" ? "Opening..." : `Set up ${selectedMarketplaceProvider?.label || "provider"}`}
+                          </button>
+                        </div>}
                         <div>{activeAction === "sync-provider" ? "Syncing account" : "Account sync"}</div>
                         <div>Product marketplace</div>
                       </div>
@@ -417,8 +555,8 @@ function AddOnsSurface({
                           <article className="dm-marketplace-product-card" key={row.integrationId}>
                             <ProductIcon product={product} />
                             <div>
-                              <strong>{row.Name || product.label}</strong>
-                              <p>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
+                              <strong title={row.Name || product.label}>{row.Name || product.label}</strong>
+                              <p title={`${row.selectedResourceLabel || row.status || "draft"} / ${row.syncCheckedAt || row.lastTested || "not synced"}`}>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
                             </div>
                             <div className="dm-marketplace-card-actions">
                               <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Manage ${product.label}`} onClick={() => {
@@ -445,9 +583,9 @@ function AddOnsSurface({
                           <article className="dm-marketplace-product-card" key={product.productId}>
                             <ProductIcon product={product} />
                             <div>
-                              <strong>{product.label}</strong>
-                              <p>{product.subtitle}</p>
-                              <small>{product.plans}</small>
+                              <strong title={product.label}>{product.label}</strong>
+                              <p title={product.subtitle}>{product.subtitle}</p>
+                              <small title={product.plans}>{product.plans}</small>
                               <small>{readiness?.configured ? "Product refs ready" : "Set up product refs"}</small>
                             </div>
                             <button
@@ -470,6 +608,15 @@ function AddOnsSurface({
                       })}
                     </div>
                   </section> : null}
+
+                  {selectedMarketplaceProvider?.providerId === "vercel" ? (
+                    <VercelCreateAppFlow
+                      vercelConnected={providerConnected}
+                      vercelAccountLabel={providerAccountLabel}
+                      onDeployProject={onDeployVercelProject}
+                      disabled={installing}
+                    />
+                  ) : null}
 
                   <section className="dm-marketplace-overview" aria-label="Overview">
                     <h3>Overview</h3>
@@ -629,6 +776,13 @@ function AddOnsSurface({
               </div>
               <p className="dm-cockpit-step-hint">This installed product row is the workspace binding used by workflow canvas upgrades and activation.</p>
             </div>
+            {selectedMarketplaceProvider?.providerId === "vercel" && managedProduct.productId === "vercel-deployments" && managedSavedRow?.isVerifiedAddOn ? (
+              <VercelProjectsCockpit
+                onLinkProject={onLinkVercelProject}
+                onDeployProject={onDeployVercelProject}
+                disabled={installing}
+              />
+            ) : null}
             <footer className="dm-marketplace-actions">
               {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />

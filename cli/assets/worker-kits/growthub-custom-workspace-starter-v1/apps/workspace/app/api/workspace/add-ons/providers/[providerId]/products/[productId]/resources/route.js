@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import {
   getMarketplaceProvider,
   getMarketplaceProduct,
+  providerAccountAuthMode,
+  resolveProviderAccountAuth,
 } from "@/lib/workspace-add-ons";
 import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
@@ -14,10 +16,6 @@ function clean(value) {
 
 function jsonError(message, status = 400, extra = {}) {
   return NextResponse.json({ error: message, ...extra }, { status });
-}
-
-function envValue(key) {
-  return clean(readEnvVar(key, process.env)?.value || "");
 }
 
 async function fetchWithTimeout(url, init = {}) {
@@ -58,7 +56,7 @@ function resourcePaths(product) {
 
 function pickArray(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ["databases", "indexes", "indices", "schedules", "queues", "resources", "items", "data"]) {
+  for (const key of ["databases", "indexes", "indices", "schedules", "queues", "resources", "projects", "items", "data"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   if (payload && typeof payload === "object") return [payload];
@@ -107,7 +105,7 @@ function normalizeResource(item, index, source) {
     label,
     source,
     region: clean(item.region || item.primary_region || item.primaryRegion || ""),
-    type: clean(item.type || item.kind || ""),
+    type: clean(item.type || item.kind || item.framework || ""),
     endpoint: clean(item.endpoint || item.url || item.rest_url || item.restUrl || ""),
   };
 }
@@ -123,26 +121,36 @@ async function GET(request, context) {
   const product = getMarketplaceProduct(providerId, productId);
   if (!provider || !product) return jsonError("unknown provider product", 404, { providerId, productId });
 
-  const emailKey = provider.accountProbe?.emailEnv;
-  const apiKey = provider.accountProbe?.keyEnv;
-  const email = envValue(emailKey);
-  const key = envValue(apiKey);
-  if (!email || !key) {
+  // Mode-aware account lane: basic (Upstash Developer API) or bearer (Vercel
+  // REST API) — resolved from the provider's single accountProbe contract.
+  const account = resolveProviderAccountAuth(provider, process.env);
+  if (!account.ready) {
     return jsonError(`${provider.label} account auth is not connected`, 422, {
       providerId,
       productId,
-      missingEnv: [emailKey, apiKey].filter((name) => name && !readEnvVar(name, process.env)),
-      resolvedEnv: [emailKey, apiKey].filter((name) => name && readEnvVar(name, process.env)),
+      missingEnv: account.missingEnv,
+      resolvedEnv: account.resolvedEnv,
       resources: [],
     });
   }
 
-  const authHeader = `Basic ${Buffer.from(`${email}:${key}`).toString("base64")}`;
+  const authHeader = account.header;
+  // Team-scoped bearer tokens (e.g. Vercel team tokens) require the teamId
+  // query on resource listings.
+  const teamQuery = providerAccountAuthMode(provider) === "bearer" && account.teamId
+    ? `${encodeURIComponent("teamId")}=${encodeURIComponent(account.teamId)}`
+    : "";
+  // Honor the provider's account-probe base override (self-hosted proxies,
+  // offline QA smokes) — same contract as the product probe's baseUrlEnv.
+  const discoveryBaseUrl = (provider.accountProbe?.baseUrlEnv
+    ? clean(readEnvVar(provider.accountProbe.baseUrlEnv, process.env)?.value || "")
+    : "") || provider.baseUrl;
   const resources = [];
   const failures = [];
   for (const path of resourcePaths(product)) {
     try {
-      const response = await fetchWithTimeout(safeUrl(provider.baseUrl, path), {
+      const url = safeUrl(discoveryBaseUrl, path);
+      const response = await fetchWithTimeout(teamQuery ? `${url}${url.includes("?") ? "&" : "?"}${teamQuery}` : url, {
         headers: { authorization: authHeader, accept: "application/json" },
       });
       if (!response.ok) {
@@ -166,7 +174,7 @@ async function GET(request, context) {
     productId: product.productId,
     resources,
     failures,
-    resolvedEnv: [emailKey, apiKey].filter((name) => name && readEnvVar(name, process.env)),
+    resolvedEnv: account.resolvedEnv,
   });
 }
 

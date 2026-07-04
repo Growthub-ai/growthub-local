@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
 import {
   getMarketplaceProvider,
+  providerAccountAuthMode,
   withMarketplaceProviderRegistry,
 } from "@/lib/workspace-add-ons";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
+import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const PROBE_TIMEOUT_MS = 8000;
@@ -52,12 +54,14 @@ function compactAccountOptions(payload, source, fallbackEmail) {
         ? payload.accounts
         : Array.isArray(payload?.data)
           ? payload.data
-          : [];
+          : payload?.user && typeof payload.user === "object"
+            ? [payload.user]
+            : [];
   const options = rawItems
     .map((item, index) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.slug || item.name || `account-${index + 1}`);
-      const label = clean(item.name || item.team_name || item.teamName || item.email || item.slug || id);
+      const id = clean(item.id || item.team_id || item.teamId || item.account_id || item.accountId || item.uid || item.slug || item.username || item.name || `account-${index + 1}`);
+      const label = clean(item.name || item.team_name || item.teamName || item.username || item.email || item.slug || id);
       if (!id || !label) return null;
       return {
         id,
@@ -106,6 +110,100 @@ function deriveEnvUpdates(fields, credentials, body) {
     .filter((field) => field.envRef)
     .map((field) => [field.envRef, getCredentialValue(credentials, body, field)])
     .filter(([, value]) => value));
+}
+
+/** Bearer-token account verification (e.g. Vercel). Probe paths come from the
+ * provider's accountProbe contract — no hardcoded provider endpoints here. */
+async function verifyBearerProviderAccount(provider, token) {
+  const probe = provider.accountProbe || {};
+  const paths = Array.isArray(probe.paths) && probe.paths.length ? probe.paths : ["/v2/user"];
+  const probeBaseUrl = (probe.baseUrlEnv ? clean(readEnvVar(probe.baseUrlEnv, process.env)?.value || "") : "") || provider.baseUrl;
+  let last = null;
+  for (const probePath of paths) {
+    try {
+      const response = await fetchWithTimeout(safeUrl(probeBaseUrl, probePath), {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+      });
+      last = { path: probePath, status: response.status };
+      if (!response.ok) continue;
+      const payload = await readJsonSafe(response);
+      const options = compactAccountOptions(payload, probePath, "");
+      return { ok: true, path: probePath, status: response.status, options };
+    } catch (error) {
+      last = { path: probePath, status: 0, error: error?.message || "network error" };
+    }
+  }
+  return { ok: false, last };
+}
+
+async function handleBearerCredentials(request, provider, credentials, body) {
+  const fields = getProviderSetupFields(provider);
+  const tokenField = fields.find((field) => field.credentialRole === "bearerToken");
+  const teamField = fields.find((field) => field.credentialRole === "teamScope");
+  const tokenEnv = tokenField?.envRef || provider.accountProbe?.tokenEnv;
+  if (!tokenField || !tokenEnv) return jsonError("provider does not support account credential setup", 400);
+  const token = getCredentialValue(credentials, body, tokenField);
+  const teamId = teamField ? getCredentialValue(credentials, body, teamField) : "";
+  if (!token) {
+    return jsonError(`${provider.label} account credentials are required`, 400, {
+      providerId: provider.providerId,
+      missingFields: [tokenField.id],
+    });
+  }
+
+  const verified = await verifyBearerProviderAccount(provider, token);
+  if (!verified.ok) {
+    return jsonError(`${provider.label} access token could not be verified`, 422, {
+      providerId: provider.providerId,
+      checked: verified.last ? { path: verified.last.path, status: verified.last.status } : null,
+    });
+  }
+
+  const envToWrite = { [tokenEnv]: token };
+  if (teamField?.envRef && teamId) envToWrite[teamField.envRef] = teamId;
+  await writeLocalEnv(envToWrite);
+
+  const selected = verified.options.find((option) => teamId && option.id === teamId) || verified.options[0] || null;
+  const now = new Date().toISOString();
+  const syncResult = {
+    ok: true,
+    syncStatus: "verified",
+    status: "connected",
+    testedAt: now,
+    proof: `${provider.label} REST API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
+    summary: `${provider.label} provider account verified and stored as local runtime env refs.`,
+    resolvedEnv: Object.keys(envToWrite),
+    providerAccountOptions: verified.options,
+    selectedProviderAccountId: selected?.id || teamId || "",
+    selectedProviderAccountLabel: selected?.label || "",
+    providerAccountSource: verified.path,
+  };
+  const currentConfig = await readWorkspaceConfig();
+  const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });
+  const persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+  const { receipt } = await appendOutcomeReceipt({
+    kind: "workspace-add-on-provider-credentials",
+    lane: "server-authoritative",
+    outcomeStatus: "published",
+    actor: "workspace-marketplace",
+    objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: provider.label }],
+    changedFields: ["dataModel.api-registry"],
+    policyVerdict: { ok: true },
+    schemaVerdict: { ok: true },
+    summary: syncResult.summary,
+    nextActions: [`Install ${provider.label} products from the marketplace page.`],
+  });
+
+  return NextResponse.json({
+    ok: true,
+    providerId: provider.providerId,
+    accountState: "verified",
+    workspaceConfig: persisted,
+    accountOptions: verified.options,
+    resolvedEnv: Object.keys(envToWrite),
+    receiptId: receipt.receiptId,
+  });
 }
 
 async function verifyProviderAccount(provider, email, apiKey) {
@@ -201,6 +299,9 @@ async function POST(request, context) {
   const credentials = body && typeof body.credentials === "object" && !Array.isArray(body.credentials)
     ? body.credentials
     : {};
+  if (providerAccountAuthMode(provider) === "bearer") {
+    return handleBearerCredentials(request, provider, credentials, body);
+  }
   const { fields, usernameField, passwordField, username: email, password: apiKey } = deriveBasicAuthCredentials(provider, credentials, body);
   const missingFields = fields
     .filter((field) => field.required && !getCredentialValue(credentials, body, field))
