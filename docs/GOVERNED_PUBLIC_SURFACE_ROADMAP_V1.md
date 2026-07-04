@@ -16,8 +16,11 @@ lowest-risk first.
 > `preflight_patch` in `live-authoritative` mode with removal impact,
 > `next_actions` governed hand-off). Gap classifications were verified by
 > reading the derivation code (node/row promotion in the metadata store, the
-> command registry, the deploy lens body), not by string search alone. Path
-> anchors below use `apps/workspace/` for
+> command registry, the deploy lens body), not by string search alone — **and
+> against the open PR queue**, because on this repo main is not the frontier:
+> PR #266 (`/pulse` autonomic cockpit) and PR #268/#264 (Official Supabase
+> Provider V1) are in flight on the same base and absorb three items below
+> (see §1.1). Path anchors use `apps/workspace/` for
 > `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`.
 
 > **The law this obeys** (unchanged, inherited from
@@ -69,6 +72,27 @@ none requires a new schema, route, or mutation path.
 
 ---
 
+## 1.1 In-flight coverage — open PRs already absorb three items
+
+The gap table describes `main` (6cd60c5). The open PR queue, based on the
+same commit, changes the roadmap arithmetic and is authoritative for "already
+being built":
+
+| Open PR | What it ships | Roadmap items absorbed |
+| --- | --- | --- |
+| **#266** — `/pulse` governed autonomic pulse cockpit | Pure deriver composing `deriveScheduleCockpit` fleet truth + heartbeat sensors (`idle/running/healthy/failed/stalled` from the governed `lastScheduledRun*` proof columns) + **deployment posture from `workspace-app-registry` / `vercel-projects` rows** + policy rules (incl. `require-deployment-live`, `max-blocked-attempts`) into one condition packet, with governed recovery hand-offs for stalled/failed runs and inbound (webhook/api-request) retest lanes; names an additive `pulse_status` MCP tool as its own Phase B | **Item 2** (unified lens over all bindings — absorbed), **Item 3** (deployment truth in an operating verdict — substantially absorbed), **Item 6** (run-health observability + recovery — substantially absorbed) |
+| **#268 / #264** — Official Supabase Provider V1 | Next marketplace provider on the frozen substrate: account/product rows, `supabase-data` node, two-way governed table sync, `/settings/apps` closed-loop link — riding the exact Vercel/GitHub mechanics | Provider-widening (was deliberately not on this list); confirms the substrate thesis |
+
+**Residual deltas that fold into #266 rather than standing alone:** folding
+`vercel-projects.lastDeployProof` freshness and the per-instance door-guard
+boundary note (429 / duplicate-ACK receipt counts) into the pulse packet, and
+exposing the packet through `app_readiness`/`pulse_status` in the MCP console.
+These are review/extension notes for #266, not roadmap items.
+
+**The genuinely open set is therefore Items 1, 4, 5, 7, 8, 9.**
+
+---
+
 ## 2. Strategic direction — project the invariants onto the new substrate
 
 The three-layer control plane (Mutation → Law → Intelligence,
@@ -90,11 +114,11 @@ unchanged `api-registry-call` runner path.
                      └───────────────────────────────────────────────┘     • deriveBlastRadius / patch preflight
                                                                             • all 14 MCP tools
                                                                             • growthub plan / fleet
-   Item 2  /triggers cockpit (projection over bindings + door receipts)
-   Item 3  deployment + binding proof folded into app_readiness (additive optional)
+   Item 2  [IN FLIGHT — PR #266 /pulse]  unified binding lens + recovery
+   Item 3  [IN FLIGHT — PR #266]         deployment posture in the operating verdict
    Item 4  sibling-binding constructor → workflow→workflow composition (values only)
    Item 5  production proof loop against the deployed domain (proof, not runtime)
-   Item 6  door-guard observability (readiness delta + receipt-derived traffic view)
+   Item 6  [IN FLIGHT — PR #266]         run-health observability (guard-boundary delta remains)
    Item 7  OpenAPI projection of the public surface (CLI/MCP --json first)
    Item 8  fleet rollup of deployed apps + public endpoints
    Item 9  inbound secret lifecycle as readiness guidance
@@ -129,9 +153,15 @@ Map renders it, and `simulate_causal_impact` stops returning "no
 outcome-level impact" for publicly exposed workflows (observed live in the
 probe).
 
-### Item 2 — `/triggers` fleet cockpit (the un-shipped Phase 4 lens)
+### Item 2 — `/triggers` fleet cockpit — **ABSORBED BY PR #266 (`/pulse`)**
 
-The one outstanding deliverable of the capability-binding loop: one pure
+> Do not build separately. The pulse cockpit is this lens plus recovery.
+> Residual delta (as #266 review notes, not a new item): fold per-binding
+> door-receipt traffic (verified 200s, duplicate ACKs, 429 blocked) into the
+> pulse packet's per-workflow cards.
+
+Original statement, kept for lineage — the outstanding deliverable of the
+capability-binding loop: one pure
 deriver `deriveTriggersCockpit({ workspaceConfig, configuredEnvRefs,
 receipts })` in the exact `deriveScheduleCockpit` shape
 (`apps/workspace/lib/schedule-cockpit-console.js:140`) over **all**
@@ -147,9 +177,17 @@ one rail pill, one cockpit component mirroring `ScheduleCockpit.jsx`).
 the richest agent condition packet in the workspace — the generalized fleet
 lens the binding-loop doc named as the terminal state of Phase 4.
 
-### Item 3 — Governed deploy-proof rows + public-door truth folded into readiness (additive optional)
+### Item 3 — Deploy-proof rows folded into readiness — **SUBSTANTIALLY ABSORBED BY PR #266**
 
-An activation-level deploy lens already exists and is already folded:
+> #266 composes deployment posture from `workspace-app-registry` /
+> `vercel-projects` rows into the pulse packet and ships a
+> `require-deployment-live` policy rule. Residual delta: mirror the same
+> signals into `deriveAppReadiness` / MCP `app_readiness` (or land the
+> `pulse_status` tool #266 names as Phase B) so agent sessions get the verdict
+> without the cockpit.
+
+Original statement, kept for lineage — an activation-level deploy lens
+already exists and is already folded:
 `deriveDeployLensState` (`workspace-activation.js:878`) reads runtime signals
 (deploy target, env readiness, check-passed, deployed flag) and its
 `deployReady` verdict reaches `GET /api/workspace/apps` blockers
@@ -206,9 +244,14 @@ stops at localhost. This extends the same rule to the layer users actually
 hand to external systems, closing build → prove → expose → run on
 user-owned infra.
 
-### Item 6 — Door-guard observability (surface the honest boundary)
+### Item 6 — Door-guard observability — **SUBSTANTIALLY ABSORBED BY PR #266**
 
-The per-instance posture of the duplicate-delivery and rate guards is
+> #266's heartbeat sensors own run-health observability and recovery.
+> Residual delta (a #266 review note): the per-instance guard boundary
+> statement and 429/duplicate-ACK receipt counts belong in the same packet.
+
+Original statement, kept for lineage — the per-instance posture of the
+duplicate-delivery and rate guards is
 deliberate and documented in source
 (`workspace-inbound-invocation.js:203–210`, `:240–247`) — but invisible to
 every operating surface. Two projections, no guard-behavior change: (a) a
