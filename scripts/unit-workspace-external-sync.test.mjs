@@ -139,3 +139,51 @@ test("withExternalSyncObject upserts by id and listExternalSyncObjects filters b
   assert.equal(bound.length, 1);
   assert.equal(bound[0].label, "Apps v2");
 });
+
+// ---------------------------------------------------------------------------
+// Drift fingerprint + causation-state freshness (live hydration lane).
+// ---------------------------------------------------------------------------
+
+const { buildDriftFingerprint, deriveExternalSyncFreshness, stampObjectSyncResult: stamp2 } = sync;
+
+test("buildDriftFingerprint is order-insensitive and content-sensitive", () => {
+  const a = [{ id: "1", name: "x" }, { id: "2", name: "y" }];
+  const b = [{ id: "2", name: "y" }, { id: "1", name: "x" }];
+  assert.equal(buildDriftFingerprint(a), buildDriftFingerprint(b), "row order never matters");
+  const changed = [{ id: "1", name: "x" }, { id: "2", name: "z" }];
+  assert.notEqual(buildDriftFingerprint(a), buildDriftFingerprint(changed), "field change changes the fingerprint");
+  const grown = [...a, { id: "3", name: "w" }];
+  assert.notEqual(buildDriftFingerprint(a), buildDriftFingerprint(grown), "row count changes the fingerprint");
+  assert.equal(buildDriftFingerprint(null), "v1:0:1505", "garbage-safe");
+});
+
+test("stampObjectSyncResult carries the fingerprint anchor without clobbering it", () => {
+  const stamped = stamp2({ id: "o" }, { status: "pulled", summary: "s", syncedAt: "t", receiptId: "r", fingerprint: "v1:2:abc" });
+  assert.equal(stamped.lastSyncFingerprint, "v1:2:abc");
+  const restamped = stamp2(stamped, { status: "pushed", summary: "s2", syncedAt: "t2", receiptId: "r2" });
+  assert.equal(restamped.lastSyncFingerprint, "v1:2:abc", "lanes that did not measure keep the prior anchor");
+});
+
+test("deriveExternalSyncFreshness walks the causation states", () => {
+  assert.equal(deriveExternalSyncFreshness({}).state, "unbound");
+  assert.equal(deriveExternalSyncFreshness(null).state, "unbound");
+
+  const bound = { externalTable: "apps", externalRegistryId: "supabase-postgrest" };
+  assert.equal(deriveExternalSyncFreshness(bound).state, "never-synced");
+
+  const synced = { ...bound, lastSyncedAt: "2026-07-04T13:00:00.000Z", lastSyncStatus: "pulled", lastSyncReceiptId: "r-1", lastSyncFingerprint: "v1:2:abc" };
+  const fresh = deriveExternalSyncFreshness(synced, { now: "2026-07-04T13:01:00.000Z" });
+  assert.equal(fresh.state, "synced");
+  assert.ok(fresh.causeChain.some((line) => line.includes("receipt r-1")), "receipt is part of the causal evidence");
+
+  const drifted = deriveExternalSyncFreshness(synced, { now: "2026-07-04T13:01:00.000Z", externalFingerprint: "v1:3:zzz" });
+  assert.equal(drifted.state, "drifted");
+  assert.ok(drifted.causeChain.some((line) => line.includes("external side changed")));
+
+  const stale = deriveExternalSyncFreshness(synced, { now: "2026-07-04T14:00:00.000Z" });
+  assert.equal(stale.state, "stale");
+  assert.ok(stale.ageMs > 5 * 60 * 1000);
+
+  const conflicted = deriveExternalSyncFreshness({ ...synced, lastSyncSummary: "pull apps · HTTP 200 · 1 field conflicts" }, { now: "2026-07-04T13:01:00.000Z" });
+  assert.equal(conflicted.state, "conflict");
+});

@@ -33,9 +33,11 @@ import {
 } from "@/lib/workspace-add-ons";
 import {
   MAX_SYNC_ROWS,
+  buildDriftFingerprint,
   buildExternalTableObject,
   buildPushRecords,
   buildSyncProof,
+  deriveExternalSyncFreshness,
   listExternalSyncObjects,
   mergeExternalIntoRows,
   parseOpenApiTables,
@@ -154,6 +156,9 @@ function summarizeSyncObject(object) {
     lastSyncStatus: clean(object.lastSyncStatus),
     lastSyncSummary: clean(object.lastSyncSummary),
     lastSyncReceiptId: clean(object.lastSyncReceiptId),
+    lastSyncFingerprint: clean(object.lastSyncFingerprint),
+    // Stamps-only causation state (no external fetch on the plain GET).
+    freshness: deriveExternalSyncFreshness(object, { now: new Date().toISOString() }),
   };
 }
 
@@ -198,6 +203,69 @@ async function GET(request, context) {
     }
   }
 
+  // Realtime readiness — declared by the product contract (an optional
+  // *_ANON_* / *_PUBLISHABLE_* env), derived server-side. Supabase's anon
+  // key is the browser-safe publishable key by the provider's own security
+  // model; the SERVICE key is never exposed, and a misconfigured anon key
+  // that equals the service secret is refused outright.
+  const url = new URL(request.url);
+  const publishableEnv = (resolution.product.optionalEnv || []).find((key) => /(_ANON_|_PUBLISHABLE_)/.test(key)) || "";
+  const publishableValue = publishableEnv ? envValue(publishableEnv) : "";
+  const realtimeConfigured = Boolean(
+    publishableValue
+    && resolution.baseUrl
+    && publishableValue !== resolution.secret,
+  );
+  const realtime = {
+    supported: Boolean(publishableEnv),
+    configured: realtimeConfigured,
+    keyEnv: publishableEnv,
+    ...(publishableValue && publishableValue === resolution.secret
+      ? { refused: `${publishableEnv} equals the service secret — refusing to treat it as publishable` }
+      : {}),
+    ...(realtimeConfigured
+      ? {
+        endpoint: `${clean(resolution.baseUrl).replace(/\/+$/, "").replace(/^http/i, "ws")}/realtime/v1/websocket`,
+        schema: "public",
+        // Publishable (anon) key only, on explicit request — never the
+        // service secret. Callers use it for the browser Realtime socket.
+        ...(url.searchParams.get("realtime") === "1" ? { publishableKey: publishableValue } : {}),
+      }
+      : {}),
+  };
+
+  // Watch lane: measure drift for ONE bound object against the live
+  // external table — read-only, no config write; the caller decides whether
+  // to run the receipted pull.
+  const watchId = clean(url.searchParams.get("watch"));
+  let watch = null;
+  if (watchId && resolution.envReady) {
+    const rawObject = listExternalSyncObjects(workspaceConfig)
+      .find((object) => clean(object.id) === watchId && clean(object.externalRegistryId) === resolution.product.integrationId);
+    if (!rawObject) {
+      watch = { objectId: watchId, error: "object not bound to this product" };
+    } else {
+      try {
+        const live = await fetchTableRecords(resolution, rawObject.externalTable, Math.max((rawObject.rows || []).length * 2, 50));
+        if (!live.ok) {
+          watch = { objectId: watchId, error: `external table fetch failed (HTTP ${live.status})` };
+        } else {
+          const fingerprint = buildDriftFingerprint(live.records, clean(rawObject.externalCorrelationKey) || "id");
+          const freshness = deriveExternalSyncFreshness(rawObject, { now: new Date().toISOString(), externalFingerprint: fingerprint });
+          watch = {
+            objectId: watchId,
+            fingerprint,
+            externalCount: live.records.length,
+            drifted: freshness.state === "drifted",
+            freshness,
+          };
+        }
+      } catch (error) {
+        watch = { objectId: watchId, error: error?.message || "network error" };
+      }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     providerId: resolution.provider.providerId,
@@ -206,6 +274,8 @@ async function GET(request, context) {
     envReady: resolution.envReady,
     missingEnv: resolution.missingEnv,
     readiness,
+    realtime,
+    ...(watch ? { watch } : {}),
     tables: inventory.tables,
     tablesProbe: { ok: inventory.ok, status: inventory.status },
     objects,
@@ -377,7 +447,7 @@ async function POST(request, context) {
       httpStatus: pull.status,
     });
     const { receipt } = await appendSyncReceipt({ outcomeStatus: "published", summary, object: target, table });
-    const nextObject = stampObjectSyncResult({ ...target, rows: merge.rows }, { status: "pulled", summary, syncedAt: nowIso, receiptId: receipt.receiptId });
+    const nextObject = stampObjectSyncResult({ ...target, rows: merge.rows }, { status: "pulled", summary, syncedAt: nowIso, receiptId: receipt.receiptId, fingerprint: buildDriftFingerprint(pull.records, correlationKey) });
     const { config } = withExternalSyncObject(workspaceConfig, nextObject);
     const persisted = await writeWorkspaceConfig({ dataModel: config.dataModel });
     return NextResponse.json({ ok: true, action, object: summarizeSyncObject(nextObject), conflicts: merge.conflicts, localOnly: merge.localOnly, workspaceConfig: persisted, receiptId: receipt.receiptId });
@@ -441,7 +511,10 @@ async function POST(request, context) {
     table,
     nextActions: skipped.length ? [`${skipped.length} empty rows were skipped.`] : [],
   });
-  const nextObject = stampObjectSyncResult({ ...target, rows: merge.rows }, { status: "pushed", summary, syncedAt: nowIso, receiptId: receipt.receiptId });
+  const nextObject = stampObjectSyncResult({ ...target, rows: merge.rows }, {
+    status: "pushed", summary, syncedAt: nowIso, receiptId: receipt.receiptId,
+    ...(verify.ok ? { fingerprint: buildDriftFingerprint(verify.records, correlationKey) } : {}),
+  });
   const { config } = withExternalSyncObject(workspaceConfig, nextObject);
   const persisted = await writeWorkspaceConfig({ dataModel: config.dataModel });
   return NextResponse.json({ ok: true, action, object: summarizeSyncObject(nextObject), pushed: records.length, skipped, conflicts: merge.conflicts, workspaceConfig: persisted, receiptId: receipt.receiptId });

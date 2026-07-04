@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HelperSidecar } from "./HelperSidecar.jsx";
+import { ExternalSyncHydrator } from "./ExternalSyncHydrator.jsx";
 import { WorkspaceRail } from "../../workspace-rail.jsx";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -3437,6 +3438,13 @@ export default function DataModelShell() {
   );
 
   const selectedTable = tables.find((t) => t.source === selectedSource) || tables[0] || null;
+  // Externally-bound data-source object behind the selected table (the table
+  // mapping drops object-level binding fields, so read the raw object).
+  const selectedExternalObject = (() => {
+    if (!selectedTable?.objectId || !workspaceConfig?.dataModel?.objects) return null;
+    const raw = workspaceConfig.dataModel.objects.find((o) => o?.id === selectedTable.objectId);
+    return raw?.externalTable && raw?.externalRegistryId ? raw : null;
+  })();
   const selectedTableKey = selectedTable
     ? String(selectedTable.objectId || selectedTable.id || selectedTable.source || "")
     : "";
@@ -3808,6 +3816,11 @@ export default function DataModelShell() {
                 {(selectedTable.columns?.length || 0)} {(selectedTable.columns?.length || 0) === 1 ? "Field" : "Fields"}
                 {" · "}
                 {(selectedTable.rows?.length || 0)} {(selectedTable.rows?.length || 0) === 1 ? "Record" : "Records"}
+                {selectedExternalObject ? (
+                  <> {" · "}
+                    <ExternalSyncHydrator object={selectedExternalObject} onWorkspaceConfig={setWorkspaceConfig} />
+                  </>
+                ) : null}
               </p>
             </div>
           ) : (

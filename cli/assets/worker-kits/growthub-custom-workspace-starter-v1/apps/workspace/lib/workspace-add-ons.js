@@ -287,7 +287,7 @@ const SUPABASE_PRODUCTS = [
     subtitle: "Postgres for the governed workspace",
     plans: "Free, Pro, Team plans",
     entityTypes: "table,record,postgres",
-    capabilities: "database,workspace-data,two-way-sync,workflow",
+    capabilities: "database,workspace-data,two-way-sync,workflow,realtime",
     executionLane: WORKSPACE_DATA_LANE,
     requiredEnv: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
     optionalEnv: ["SUPABASE_ANON_KEY"],

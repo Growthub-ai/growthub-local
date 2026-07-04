@@ -166,3 +166,21 @@ test("supabase-data executor: canonical secret resolution + redaction, no secret
   assert.ok(!executor.includes("authRefValue") && !/adapterMeta[\s\S]{0,400}secret[,}]/.test(executor), "no secret value in adapter metadata");
   assert.ok(executor.includes("requires a row filter"), "filterless update/delete guardrail present");
 });
+
+test("/data route: watch + realtime lanes stay governed and secret-safe", () => {
+  assert.ok(dataRouteSource.includes("buildDriftFingerprint("), "drift measured by the pure core");
+  assert.ok(dataRouteSource.includes("deriveExternalSyncFreshness("), "causation-state deriver used");
+  assert.ok(dataRouteSource.includes('publishableValue !== resolution.secret'), "publishable key refused when it equals the service secret");
+  assert.ok(!/publishableKey:\s*resolution\.secret/.test(dataRouteSource), "service secret never serialized as publishable key");
+  const watchBlock = dataRouteSource.slice(dataRouteSource.indexOf("const watchId"), dataRouteSource.indexOf("return NextResponse.json({\n    ok: true,\n    providerId"));
+  assert.ok(!watchBlock.includes("writeWorkspaceConfig"), "watch lane is read-only — the receipted pull stays the only write path");
+});
+
+test("ExternalSyncHydrator: realtime-when-present, governed pull always", () => {
+  const hydratorSource = readFileSync(path.join(kitApp, "app/data-model/components/ExternalSyncHydrator.jsx"), "utf8");
+  assert.ok(hydratorSource.includes('action: "pull"'), "hydration lands through the governed pull action");
+  assert.ok(!hydratorSource.includes("SERVICE_ROLE"), "no service credential references in the client");
+  assert.ok(hydratorSource.includes("publishableKey"), "realtime uses the publishable key from the governed GET");
+  assert.ok(hydratorSource.includes("startWatchMode"), "watch fallback exists when realtime is absent or fails");
+  assert.ok(!/localStorage|sessionStorage/.test(hydratorSource), "no browser storage");
+});

@@ -278,10 +278,31 @@ Validated V1 capability:
   the `workspace-data` lane.
 - Receipts (`workspace-add-on-data-sync` and the standard provider/product
   kinds) record the full lifecycle.
+- **Live hydration (governed, power-when-present):** while a user views an
+  externally-bound `data-source` object in the Data Model table, the
+  `ExternalSyncHydrator` keeps it fresh. When the product declares a
+  publishable key (`SUPABASE_ANON_KEY`) the governed GET serves it (service
+  secret withheld) and the client opens a **Supabase Realtime**
+  `postgres_changes` WebSocket; every external change triggers the SAME
+  receipted `pull` action on the governed door. When Realtime is absent or
+  the socket fails, it falls back to a **watch poll** against the GET's
+  read-only drift lane (`?watch=<objectId>`), which compares the live
+  external fingerprint with the object's stamped `lastSyncFingerprint` and
+  pulls only on measured drift — no client-side merge, no client-held
+  service credentials, no receipt spam.
+- **Causation-state derivation:** `deriveExternalSyncfreshness` (in
+  `workspace-external-sync.js`) reads the governed stamps
+  (binding → sync stamp → receipt → fingerprint) into an evidence-ordered
+  state — `unbound / never-synced / drifted / conflict / stale / synced` —
+  with a `causeChain`. Every derived surface consumes it: the `/data` GET
+  per object, the Data Model table hydrator pill, and the Workspace Lens
+  "External tables" observability stat. Binding a table externally moves NO
+  unrelated derived UI state (backwards-compatibility is unit-proven), and
+  externally-held records co-exist seamlessly with local rows.
 
-Deferred (explicit): scheduler-driven continuous sync, Supabase Realtime
-subscriptions, Storage/Edge Function products, relationship import, and
-conflict auto-resolution policies.
+Deferred (explicit): scheduler-driven continuous sync (QStash → `pull`),
+Storage/Edge Function products, relationship import, and conflict
+auto-resolution policies.
 
 ## User Surfaces
 

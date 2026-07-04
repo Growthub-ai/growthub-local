@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Activity, BarChart3, Check, Copy, Eye, GitBranch, MoreVertical, Search, Share2 } from "lucide-react";
 import { deriveWorkspaceState, deriveSwarmConditionPacket, deriveWorkspaceContributions, deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
+import { deriveExternalSyncFreshness, listExternalSyncObjects } from "@/lib/workspace-external-sync";
 import { WorkspaceContributionGraph } from "./WorkspaceContributionGraph.jsx";
 import { WorkspaceLensWalkthrough } from "./WorkspaceLensWalkthrough.jsx";
 import { HelperSidecar } from "../data-model/components/HelperSidecar.jsx";
@@ -220,11 +221,25 @@ export function WorkspaceLensPanel({ workspaceConfig, workspaceSourceRecords, me
       ? Object.keys(workspaceSourceRecords).length
       : 0;
     const sandboxCount = objects.filter((object) => object?.objectType === "sandbox-environment").length;
+    // External data (Supabase and future workspace-data providers): the SAME
+    // causation-state deriver the /data route stamps against, run over the
+    // governed objects — the Lens stays synced with externally-held records
+    // with no new state, purely derived.
+    const externalObjects = listExternalSyncObjects(effectiveConfig || {});
+    const now = new Date().toISOString();
+    const externalStates = externalObjects.map((object) => deriveExternalSyncFreshness(object, { now }).state);
+    const externalAttention = externalStates.filter((state) => state === "drifted" || state === "conflict" || state === "never-synced").length;
     return [
       { label: "Ready lenses", value: counts.ready },
       { label: "Open actions", value: counts.assignable },
       { label: "Sandbox environments", value: sandboxCount },
       { label: "Source records", value: sourceCount },
+      {
+        label: "External tables",
+        value: externalAttention
+          ? `${externalObjects.length} · ${externalAttention} need sync`
+          : externalObjects.length,
+      },
     ];
   }, [counts.assignable, counts.ready, effectiveConfig, workspaceSourceRecords]);
 

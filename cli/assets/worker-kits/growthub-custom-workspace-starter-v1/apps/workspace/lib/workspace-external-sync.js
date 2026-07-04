@@ -224,7 +224,7 @@ function buildSyncProof({ action, table, pulled = 0, pushed = 0, added = 0, upda
 }
 
 /** Stamp the sync outcome onto the owning object (object-level, additive). */
-function stampObjectSyncResult(object, { status, summary, syncedAt, receiptId }) {
+function stampObjectSyncResult(object, { status, summary, syncedAt, receiptId, fingerprint }) {
   if (!object || typeof object !== "object") return object;
   return {
     ...object,
@@ -232,7 +232,115 @@ function stampObjectSyncResult(object, { status, summary, syncedAt, receiptId })
     lastSyncStatus: clean(status),
     lastSyncSummary: clean(summary).slice(0, 500),
     lastSyncReceiptId: clean(receiptId),
+    // Optional drift anchor: only overwritten when the caller measured one,
+    // so stamps from lanes that did not fetch external rows keep the prior
+    // causation evidence intact.
+    lastSyncFingerprint: fingerprint !== undefined ? clean(fingerprint) : clean(object.lastSyncFingerprint),
   };
+}
+
+/**
+ * Order-insensitive fingerprint of external records over the correlation
+ * key + full row content. Pure and dependency-free (djb2 over a stable
+ * serialization) — a collision costs one redundant receipted pull, never
+ * a missed governance step.
+ */
+function buildDriftFingerprint(records, correlationKey = "id") {
+  const list = Array.isArray(records) ? records : [];
+  const key = clean(correlationKey) || "id";
+  const parts = list
+    .map((record) => {
+      if (!record || typeof record !== "object" || Array.isArray(record)) return "";
+      const entries = Object.keys(record)
+        .sort()
+        .map((field) => {
+          const value = record[field];
+          return `${field}=${clean(value && typeof value === "object" ? JSON.stringify(value) : value)}`;
+        });
+      return `${clean(record[key])}|${entries.join(",")}`;
+    })
+    .filter(Boolean)
+    .sort();
+  const text = parts.join("\n");
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash * 33) ^ text.charCodeAt(index)) >>> 0;
+  }
+  return `v1:${list.length}:${hash.toString(16)}`;
+}
+
+const SYNC_STALE_AFTER_MS = 5 * 60 * 1000;
+
+/**
+ * Causation-state freshness for an externally-bound object. Derivation is
+ * evidence-ordered — every conclusion is justified by a `causeChain` entry
+ * reading straight off the governed stamps (binding → sync stamp → receipt
+ * → fingerprint comparison), so the state stays strong no matter which
+ * external system (Supabase PostgREST, Realtime-notified pulls, any future
+ * data provider) holds the records:
+ *
+ *   unbound      → object declares no external binding
+ *   never-synced → bound but no governed sync has stamped it
+ *   drifted      → measured external fingerprint ≠ stamped fingerprint
+ *   conflict     → last governed merge reported field conflicts
+ *   stale        → last sync older than staleAfterMs (advisory; needs `now`)
+ *   synced       → binding + stamp + no contrary evidence
+ *
+ * Garbage-safe: any malformed object degrades to "unbound", never throws.
+ */
+function deriveExternalSyncFreshness(object, { now = "", externalFingerprint = "", staleAfterMs = SYNC_STALE_AFTER_MS } = {}) {
+  const causeChain = [];
+  const boundTable = clean(object?.externalTable);
+  const registryId = clean(object?.externalRegistryId);
+  const base = {
+    boundTable,
+    registryId,
+    lastSyncedAt: clean(object?.lastSyncedAt),
+    lastSyncStatus: clean(object?.lastSyncStatus),
+    receiptId: clean(object?.lastSyncReceiptId),
+    ageMs: null,
+    causeChain,
+  };
+  if (!boundTable || !registryId) {
+    causeChain.push("no external binding declared on the object");
+    return { ...base, state: "unbound" };
+  }
+  causeChain.push(`bound to external table "${boundTable}" via registry row ${registryId}`);
+  if (!base.lastSyncedAt) {
+    causeChain.push("no governed sync stamp — never pulled or pushed");
+    return { ...base, state: "never-synced" };
+  }
+  causeChain.push(`last governed ${base.lastSyncStatus || "sync"} at ${base.lastSyncedAt}${base.receiptId ? ` (receipt ${base.receiptId})` : ""}`);
+  const stampedFingerprint = clean(object?.lastSyncFingerprint);
+  const measured = clean(externalFingerprint);
+  if (measured && stampedFingerprint && measured !== stampedFingerprint) {
+    causeChain.push(`external fingerprint ${measured} ≠ stamped ${stampedFingerprint} — external side changed since the last sync`);
+    return { ...base, state: "drifted" };
+  }
+  if (measured && !stampedFingerprint) {
+    causeChain.push("external fingerprint measured but no stamped anchor — one governed pull re-anchors it");
+    return { ...base, state: "drifted" };
+  }
+  if (measured && stampedFingerprint) {
+    causeChain.push("external fingerprint matches the stamped anchor");
+  }
+  const conflictMatch = /(\d+) field conflicts/.exec(clean(object?.lastSyncSummary));
+  if (conflictMatch && Number(conflictMatch[1]) > 0) {
+    causeChain.push(`last merge reported ${conflictMatch[1]} field conflict(s) — resolution followed the action direction`);
+    return { ...base, state: "conflict" };
+  }
+  if (clean(now)) {
+    const ageMs = Date.parse(clean(now)) - Date.parse(base.lastSyncedAt);
+    if (Number.isFinite(ageMs)) {
+      base.ageMs = ageMs;
+      if (ageMs > staleAfterMs) {
+        causeChain.push(`sync age ${Math.round(ageMs / 1000)}s exceeds ${Math.round(staleAfterMs / 1000)}s — advisory staleness`);
+        return { ...base, state: "stale" };
+      }
+    }
+  }
+  causeChain.push("binding, stamp, and receipts agree — synced");
+  return { ...base, state: "synced" };
 }
 
 /** Replace (or insert) one object in the config's dataModel — pure merge. */
@@ -253,9 +361,12 @@ function withExternalSyncObject(workspaceConfig, nextObject) {
 
 export {
   MAX_SYNC_ROWS,
+  SYNC_STALE_AFTER_MS,
+  buildDriftFingerprint,
   buildExternalTableObject,
   buildPushRecords,
   buildSyncProof,
+  deriveExternalSyncFreshness,
   externalTableObjectId,
   listExternalSyncObjects,
   mapExternalRecordsToRows,
