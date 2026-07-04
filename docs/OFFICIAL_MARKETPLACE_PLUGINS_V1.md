@@ -353,6 +353,63 @@ Deferred (explicit): scheduler-driven continuous sync (QStash → `pull`),
 signed-URL issuance and object upload UI, relationship import, and conflict
 auto-resolution policies.
 
+## V1 Provider: Nango
+
+Nango is the fourth official marketplace provider and the first provider whose
+installable products are discovered live from the connected account. It adds a
+governed integrations lane without changing the Supabase, Vercel, Upstash, or
+native inbound lanes.
+
+Provider:
+
+- `providerId`: `nango`
+- provider account lane: Nango REST API bearer auth with `NANGO_SECRET_KEY`
+- setup field: Nango secret key
+- setup surface: Add-ons Marketplace / provider setup
+- persisted truth: provider row and discovered integration product rows in
+  the API Registry
+- secret rule: identical to other official providers — no key is persisted
+  into config, receipts, browser payloads, or row output; `.env.local` holds
+  values, rows hold env-ref names only
+
+### Nango Live Integration Products
+
+Nango declares a `productDiscovery` contract instead of relying on a fixed
+catalog of installable products. The static `Nango Integrations` entry is the
+discovery contract and must not render as a fake install card beside live
+integrations.
+
+Product identity:
+
+- `productId` / `integrationId`: `nango-<providerConfigKey>`
+- `authRef`: `NANGO_SECRET_KEY`
+- execution lane: `workspace-integrations`
+- connector kind: `nango`
+- resolver template: `nango`
+- binding field: `providerConfigKey`
+- required env: `NANGO_SECRET_KEY`
+- optional env: `NANGO_HOST_URL`, `NANGO_ENVIRONMENT`, `NANGO_MODE`
+
+Validated V1 capability:
+
+- Live discovery reads the connected account's Nango integrations through
+  `GET /api/workspace/add-ons/providers/nango/products/live`.
+- Discovery is read-only, operator-gated, provider-contract-driven, and never
+  writes workspace config.
+- Product install re-fetches and re-verifies the selected integration
+  server-side through the product sync route before writing a governed
+  `connectorKind: "nango"` API Registry row.
+- Missing `NANGO_SECRET_KEY` produces an honest blocked/needs-setup outcome
+  and does not delete existing provider or product rows.
+- Installed Nango rows feed the existing config-driven Nango resolver loader
+  and become governed API requests through the Unified API Resolver Registry.
+- `/settings/apps` derives the Nango app icon only after a verified governed
+  Nango product row exists.
+- Every product-sync outcome, including blocked discovery/install states, is
+  receipted.
+
+Reference: [`NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md`](./NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md).
+
 ## User Surfaces
 
 Official marketplace plugins appear in these workspace surfaces:
@@ -368,8 +425,8 @@ Official marketplace plugins appear in these workspace surfaces:
 - Schedule Cockpit: fleet view for scheduled, ready, blocked, and drifted
   workflows
 - Settings / Apps: governed external links (GitHub repository, Vercel
-  deployment, Supabase database) derived from registry rows, deduped by
-  provider URL, with hover popovers
+  deployment, Supabase database/storage, Nango integration) derived from
+  registry rows, deduped by provider URL, with hover popovers
 - Agent Outcomes: receipt ledger for every governed action
 
 ## Product Lane Dispatch

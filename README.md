@@ -183,6 +183,7 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 - [**Governed MCP Console V1**](./docs/GOVERNED_MCP_CONSOLE_V1.md) — the agent-facing operating console (read → reason → dry-run → governed mutate → re-read)
 - [**Official Marketplace Plugins V1**](./docs/OFFICIAL_MARKETPLACE_PLUGINS_V1.md)
 - [**Supabase Add-on Topology and Capabilities V1**](./docs/SUPABASE_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md)
+- [**Nango Add-on Topology and Capabilities V1**](./docs/NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md)
 - [**Governed Inbound And Deployment Release Freeze V1**](./docs/GOVERNED_INBOUND_AND_DEPLOYMENT_RELEASE_FREEZE_V1.md)
 - [**Serverless Scheduler Command Guide V1**](./docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md)
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
