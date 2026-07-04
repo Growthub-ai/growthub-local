@@ -19,6 +19,19 @@ existing proposal payload. Nothing here changes or compromises current behavior.
 > vendored at `cli/dist/runtime/server/node_modules/@paperclipai/*`; helper paths
 > below are under `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`
 > unless otherwise noted.
+>
+> **Vendored-dist correction (verified against the actual dist):** three anchors
+> below cite source paths that do NOT exist in the vendored build. (1) There is
+> no `gtm-campaign-policy.ts` / `enforcePerformanceReview` — the review→improve
+> primitive is absent upstream in this build (only `dist/services/gtm-state.js`
+> ships); the workspace's `/pulse` Report + `min-swarm-outcome-score` delegation
+> implements that loop first. (2) There is no separate `compute-scheduler` —
+> capacity gating is inline in the heartbeat (`dist/services/heartbeat.js:1426-1461`,
+> `availableSlots = maxConcurrentRuns - runningCount`). (3) Stuck-work recovery
+> is `reapOrphanedRuns` + retry-once + `resumeQueuedRuns` on a 5-minute stale
+> loop (`heartbeat.js:1277-1378`, driver `dist/index.js:397-427`) — the shape the
+> workspace `/pulse` mirrors with human-gated recovery
+> (`GOVERNED_AUTONOMIC_PULSE_V1.md`).
 
 ---
 

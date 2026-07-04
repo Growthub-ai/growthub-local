@@ -97,9 +97,35 @@ enabled, goal, description`.
 
 Rule kinds V1: `max-stalled-runs`, `max-failed-runs`, `max-blocked-workflows`,
 `max-drifted-workflows`, `max-blocked-attempts`, `max-missing-secrets`,
-`require-deployment-live`, `pulse-cadence-minutes`. An unknown `ruleKind` is
-reported as a finding — a policy the workspace cannot evaluate is itself a
-governance signal, never silently ignored.
+`require-deployment-live`, `pulse-cadence-minutes`, plus the agent governance
+rules below. An unknown `ruleKind` is reported as a finding — a policy the
+workspace cannot evaluate is itself a governance signal, never silently
+ignored.
+
+### Agent governance rules (swarms AND standalone ai-agent nodes)
+
+Two DISTINCT agent shapes are covered — a workspace with a single `ai-agent`
+node and no swarm still gets agent-health findings:
+
+- **Agent swarms** (`agent-swarm-v1` graphs): quality/spend truth comes from
+  the SAME run records the Swarm cockpit reads (`deriveSwarmRunProjection` —
+  tokens are null when the adapter reported nothing; the pulse never
+  estimates), eligibility from the existing pre-run gate
+  (`deriveSwarmWorkflowExecutionEligibility`).
+  - `max-swarm-tokens-24h` — budget ceiling over reported tokens; runs that
+    reported no count are counted separately and named in the finding.
+  - `min-swarm-outcome-score` — quality floor over the synthesizer's outcome
+    score; a breach seeds a governed **improvement swarm proposal** for that
+    exact workflow (the review→improve loop, human-gated). Structural-fallback
+    scores are labeled as such, never passed off as semantic.
+  - `max-blocked-swarms` — eligibility-blocked swarms, handed to Checks with
+    the exact affected cards.
+- **Standalone `ai-agent` NODES** (plain pipeline graphs — NOT swarms): per-
+  node completion truth comes from the row's own `lastScheduledRunNodeTrace`
+  (written by the destination door) — no fetch, no estimate.
+  - `max-failed-agent-nodes` — failed/skipped agent steps across latest runs,
+    handed to Checks scoped to the affected workflows; each card's existing
+    recovery (re-run / retest / rebind) clears it on the next fresh run.
 
 `pulse-cadence-minutes` is the watchdog-of-the-watchdog: **only a successful
 beat counts** — a heartbeat workflow failing on schedule is stale, not fresh.
@@ -177,7 +203,10 @@ REWARD  /pulse re-derives: card healthy, 0 stalled, the no-stalls finding
         clears itself, the beat finding persists until the heartbeat exists.
 ```
 
-Observed at freeze: 17/17 checks, 4 screenshots. Operational note surfaced by
+Observed at freeze: 22/22 journey checks plus a live agent-node probe (the
+`max-failed-agent-nodes` finding fires for a standalone ai-agent workflow, its
+one-click lands on Checks scoped to the affected card, and the card shows the
+agent-step lens), 8 screenshots. Operational note surfaced by
 this journey: a workflow canvas left open can adopt the server-synced trigger
 graph and its client PATCH races the door's proof write (last-writer-wins on
 config) — the e2e's REALITY phase therefore invokes with the canvas closed,

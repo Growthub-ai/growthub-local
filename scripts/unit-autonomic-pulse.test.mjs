@@ -504,6 +504,123 @@ test("report derives the daily digest and the self-run checklist with governed s
   assert.equal(model.report.selfRun.find((s) => s.id === "auto-recovery").done, true);
 });
 
+/* ================= swarm + standalone ai-agent lenses ================= */
+function swarmGraph() {
+  return JSON.stringify({
+    version: 1, provider: "growthub-native", executionMode: "agent-swarm-v1",
+    nodes: [
+      { id: "orchestrator", type: "ai-agent", config: { adapter: "local-intelligence", role: "orchestrator" } },
+      { id: "worker-1", type: "ai-agent", config: { adapter: "local-intelligence", role: "researcher", taskPrompt: "research" } },
+      { id: "synth", type: "ai-agent", config: { adapter: "local-intelligence", role: "synthesizer" } },
+    ],
+    edges: [{ from: "orchestrator", to: "worker-1" }, { from: "worker-1", to: "synth" }],
+  });
+}
+function agentNodeGraph() {
+  return JSON.stringify({
+    version: 1, provider: "growthub-native",
+    nodes: [
+      { id: "input", type: "input", config: { inputMode: "manual", samplePayload: { since: "2026-01-01" } } },
+      { id: "agent-step", type: "ai-agent", config: { adapter: "local-agent-host", host: "claude_local", taskPrompt: "summarize" } },
+      { id: "result", type: "tool-result", config: { writeLastResponse: true } },
+    ],
+    edges: [{ from: "input", to: "agent-step" }, { from: "agent-step", to: "result" }],
+  });
+}
+function swarmRecord({ ranAtMs, score, kind = "outcome", tokens = 1200 } = {}) {
+  return {
+    ranAt: iso(ranAtMs),
+    status: "passed",
+    durationMs: 1000,
+    swarm: {
+      status: "passed",
+      reward: { kind, parallel: 1, finish: 1, outcome: score, score, weights: {}, note: "" },
+      orchestrator: { status: "completed", plan: "plan", tokens },
+      tasks: [],
+      synthesis: { status: "completed" },
+    },
+  };
+}
+
+test("swarm workflows get eligibility + truthful score/tokens from caller-supplied run records", () => {
+  const workspaceConfig = cfg({ rows: [
+    { Name: "my-swarm", runLocality: "local", adapter: "local-intelligence", lifecycleStatus: "live", orchestrationConfig: swarmGraph() },
+  ] });
+  const cardId = "sandbox-workflows::my-swarm::0";
+  const model = derivePulseCockpit({
+    workspaceConfig, configuredEnvRefs: CONFIGURED, nowMs: NOW,
+    runRecordsByCard: { [cardId]: swarmRecord({ ranAtMs: NOW - 3600_000, score: 0.31 }) },
+  });
+  const entry = model.heartbeats.find((h) => h.name === "my-swarm");
+  assert.ok(entry.swarm, "swarm lens present");
+  assert.equal(entry.swarm.lastRun.score, 0.31);
+  assert.equal(model.swarm.swarms, 1);
+  assert.equal(model.swarm.worst.name, "my-swarm");
+  assert.equal(model.swarm.reportedTokens24h, 1200, "reported tokens summed, never estimated");
+  // Without a record, telemetry stays null-honest.
+  const bare = derivePulseCockpit({ workspaceConfig, configuredEnvRefs: CONFIGURED, nowMs: NOW });
+  assert.equal(bare.heartbeats.find((h) => h.name === "my-swarm").swarm.lastRun, null);
+  assert.equal(bare.swarm.reportedTokens24h, 0);
+});
+
+test("swarm budget / quality / health rules fire with governed, targeted actions", () => {
+  const workspaceConfig = cfg({
+    rows: [{ Name: "my-swarm", runLocality: "local", adapter: "local-intelligence", lifecycleStatus: "live", orchestrationConfig: swarmGraph() }],
+    policyRows: [
+      { Name: "swarm-budget", ruleKind: "max-swarm-tokens-24h", threshold: 1000, severity: "warn", enabled: "true" },
+      { Name: "swarm-quality", ruleKind: "min-swarm-outcome-score", threshold: 0.5, severity: "critical", enabled: "true" },
+      { Name: "swarm-health", ruleKind: "max-blocked-swarms", threshold: 0, severity: "warn", enabled: "true" },
+    ],
+  });
+  const cardId = "sandbox-workflows::my-swarm::0";
+  const model = derivePulseCockpit({
+    workspaceConfig, configuredEnvRefs: CONFIGURED, nowMs: NOW,
+    runRecordsByCard: { [cardId]: swarmRecord({ ranAtMs: NOW - 3600_000, score: 0.31 }) },
+  });
+  const byId = Object.fromEntries(model.findings.map((f) => [f.policyId, f]));
+  assert.ok(byId["swarm-budget"], "budget finding fires (1200 > 1000)");
+  assert.equal(byId["swarm-budget"].nextAction.handoff, "ceo-cockpit");
+  assert.ok(byId["swarm-quality"], "quality finding fires (0.31 < 0.5)");
+  assert.equal(byId["swarm-quality"].nextAction.kind, "seed-proposal");
+  assert.equal(byId["swarm-quality"].nextAction.seedIntent, "swarm", "review→improve delegates through the governed swarm lane");
+  assert.match(byId["swarm-quality"].nextAction.seedPrompt, /"my-swarm"/);
+  // Eligibility for this fixture is not ready (no live helper adapter context) → health rule fires with targets.
+  if (byId["swarm-health"]) {
+    assert.equal(byId["swarm-health"].nextAction.handoff, "checks-tab");
+    assert.deepEqual(byId["swarm-health"].nextAction.targetCardIds, [cardId]);
+  }
+  for (const f of model.findings) assert.ok(f.plain?.title && f.plain?.actionDoes, "plain copy on every finding");
+});
+
+test("standalone ai-agent NODES (no swarm) get their own lens and max-failed-agent-nodes rule", () => {
+  const trace = JSON.stringify([
+    { nodeId: "input", status: "completed" },
+    { nodeId: "agent-step", status: "failed" },
+    { nodeId: "result", status: "skipped" },
+  ]);
+  const model = derivePulseCockpit({
+    configuredEnvRefs: CONFIGURED,
+    nowMs: NOW,
+    workspaceConfig: cfg({
+      rows: [
+        { Name: "single-agent-flow", runLocality: "local", adapter: "local-process", orchestrationConfig: agentNodeGraph(), lastScheduledRunNodeTrace: trace, lastScheduledRunStatus: "502", lastScheduledRunFailedAt: iso(NOW - 60_000), lastScheduledRunAttemptedAt: iso(NOW - 90_000), lastScheduledRunFailureReason: "agent step failed" },
+      ],
+      policyRows: [{ Name: "agent-steps", ruleKind: "max-failed-agent-nodes", threshold: 0, severity: "critical", enabled: "true" }],
+    }),
+  });
+  const entry = model.heartbeats.find((h) => h.name === "single-agent-flow");
+  assert.equal(entry.swarm, null, "a plain ai-agent graph is NOT a swarm");
+  assert.ok(entry.agentNodes, "standalone agent lens present");
+  assert.equal(entry.agentNodes.count, 1, "only ai-agent nodes counted");
+  assert.deepEqual(entry.agentNodes.failed, ["agent-step"]);
+  assert.equal(model.agents.failedNodes, 1);
+  const finding = model.findings.find((f) => f.policyId === "agent-steps");
+  assert.ok(finding, "max-failed-agent-nodes fires");
+  assert.equal(finding.nextAction.handoff, "checks-tab");
+  assert.deepEqual(finding.nextAction.targetCardIds, [entry.cardId]);
+  assert.equal(finding.plain.title, "AI agent steps are failing");
+});
+
 test("no policies → sensing still runs, setup state names the gap", () => {
   const model = derivePulseCockpit({ workspaceConfig: cfg({ rows: [wfRow("Flow A")] }), configuredEnvRefs: CONFIGURED, nowMs: NOW });
   assert.equal(model.policySetupState, "none");

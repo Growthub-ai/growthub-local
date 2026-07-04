@@ -62,6 +62,32 @@ if (!sandbox.rows.some((r) => String(r?.Name || "") === "stuck-workflow")) {
   });
 }
 
+// A single standalone ai-agent NODE workflow (NOT a swarm) whose latest run
+// trace shows the agent step failed — the max-failed-agent-nodes fixture.
+if (!sandbox.rows.some((r) => String(r?.Name || "") === "agent-step-flow")) {
+  sandbox.rows.push({
+    Name: "agent-step-flow", lifecycleStatus: "live", runLocality: "local", adapter: "local-process", status: "failed",
+    lastScheduledRunAttemptedAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    lastScheduledRunFailedAt: new Date(Date.now() - 2 * 3600_000 + 30_000).toISOString(),
+    lastScheduledRunStatus: "502",
+    lastScheduledRunFailureReason: "agent step failed",
+    lastScheduledRunNodeTrace: JSON.stringify([
+      { nodeId: "input", status: "completed" },
+      { nodeId: "agent-step", status: "failed" },
+      { nodeId: "result", status: "skipped" },
+    ]),
+    orchestrationConfig: JSON.stringify({
+      version: 1, provider: "growthub-native",
+      nodes: [
+        { id: "input", type: "input", config: { inputMode: "manual", samplePayload: { since: "2026-01-01" } } },
+        { id: "agent-step", type: "ai-agent", config: { adapter: "local-agent-host", host: "claude_local", taskPrompt: "summarize" } },
+        { id: "result", type: "tool-result", config: { writeLastResponse: true } },
+      ],
+      edges: [{ from: "input", to: "agent-step" }, { from: "agent-step", to: "result" }],
+    }, null, 2),
+  });
+}
+
 // Human policy rows — a plain custom object, the same shape the governed
 // create_object helper lane produces. No preset, no new object type.
 if (!objects.some((o) => String(o?.id || "") === "workspace-policy")) {
@@ -74,6 +100,7 @@ if (!objects.some((o) => String(o?.id || "") === "workspace-policy")) {
     rows: [
       { Name: "no-stalls", ruleKind: "max-stalled-runs", threshold: 0, severity: "critical", autoApprove: "true", enabled: "true", goal: "keep automations flowing" },
       { Name: "beat", ruleKind: "pulse-cadence-minutes", threshold: 30, severity: "warn", autoApprove: "false", enabled: "true", goal: "the workspace watches itself" },
+      { Name: "agent-steps", ruleKind: "max-failed-agent-nodes", threshold: 0, severity: "critical", autoApprove: "false", enabled: "true", goal: "agents always deliver their outputs" },
     ],
   });
 }

@@ -45,6 +45,9 @@
 
 import { deriveScheduleCockpit } from "./schedule-cockpit-console.js";
 import { READINESS_DELTA_TAGS } from "./serverless-readiness.js";
+import { parseOrchestrationGraph, isAgentSwarmGraph } from "./orchestration-graph.js";
+import { deriveSwarmWorkflowExecutionEligibility } from "./workspace-swarm-proposal.js";
+import { deriveSwarmRunProjection } from "./orchestration-run-console.js";
 
 // CLIENT-BUNDLE RULE: this module is imported by a "use client" component, so
 // it must not (transitively) import node:crypto modules. The two values below
@@ -377,11 +380,82 @@ export function evaluatePulsePolicies({ packet, policyRows = [] } = {}) {
       continue;
     }
 
+    if (ruleKind === "max-swarm-tokens-24h") {
+      const s = packet.swarm || {};
+      const limit = threshold == null ? 0 : threshold;
+      if ((s.reportedTokens24h || 0) > limit) {
+        findings.push(buildFinding(policy, {
+          observed: s.reportedTokens24h,
+          expected: `<= ${limit} reported tokens/24h`,
+          message: `Agent swarms used ${s.reportedTokens24h} reported tokens in 24h (limit ${limit}).${s.unreportedRuns24h ? ` ${s.unreportedRuns24h} run${s.unreportedRuns24h === 1 ? "" : "s"} reported no token count and ${s.unreportedRuns24h === 1 ? "is" : "are"} not included.` : ""}`,
+          sensorTag: PULSE_SENSOR_TAGS.GOVERNANCE_BLOCKED,
+          nextAction: { kind: "open-ceo", label: "Review swarm spend", handoff: "ceo-cockpit", explain: "The CEO cockpit shows each swarm's runs and truthful per-agent telemetry." },
+          autoApprove,
+        }));
+      }
+      continue;
+    }
+
+    if (ruleKind === "min-swarm-outcome-score") {
+      const s = packet.swarm || {};
+      const floor = threshold == null ? 0.5 : threshold;
+      if (s.worst && s.worst.score < floor) {
+        findings.push(buildFinding(policy, {
+          observed: s.worst.score,
+          expected: `>= ${floor}`,
+          message: `"${s.worst.name}" scored ${s.worst.score} on its last swarm run${s.worst.rewardKind === "structural-fallback" ? " (structural score — the synthesizer returned no semantic outcome)" : ""}.`,
+          sensorTag: PULSE_SENSOR_TAGS.RUN_FAILED,
+          nextAction: {
+            kind: "seed-proposal",
+            label: "Delegate improvement",
+            handoff: "helper-proposal",
+            targetCardIds: [s.worst.cardId],
+            seedIntent: "swarm",
+            seedPrompt: `Propose a governed agent swarm to improve the workflow "${s.worst.name}": its last outcome score was ${s.worst.score} (floor ${floor}). Review the previous run's outputs, sharpen the task prompts and outcome criteria, and finish only when a fresh run scores at or above ${floor}:`,
+          },
+          autoApprove,
+        }));
+      }
+      continue;
+    }
+
+    if (ruleKind === "max-failed-agent-nodes") {
+      const a = packet.agents || {};
+      const limit = threshold == null ? 0 : threshold;
+      if ((a.failedNodes || 0) > limit) {
+        findings.push(buildFinding(policy, {
+          observed: a.failedNodes,
+          expected: `<= ${limit}`,
+          message: `${a.failedNodes} AI-agent node${a.failedNodes === 1 ? "" : "s"} failed or ${a.failedNodes === 1 ? "was" : "were"} skipped in the latest runs of ${(a.failedNames || []).slice(0, 3).map((n) => `"${n}"`).join(", ")}${(a.failedNames || []).length > 3 ? "…" : ""}.`,
+          sensorTag: PULSE_SENSOR_TAGS.RUN_FAILED,
+          nextAction: { kind: "open-checks", label: "Open affected workflows", handoff: "checks-tab", targetCardIds: a.failedCardIds || [], explain: "Each affected workflow's card shows its state and recovery; open it to re-run the agent node with fresh inputs." },
+          autoApprove,
+        }));
+      }
+      continue;
+    }
+
+    if (ruleKind === "max-blocked-swarms") {
+      const s = packet.swarm || {};
+      const limit = threshold == null ? 0 : threshold;
+      if ((s.blocked || 0) > limit) {
+        findings.push(buildFinding(policy, {
+          observed: s.blocked,
+          expected: `<= ${limit}`,
+          message: `${s.blocked} agent swarm${s.blocked === 1 ? " is" : "s are"} not runnable — the eligibility gate names what each is missing.`,
+          sensorTag: PULSE_SENSOR_TAGS.BLOCKED_READINESS,
+          nextAction: { kind: "open-checks", label: "Open blocked swarms", handoff: "checks-tab", targetCardIds: s.blockedCardIds || [], explain: "The Checks tab lists each blocked swarm; open a card to see and fix what it is missing." },
+          autoApprove,
+        }));
+      }
+      continue;
+    }
+
     const rule = RULE_TABLE[ruleKind];
     if (!rule) {
       findings.push(buildFinding(policy, {
         observed: ruleKind || "(empty)",
-        expected: `one of: ${Object.keys(RULE_TABLE).concat(["require-deployment-live", "pulse-cadence-minutes"]).join(", ")}`,
+        expected: `one of: ${PULSE_RULE_KINDS.join(", ")}`,
         message: `Unknown policy rule kind "${ruleKind}" — this row cannot be evaluated.`,
         sensorTag: PULSE_SENSOR_TAGS.GOVERNANCE_BLOCKED,
         severityOverride: "warn",
@@ -460,6 +534,30 @@ function plainCopyFor(finding) {
       actionDoes: "Opens /settings/apps to review and redeploy through the governed deploy flow.",
       actionOutcome: "A successful deploy writes proof the pulse reads on its next beat.",
     },
+    "max-swarm-tokens-24h": {
+      title: "Agent swarms are over budget",
+      why: `Swarms used ${observed} reported tokens in the last 24 hours — above the ceiling you set.${goalLine}`,
+      actionDoes: "Opens the CEO cockpit, which shows each swarm's runs with truthful per-agent token counts.",
+      actionOutcome: "You see where the spend goes; pause or reshape the expensive swarm.",
+    },
+    "min-swarm-outcome-score": {
+      title: "A swarm's output quality dropped",
+      why: `A swarm's last run scored ${observed} — below the floor you set.${goalLine}`,
+      actionDoes: "Drafts a governed improvement proposal for that exact workflow — reviewed before anything runs.",
+      actionOutcome: "After you approve, agents rework the swarm until a fresh run clears your floor.",
+    },
+    "max-blocked-swarms": {
+      title: "Agent swarms can't run",
+      why: `${observed} swarm${observed === 1 ? " is" : "s are"} blocked before launch — each names exactly what it is missing.${goalLine}`,
+      actionDoes: "Opens the affected swarms in Checks so you can fix what each one is missing.",
+      actionOutcome: "Once the missing pieces resolve, the swarms become runnable again.",
+    },
+    "max-failed-agent-nodes": {
+      title: "AI agent steps are failing",
+      why: `${observed} AI-agent step${observed === 1 ? "" : "s"} inside your workflows failed or ${observed === 1 ? "was" : "were"} skipped on the latest runs.${goalLine}`,
+      actionDoes: "Opens the affected workflows in Checks; each card offers its recovery (re-run, retest, or rebind).",
+      actionOutcome: "A fresh run with every agent step completed clears this on the next pulse.",
+    },
     "pulse-cadence-minutes": {
       title: "The workspace heartbeat is silent",
       why: finding.nextAction?.kind === "seed-proposal"
@@ -481,8 +579,15 @@ function plainCopyFor(finding) {
   };
 }
 
-/** Exported list of evaluable rule kinds (tests + docs). */
-export const PULSE_RULE_KINDS = Object.keys(RULE_TABLE).concat(["require-deployment-live", "pulse-cadence-minutes"]);
+/** Exported list of evaluable rule kinds (tests + docs + the policy editor). */
+export const PULSE_RULE_KINDS = Object.keys(RULE_TABLE).concat([
+  "require-deployment-live",
+  "pulse-cadence-minutes",
+  "max-swarm-tokens-24h",
+  "min-swarm-outcome-score",
+  "max-blocked-swarms",
+  "max-failed-agent-nodes",
+]);
 
 function buildFinding(policy, { observed, expected, message, sensorTag, nextAction, autoApprove, severityOverride }) {
   const safe = SAFE_AUTO_RECOVERY_KINDS.includes(nextAction?.kind);
@@ -517,7 +622,7 @@ function buildFinding(policy, { observed, expected, message, sensorTag, nextActi
  * @returns {object} view-model consumed by PulseCockpit.jsx — and a valid
  *                   agent condition packet in the binding-loop sense.
  */
-export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], receipts = [], nowMs = null } = {}) {
+export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], receipts = [], runRecordsByCard = {}, nowMs = null } = {}) {
   const fleet = deriveScheduleCockpit({ workspaceConfig, configuredEnvRefs, receipts });
 
   // Join fleet cards back to their owning rows by replicating the EXACT card
@@ -540,6 +645,57 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
   const heartbeats = fleet.workflowCards.map((card) => {
     const row = rowByCardId.get(card.cardId) || null;
     const heartbeat = senseRunHeartbeat(row || {}, { nowMs });
+
+    // Agent lenses. Two DISTINCT shapes share nothing but vocabulary:
+    //   - agent-swarm-v1 graphs (orchestrator→workers→synthesizer) with their
+    //     own eligibility gate, outcome score, and token telemetry;
+    //   - a plain pipeline graph carrying one or more standalone `ai-agent`
+    //     NODES, whose per-node completion truth is already on the row in
+    //     `lastScheduledRunNodeTrace` (written by the destination door).
+    // Policy must cover BOTH — a workspace with a single ai-agent node and no
+    // swarm still gets agent-health findings.
+    let swarm = null;
+    let agentNodes = null;
+    const graph = row ? parseOrchestrationGraph(row.orchestrationConfig || row.orchestrationGraph) : null;
+    const isSwarmGraph = Boolean(graph && isAgentSwarmGraph(graph));
+    if (graph && !isSwarmGraph) {
+      const declared = (Array.isArray(graph.nodes) ? graph.nodes : []).filter((n) => n?.type === "ai-agent");
+      if (declared.length > 0) {
+        // Per-node truth from the row's own trace — no fetch, no estimate.
+        let trace = [];
+        try { trace = JSON.parse(clean(row?.lastScheduledRunNodeTrace) || "[]"); } catch { trace = []; }
+        const traceById = new Map((Array.isArray(trace) ? trace : []).filter(Boolean).map((t) => [clean(t.nodeId || t.id), t]));
+        const nodes = declared.map((n) => {
+          const t = traceById.get(clean(n.id));
+          return { nodeId: clean(n.id), status: t ? clean(t.status) || "unknown" : "untraced" };
+        });
+        agentNodes = {
+          count: declared.length,
+          traced: nodes.filter((n) => n.status !== "untraced").length,
+          failed: nodes.filter((n) => ["failed", "skipped"].includes(n.status)).map((n) => n.nodeId),
+        };
+      }
+    }
+    if (graph && isSwarmGraph) {
+      const eligibility = deriveSwarmWorkflowExecutionEligibility({ row, workspaceConfig });
+      const record = runRecordsByCard[card.cardId] || null;
+      const projection = record ? deriveSwarmRunProjection(record) : null;
+      const reward = record?.swarm?.reward && typeof record.swarm.reward === "object" ? record.swarm.reward : null;
+      swarm = {
+        isSwarm: true,
+        eligibilityReady: Boolean(eligibility?.ready),
+        eligibilityMissing: Array.isArray(eligibility?.missing) ? eligibility.missing : [],
+        lastRun: record
+          ? {
+            ranAtMs: toMs(record.ranAt),
+            status: clean(projection?.status || record.status),
+            score: Number.isFinite(reward?.score) ? reward.score : null,
+            rewardKind: clean(reward?.kind),
+            totalTokens: Number.isFinite(projection?.totalTokens) ? projection.totalTokens : null,
+          }
+          : null,
+      };
+    }
     const recovery = recoveryFor({ heartbeat, card, row });
     const sensorTags = [];
     if (heartbeat.state === "stalled") sensorTags.push(PULSE_SENSOR_TAGS.STALLED_RUN);
@@ -571,9 +727,49 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
           seedPrompt: `Propose a governed agent swarm to heal the workflow "${card.name}": diagnose why its last run ${heartbeat.state === "stalled" ? "never completed" : "failed"}${heartbeat.reason && heartbeat.reason !== "no-clock" ? ` (${truncate(heartbeat.reason, 60)})` : ""}, fix the graph or its inputs, and finish only when a fresh test run returns verified 200:`,
         }
         : null,
+      swarm,
+      agentNodes,
       artifact: card.artifact,
     };
   });
+
+  // Standalone ai-agent node aggregates (single-agent workflows, NOT swarms).
+  const agentEntries = heartbeats.filter((h) => h.agentNodes);
+  const agentSignals = {
+    workflows: agentEntries.length,
+    failedNodes: agentEntries.reduce((n, h) => n + h.agentNodes.failed.length, 0),
+    failedCardIds: agentEntries.filter((h) => h.agentNodes.failed.length > 0).map((h) => h.cardId),
+    failedNames: agentEntries.filter((h) => h.agentNodes.failed.length > 0).map((h) => h.name),
+  };
+
+  // Swarm aggregates for the budget / quality / health rules — truthful:
+  // reported tokens only, unreported runs counted separately, worst score
+  // named with its workflow.
+  const swarmEntries = heartbeats.filter((h) => h.swarm);
+  const swarmWindowStart = nowMs != null ? nowMs - 24 * 3600_000 : null;
+  let swarmReportedTokens24h = 0;
+  let swarmUnreportedRuns24h = 0;
+  let swarmWorst = null;
+  for (const h of swarmEntries) {
+    const run = h.swarm.lastRun;
+    if (!run) continue;
+    const inWindow = swarmWindowStart == null || run.ranAtMs == null || run.ranAtMs >= swarmWindowStart;
+    if (inWindow) {
+      if (run.totalTokens != null) swarmReportedTokens24h += run.totalTokens;
+      else swarmUnreportedRuns24h += 1;
+    }
+    if (run.score != null && (swarmWorst == null || run.score < swarmWorst.score)) {
+      swarmWorst = { cardId: h.cardId, name: h.name, score: run.score, rewardKind: run.rewardKind };
+    }
+  }
+  const swarmSignals = {
+    swarms: swarmEntries.length,
+    blocked: swarmEntries.filter((h) => !h.swarm.eligibilityReady).length,
+    blockedCardIds: swarmEntries.filter((h) => !h.swarm.eligibilityReady).map((h) => h.cardId),
+    reportedTokens24h: swarmReportedTokens24h,
+    unreportedRuns24h: swarmUnreportedRuns24h,
+    worst: swarmWorst,
+  };
 
   // Pulse-of-the-pulse: only a SUCCESSFUL completion is a beat.
   const pulseBeat = pulseRow ? senseRunHeartbeat(pulseRow, { nowMs }) : null;
@@ -602,6 +798,8 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
     governance,
     deployment,
     pulseProof,
+    swarm: swarmSignals,
+    agents: agentSignals,
     targets: {
       stalled: cardIdsWhere((h) => h.heartbeat.state === "stalled"),
       failed: cardIdsWhere((h) => h.heartbeat.state === "failed"),
@@ -674,6 +872,13 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
   if (runsFailed === 0 && runReceipts.length > 0) insights.push(`All ${runReceipts.length} recorded run${runReceipts.length === 1 ? "" : "s"} in the last day succeeded.`);
   if (governance.blockedAttempts > 0) insights.push(`${governance.blockedAttempts} action${governance.blockedAttempts === 1 ? " was" : "s were"} blocked by workspace rules — review in the CEO cockpit.`);
   if (deployment.projects > 0 && !deployment.anyLive) insights.push("No deployment shows live evidence — the workspace may not be reachable externally.");
+  if (swarmSignals.swarms > 0) {
+    insights.push(`Agent swarms: ${swarmSignals.swarms} governed, ${swarmSignals.blocked} blocked, ${swarmSignals.reportedTokens24h} reported tokens in 24h${swarmSignals.unreportedRuns24h ? ` (${swarmSignals.unreportedRuns24h} run${swarmSignals.unreportedRuns24h === 1 ? "" : "s"} reported no count)` : ""}.`);
+    if (swarmSignals.worst) insights.push(`Lowest swarm outcome: "${swarmSignals.worst.name}" at ${swarmSignals.worst.score} — delegation can rework it.`);
+  }
+  if (agentSignals.workflows > 0 && agentSignals.failedNodes > 0) {
+    insights.push(`${agentSignals.failedNodes} AI-agent step${agentSignals.failedNodes === 1 ? "" : "s"} failed in single-agent workflows — open them in Checks to recover.`);
+  }
   if (insights.length === 0) insights.push("Everything the pulse watches is healthy. Add or tighten policies to watch more.");
 
   // Self-run readiness: what stands between this workspace and running itself.
@@ -743,6 +948,8 @@ export function derivePulseCockpit({ workspaceConfig, configuredEnvRefs = [], re
     governance,
     deployment,
     pulseProof,
+    swarm: swarmSignals,
+    agents: agentSignals,
     report,
     policyRows,
     targets: packet.targets,

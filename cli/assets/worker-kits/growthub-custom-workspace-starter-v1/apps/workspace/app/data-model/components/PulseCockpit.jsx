@@ -28,7 +28,7 @@
  * exact lane the canvas uses. No new route, no client-side side state.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Search, Settings2 } from "lucide-react";
 import { derivePulseCockpit, PULSE_RULE_KINDS, WORKSPACE_POLICY_OBJECT_ID } from "@/lib/autonomic-pulse-console";
 
@@ -87,6 +87,16 @@ function HeartbeatCard({ entry, onRecover, busy, onOpen, onDelegate }) {
       <div className="dm-swarm-card-meta">
         <span className="dm-run-console__hint dm-swarm-card-kind">{entry.statusLabel}</span>
         {entry.triggerKind && <span className="dm-run-console__hint">{entry.triggerKind}</span>}
+        {entry.swarm && (
+          <span className="dm-run-console__hint">
+            {`Swarm${entry.swarm.lastRun?.score != null ? ` · score ${entry.swarm.lastRun.score}` : ""}${entry.swarm.lastRun?.totalTokens != null ? ` · ${entry.swarm.lastRun.totalTokens} tokens` : ""}${!entry.swarm.eligibilityReady ? " · Not runnable" : ""}`}
+          </span>
+        )}
+        {entry.agentNodes && (
+          <span className="dm-run-console__hint">
+            {`${entry.agentNodes.count} agent step${entry.agentNodes.count === 1 ? "" : "s"}${entry.agentNodes.failed.length ? ` · ${entry.agentNodes.failed.length} failed` : ""}`}
+          </span>
+        )}
       </div>
 
       {entry.reasonLine && <div className="dm-run-console__hint dm-pulse-truncate">{entry.reasonLine}</div>}
@@ -428,10 +438,38 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     return () => { cancelled = true; };
   }, []);
 
+  // Latest run record per SWARM row (the pulse's quality/spend truth comes
+  // from the same records the Swarm cockpit reads). Fetched once per card,
+  // capped, through the existing sandbox-run GET — no new route.
+  const [runRecordsByCard, setRunRecordsByCard] = useState({});
+  const fetchedCardsRef = useRef(new Set());
+
   const model = useMemo(
-    () => derivePulseCockpit({ workspaceConfig, configuredEnvRefs, receipts, nowMs: Date.now() }),
-    [workspaceConfig, configuredEnvRefs, receipts, deriveTick],
+    () => derivePulseCockpit({ workspaceConfig, configuredEnvRefs, receipts, runRecordsByCard, nowMs: Date.now() }),
+    [workspaceConfig, configuredEnvRefs, receipts, runRecordsByCard, deriveTick],
   );
+
+  useEffect(() => {
+    const targets = model.heartbeats
+      .filter((h) => h.swarm && !fetchedCardsRef.current.has(h.cardId))
+      .slice(0, 20);
+    if (!targets.length) return undefined;
+    targets.forEach((h) => fetchedCardsRef.current.add(h.cardId));
+    let cancelled = false;
+    (async () => {
+      const updates = {};
+      await Promise.all(targets.map(async (h) => {
+        try {
+          const res = await fetch(`/api/workspace/sandbox-run?objectId=${encodeURIComponent(h.objectId)}&name=${encodeURIComponent(h.name)}`);
+          const data = await res.json();
+          const latest = Array.isArray(data?.records) && data.records.length > 0 ? data.records[0] : null;
+          if (latest) updates[h.cardId] = latest;
+        } catch { /* truthful: no record → no invented telemetry */ }
+      }));
+      if (!cancelled && Object.keys(updates).length) setRunRecordsByCard((prev) => ({ ...prev, ...updates }));
+    })();
+    return () => { cancelled = true; };
+  }, [model.heartbeats]);
 
   const tab = activeTab || (model.attention || model.findings.length ? "attention" : "checks");
 
@@ -504,6 +542,17 @@ export function PulseCockpit({ workspaceConfig, onConfigRefresh, onOpenArtifact,
     if (action.handoff === "settings-env") { window.location.assign("/settings"); return; }
     if (action.handoff === "data-model") { setActiveTab("policies"); return; }
     if (action.handoff === "ceo-cockpit" && typeof onOpenCeo === "function") { onOpenCeo(); return; }
+    if (action.handoff === "checks-tab") {
+      // Land the user on exactly the affected cards: narrow via search when
+      // the finding covers one workflow, otherwise show the fleet.
+      const first = (action.targetCardIds || []).length === 1
+        ? model.heartbeats.find((h) => h.cardId === action.targetCardIds[0])
+        : null;
+      setSearch(first ? first.name : "");
+      setActiveFilter("all");
+      setActiveTab("checks");
+      return;
+    }
     if (action.handoff === "add-ons-schedule-route") {
       const targets = (action.targetCardIds || [])
         .map((id) => model.heartbeats.find((h) => h.cardId === id))
