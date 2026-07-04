@@ -1805,9 +1805,10 @@ function resolveInboundMethodProducts(workspaceConfig) {
 /**
  * Installed + verified products on the database-operations lane
  * (executionLane === "workspace-data"). Provider-agnostic by design: any
- * future first-party data provider whose product declares this lane becomes a
- * /data cockpit + supabase-data-class capability with zero surface changes —
- * the same lane grammar the scheduler cockpit uses for "serverless-scheduler".
+ * future first-party data provider whose product declares this lane surfaces
+ * as a governed /settings/apps link + supabase-data-class capability with
+ * zero surface changes — the same lane grammar the scheduler cockpit uses
+ * for "serverless-scheduler".
  */
 function listInstalledDataProducts(workspaceConfig) {
   return findInstalledWorkspaceAddOns(workspaceConfig)

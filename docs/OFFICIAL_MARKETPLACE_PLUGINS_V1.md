@@ -272,9 +272,10 @@ Validated V1 capability:
 - A tested `supabase-postgrest` row constructs a governed resolver through
   the Unified Resolver Registry (top-level PostgREST arrays profile clean),
   addressable at `/api/resolvers/supabase-postgrest`.
-- The `/data` cockpit (helper slash command, same primitive class as
-  `/schedule`) renders sync state, conflicts, and next actions for every
-  bound object, provider-agnostic over the `workspace-data` lane.
+- `/settings/apps` derives a Supabase external link for the workspace app
+  from the governed registry rows (same icon + popover + dedupe mechanism as
+  the GitHub repository and Vercel deployment links), provider-agnostic over
+  the `workspace-data` lane.
 - Receipts (`workspace-add-on-data-sync` and the standard provider/product
   kinds) record the full lifecycle.
 
@@ -293,11 +294,12 @@ Official marketplace plugins appear in these workspace surfaces:
 - Data Model: governed `vercel-projects` records with per-record deploy,
   latest-deployment proof, and workflow linkage
 - Workflow Canvas: trigger/runtime configuration and schedule ownership
-- Workspace Helper: `/schedule` and `/data` command entry points
+- Workspace Helper: `/schedule` command entry point
 - Schedule Cockpit: fleet view for scheduled, ready, blocked, and drifted
   workflows
-- Data Cockpit: fleet view for external-table sync — synced, never-synced,
-  and blocked objects with receipted pull/push/bind hand-offs
+- Settings / Apps: governed external links (GitHub repository, Vercel
+  deployment, Supabase database) derived from registry rows, deduped by
+  provider URL, with hover popovers
 - Agent Outcomes: receipt ledger for every governed action
 
 ## Product Lane Dispatch

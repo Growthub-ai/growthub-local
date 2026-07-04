@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
- * Unit coverage for the pure external-sync helpers + the /data cockpit deriver:
+ * Unit coverage for the pure external-sync helpers:
  *   - PostgREST OpenAPI table parsing (definitions + paths, garbage-safe)
  *   - external-table object construction on the data-source grammar
  *   - pull merge (external wins, local-only kept, field conflicts reported)
  *   - push mapping (reserved workspace columns stripped, correlation restored)
  *   - sync proof + object stamps carry no secret values and bounded strings
- *   - deriveDataCockpit lane-derived capability, states, filters, attention
  *
  * Pure / offline. Run with:
  *   node --test scripts/unit-workspace-external-sync.test.mjs
@@ -25,7 +24,6 @@ const kitLib = path.join(
 );
 
 const sync = await import(pathToFileURL(path.join(kitLib, "workspace-external-sync.js")).href);
-const cockpit = await import(pathToFileURL(path.join(kitLib, "data-cockpit-console.js")).href);
 
 const {
   buildExternalTableObject,
@@ -38,7 +36,6 @@ const {
   stampObjectSyncResult,
   withExternalSyncObject,
 } = sync;
-const { deriveDataCockpit } = cockpit;
 
 const OPENAPI = {
   swagger: "2.0",
@@ -141,75 +138,4 @@ test("withExternalSyncObject upserts by id and listExternalSyncObjects filters b
   const bound = listExternalSyncObjects(second.config);
   assert.equal(bound.length, 1);
   assert.equal(bound[0].label, "Apps v2");
-});
-
-function cockpitConfig({ verified = true, stamped = true } = {}) {
-  const object = stamped
-    ? stampObjectSyncResult(
-      { ...buildExternalTableObject({ providerId: "supabase", table: "apps", columns: ["id", "status"], integrationId: "supabase-postgrest" }), rows: [{ Name: "a", externalId: "1" }] },
-      { status: "pulled", summary: "pull apps · HTTP 200 · 1 pulled", syncedAt: "2026-07-02T00:00:00.000Z", receiptId: "r-1" },
-    )
-    : { ...buildExternalTableObject({ providerId: "supabase", table: "apps", columns: ["id"], integrationId: "supabase-postgrest" }) };
-  return {
-    dataModel: {
-      objects: [
-        {
-          id: "api-registry",
-          objectType: "api-registry",
-          rows: [{
-            Name: "Supabase Postgres (PostgREST)",
-            integrationId: "supabase-postgrest",
-            productId: "supabase-postgrest",
-            executionLane: "workspace-data",
-            requiredEnv: "SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY",
-            syncStatus: verified ? "verified" : "missing-env",
-            syncProof: verified ? "probe ok" : "",
-            syncCheckedAt: verified ? "2026-07-02T00:00:00.000Z" : "",
-          }],
-        },
-        { id: "workspace-app-registry", objectType: "app-surface", label: "Applications", rows: [{ Name: "app-one" }] },
-        object,
-      ],
-    },
-  };
-}
-
-test("deriveDataCockpit: verified product + stamped object → synced card with pull action", () => {
-  const model = deriveDataCockpit({ workspaceConfig: cockpitConfig(), configuredEnvRefs: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] });
-  assert.equal(model.dataSetupState, "installed");
-  assert.equal(model.installedDataProducts.length, 1);
-  assert.equal(model.syncCards.length, 1);
-  const card = model.syncCards[0];
-  assert.equal(card.state, "synced");
-  assert.equal(card.provider, "Supabase");
-  assert.equal(card.nextAction.kind, "pull");
-  assert.equal(card.artifact.surface, "data-model");
-  assert.equal(model.counts.synced, 1);
-  assert.equal(model.attention, null, "nothing needs attention when synced");
-  // App registry is offered as the primary bind target.
-  assert.equal(model.bindableObjects[0].objectId, "workspace-app-registry");
-  assert.equal(model.bindableObjects[0].objectType, "app-surface");
-});
-
-test("deriveDataCockpit: bound but never synced → attention + first-sync action", () => {
-  const model = deriveDataCockpit({ workspaceConfig: cockpitConfig({ stamped: false }) });
-  assert.equal(model.syncCards[0].state, "never-synced");
-  assert.equal(model.syncCards[0].nextAction.kind, "pull");
-  assert.equal(model.attention?.objectId, "supabase-apps");
-});
-
-test("deriveDataCockpit: unverified product → blocked card routed to setup", () => {
-  const model = deriveDataCockpit({ workspaceConfig: cockpitConfig({ verified: false }) });
-  assert.equal(model.dataSetupState, "none");
-  assert.equal(model.syncCards[0].state, "blocked");
-  assert.equal(model.syncCards[0].nextAction.kind, "setup-provider");
-  assert.equal(model.setupRoute, "/settings/add-ons");
-});
-
-test("deriveDataCockpit never throws on garbage input", () => {
-  assert.doesNotThrow(() => deriveDataCockpit({}));
-  assert.doesNotThrow(() => deriveDataCockpit({ workspaceConfig: null, receipts: "x", configuredEnvRefs: null }));
-  const empty = deriveDataCockpit({});
-  assert.equal(empty.syncCards.length, 0);
-  assert.equal(empty.counts.total, 0);
 });

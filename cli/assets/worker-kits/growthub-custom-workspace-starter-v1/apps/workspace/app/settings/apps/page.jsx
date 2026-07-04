@@ -2,7 +2,7 @@ import { SettingsShell } from "../settings-shell.jsx";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { VERCEL_PROJECTS_OBJECT_ID } from "@/lib/workspace-add-ons";
+import { VERCEL_PROJECTS_OBJECT_ID, listInstalledDataProducts } from "@/lib/workspace-add-ons";
 import { AppsList } from "./apps-list.jsx";
 import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
@@ -192,10 +192,49 @@ function appMatchesProject(app, project, appCount) {
     || (appId && (name === appId || repo.endsWith(`/${appId}`) || repo.includes(`/${appId}-`))));
 }
 
+/**
+ * External database link for an installed + verified data-lane product row
+ * (executionLane === "workspace-data"). Same governed-row derivation as the
+ * GitHub/Vercel links: the api-registry row is the truth, the link points at
+ * the provider console for the bound project, and the label reflects the
+ * row's sync state. Rows carry env-ref names and routing metadata only —
+ * never secret values — so everything here is safe to render.
+ */
+function dataProductLink(row) {
+  const providerId = String(row?.integrationId || "").trim().split("-")[0] || "data";
+  const projectUrl = ensureHttpsUrl(row?.baseUrl || row?.selectedResourceLabel);
+  let host = "";
+  try {
+    host = projectUrl ? new URL(projectUrl).host : "";
+  } catch {
+    host = "";
+  }
+  // Supabase project ref = the <ref>.supabase.co host prefix; deep-link the
+  // provider dashboard when we can, fall back to the bound project URL.
+  const supabaseRef = /\.supabase\.co$/i.test(host) ? host.split(".")[0] : "";
+  const href = supabaseRef
+    ? `https://supabase.com/dashboard/project/${supabaseRef}`
+    : projectUrl;
+  if (!href) return null;
+  const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
+  const synced = String(row?.syncStatus || "").trim() === "verified";
+  return {
+    id: `${providerId}:${row.integrationId}:${host || href}`,
+    label: synced ? `${providerLabel} database` : `${providerLabel} project`,
+    detail: host || row?.Name || href,
+    href,
+    iconSrc: `/integrations/${providerId}/provider.png`,
+  };
+}
+
 function attachExternalAppLinks(apps, workspaceConfig) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const vercelObject = objects.find((object) => String(object?.id || "").trim() === VERCEL_PROJECTS_OBJECT_ID);
   const projects = Array.isArray(vercelObject?.rows) ? vercelObject.rows : [];
+  // Installed + verified database products (Supabase today) — the exact rule
+  // the marketplace uses (findInstalledWorkspaceAddOns), lane-derived so any
+  // future data provider joins with zero changes here.
+  const dataProducts = listInstalledDataProducts(workspaceConfig);
   return apps.map((app) => {
     const externalLinks = linkFromAppRow(app);
     for (const project of projects) {
@@ -219,6 +258,16 @@ function attachExternalAppLinks(apps, workspaceConfig) {
           href: deploymentHref,
           iconSrc: "/integrations/vercel/provider.png",
         });
+      }
+    }
+    // The bound external database serves the workspace app surface — attach
+    // to the workspace app (and to a sole app, same rule appMatchesProject
+    // uses for a single-app workspace).
+    const isWorkspaceApp = String(app?.id || app?.name || "").trim().toLowerCase() === "workspace";
+    if (isWorkspaceApp || apps.length === 1) {
+      for (const row of dataProducts) {
+        const link = dataProductLink(row);
+        if (link) externalLinks.push(link);
       }
     }
     const deduped = Array.from(new Map(externalLinks.map((link) => {

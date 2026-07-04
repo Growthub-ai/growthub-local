@@ -563,9 +563,10 @@ function AddOnsSurface({
                               <p title={`${row.selectedResourceLabel || row.status || "draft"} / ${row.syncCheckedAt || row.lastTested || "not synced"}`}>{row.selectedResourceLabel || row.status || "draft"} / {row.syncCheckedAt || row.lastTested || "not synced"}</p>
                               {/* Installed rows are verified by construction
                                   (findInstalledWorkspaceAddOns) — data-lane
-                                  products manage synced tables in /data. */}
+                                  products surface on /settings/apps like
+                                  GitHub/Vercel governed links. */}
                               {product.executionLane === "workspace-data" ? (
-                                <small><a href="/data-model">Manage tables in /data</a></small>
+                                <small><a href="/settings/apps">View in workspace apps</a></small>
                               ) : null}
                             </div>
                             <div className="dm-marketplace-card-actions">
@@ -794,8 +795,8 @@ function AddOnsSurface({
               />
             ) : null}
             <footer className="dm-marketplace-actions">
-              {managedSavedRow?.isVerifiedAddOn && managedProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/data-model">
-                Manage tables in /data
+              {managedSavedRow?.isVerifiedAddOn && managedProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/settings/apps">
+                View in workspace apps
               </a> : null}
               {managedProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={managedProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
@@ -943,8 +944,8 @@ function AddOnsSurface({
               <div className={productInstalled ? "is-complete" : providerConnected ? "is-active" : ""}>Product install</div>
             </div>
             <footer className="dm-marketplace-actions">
-              {activeSavedRow?.isVerifiedAddOn && activeProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/data-model">
-                Manage tables in /data
+              {activeSavedRow?.isVerifiedAddOn && activeProduct.executionLane === "workspace-data" ? <a className="dm-btn-outline dm-marketplace-console-link" href="/settings/apps">
+                View in workspace apps
               </a> : null}
               {activeSavedRow?.isVerifiedAddOn && activeProduct.consoleUrl ? <a className="dm-btn-outline dm-marketplace-console-link" href={activeProduct.consoleUrl} target="_blank" rel="noreferrer">
                 Open provider <ExternalLink size={13} />
