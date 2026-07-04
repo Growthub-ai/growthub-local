@@ -61,6 +61,11 @@ test("supabase provider registers with the canonical marketplace identity", () =
   assert.equal(provider.accountProbe?.fallback?.baseUrlEnv, "SUPABASE_URL");
   assert.equal(provider.accountProbe?.fallback?.tokenEnv, "SUPABASE_SERVICE_ROLE_KEY");
   assert.deepEqual(provider.accountProbe?.aliasEnv, { SUPABASE_API_KEY: "SUPABASE_SERVICE_ROLE_KEY" });
+  const fieldsById = Object.fromEntries(provider.accountSetupFields.map((field) => [field.id, field]));
+  assert.equal(fieldsById.accessToken.credentialRole, "bearerToken");
+  assert.equal(fieldsById.accessToken.label, "Personal access token (sbp_…)");
+  assert.equal(fieldsById.projectUrl.credentialRole, "baseUrl");
+  assert.equal(fieldsById.serviceRoleKey.credentialRole, "secret");
   // Provider must resolve by integrationId too (registry row correlation).
   assert.equal(getMarketplaceProvider(SUPABASE_PROVIDER_INTEGRATION_ID)?.providerId, "supabase");
 });
@@ -89,7 +94,7 @@ test("supabase-postgrest product declares the database-operations lane grammar",
   assert.equal(product.probe.baseUrlEnv, "SUPABASE_URL");
   assert.equal(product.probe.tokenEnv, "SUPABASE_SERVICE_ROLE_KEY");
   assert.equal(product.probe.tokenHeaderName, "apikey");
-  assert.ok(product.probe.paths.includes("/rest/v1/"));
+  assert.ok(product.probe.paths.includes("/auth/v1/health"));
 });
 
 test("bearer resourceDiscovery contract declares project→env mappings", () => {

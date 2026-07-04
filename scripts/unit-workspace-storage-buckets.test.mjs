@@ -60,8 +60,10 @@ test("Supabase provider now exposes two products on distinct lanes (Upstash mirr
   assert.equal(storage.executionLane, "workspace-storage");
   assert.equal(storage.connectorKind, "supabase-storage");
   assert.equal(storage.requiresProduct, "supabase-postgrest");
-  assert.deepEqual(storage.requiredEnv, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], "same account credentials as the database product");
+  assert.deepEqual(storage.requiredEnv, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"], "storage admin operations use the server-side project key");
   assert.equal(storage.probe.tokenHeaderName, "apikey");
+  assert.equal(storage.probe.requireNonEmptyArray, true);
+  assert.equal(storage.resourceDiscovery.requiresExistingResource, true);
   // The storage product row builds through the same generic builder.
   const row = addOns.makeMarketplaceProductRow({ providerId: "supabase", productId: "supabase-storage" });
   assert.equal(row.executionLane, "workspace-storage");

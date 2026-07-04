@@ -305,13 +305,12 @@ const SUPABASE_PRODUCTS = [
       // Bearer carries the same key for PostgREST. probeJsonPaths sends both
       // when tokenHeaderName is declared.
       tokenHeaderName: "apikey",
-      paths: ["/rest/v1/"],
+      paths: ["/auth/v1/health"],
     },
     resourceDiscovery: {
       auth: "provider-bearer",
       paths: ["/v1/projects"],
       emptyLabel: "No Supabase projects returned for this account.",
-      createDividerLabel: "Or create a new Supabase project",
       envFromResource: [
         { envRef: "SUPABASE_URL", urlTemplate: "https://{id}.supabase.co" },
         {
@@ -363,6 +362,13 @@ const SUPABASE_PRODUCTS = [
       tokenEnv: "SUPABASE_SERVICE_ROLE_KEY",
       tokenHeaderName: "apikey",
       paths: ["/storage/v1/bucket"],
+      requireNonEmptyArray: true,
+    },
+    resourceDiscovery: {
+      auth: "product-probe",
+      paths: ["/storage/v1/bucket"],
+      emptyLabel: "No Supabase Storage buckets returned for this project.",
+      requiresExistingResource: true,
     },
   },
 ];

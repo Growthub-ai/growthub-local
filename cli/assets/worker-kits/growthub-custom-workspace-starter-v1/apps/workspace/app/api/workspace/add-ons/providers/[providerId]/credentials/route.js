@@ -45,6 +45,21 @@ function safeUrl(baseUrl, pathName) {
   return `${base}${suffix}`;
 }
 
+function normalizeSupabaseProjectUrl(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    url.hostname = url.hostname.replace(/\.supabase\.com$/i, ".supabase.co");
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return raw.replace(/\.supabase\.com(\/)?$/i, ".supabase.co");
+  }
+}
+
 function compactAccountOptions(payload, source, fallbackEmail) {
   const rawItems = Array.isArray(payload)
     ? payload
@@ -112,6 +127,10 @@ function deriveEnvUpdates(fields, credentials, body) {
     .filter(([, value]) => value));
 }
 
+function looksLikeSupabasePublishableKey(value) {
+  return /^sb_publishable_/i.test(clean(value));
+}
+
 /** Bearer-token account verification (e.g. Vercel REST API, Supabase
  * Management API). Probe paths come from the provider's accountProbe
  * contract — no hardcoded provider endpoints here. */
@@ -174,6 +193,33 @@ async function verifyProviderProjectFallback(provider, baseUrl, secret) {
   return { ok: false, last };
 }
 
+async function verifySupabasePublicProject(baseUrl, key) {
+  if (!key) return { ok: false, last: null };
+  const projectUrl = normalizeSupabaseProjectUrl(baseUrl);
+  try {
+    const response = await fetchWithTimeout(safeUrl(projectUrl, "/auth/v1/health"), {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${key}`,
+        apikey: key,
+        accept: "application/json",
+      },
+    });
+    if (response.ok) {
+      let host = projectUrl;
+      try {
+        host = new URL(projectUrl).host;
+      } catch {
+        /* keep raw value */
+      }
+      return { ok: true, path: "/auth/v1/health", status: response.status, options: [{ id: host, label: host, source: "/auth/v1/health" }] };
+    }
+    return { ok: false, last: { path: "/auth/v1/health", status: response.status } };
+  } catch (error) {
+    return { ok: false, last: { path: "/auth/v1/health", status: 0, error: error?.message || "network error" } };
+  }
+}
+
 async function handleBearerCredentials(request, provider, credentials, body) {
   const fields = getProviderSetupFields(provider);
   const tokenField = fields.find((field) => field.credentialRole === "bearerToken");
@@ -184,8 +230,24 @@ async function handleBearerCredentials(request, provider, credentials, body) {
   if (!tokenField || !tokenEnv) return jsonError("provider does not support account credential setup", 400);
   const token = getCredentialValue(credentials, body, tokenField);
   const teamId = teamField ? getCredentialValue(credentials, body, teamField) : "";
-  const projectUrl = baseUrlField ? getCredentialValue(credentials, body, baseUrlField) : "";
+  const projectUrl = baseUrlField ? normalizeSupabaseProjectUrl(getCredentialValue(credentials, body, baseUrlField)) : "";
   const projectSecret = secretField ? getCredentialValue(credentials, body, secretField) : "";
+  const publishableField = fields.find((field) => field.credentialRole === "publishableKey");
+  const publishableKey = publishableField ? getCredentialValue(credentials, body, publishableField) : "";
+  if (token && looksLikeSupabasePublishableKey(token)) {
+    return jsonError(
+      `${provider.label} publishable key was entered as a personal access token. Use an sbp_ personal access token for account discovery, or bind directly with the project URL plus service role key.`,
+      422,
+      {
+        providerId: provider.providerId,
+        code: "publishable_key_in_access_token",
+        repairPlan: [
+          "Move the sb_publishable_ key to the optional publishable key field.",
+          "Enter a Supabase personal access token that starts with sbp_, or enter the project URL and service role key.",
+        ],
+      },
+    );
+  }
   // Providers that declare accountProbe.fallback (e.g. Supabase) can verify a
   // single bound project with its URL + secret when no management token is
   // supplied — same persistence tail either way.
@@ -212,6 +274,11 @@ async function handleBearerCredentials(request, provider, credentials, body) {
     if (fallbackVerified.ok || !verified) verified = fallbackVerified;
     if (fallbackVerified.ok) accountSource = "project-probe";
   }
+  if (!verified?.ok && provider.providerId === "supabase" && projectUrl && (publishableKey || projectSecret)) {
+    const publicVerified = await verifySupabasePublicProject(projectUrl, publishableKey || projectSecret);
+    if (publicVerified.ok || !verified) verified = publicVerified;
+    if (publicVerified.ok) accountSource = "project-probe";
+  }
   if (!verified?.ok) {
     return jsonError(`${provider.label} ${token ? "access token" : "project binding"} could not be verified`, 422, {
       providerId: provider.providerId,
@@ -220,6 +287,11 @@ async function handleBearerCredentials(request, provider, credentials, body) {
   }
 
   const envToWrite = deriveEnvUpdates(fields, credentials, body);
+  if (accountSource === "project-probe" && provider.providerId === "supabase" && (publishableKey || projectSecret)) {
+    envToWrite.SUPABASE_URL = projectUrl;
+    envToWrite.SUPABASE_ANON_KEY = publishableKey || projectSecret;
+    if (!publishableKey && envToWrite.SUPABASE_SERVICE_ROLE_KEY === projectSecret) delete envToWrite.SUPABASE_SERVICE_ROLE_KEY;
+  }
   if (token) envToWrite[tokenEnv] = token;
   if (teamField?.envRef && teamId) envToWrite[teamField.envRef] = teamId;
   // Declared alias writes (e.g. SUPABASE_API_KEY ← SUPABASE_SERVICE_ROLE_KEY)

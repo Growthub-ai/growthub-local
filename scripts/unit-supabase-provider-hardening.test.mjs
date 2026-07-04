@@ -152,8 +152,19 @@ test("products/sync route delegates mapping semantics to the pure core", () => {
 test("credentials route: bearer verify + direct project fallback + alias application", () => {
   assert.ok(credentialsRouteSource.includes("verifyBearerProviderAccount"), "bearer account verify");
   assert.ok(credentialsRouteSource.includes("verifyProviderProjectFallback"), "project-probe fallback");
+  assert.ok(credentialsRouteSource.includes("verifySupabasePublicProject"), "publishable/anon Supabase project probe");
+  assert.ok(credentialsRouteSource.includes("normalizeSupabaseProjectUrl"), "dashboard host normalized to API host");
+  assert.ok(credentialsRouteSource.includes("looksLikeSupabasePublishableKey"), "publishable keys are rejected from the personal access token slot");
+  assert.ok(credentialsRouteSource.includes("publishable_key_in_access_token"), "specific repair code returned for sb_publishable_ in PAT field");
   assert.ok(credentialsRouteSource.includes("aliasEnv"), "alias applied before env write");
   assert.ok(credentialsRouteSource.includes("writeLocalEnv"), "secrets land in .env.local only");
+});
+
+test("add-ons UI requires bearer token or direct project pair before verify", () => {
+  const marketplaceSource = readFileSync(path.join(kitApp, "app/components/WorkspaceAddOnsMarketplace.jsx"), "utf8");
+  assert.ok(marketplaceSource.includes('providerSetupHasBearerToken'), "bearer-token readiness branch present");
+  assert.ok(marketplaceSource.includes('providerSetupHasDirectProject'), "project URL + service key readiness branch present");
+  assert.ok(!marketplaceSource.includes('field.help'), "credential form avoids inline explanatory copy");
 });
 
 test("supabase-data executor: canonical secret resolution + redaction, no secret in metadata", () => {

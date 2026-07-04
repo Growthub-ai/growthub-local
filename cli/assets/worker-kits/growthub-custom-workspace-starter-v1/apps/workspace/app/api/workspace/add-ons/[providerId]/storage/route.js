@@ -13,6 +13,7 @@
  *            (deriveBucketProductState), the linkable tables, the live
  *            bucket inventory, and the governed buckets object.
  *   POST   → one governed action per call, receipted (workspace-add-on-storage):
+ *              create-linked-table { label? }              (first-run table)
  *              link-table   { linkedTableObjectId }        (enable creation)
  *              create-bucket{ name, access?, allowedMimeTypes?, fileSizeLimit?, linkedRecordRef? }
  *              sync-buckets {}                              (pull live inventory)
@@ -203,8 +204,8 @@ async function POST(request, context) {
     return jsonError("invalid json body", 400);
   }
   const action = clean(body.action);
-  if (!["link-table", "create-bucket", "sync-buckets"].includes(action)) {
-    return jsonError("action must be link-table | create-bucket | sync-buckets", 400);
+  if (!["create-linked-table", "link-table", "create-bucket", "sync-buckets"].includes(action)) {
+    return jsonError("action must be create-linked-table | link-table | create-bucket | sync-buckets", 400);
   }
 
   const workspaceConfig = await readWorkspaceConfig();
@@ -223,6 +224,59 @@ async function POST(request, context) {
   }
 
   const integrationId = resolution.product.integrationId;
+
+  // ---- create-linked-table: first-run table owned by the storage install ----
+  if (action === "create-linked-table") {
+    const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+    const baseId = "supabase-storage-files";
+    const ids = new Set(objects.map((object) => clean(object?.id)).filter(Boolean));
+    let objectId = baseId;
+    let suffix = 2;
+    while (ids.has(objectId)) {
+      objectId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    const label = clean(body.label) || "Supabase Storage Files";
+    const tableObject = {
+      id: objectId,
+      label,
+      source: label,
+      objectType: "data-source",
+      icon: "Database",
+      columns: ["Name", "bucketId", "objectPath", "mimeType", "size", "publicUrl", "status"],
+      rows: [],
+      binding: { mode: "manual", source: "Supabase Storage" },
+      fieldSettings: {},
+    };
+    const base = buckets || buildBucketsObject({ providerId: resolution.provider.providerId, integrationId });
+    const nextBuckets = {
+      ...base,
+      ...buildBucketsObject({
+        providerId: resolution.provider.providerId,
+        integrationId,
+        linkedTableObjectId: tableObject.id,
+        linkedTableLabel: tableObject.label,
+        label: base.label,
+      }),
+      rows: Array.isArray(base.rows) ? base.rows : [],
+    };
+    const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+    const { config } = withBucketsObject({
+      ...workspaceConfig,
+      dataModel: { ...dm, objects: [...objects, tableObject] },
+    }, nextBuckets);
+    const summary = buildBucketProof({ action: "create linked table", bucket: tableObject.label });
+    const { receipt } = await appendStorageReceipt({ outcomeStatus: "published", summary, object: nextBuckets, bucket: tableObject.label });
+    const persisted = await writeWorkspaceConfig({ dataModel: config.dataModel });
+    return NextResponse.json({
+      ok: true,
+      action,
+      linkedTableObjectId: tableObject.id,
+      linkedTableLabel: tableObject.label,
+      workspaceConfig: persisted,
+      receiptId: receipt.receiptId,
+    });
+  }
 
   // ---- link-table: bind the buckets object to an existing governed table ----
   if (action === "link-table") {
