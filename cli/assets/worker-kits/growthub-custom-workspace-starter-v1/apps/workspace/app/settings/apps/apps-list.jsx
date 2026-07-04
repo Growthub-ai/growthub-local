@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Database, HardDrive, LayoutGrid } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
@@ -17,7 +18,9 @@ function AppsList({ apps }) {
   return <div className="workspace-paginated-list">
     <div className="workspace-app-list bounded">
       {visibleApps.map((item, index) => <article className="workspace-app-row" key={item.id || index}>
-        <span className="workspace-provider-mark">{item.icon || item.label?.slice(0, 1) || item.name?.slice(0, 1) || "A"}</span>
+        <span className="workspace-provider-mark workspace-app-mark" aria-hidden>
+          <LayoutGrid size={16} />
+        </span>
         <div>
           <strong>{item.label || item.name || item.id}</strong>
           <p>{item.description || "Workspace app metadata from the active config."}</p>
@@ -32,6 +35,7 @@ function AppsList({ apps }) {
                 className="workspace-app-external-link"
                 href={link.href}
                 key={link.id || link.href}
+                aria-label={`${link.label}: ${link.detail || link.href}`}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -46,6 +50,15 @@ function AppsList({ apps }) {
             <a className="workspace-app-deploy-action" href={item.deploymentSetupHref}>
               Deploy
             </a>
+          ) : null}
+          {Array.isArray(item.dataProofs) && item.dataProofs.length ? (
+            <div className="workspace-app-proof-chips" aria-label="External data causation proofs">
+              {item.dataProofs.map((proof) => <span className={`workspace-app-proof-chip ${proof.state}`} key={proof.objectId}>
+                {proof.kind === "storage" ? <HardDrive size={12} /> : <Database size={12} />}
+                <b>{proof.label}</b>
+                <em>{proof.detail}</em>
+              </span>)}
+            </div>
           ) : null}
         </div>
         <span className={`workspace-integration-status ${item.status || "available"}`}>{item.status || "available"}</span>

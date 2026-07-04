@@ -253,7 +253,8 @@ test("settings/apps derives the data-lane external link from governed rows", asy
   );
   assert.ok(appsPageSource.includes("listInstalledDataProducts(workspaceConfig)"), "installed+verified rule reused from the marketplace lane");
   assert.ok(appsPageSource.includes("dataProductLink"), "data-lane link builder present");
+  assert.ok(appsPageSource.includes("deriveExternalSyncFreshness"), "app links include external-table causation proof state");
   assert.ok(appsPageSource.includes("supabase.com/dashboard/project/"), "Supabase console deep-link from the bound project ref");
-  assert.ok(appsPageSource.includes("/integrations/${providerId}/provider.png") || appsPageSource.includes("/integrations/supabase/provider.png"), "provider icon derives from the row");
+  assert.ok(appsPageSource.includes("/integrations/${providerId}/postgrest.png"), "database product icon derives from the row");
   assert.ok(!appsPageSource.includes("SUPABASE_SERVICE_ROLE_KEY"), "no secret env names hardcoded into the page");
 });

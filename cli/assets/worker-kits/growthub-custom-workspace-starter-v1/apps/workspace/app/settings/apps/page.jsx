@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { VERCEL_PROJECTS_OBJECT_ID, listInstalledDataProducts, listInstalledStorageProducts } from "@/lib/workspace-add-ons";
+import { deriveExternalSyncFreshness, listExternalSyncObjects } from "@/lib/workspace-external-sync";
 import { AppsList } from "./apps-list.jsx";
 import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
@@ -223,7 +224,7 @@ function dataProductLink(row) {
     label: synced ? `${providerLabel} database` : `${providerLabel} project`,
     detail: host || row?.Name || href,
     href,
-    iconSrc: `/integrations/${providerId}/provider.png`,
+    iconSrc: `/integrations/${providerId}/postgrest.png`,
   };
 }
 
@@ -235,7 +236,7 @@ function dataProductLink(row) {
  */
 function storageProductLink(row) {
   const providerId = String(row?.integrationId || "").trim().split("-")[0] || "storage";
-  const projectUrl = ensureHttpsUrl(row?.baseUrl || row?.selectedResourceLabel);
+  const projectUrl = ensureHttpsUrl(row?.baseUrl);
   let host = "";
   try {
     host = projectUrl ? new URL(projectUrl).host : "";
@@ -266,6 +267,7 @@ function attachExternalAppLinks(apps, workspaceConfig) {
   // future data provider joins with zero changes here.
   const dataProducts = listInstalledDataProducts(workspaceConfig);
   const storageProducts = listInstalledStorageProducts(workspaceConfig);
+  const dataProofs = deriveExternalDataProofs(workspaceConfig);
   return apps.map((app) => {
     const externalLinks = linkFromAppRow(app);
     for (const project of projects) {
@@ -310,8 +312,47 @@ function attachExternalAppLinks(apps, workspaceConfig) {
       const stableProvider = String(link.iconSrc || link.label || "").trim();
       return [`${stableProvider}:${stableHref}`, link];
     })).values());
-    return deduped.length ? { ...app, externalLinks: deduped } : app;
+    const nextApp = deduped.length ? { ...app, externalLinks: deduped } : app;
+    if ((isWorkspaceApp || apps.length === 1) && dataProofs.length) {
+      return { ...nextApp, dataProofs };
+    }
+    return nextApp;
   });
+}
+
+function deriveExternalDataProofs(workspaceConfig) {
+  const proofs = [];
+  for (const object of listExternalSyncObjects(workspaceConfig)) {
+    const freshness = deriveExternalSyncFreshness(object, { now: new Date().toISOString() });
+    const state = String(freshness?.state || "unbound").trim();
+    proofs.push({
+      objectId: String(object?.id || object?.externalTable || "").trim(),
+      kind: "database",
+      state,
+      label: String(object?.label || object?.name || object?.externalTable || "External table").trim(),
+      detail: state === "synced"
+        ? `synced proof ${String(object?.lastSyncReceiptId || "").trim() || "recorded"}`
+        : state.replace(/-/g, " "),
+      causeChain: freshness?.causeChain || [],
+    });
+  }
+  const storageObjects = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+    .filter((object) => String(object?.storageProduct || "").trim() && String(object?.linkedTableObjectId || "").trim());
+  for (const object of storageObjects) {
+    const rows = Array.isArray(object?.rows) ? object.rows : [];
+    proofs.push({
+      objectId: String(object.id || object.storageProduct).trim(),
+      kind: "storage",
+      state: rows.length ? "synced" : "ready",
+      label: String(object.label || "Storage buckets").trim(),
+      detail: rows.length ? `${rows.length} bucket${rows.length === 1 ? "" : "s"} linked` : "linked table ready",
+      causeChain: [
+        `linked to governed table ${String(object.linkedTableObjectId || "").trim()}`,
+        `${rows.length} governed bucket row${rows.length === 1 ? "" : "s"}`,
+      ],
+    });
+  }
+  return proofs;
 }
 
 function withDeploymentSetupActions(apps) {
