@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, Check, ChevronDown, Database, FileInput, ListTree } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
@@ -574,6 +574,8 @@ export function OrchestrationNodeConfigPanel({
   inputScheduleControls,
   serverlessScheduleOptionAvailable = false,
   serverlessScheduleAvailable = false,
+  webhookTriggerAvailable = false,
+  apiTriggerAvailable = false,
   readinessFlag,
   activeTab: controlledTab,
   onTabChange
@@ -608,6 +610,12 @@ export function OrchestrationNodeConfigPanel({
     { value: "record", label: "Record", Icon: Database },
     { value: "source-record", label: "Source Record", Icon: ListTree },
     ...(schedulerAvailable ? [{ value: "serverless-schedule", label: "Serverless Schedule", Icon: CalendarClock }] : []),
+    // Inbound input methods are workspace-NATIVE capabilities — no external
+    // account or marketplace install exists, so they are always offered. The
+    // real readiness gate (signing secret / invoke token env ref) lives in the
+    // trigger panel and on the server bind; both name the exact missing ref.
+    { value: "webhook", label: "Webhook", Icon: Webhook },
+    { value: "api-request", label: "API Request", Icon: KeyRound },
   ];
   const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
   const meta = config.requestHeadersMetadata || {};
@@ -728,6 +736,21 @@ export function OrchestrationNodeConfigPanel({
               ) : null}
             </div>
           </div>
+          {config.inputMode === "webhook" ? (
+            <label className="dm-orchestration-config__field">
+              <span>HTTP method</span>
+              <select
+                value={String(config.httpMethod || "POST").toUpperCase()}
+                disabled={disabled}
+                onChange={(event) => patchConfig({ httpMethod: event.target.value })}
+              >
+                {["POST", "PUT", "PATCH", "GET"].map((method) => (
+                  <option key={method} value={method}>{method}</option>
+                ))}
+              </select>
+              <small className="dm-run-setup__help">The method external senders must use against this workflow&apos;s endpoint — enforced at the destination door once published.</small>
+            </label>
+          ) : null}
           <PayloadKeyRows
             payload={config.samplePayload}
             disabled={disabled}

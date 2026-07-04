@@ -26,6 +26,27 @@ function AppsList({ apps }) {
             <span>{item.source || "config"}</span>
             <span>{item.authority || "read-only"}</span>
           </div>
+          {Array.isArray(item.externalLinks) && item.externalLinks.length ? (
+            <div className="workspace-app-external-links" aria-label="External app links">
+              {item.externalLinks.map((link) => <a
+                className="workspace-app-external-link"
+                href={link.href}
+                key={link.id || link.href}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <img alt="" src={link.iconSrc} />
+                <span className="workspace-app-link-popover">
+                  <strong>{link.label}</strong>
+                  <em>{link.detail || link.href}</em>
+                </span>
+              </a>)}
+            </div>
+          ) : item.deploymentSetupHref ? (
+            <a className="workspace-app-deploy-action" href={item.deploymentSetupHref}>
+              Deploy
+            </a>
+          ) : null}
         </div>
         <span className={`workspace-integration-status ${item.status || "available"}`}>{item.status || "available"}</span>
       </article>)}

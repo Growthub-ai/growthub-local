@@ -4,7 +4,7 @@ import { readWorkspaceConfig, readWorkspaceSourceRecords, writeWorkspaceConfig }
 import { sandboxRunSourceId } from "@/lib/workspace-data-model";
 import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
-import { readTriggerScheduleBinding } from "@/lib/workspace-add-ons";
+import { rowHasSuccessfulServerlessBindingProof, syncTriggerNodeForSchedule } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -76,15 +76,13 @@ function findSandboxRow(workspaceConfig, objectId, name) {
         rowIndex
     };
 }
+// Serverless binding proof — the strict, method-consistent, all-nodes-succeeded
+// invocation proof (2xx + succeededAt + node-trace completion + trigger-kind
+// agreement + graph identity with the promoted bytes). Lives in
+// lib/workspace-add-ons.js beside readTriggerScheduleBinding so it is
+// offline-testable; binding alone is never proof.
 function rowHasSuccessfulServerlessSchedulerProof(row, draft) {
-    const runLocality = String(row?.runLocality || "").trim().toLowerCase();
-    const schedulerRegistryId = String(row?.schedulerRegistryId || "").trim();
-    const scheduleId = String(row?.scheduleId || "").trim();
-    const draftGraph = String(draft || "").trim();
-    const testedConfig = String(row?.orchestrationDraftTestedConfig || "").trim();
-    const liveGraph = String(row?.orchestrationGraph || row?.orchestrationConfig || "").trim();
-    const binding = readTriggerScheduleBinding(row?.orchestrationGraph || row?.orchestrationConfig);
-    return runLocality === "serverless" && Boolean(schedulerRegistryId) && Boolean(scheduleId) && binding?.enabled === true && binding?.scheduleId === scheduleId && binding?.schedulerRegistryId === schedulerRegistryId && (testedConfig === draftGraph || liveGraph === draftGraph);
+    return rowHasSuccessfulServerlessBindingProof(row, draft);
 }
 /**
  * Gate failures are governance signal: emit a blocked outcome receipt
@@ -348,8 +346,25 @@ async function POST(request) {
     // This is the same value sandbox-run stamped as the record's draftSha256,
     // so the lineage record and the publish delta are directly comparable.
     const publishedSha256 = expectedSha256;
+    // A serverless-bound row's trigger binding is ROW authority — promoting
+    // draft bytes must not sever it. Re-sync the trigger node into the
+    // promoted live graph from the row's own binding fields (the exact writer
+    // the bind uses); drafts themselves are never mutated by binds.
+    const promotedLive = String(row.runLocality || "").trim() === "serverless" && String(row.scheduleId || "").trim()
+        ? syncTriggerNodeForSchedule(draft, {
+            triggerKind: row.schedulerTriggerKind,
+            schedulerRegistryId: row.schedulerRegistryId,
+            scheduleId: row.scheduleId,
+            cron: row.schedulerCron,
+            schedulerProviderId: row.schedulerProviderId,
+            schedulerProductId: row.schedulerProductId,
+            destinationUrl: row.schedulerDestination,
+            callbackUrl: row.schedulerCallbackUrl,
+            triggerInput: row.schedulerTriggerInput
+        }).value
+        : draft;
     const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
-        [liveField]: draft,
+        [liveField]: promotedLive,
         [draftField]: "",
         version: nextVersion,
         lifecycleStatus: "live",
@@ -453,3 +468,7 @@ async function POST(request) {
         });
     }
 }
+
+// Next.js only wires exported handlers — without this line the whole
+// server-authoritative publish gate is a 405 for every caller.
+export { POST };

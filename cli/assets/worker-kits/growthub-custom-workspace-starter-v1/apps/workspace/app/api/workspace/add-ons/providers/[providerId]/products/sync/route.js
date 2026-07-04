@@ -180,10 +180,11 @@ async function resolveProviderResource({ provider, product, selectedResourceId }
   return { writtenEnv, resource: selected, failures };
 }
 
-async function probeJsonPaths({ baseUrl, token, paths, label }) {
+async function probeJsonPaths({ baseUrl, token, paths, label, query = "" }) {
   let last = null;
   for (const path of paths) {
-    const url = safeUrl(baseUrl, path);
+    const base = safeUrl(baseUrl, path);
+    const url = query ? `${base}${base.includes("?") ? "&" : "?"}${query}` : base;
     const response = await fetchWithTimeout(url, {
       method: "GET",
       headers: { authorization: `Bearer ${token}` },
@@ -232,12 +233,18 @@ async function probeProviderProduct({ providerId, productId, region }) {
     return { ok: false, status: 400, error: "unsupported provider product probe" };
   }
   const regionOption = selectedRegion(product, region);
-  const configuredUrl = envValue(probe.baseUrlEnv) || (probe.fallbackRegionBaseUrl ? regionOption.baseUrl : "");
+  const configuredUrl = envValue(probe.baseUrlEnv)
+    || (probe.fallbackRegionBaseUrl ? regionOption.baseUrl : "")
+    || clean(probe.fallbackBaseUrl || "");
+  // Team-scoped bearer tokens (e.g. Vercel team tokens) need the teamId query
+  // on read probes; probe.teamEnv names the optional env ref.
+  const teamId = probe.teamEnv ? envValue(probe.teamEnv) : "";
   const result = await probeJsonPaths({
     baseUrl: configuredUrl,
     token: envValue(probe.tokenEnv),
     paths: probe.paths,
     label: product.label,
+    query: teamId ? `teamId=${encodeURIComponent(teamId)}` : "",
   });
   return {
     ...result,

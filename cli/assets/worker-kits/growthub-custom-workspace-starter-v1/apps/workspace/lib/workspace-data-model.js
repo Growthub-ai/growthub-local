@@ -866,6 +866,10 @@ const OBJECT_TYPE_PRESETS = {
       "workflowRefs",
       "dataSourceIds",
       "registryIds",
+      "githubRepo",
+      "githubRepoUrl",
+      "vercelProjectUrl",
+      "deploymentUrl",
       "exportStatus",
       "description"
     ],
