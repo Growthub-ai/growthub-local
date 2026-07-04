@@ -14,8 +14,11 @@ lowest-risk first.
 > (`describe_workspace`, `list_workflows`, `list_integrations`,
 > `outcome_ledger`, `simulate_causal_impact`, `app_readiness`,
 > `preflight_patch` in `live-authoritative` mode with removal impact,
-> `next_actions` governed hand-off). Path anchors below use `apps/workspace/`
-> for `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`.
+> `next_actions` governed hand-off). Gap classifications were verified by
+> reading the derivation code (node/row promotion in the metadata store, the
+> command registry, the deploy lens body), not by string search alone. Path
+> anchors below use `apps/workspace/` for
+> `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/`.
 
 > **The law this obeys** (unchanged, inherited from
 > `GROWTHUB_OPPORTUNITIES_ROADMAP_V1.md` and the mutation boundary in
@@ -41,8 +44,10 @@ stream) → deploy (private repo + Vercel project + deploy proof as governed
 rows).
 
 The roadmap question is therefore not "what feature next" but **which shipped
-invariants have not yet been projected onto the new substrate**. Four
-subsystems are still blind to it, and one latent primitive is unactivated.
+invariants have not yet been projected onto the new substrate**. The
+Intelligence, readiness, cockpit, and fleet layers each see the new rows only
+generically (or not at all) — none can reason about public exposure or deploy
+proof semantically — and one latent primitive (composition) is unactivated.
 Every item below is a projection or an additive value over shipped rows —
 none requires a new schema, route, or mutation path.
 
@@ -52,9 +57,9 @@ none requires a new schema, route, or mutation path.
 
 | # | Finding | Category | Evidence |
 | --- | --- | --- | --- |
-| P1 | Metadata graph has **zero coverage** of `workspace-app-registry`, `vercel-projects`, and inbound bindings — the Intelligence layer (Workspace Map, `deriveBlastRadius`, `deriveStaleSurfaces`, `derivePatchImpact`, all 14 MCP tools) cannot see the release surface | **Missing** | grep of `apps/workspace/lib/workspace-metadata-graph.js` for `vercel-projects` / `workspace-app-registry` / `inbound` / `webhook` / `api-request`: no hits |
-| P2 | `/triggers` fleet cockpit — the one Phase-4 deliverable of `GOVERNED_CAPABILITY_BINDING_LOOP_V1.md` §4 not shipped: no pure deriver unifies scheduler + webhook + api-request bindings | **Missing** | `apps/workspace/app/data-model/components/helper-commands.js` has no `triggers` row; only `schedule-cockpit-console.js` and `ceo-cockpit-console.js` exist in `apps/workspace/lib/` |
-| P3 | `deriveAppReadiness` / MCP `app_readiness` / `GET /api/workspace/apps` fold **no deployment or binding proof** — live probe returned `signals: { integrations, sandboxes, pipelines, workflows }` only | **Partially Exists** | `apps/workspace/lib/workspace-app-readiness.js` (no `vercel`/`deploy`/`binding` signal); `vercel-projects` rows carry `lastDeployProof` already |
+| P1 | Metadata graph covers `workspace-app-registry` and `vercel-projects` **only as generic `dataModelObject` nodes + fields** (all objects enter via `workspace-metadata-graph.js:102`). Row-level typed derivation exists for exactly one row family — `sandbox-environment` rows become sandboxes/workflows/workflowNodes/pipelineHealth (`workspace-metadata-store.js:534–988`). No `appSurface`/`vercelProject`/`inboundBinding` typed nodes, no exposure edges, and `inputMode` never enters the store — so blast radius, stale surfaces, patch impact, and the MCP tools can see the *objects* but cannot reason about *which workflow is publicly exposed, by which binding, served by which deployment* | **Partially Exists** | `apps/workspace/lib/workspace-metadata-graph.js:102`; `apps/workspace/lib/workspace-metadata-store.js:534,644,848,988` (sandbox-only row typing); no `inputMode` reference in any `workspace-metadata-*.js` |
+| P2 | `/triggers` fleet cockpit — the one Phase-4 deliverable of `GOVERNED_CAPABILITY_BINDING_LOOP_V1.md` §4 not shipped: no pure deriver unifies scheduler + webhook + api-request bindings | **Missing** | command registry is exactly `/goal /loop /workflows /swarm /ceo /schedule /register-api /create-object` (`helper-commands.js:20–77`); `schedule-cockpit-console.js` contains no `inputMode`/method handling (its chips are readiness delta tags, `:80,191`); the only cockpit derivers in `apps/workspace/lib/` are `schedule-cockpit-console.js` and `ceo-cockpit-console.js` |
+| P3 | App readiness folds an activation-level deploy lens but **not the release's governed proof rows or public-door exposure**. `deriveDeployLensState` (`workspace-activation.js:878`) already feeds `deployReady` into `GET /api/workspace/apps` blockers (`workspace-app-registry.js:158`) from runtime signals (target, env vars, check-passed, deployed flag) — but neither it, `workspace-app-readiness.js`, nor the apps route reads `vercel-projects.latestDeploymentState`/`lastDeployProof` or inbound-binding exposure; live MCP `app_readiness` returned `signals: { integrations, sandboxes, pipelines, workflows }` only | **Partially Exists** | zero `latestDeploymentState`/`lastDeployProof` references in `workspace-app-readiness.js`, `apps/route.js`, `workspace-app-registry.js`; `vercel-projects` rows carry the proof fields already (release freeze §governed rows) |
 | P4 | Workflow → workflow composition — named "the compounding move… comes for free" in `GOVERNED_CAPABILITY_BINDING_LOOP_V1.md` §3 — has **no governed constructor**: nothing mints an `api-registry` row from a sibling workflow's published inbound binding | **Missing** | grep of `apps/workspace/lib/resolver-constructor.js` + `workspace-add-ons.js` for sibling-binding construction: no hits |
 | P5 | Door guards (duplicate-delivery + rate) are deliberately per-instance (`deliveryCache` `apps/workspace/lib/workspace-inbound-invocation.js:212`, `rateCache` `:253`, "best-effort WITHIN one runtime instance" comment) — correct posture, but **invisible**: no readiness delta, cockpit chip, or receipt-derived traffic view surfaces it on serverless multi-instance deployments | **Partially Exists** | source comments at `:203–210`, `:240–247`; blocked receipts already emitted (429 + retry-after) but no deriver folds them |
 | P6 | Production proof loop — the QA bar verifies signed/bearer 200 against localhost; nothing replays the verified test event against the **deployed domain** and writes proof back to the `vercel-projects` / binding rows | **Partially Exists** | `scripts/smoke-vercel-marketplace-localhost.mjs`, `scripts/e2e-inbound-journey-playwright.mjs` exist; no production-domain sibling |
@@ -99,18 +104,22 @@ unchanged `api-registry-call` runner path.
 
 ## 3. The items (dependency order; no timelines)
 
-### Item 1 — Graph coverage of the release substrate (the spine move; do first)
+### Item 1 — Row-level typed graph derivation for the release substrate (the spine move; do first)
 
-Add typed nodes and edges to `buildWorkspaceMetadataGraph`
-(`apps/workspace/lib/workspace-metadata-graph.js`) for the three governed row
-families the release created: `appSurface` (from `workspace-app-registry`),
-`vercelProject` (from `vercel-projects`), and `inboundBinding` (from workflow
-rows whose trigger node carries `inputMode: "webhook" | "api-request"` —
-mirroring how `pipelineHealth` nodes are already derived from rows). Edge
-taxonomy, additive: *workflow —exposedBy→ inboundBinding*, *inboundBinding
-—servedBy→ vercelProject*, *appSurface —deployedTo→ vercelProject*,
-*appSurface —referencesRegistry→ api-registry row*. Deterministic edge ids,
-same as every existing edge.
+The store already has the exact pattern: `sandbox-environment` is the one row
+family promoted from generic rows to typed graph citizens
+(`workspace-metadata-store.js:534–988` derives sandboxes → workflows →
+workflowNodes → pipelineHealth). Extend that same promotion to the three row
+families the release created: `appSurface` (from `workspace-app-registry`
+rows), `vercelProject` (from `vercel-projects` rows), and `inboundBinding`
+(from workflow rows whose trigger node carries
+`inputMode: "webhook" | "api-request"` — the store already walks these rows'
+graphs today; it just discards the trigger metadata). Edge taxonomy,
+additive: *workflow —exposedBy→ inboundBinding*, *inboundBinding —servedBy→
+vercelProject*, *appSurface —deployedTo→ vercelProject*, *appSurface
+—referencesRegistry→ api-registry row*. Deterministic edge ids, same as every
+existing edge. The generic `dataModelObject` nodes stay untouched — this adds
+semantics on top, exactly as pipelineHealth did.
 
 *Why highest impact / lowest risk:* pure deriver extension, zero writes, and
 every downstream consumer inherits it in the same change — blast radius can
@@ -138,21 +147,25 @@ one rail pill, one cockpit component mirroring `ScheduleCockpit.jsx`).
 the richest agent condition packet in the workspace — the generalized fleet
 lens the binding-loop doc named as the terminal state of Phase 4.
 
-### Item 3 — Deployment + public-door truth folded into readiness (additive optional)
+### Item 3 — Governed deploy-proof rows + public-door truth folded into readiness (additive optional)
 
-`deriveAppReadiness` (`apps/workspace/lib/workspace-app-readiness.js`)
-composes two new signal families it currently ignores, both already durable:
-deployment proof (`vercel-projects.latestDeploymentState`,
-`lastDeployProof`, `workspace-app-registry.deploymentUrl`) and public-door
-status (live inbound bindings on workflows). New warning classes, additive:
-*"binding live but no deployment — signed endpoint exists only on
-localhost"* (the exact activation gap the release closed) and *"deployed but
-deploy proof stale."* Surfaces automatically in MCP `app_readiness`, `GET
-/api/workspace/apps` (optional field, version stays `1`), and `/settings/apps`.
+An activation-level deploy lens already exists and is already folded:
+`deriveDeployLensState` (`workspace-activation.js:878`) reads runtime signals
+(deploy target, env readiness, check-passed, deployed flag) and its
+`deployReady` verdict reaches `GET /api/workspace/apps` blockers
+(`workspace-app-registry.js:158`). What no readiness layer reads yet are the
+release's **governed proof rows**: `vercel-projects.latestDeploymentState` /
+`lastDeployProof` / `latestDeploymentUrl`, `workspace-app-registry.deploymentUrl`,
+and live inbound bindings on workflow rows. Fold those into
+`deriveAppReadiness` (and thereby MCP `app_readiness`) as additive signals.
+New warning classes: *"binding live but no deployment — signed endpoint
+exists only on localhost"* (the exact activation gap the release closed) and
+*"deployed but deploy proof stale."* Optional field on `GET
+/api/workspace/apps`; version stays `1`.
 
-*Why:* the release made "where does my platform run" a governed row; readiness
-is the layer whose whole job is folding governed rows into one
-`ready/blocking/nextAction` verdict, and it predates those rows.
+*Why:* the release made "where does my platform run" a governed row with
+proof fields; the readiness layer predates those rows and still reasons only
+from runtime flags — row truth and readiness truth should be the same truth.
 
 ### Item 4 — Sibling-binding constructor: workflow → workflow composition made first-class
 
@@ -251,7 +264,7 @@ rotation's completion proof is a fresh production 200.
 
 | Item | Modify | Add | Test |
 | --- | --- | --- | --- |
-| **1** | `apps/workspace/lib/workspace-metadata-graph.js` (+ selectors) | — | sibling of `scripts/unit-workspace-metadata-impact.test.mjs` |
+| **1** | `apps/workspace/lib/workspace-metadata-store.js` (row-typing, mirrors the sandbox-environment derivation at `:534–988`), `workspace-metadata-graph.js` (+ selectors) | — | sibling of `scripts/unit-workspace-metadata-impact.test.mjs` |
 | **2** | `helper-commands.js`, `HelperSidecar.jsx`, `workspace-rail.jsx` | `apps/workspace/lib/triggers-cockpit-console.js`, `TriggersCockpit.jsx` | `scripts/unit-triggers-cockpit.test.mjs` |
 | **3** | `apps/workspace/lib/workspace-app-readiness.js`, `app/api/workspace/apps/route.js` (optional field), `packages/api-contract/src/workspace-apps.ts` (optional) | — | extend `scripts/unit-workspace-app-readiness.test.mjs` |
 | **4** | `apps/workspace/lib/workspace-add-ons.js` (constructor entry), `workspace-outcome-receipts.js` (additive lineage field) | `apps/workspace/lib/sibling-binding-constructor.js` (pure, `resolver-constructor.js` shape) | `scripts/unit-sibling-binding-constructor.test.mjs` |
