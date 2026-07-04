@@ -44,7 +44,7 @@ npm install -g @growthub/cli
 growthub workspace status --json
 ```
 
-**Reference contracts:** [Workspace Config Contract V1](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Workspace Builder Runtime V1](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
+**Reference contracts:** [Workspace Config Contract V1](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md) · [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) · [Governed Inbound And Deployment Release Freeze V1](./docs/GOVERNED_INBOUND_AND_DEPLOYMENT_RELEASE_FREEZE_V1.md) · [Workspace Builder Runtime V1](./docs/WORKSPACE_BUILDER_RUNTIME_V1.md)
 &nbsp;
 
 ---
@@ -182,6 +182,7 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 - [**Operating the Governed Universe V1**](./docs/OPERATING_THE_GOVERNED_UNIVERSE_V1.md) — the three-layer control plane (Mutation → Law → Intelligence)
 - [**Governed MCP Console V1**](./docs/GOVERNED_MCP_CONSOLE_V1.md) — the agent-facing operating console (read → reason → dry-run → governed mutate → re-read)
 - [**Official Marketplace Plugins V1**](./docs/OFFICIAL_MARKETPLACE_PLUGINS_V1.md)
+- [**Governed Inbound And Deployment Release Freeze V1**](./docs/GOVERNED_INBOUND_AND_DEPLOYMENT_RELEASE_FREEZE_V1.md)
 - [**Serverless Scheduler Command Guide V1**](./docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md)
 - [**Governed Workspace Topology V1**](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md)
 - [**Workspace Config Contract V1**](./docs/WORKSPACE_CONFIG_CONTRACT_V1.md)
