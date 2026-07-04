@@ -8,6 +8,7 @@ import {
   getProviderProductDiscovery,
   listProviderProductReadiness,
   makeDiscoveredMarketplaceProduct,
+  resolveProbePaths,
   resolveProviderAccountAuth,
   withDiscoveredMarketplaceProductRegistry,
   withMarketplaceProductRegistry,
@@ -103,7 +104,7 @@ async function readJsonSafe(response) {
 
 function pickArray(payload) {
   if (Array.isArray(payload)) return payload;
-  for (const key of ["databases", "indexes", "indices", "schedules", "queues", "resources", "items", "data"]) {
+  for (const key of ["databases", "indexes", "indices", "schedules", "queues", "resources", "projects", "items", "data"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
   if (payload && typeof payload === "object") return [payload];
@@ -270,6 +271,21 @@ async function probeProviderProduct({ providerId, productId, region }) {
   if (!probe.baseUrlEnv || !probe.tokenEnv || !Array.isArray(probe.paths) || !probe.paths.length) {
     return { ok: false, status: 400, error: "unsupported provider product probe" };
   }
+  // Declared path-template contract (probe.pathEnv): `{placeholder}` segments
+  // resolve from named env refs server-side (Cloudflare account-scoped R2
+  // paths). A missing ref fails honestly with the env NAME — never a literal
+  // `{placeholder}` fetch.
+  const probePaths = resolveProbePaths(probe, process.env);
+  if (!probePaths.ok) {
+    return {
+      ok: false,
+      status: 422,
+      error: `${product.label} provider credentials are not connected`,
+      missingEnv: probePaths.missingEnv,
+      resolvedEnv: requiredEnv.resolvedKeys,
+      summary: `${product.label} probe path refs are not resolved (${probePaths.missingEnv.join(", ")}). Complete provider setup, then sync again.`,
+    };
+  }
   const regionOption = selectedRegion(product, region);
   const configuredUrl = envValue(probe.baseUrlEnv)
     || (probe.fallbackRegionBaseUrl ? regionOption.baseUrl : "")
@@ -280,7 +296,7 @@ async function probeProviderProduct({ providerId, productId, region }) {
   const result = await probeJsonPaths({
     baseUrl: configuredUrl,
     token: envValue(probe.tokenEnv),
-    paths: probe.paths,
+    paths: probePaths.paths,
     label: product.label,
     query: teamId ? `teamId=${encodeURIComponent(teamId)}` : "",
     tokenHeaderName: probe.tokenHeaderName,

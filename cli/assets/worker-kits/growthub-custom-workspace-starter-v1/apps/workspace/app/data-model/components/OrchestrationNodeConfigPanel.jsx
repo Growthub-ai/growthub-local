@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
   FILTER_OPERATORS,
-  isApiRegistryTestSuccessful
+  isApiRegistryTestSuccessful,
+  substituteVariables
 } from "@/lib/orchestration-graph";
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
 import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
@@ -14,6 +15,8 @@ import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const SUPABASE_DATA_OPERATIONS = ["select", "insert", "update", "upsert", "delete", "rpc"];
+// Read-only V1 allowlist — mirrors STRIPE_COMMERCE_OPERATIONS in the runner.
+const STRIPE_COMMERCE_OPERATIONS = ["list-payment-intents", "list-customers", "list-products", "retrieve-balance"];
 const MODEL_OPTIONS = ["Claude Opus 4.6", "Claude Sonnet 4.5", "GPT-5.2", "Local agent host"];
 const OUTPUT_TYPES = ["Text", "Number", "Boolean", "JSON", "Record ID"];
 const LOCAL_AGENT_ADAPTERS = [
@@ -74,6 +77,8 @@ function inferDeltaTagsForNode(node, config) {
   if (type === "ai-agent") tags.push("model", "prompt", "output");
   if (type === "data-action" || type === "data-trigger") tags.push("input", "output");
   if (type === "supabase-data") tags.push("input", "output");
+  if (type === "stripe-commerce") tags.push("input", "output");
+  if (type === "resend-email") tags.push("input", "output");
   if (type === "flow-control") tags.push("routing");
   if (type === "core-action") tags.push("runtime");
   if (type === "human-input") tags.push("input");
@@ -134,6 +139,218 @@ function getObjectFields(object) {
 
 function getSelectedObject(workspaceObjects, objectId) {
   return workspaceObjects.find((object) => String(object.id) === String(objectId || "")) || null;
+}
+
+/**
+ * Email body editor for the resend-email node — Design (rich text) and HTML
+ * tabs over ONE stored value (config.htmlTemplate). Design edits a
+ * contentEditable surface with a compact formatting toolbar; HTML edits the
+ * raw markup; both stay in lockstep so a user can move between designing and
+ * hand-tuning without losing work. {{input.key}} tokens survive both views.
+ */
+function EmailBodyEditor({ value, disabled, onChange }) {
+  const [mode, setMode] = useState("design");
+  const editorRef = useRef(null);
+  // Push external value into the design surface only when it actually
+  // differs — otherwise every keystroke would reset the caret.
+  useEffect(() => {
+    if (mode !== "design" || !editorRef.current) return;
+    if (editorRef.current.innerHTML !== String(value || "")) {
+      editorRef.current.innerHTML = String(value || "");
+    }
+  }, [mode, value]);
+  function exec(command, argument = null) {
+    if (disabled) return;
+    editorRef.current?.focus();
+    document.execCommand(command, false, argument);
+    onChange(editorRef.current?.innerHTML || "");
+  }
+  const toolbar = [
+    { id: "bold", label: "B", title: "Bold", style: { fontWeight: 700 } },
+    { id: "italic", label: "I", title: "Italic", style: { fontStyle: "italic" } },
+    { id: "underline", label: "U", title: "Underline", style: { textDecoration: "underline" } },
+    { id: "insertUnorderedList", label: "• List", title: "Bulleted list" },
+    { id: "insertOrderedList", label: "1. List", title: "Numbered list" },
+  ];
+  return (
+    <div className="dm-orchestration-config__field dm-email-editor">
+      <span>Body</span>
+      <div className="dm-workflow-tabs dm-email-editor__tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={mode === "design"} className={mode === "design" ? "is-active" : ""} onClick={() => setMode("design")}>Design</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "html"}
+          className={mode === "html" ? "is-active" : ""}
+          onClick={() => setMode("html")}
+        >
+          HTML
+        </button>
+      </div>
+      {mode === "design" ? (
+        <>
+          <div className="dm-email-editor__toolbar" role="toolbar" aria-label="Formatting">
+            {toolbar.map((tool) => (
+              <button key={tool.id} type="button" title={tool.title} style={tool.style} disabled={disabled} onClick={() => exec(tool.id)}>
+                {tool.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              title="Insert link"
+              disabled={disabled}
+              onClick={() => {
+                const href = window.prompt("Link URL (https://…)");
+                if (href) exec("createLink", href);
+              }}
+            >
+              Link
+            </button>
+            <button type="button" title="Heading" disabled={disabled} onClick={() => exec("formatBlock", "<h2>")}>H2</button>
+            <button type="button" title="Paragraph" disabled={disabled} onClick={() => exec("formatBlock", "<p>")}>¶</button>
+          </div>
+          <div
+            ref={editorRef}
+            className="dm-email-editor__surface"
+            contentEditable={!disabled}
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Email body design surface"
+            style={{ minHeight: 140, border: "1px solid var(--dm-border, #d5d9e0)", borderRadius: 8, padding: 10, background: "#fff", overflowY: "auto" }}
+            onInput={() => onChange(editorRef.current?.innerHTML || "")}
+          />
+          <p className="dm-orchestration-config__hint">Design the email visually — bind live values with {"{{input.key}}"} anywhere in the text. Switch to HTML for full markup control.</p>
+        </>
+      ) : (
+        <>
+          <textarea rows={8} value={value || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+          <p className="dm-orchestration-config__hint">Raw HTML — full control, including inline styles and {"{{input.key}}"} tokens. The Design tab renders exactly this markup.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Test pane for the resend-email node — the node-sidecar mirror of the
+ * webhook trigger's test-event modal: derive a JSON test event, run the REAL
+ * governed send through the messaging door, and show a Verified chip only on
+ * a live HTTP success. Proof is stamped onto the node config (lastTest*) so
+ * the draft carries honest lineage — never optimistic text.
+ */
+function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected }) {
+  const [doorState, setDoorState] = useState(null);
+  const [testInput, setTestInput] = useState('{\n  "email": "customer@example.com"\n}');
+  const [sendTo, setSendTo] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/workspace/add-ons/resend/messaging")
+      .then((response) => response.json())
+      .then((body) => { if (alive) setDoorState(body); })
+      .catch(() => { if (alive) setDoorState({ error: "messaging door unreachable" }); });
+    return () => { alive = false; };
+  }, []);
+  let parsedInput = null;
+  try {
+    parsedInput = JSON.parse(testInput || "{}");
+  } catch {
+    parsedInput = null;
+  }
+  const inputPayload = parsedInput && typeof parsedInput === "object" ? parsedInput : {};
+  const resolvedTo = String(sendTo || substituteVariables(String(config.toTemplate || config.to || ""), inputPayload)).trim();
+  const canSend = !disabled && !sending && parsedInput !== null && /@/.test(resolvedTo);
+  async function sendTestEmail() {
+    setSending(true);
+    setResult(null);
+    try {
+      const response = await fetch("/api/workspace/add-ons/resend/messaging", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "send-test",
+          to: resolvedTo,
+          subject: substituteVariables(String(config.subjectTemplate || config.subject || ""), inputPayload) || "Growthub workflow test email",
+          html: substituteVariables(String(config.htmlTemplate || config.html || ""), inputPayload),
+          text: substituteVariables(String(config.textTemplate || config.text || ""), inputPayload),
+          from: substituteVariables(String(config.fromTemplate || config.from || ""), inputPayload),
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      const outcome = {
+        ok: response.ok && body?.ok === true,
+        httpStatus: body?.httpStatus || response.status,
+        providerMessageId: body?.providerMessageId || "",
+        testedAt: body?.testedAt || new Date().toISOString(),
+        summary: body?.summary || body?.error || `HTTP ${response.status}`,
+        receiptId: body?.receiptId || "",
+      };
+      setResult(outcome);
+      // Stamp honest proof onto the draft node — mirrors the webhook proof
+      // discipline (state derives from the real outcome, success or not).
+      patchConfig({
+        lastTestStatus: String(outcome.httpStatus),
+        lastTestAt: outcome.testedAt,
+        lastTestSummary: outcome.summary,
+        sampleResponse: JSON.stringify({ ok: outcome.ok, httpStatus: outcome.httpStatus, id: outcome.providerMessageId }, null, 2),
+      });
+    } catch (error) {
+      setResult({ ok: false, httpStatus: 0, summary: error?.message || "send failed", testedAt: new Date().toISOString() });
+    } finally {
+      setSending(false);
+    }
+  }
+  const verified = Boolean(result?.ok) || (!result && String(config.lastTestStatus || "").startsWith("2"));
+  return (
+    <div className="dm-orchestration-config__pane">
+      {verified ? <span className="dm-orchestration-config__badge is-connected">Verified {result?.httpStatus || config.lastTestStatus}</span> : null}
+      <p className="dm-orchestration-config__meta">1 · Connect</p>
+      <div className="dm-orchestration-config__field">
+        <span>Sending lane</span>
+        <code>
+          RESEND_API_KEY {doorState?.envReady ? "· Configured" : doorState ? "· Missing" : "· Checking…"}
+          {" — "}
+          {doorState?.senderEnvRef || "RESEND_FROM_EMAIL"} {doorState?.senderReady ? "· Resolved" : "· set in runtime or From field"}
+        </code>
+      </div>
+      {registryConnected || doorState?.productVerified ? (
+        <p className="dm-orchestration-config__hint">Product installed + verified — {doorState?.syncProof || "provider proof stored on the registry row"}.</p>
+      ) : (
+        <p className="dm-orchestration-config__hint">Install the Resend Email product from the Add-ons Marketplace to unlock live sends.</p>
+      )}
+      <p className="dm-orchestration-config__meta">2 · Test event</p>
+      <label className="dm-orchestration-config__field">
+        <span>Test input (JSON)</span>
+        <textarea rows={4} value={testInput} spellCheck={false} disabled={disabled} onChange={(e) => setTestInput(e.target.value)} />
+      </label>
+      {parsedInput === null ? <p className="dm-workflow-schedule-error" role="alert">Test input is not valid JSON yet — Send stays disabled until it parses.</p> : null}
+      <label className="dm-orchestration-config__field">
+        <span>Send to</span>
+        <input value={sendTo} placeholder={resolvedTo || "qa@yourdomain.com"} disabled={disabled} onChange={(e) => setSendTo(e.target.value)} />
+      </label>
+      <button type="button" className="dm-btn-primary-sm" disabled={!canSend} onClick={sendTestEmail}>
+        {sending ? "Sending…" : "Send test email"}
+      </button>
+      <p className="dm-orchestration-config__hint">
+        Sends the REAL email through the governed messaging door with this node&apos;s subject and body ({"{{input.key}}"} bound from the test input). Every outcome is receipted.
+      </p>
+      {result || config.lastTestAt ? (
+        <>
+          <p className="dm-orchestration-config__meta">3 · Result</p>
+          <div className="dm-marketplace-config-summary">
+            <div><span>Method</span><code>POST /emails</code></div>
+            <div><span>HTTP status</span><code>{result?.httpStatus ?? config.lastTestStatus ?? "—"}</code></div>
+            <div><span>At</span><code>{result?.testedAt || config.lastTestAt || "—"}</code></div>
+            <div><span>Message id</span><code>{result?.providerMessageId || "—"}</code></div>
+            <div><span>Summary</span><code>{result?.summary || config.lastTestSummary || "—"}</code></div>
+            {result?.receiptId ? <div><span>Receipt</span><code>{result.receiptId}</code></div> : null}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
 }
 
 function KeyValueRows({ label, entries, onChange, disabled, keyPlaceholder = "Key", valuePlaceholder = "Value" }) {
@@ -646,7 +863,7 @@ export function OrchestrationNodeConfigPanel({
     return keys.some((k) => readinessFieldSet.has(k)) ? ` dm-field--readiness is-${readinessSeverity}` : "";
   }
 
-  const tabsForType = type === "api-registry-call" || type === "supabase-data" || type === "core-action"
+  const tabsForType = type === "api-registry-call" || type === "supabase-data" || type === "stripe-commerce" || type === "resend-email" || type === "core-action"
     ? ["configuration", "test", "advanced"]
     : type === "input" || type === "transform-filter" || type === "data-action" || type === "data-trigger" || type === "ai-agent" || type === "flow-control" || type === "human-input"
       ? ["configuration", "advanced"]
@@ -883,6 +1100,89 @@ export function OrchestrationNodeConfigPanel({
           >
             Return representation
           </WorkflowCheckbox>
+        </div>
+      )}
+
+      {activeTab === "configuration" && type === "stripe-commerce" && (
+        <div className="dm-orchestration-config__pane">
+          {registryConnected && (
+            <span className="dm-orchestration-config__badge is-connected">Connected</span>
+          )}
+          <label className="dm-orchestration-config__field">
+            <span>Operation</span>
+            <select
+              value={String(config.operation || "list-payment-intents").trim().toLowerCase()}
+              disabled={disabled}
+              onChange={(e) => patchConfig({ operation: e.target.value })}
+            >
+              {STRIPE_COMMERCE_OPERATIONS.map((op) => (
+                <option key={op} value={op}>{op}</option>
+              ))}
+            </select>
+          </label>
+          <label className={`dm-orchestration-config__field${flagFieldClass("queryTemplate", "query")}`}>
+            <span>Query</span>
+            <input
+              value={config.queryTemplate || config.query || ""}
+              placeholder="limit=5&customer={{input.customerId}}"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ queryTemplate: e.target.value })}
+            />
+          </label>
+          <p className="dm-orchestration-config__hint">
+            Read-only revenue lookups against the installed Stripe product. Bind values with {"{{input.key}}"} — the runner refuses anything that mutates commerce state.
+          </p>
+          <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
+            <span>Registry ID</span>
+            <input value={config.registryId || "stripe-payments"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />
+          </label>
+        </div>
+      )}
+
+      {activeTab === "configuration" && type === "resend-email" && (
+        <div className="dm-orchestration-config__pane">
+          {registryConnected && (
+            <span className="dm-orchestration-config__badge is-connected">Connected</span>
+          )}
+          <label className={`dm-orchestration-config__field${flagFieldClass("toTemplate", "to")}`}>
+            <span>To</span>
+            <input
+              value={config.toTemplate || config.to || ""}
+              placeholder="{{input.email}} or ops@yourdomain.com"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ toTemplate: e.target.value })}
+            />
+          </label>
+          <label className={`dm-orchestration-config__field${flagFieldClass("subjectTemplate", "subject")}`}>
+            <span>Subject</span>
+            <input
+              value={config.subjectTemplate || config.subject || ""}
+              placeholder="Order {{input.id}} received"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ subjectTemplate: e.target.value })}
+            />
+          </label>
+          <EmailBodyEditor
+            value={config.htmlTemplate || config.html || ""}
+            disabled={disabled}
+            onChange={(htmlTemplate) => patchConfig({ htmlTemplate })}
+          />
+          <label className="dm-orchestration-config__field">
+            <span>From (optional)</span>
+            <input
+              value={config.fromTemplate || config.from || ""}
+              placeholder="Resolved from RESEND_FROM_EMAIL when empty"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ fromTemplate: e.target.value })}
+            />
+          </label>
+          <p className="dm-orchestration-config__hint">
+            One governed send per run through the installed Resend product. Sender resolves server-side from RESEND_FROM_EMAIL — nothing to wire by hand. Bind values with {"{{input.key}}"}.
+          </p>
+          <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
+            <span>Registry ID</span>
+            <input value={config.registryId || "resend-email"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />
+          </label>
         </div>
       )}
 
@@ -1443,7 +1743,16 @@ export function OrchestrationNodeConfigPanel({
         </div>
       )}
 
-      {activeTab === "test" && (
+      {activeTab === "test" && type === "resend-email" && (
+        <ResendEmailTestPane
+          config={config}
+          disabled={disabled}
+          patchConfig={patchConfig}
+          registryConnected={registryConnected}
+        />
+      )}
+
+      {activeTab === "test" && type !== "resend-email" && (
         <div className="dm-orchestration-config__pane">
           <label className="dm-orchestration-config__field">
             <span>Success condition</span>
@@ -1549,7 +1858,7 @@ export function OrchestrationNodeConfigPanel({
               </label>
             </>
           )}
-          {type === "supabase-data" && (
+          {(type === "supabase-data" || type === "stripe-commerce" || type === "resend-email") && (
             <label className="dm-orchestration-config__field">
               <span>Timeout (ms)</span>
               <input

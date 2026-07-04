@@ -419,6 +419,190 @@ const NANGO_PRODUCTS = [
     },
   },
 ];
+const STRIPE_PROVIDER_INTEGRATION_ID = "stripe-provider";
+const STRIPE_PAYMENTS_INTEGRATION_ID = "stripe-payments";
+const STRIPE_AUTH_REF = "STRIPE";
+const STRIPE_API_BASE_URL = "https://api.stripe.com";
+// Commerce lane — provider-agnostic grouping for products that expose
+// governed payments/revenue capability (mirrors how "workspace-data" groups
+// database products). Cockpits, apps links, and the canvas detect capability
+// by THIS lane string, never by provider id.
+const WORKSPACE_COMMERCE_LANE = "workspace-commerce";
+const STRIPE_PRODUCTS = [
+  {
+    productId: "stripe-payments",
+    integrationId: STRIPE_PAYMENTS_INTEGRATION_ID,
+    authRef: STRIPE_AUTH_REF,
+    label: "Stripe Payments",
+    shortLabel: "Payments",
+    icon: "S",
+    iconClass: "is-stripe",
+    iconSrc: "/integrations/stripe/payments.png",
+    connectorKind: "stripe-commerce",
+    endpoint: "/v1/account",
+    method: "GET",
+    description: "Stripe account connection for governed commerce capability. Payments, products, prices, and customers become callable through the existing governed API request lanes; the secret key stays in env — this row stores only refs and routing metadata.",
+    subtitle: "Payments infrastructure for the internet",
+    plans: "Pay as you go",
+    entityTypes: "payment,customer,product,price",
+    capabilities: "payments,commerce,customers,governed-api-requests",
+    executionLane: WORKSPACE_COMMERCE_LANE,
+    requiredEnv: ["STRIPE_SECRET_KEY"],
+    optionalEnv: ["STRIPE_WEBHOOK_SECRET", "STRIPE_PUBLISHABLE_KEY", "STRIPE_API_URL"],
+    consoleUrl: "https://dashboard.stripe.com",
+    probe: {
+      baseUrlEnv: "STRIPE_API_URL",
+      tokenEnv: "STRIPE_SECRET_KEY",
+      paths: ["/v1/account"],
+      fallbackBaseUrl: STRIPE_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/v1/products"],
+      emptyLabel: "No Stripe products returned for this account yet.",
+      createDividerLabel: "Or create a new product from the Stripe dashboard",
+      // The account secret key already authorizes every commerce object;
+      // selecting a resource binds the row, it never writes env.
+      envFromResource: [],
+    },
+  },
+];
+const RESEND_PROVIDER_INTEGRATION_ID = "resend-provider";
+const RESEND_EMAIL_INTEGRATION_ID = "resend-email";
+const RESEND_AUTH_REF = "RESEND";
+const RESEND_API_BASE_URL = "https://api.resend.com";
+// Messaging lane — provider-agnostic grouping for products that expose
+// governed outbound messaging capability (email first). Same lane-grammar
+// rule as workspace-commerce: surfaces detect by lane string only.
+const WORKSPACE_MESSAGING_LANE = "workspace-messaging";
+const RESEND_PRODUCTS = [
+  {
+    productId: "resend-email",
+    integrationId: RESEND_EMAIL_INTEGRATION_ID,
+    authRef: RESEND_AUTH_REF,
+    label: "Resend Email",
+    shortLabel: "Email",
+    icon: "R",
+    iconClass: "is-resend",
+    iconSrc: "/integrations/resend/email.png",
+    connectorKind: "resend-messaging",
+    endpoint: "/domains",
+    method: "GET",
+    description: "Resend email connection for governed outbound messaging. Verified sending domains become the workspace's messaging capability; sends run through the existing governed API request lanes and the API key stays in env — this row stores only refs and routing metadata.",
+    subtitle: "Email for developers",
+    plans: "Free, Pro, Scale plans",
+    entityTypes: "email,domain,audience",
+    capabilities: "email,messaging,outbound,governed-api-requests",
+    executionLane: WORKSPACE_MESSAGING_LANE,
+    requiredEnv: ["RESEND_API_KEY"],
+    optionalEnv: ["RESEND_FROM_EMAIL", "RESEND_API_URL"],
+    consoleUrl: "https://resend.com/domains",
+    probe: {
+      baseUrlEnv: "RESEND_API_URL",
+      tokenEnv: "RESEND_API_KEY",
+      paths: ["/domains"],
+      fallbackBaseUrl: RESEND_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/domains"],
+      emptyLabel: "No Resend sending domains returned for this account yet.",
+      createDividerLabel: "Or add a new domain from the Resend dashboard",
+      // The account API key already authorizes every domain; selecting a
+      // resource binds the row, it never writes env.
+      envFromResource: [],
+    },
+  },
+];
+const NEON_PROVIDER_INTEGRATION_ID = "neon-provider";
+const NEON_POSTGRES_INTEGRATION_ID = "neon-postgres";
+const NEON_AUTH_REF = "NEON";
+const NEON_API_BASE_URL = "https://console.neon.tech";
+const NEON_PRODUCTS = [
+  {
+    productId: "neon-postgres",
+    integrationId: NEON_POSTGRES_INTEGRATION_ID,
+    authRef: NEON_AUTH_REF,
+    label: "Neon Postgres",
+    shortLabel: "Postgres",
+    icon: "N",
+    iconClass: "is-neon",
+    iconSrc: "/integrations/neon/postgres.png",
+    connectorKind: "neon-data",
+    endpoint: "/api/v2/projects",
+    method: "GET",
+    description: "Neon serverless Postgres project bound as a governed workspace data product (second occupant of the workspace-data lane). The management API key stays in env; this row stores only refs and routing metadata. Branch-aware external table sync is a deferred follow-up on the same lane grammar.",
+    subtitle: "Serverless Postgres with branching",
+    plans: "Free, Launch, Scale plans",
+    entityTypes: "project,branch,postgres",
+    capabilities: "database,workspace-data,branching",
+    executionLane: WORKSPACE_DATA_LANE,
+    requiredEnv: ["NEON_API_KEY"],
+    optionalEnv: ["NEON_PROJECT_ID", "NEON_DATABASE_URL", "NEON_API_URL"],
+    consoleUrl: "https://console.neon.tech/app/projects",
+    probe: {
+      baseUrlEnv: "NEON_API_URL",
+      tokenEnv: "NEON_API_KEY",
+      paths: ["/api/v2/projects"],
+      fallbackBaseUrl: NEON_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "provider-bearer",
+      paths: ["/api/v2/projects"],
+      emptyLabel: "No Neon projects returned for this account yet.",
+      createDividerLabel: "Or create a new project from the Neon console",
+      envFromResource: [
+        // Bind the selected project id so lane runtimes and follow-up sync
+        // lanes resolve the same project the user installed.
+        { envRef: "NEON_PROJECT_ID", fieldCandidates: ["id"] },
+      ],
+    },
+  },
+];
+const CLOUDFLARE_PROVIDER_INTEGRATION_ID = "cloudflare-provider";
+const CLOUDFLARE_R2_INTEGRATION_ID = "cloudflare-r2";
+const CLOUDFLARE_AUTH_REF = "CLOUDFLARE";
+const CLOUDFLARE_API_BASE_URL = "https://api.cloudflare.com";
+const CLOUDFLARE_PRODUCTS = [
+  {
+    productId: "cloudflare-r2",
+    integrationId: CLOUDFLARE_R2_INTEGRATION_ID,
+    authRef: CLOUDFLARE_AUTH_REF,
+    label: "Cloudflare R2 (Object Storage)",
+    shortLabel: "R2 Storage",
+    icon: "C",
+    iconClass: "is-cloudflare",
+    iconSrc: "/integrations/cloudflare/r2.png",
+    connectorKind: "cloudflare-storage",
+    endpoint: "/client/v4/accounts/{accountId}/r2/buckets",
+    method: "GET",
+    description: "Cloudflare R2 object storage managed as governed workspace records (second occupant of the workspace-storage lane). Create and manage buckets no-code through the governed storage door; the API token stays in env and rows store refs and routing metadata only.",
+    subtitle: "Zero-egress object storage for the governed workspace",
+    plans: "Free tier, Pay as you go",
+    entityTypes: "bucket,object,storage",
+    capabilities: "storage,buckets,workspace-storage",
+    executionLane: WORKSPACE_STORAGE_LANE,
+    requiredEnv: ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+    optionalEnv: ["CLOUDFLARE_API_URL"],
+    consoleUrl: "https://dash.cloudflare.com/?to=/:account/r2/overview",
+    probe: {
+      baseUrlEnv: "CLOUDFLARE_API_URL",
+      tokenEnv: "CLOUDFLARE_API_TOKEN",
+      // Declared path-template contract: {accountId} resolves from the named
+      // env ref server-side (resolveProbePaths) — the generic probe lanes
+      // interpret this key; nothing provider-specific forks the routes.
+      paths: ["/client/v4/accounts/{accountId}/r2/buckets"],
+      pathEnv: { accountId: "CLOUDFLARE_ACCOUNT_ID" },
+      fallbackBaseUrl: CLOUDFLARE_API_BASE_URL,
+    },
+    resourceDiscovery: {
+      auth: "product-probe",
+      paths: ["/client/v4/accounts/{accountId}/r2/buckets"],
+      emptyLabel: "No R2 buckets returned for this account yet.",
+      requiresExistingResource: true,
+    },
+  },
+];
 const MARKETPLACE_PROVIDERS = [
   {
     providerId: "upstash",
@@ -710,6 +894,217 @@ const MARKETPLACE_PROVIDERS = [
     capabilities: "provider-account,marketplace-products,integrations",
     executionLane: "workspace-provider",
     description: "Provider-level Nango account binding for workspace add-ons. The secret key stays in runtime env; available integrations render live and install as governed API Registry rows.",
+  },
+  {
+    providerId: "stripe",
+    integrationId: STRIPE_PROVIDER_INTEGRATION_ID,
+    authRef: STRIPE_AUTH_REF,
+    label: "Stripe",
+    developer: "Stripe",
+    iconSrc: "/integrations/stripe/provider.png",
+    baseUrl: STRIPE_API_BASE_URL,
+    endpoint: "/v1/account",
+    method: "GET",
+    // Provider/account lane (Stripe REST API): Authorization Bearer with the
+    // account secret key (sk_…). One key authorizes account, products,
+    // prices, and customers — there is no separate per-product credential.
+    // STRIPE_API_URL overrides the base (self-hosted proxies, offline QA
+    // smokes) — same contract as the Vercel/Nango account probes.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "STRIPE_SECRET_KEY",
+      baseUrlEnv: "STRIPE_API_URL",
+      paths: ["/v1/account"],
+      // Alias writes so the canonical readServerSecret("STRIPE") candidate
+      // expansion (STRIPE / STRIPE_API_KEY / STRIPE_TOKEN) resolves the same
+      // key the product declares — generic HTTP lanes (test-api-record,
+      // api-registry-call, constructed resolvers) then authenticate too.
+      aliasEnv: { STRIPE_API_KEY: "STRIPE_SECRET_KEY" },
+    },
+    accountSetupFields: [
+      {
+        id: "secretKey",
+        label: "Secret key (sk_…)",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "STRIPE_SECRET_KEY",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "webhookSecret",
+        label: "Webhook signing secret (optional, whsec_…)",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "STRIPE_WEBHOOK_SECRET",
+        credentialRole: "secret",
+      },
+    ],
+    consoleUrl: "https://dashboard.stripe.com",
+    accountSetupUrl: "https://dashboard.stripe.com/apikeys",
+    supportUrl: "https://support.stripe.com",
+    websiteUrl: "https://stripe.com",
+    docsUrl: "https://docs.stripe.com/api",
+    termsUrl: "https://stripe.com/legal/ssa",
+    privacyUrl: "https://stripe.com/privacy",
+    providerProductsLabel: "Payments (Account, Products, Customers)",
+    products: STRIPE_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "stripe-provider",
+    capabilities: "provider-account,marketplace-products,commerce",
+    executionLane: "workspace-provider",
+    description: "Provider-level Stripe account binding for workspace add-ons. The secret key stays in runtime env; product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "resend",
+    integrationId: RESEND_PROVIDER_INTEGRATION_ID,
+    authRef: RESEND_AUTH_REF,
+    label: "Resend",
+    developer: "Resend",
+    iconSrc: "/integrations/resend/provider.png",
+    baseUrl: RESEND_API_BASE_URL,
+    endpoint: "/domains",
+    method: "GET",
+    // Provider/account lane (Resend REST API): Authorization Bearer with the
+    // API key (re_…). One key authorizes domains, audiences, and sends.
+    // RESEND_API_URL overrides the base for offline QA smokes.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "RESEND_API_KEY",
+      baseUrlEnv: "RESEND_API_URL",
+      paths: ["/domains"],
+    },
+    accountSetupFields: [
+      {
+        id: "apiKey",
+        label: "API key (re_…)",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "RESEND_API_KEY",
+        credentialRole: "bearerToken",
+      },
+    ],
+    consoleUrl: "https://resend.com/domains",
+    accountSetupUrl: "https://resend.com/api-keys",
+    supportUrl: "https://resend.com/help",
+    websiteUrl: "https://resend.com",
+    docsUrl: "https://resend.com/docs/api-reference",
+    termsUrl: "https://resend.com/legal/terms-of-service",
+    privacyUrl: "https://resend.com/legal/privacy-policy",
+    providerProductsLabel: "Email (Domains, Outbound sends)",
+    products: RESEND_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "resend-provider",
+    capabilities: "provider-account,marketplace-products,messaging",
+    executionLane: "workspace-provider",
+    description: "Provider-level Resend account binding for workspace add-ons. The API key stays in runtime env; product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "neon",
+    integrationId: NEON_PROVIDER_INTEGRATION_ID,
+    authRef: NEON_AUTH_REF,
+    label: "Neon",
+    developer: "Neon",
+    iconSrc: "/integrations/neon/provider.png",
+    baseUrl: NEON_API_BASE_URL,
+    endpoint: "/api/v2/projects",
+    method: "GET",
+    // Provider/account lane (Neon API v2): Authorization Bearer with a
+    // personal or org API key. One key authorizes projects and branches.
+    // NEON_API_URL overrides the base for offline QA smokes.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "NEON_API_KEY",
+      baseUrlEnv: "NEON_API_URL",
+      paths: ["/api/v2/projects"],
+    },
+    accountSetupFields: [
+      {
+        id: "apiKey",
+        label: "Neon API key",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "NEON_API_KEY",
+        credentialRole: "bearerToken",
+      },
+    ],
+    consoleUrl: "https://console.neon.tech/app/projects",
+    accountSetupUrl: "https://console.neon.tech/app/settings/api-keys",
+    supportUrl: "https://neon.tech/docs/introduction/support",
+    websiteUrl: "https://neon.tech",
+    docsUrl: "https://api-docs.neon.tech",
+    termsUrl: "https://neon.tech/terms-of-service",
+    privacyUrl: "https://neon.tech/privacy-policy",
+    providerProductsLabel: "Serverless Postgres (Projects, Branching)",
+    products: NEON_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "neon-provider",
+    capabilities: "provider-account,marketplace-products,workspace-data",
+    executionLane: "workspace-provider",
+    description: "Provider-level Neon account binding for workspace add-ons. The API key stays in runtime env; product rows are installed after this account is verified.",
+  },
+  {
+    providerId: "cloudflare",
+    integrationId: CLOUDFLARE_PROVIDER_INTEGRATION_ID,
+    authRef: CLOUDFLARE_AUTH_REF,
+    label: "Cloudflare",
+    developer: "Cloudflare",
+    iconSrc: "/integrations/cloudflare/provider.png",
+    baseUrl: CLOUDFLARE_API_BASE_URL,
+    endpoint: "/client/v4/user/tokens/verify",
+    method: "GET",
+    // Provider/account lane (Cloudflare API v4): Authorization Bearer with a
+    // scoped API token; /user/tokens/verify is Cloudflare's own token-health
+    // endpoint. The account id scopes R2 paths and is a plain scope value
+    // (teamScope role, Vercel mirror) — never a secret.
+    // CLOUDFLARE_API_URL overrides the base for offline QA smokes.
+    accountProbe: {
+      authMode: "bearer",
+      tokenEnv: "CLOUDFLARE_API_TOKEN",
+      baseUrlEnv: "CLOUDFLARE_API_URL",
+      paths: ["/client/v4/user/tokens/verify", "/client/v4/accounts"],
+      // Alias writes so the canonical readServerSecret("CLOUDFLARE")
+      // candidate expansion (CLOUDFLARE / CLOUDFLARE_API_KEY /
+      // CLOUDFLARE_TOKEN) resolves the same token the product declares.
+      aliasEnv: { CLOUDFLARE_API_KEY: "CLOUDFLARE_API_TOKEN" },
+    },
+    accountSetupFields: [
+      {
+        id: "apiToken",
+        label: "API token (R2 read/write scope)",
+        type: "password",
+        autocomplete: "off",
+        required: true,
+        envRef: "CLOUDFLARE_API_TOKEN",
+        credentialRole: "bearerToken",
+      },
+      {
+        id: "accountId",
+        label: "Account ID",
+        type: "text",
+        autocomplete: "off",
+        required: true,
+        envRef: "CLOUDFLARE_ACCOUNT_ID",
+        credentialRole: "teamScope",
+      },
+    ],
+    consoleUrl: "https://dash.cloudflare.com",
+    accountSetupUrl: "https://dash.cloudflare.com/profile/api-tokens",
+    supportUrl: "https://developers.cloudflare.com/support",
+    websiteUrl: "https://www.cloudflare.com",
+    docsUrl: "https://developers.cloudflare.com/api",
+    termsUrl: "https://www.cloudflare.com/terms",
+    privacyUrl: "https://www.cloudflare.com/privacypolicy",
+    providerProductsLabel: "Object Storage (R2 Buckets)",
+    products: CLOUDFLARE_PRODUCTS,
+    entityTypes: "provider,marketplace,account",
+    connectorKind: "cloudflare-provider",
+    capabilities: "provider-account,marketplace-products,workspace-storage",
+    executionLane: "workspace-provider",
+    description: "Provider-level Cloudflare account binding for workspace add-ons. The API token stays in runtime env; product rows are installed after this account is verified.",
   },
 ];
 
@@ -2179,6 +2574,59 @@ function listInstalledStorageProducts(workspaceConfig) {
     .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
 }
 
+/**
+ * Installed + verified products on the commerce lane
+ * (executionLane === "workspace-commerce"). Same lane-derived rule as the
+ * data/storage products — any provider whose product declares this lane
+ * surfaces the capability with zero surface changes.
+ */
+function listInstalledCommerceProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_COMMERCE_LANE);
+}
+
+/**
+ * Installed + verified products on the outbound messaging lane
+ * (executionLane === "workspace-messaging"). Same lane-derived rule.
+ */
+function listInstalledMessagingProducts(workspaceConfig) {
+  return findInstalledWorkspaceAddOns(workspaceConfig)
+    .filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_MESSAGING_LANE);
+}
+
+/**
+ * Resolve a product probe's declared path templates against the run env.
+ * `probe.pathEnv` maps `{placeholder}` names to concrete env-ref NAMES (e.g.
+ * `{ accountId: "CLOUDFLARE_ACCOUNT_ID" }`); each placeholder substitutes the
+ * env VALUE server-side. Pure + env-injectable: returns
+ * `{ ok, paths, missingEnv }` and never throws — a missing ref reports the
+ * env NAME so callers can fail honestly instead of fetching a literal
+ * `{placeholder}` URL. Probes without `pathEnv` pass through unchanged.
+ */
+function resolveProbePaths(probe, env = process.env) {
+  const paths = Array.isArray(probe?.paths) ? probe.paths.map((p) => String(p == null ? "" : p).trim()).filter(Boolean) : [];
+  const pathEnv = probe?.pathEnv && typeof probe.pathEnv === "object" && !Array.isArray(probe.pathEnv) ? probe.pathEnv : {};
+  const entries = Object.entries(pathEnv);
+  if (!entries.length) return { ok: true, paths, missingEnv: [] };
+  const source = env && typeof env === "object" ? env : {};
+  const missingEnv = [];
+  const values = {};
+  for (const [placeholder, envName] of entries) {
+    const value = String(readEnvVar(envName, source)?.value || "").trim();
+    if (!value) {
+      missingEnv.push(String(envName || "").trim());
+      continue;
+    }
+    values[placeholder] = value;
+  }
+  if (missingEnv.length) return { ok: false, paths: [], missingEnv };
+  const resolved = paths.map((path) => entries.reduce(
+    (acc, [placeholder]) => acc.split(`{${placeholder}}`).join(encodeURIComponent(values[placeholder])),
+    path,
+  ));
+  return { ok: true, paths: resolved, missingEnv: [] };
+}
+
 function deriveWorkspaceAddOnsState(workspaceConfig) {
   const installed = findInstalledWorkspaceAddOns(workspaceConfig);
   const upstashProvider = findUpstashProviderRow(workspaceConfig);
@@ -2200,6 +2648,14 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const supabaseData = dataProducts.find((row) => row.productId === "supabase-postgrest") || null;
   const storageProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_STORAGE_LANE);
   const supabaseStorage = storageProducts.find((row) => row.productId === "supabase-storage") || null;
+  const neonData = dataProducts.find((row) => row.productId === "neon-postgres") || null;
+  const cloudflareStorage = storageProducts.find((row) => row.productId === "cloudflare-r2") || null;
+  // Lane-derived commerce + messaging capabilities (provider-agnostic —
+  // the same rule the data/storage lanes use).
+  const commerceProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_COMMERCE_LANE);
+  const stripeCommerce = commerceProducts.find((row) => row.productId === "stripe-payments") || null;
+  const messagingProducts = installed.filter((row) => String(row?.executionLane || "").trim() === WORKSPACE_MESSAGING_LANE);
+  const resendMessaging = messagingProducts.find((row) => row.productId === "resend-email") || null;
   return {
     kind: "growthub-workspace-add-ons-state-v1",
     upstashProvider,
@@ -2228,6 +2684,22 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     supabaseStorage,
     hasSupabaseStorageCapability: Boolean(supabaseStorage),
     hasWorkspaceStorageCapability: storageProducts.length > 0,
+    // Second occupants of the data/storage lanes (lane rule, provider named
+    // rows for cockpit convenience — capability booleans stay lane-derived).
+    neonData,
+    hasNeonDataCapability: Boolean(neonData),
+    cloudflareStorage,
+    hasCloudflareStorageCapability: Boolean(cloudflareStorage),
+    // Lane-derived commerce capability (Stripe is the first occupant).
+    commerceProducts,
+    stripeCommerce,
+    hasStripeCommerceCapability: Boolean(stripeCommerce),
+    hasWorkspaceCommerceCapability: commerceProducts.length > 0,
+    // Lane-derived outbound messaging capability (Resend is the first occupant).
+    messagingProducts,
+    resendMessaging,
+    hasResendMessagingCapability: Boolean(resendMessaging),
+    hasWorkspaceMessagingCapability: messagingProducts.length > 0,
   };
 }
 
@@ -2249,8 +2721,33 @@ export {
   SUPABASE_STORAGE_INTEGRATION_ID,
   SUPABASE_PRODUCTS,
   SUPABASE_PROVIDER_INTEGRATION_ID,
+  STRIPE_API_BASE_URL,
+  STRIPE_AUTH_REF,
+  STRIPE_PAYMENTS_INTEGRATION_ID,
+  STRIPE_PRODUCTS,
+  STRIPE_PROVIDER_INTEGRATION_ID,
+  RESEND_API_BASE_URL,
+  RESEND_AUTH_REF,
+  RESEND_EMAIL_INTEGRATION_ID,
+  RESEND_PRODUCTS,
+  RESEND_PROVIDER_INTEGRATION_ID,
+  NEON_API_BASE_URL,
+  NEON_AUTH_REF,
+  NEON_POSTGRES_INTEGRATION_ID,
+  NEON_PRODUCTS,
+  NEON_PROVIDER_INTEGRATION_ID,
+  CLOUDFLARE_API_BASE_URL,
+  CLOUDFLARE_AUTH_REF,
+  CLOUDFLARE_R2_INTEGRATION_ID,
+  CLOUDFLARE_PRODUCTS,
+  CLOUDFLARE_PROVIDER_INTEGRATION_ID,
+  WORKSPACE_COMMERCE_LANE,
+  WORKSPACE_MESSAGING_LANE,
   WORKSPACE_STORAGE_LANE,
+  listInstalledCommerceProducts,
+  listInstalledMessagingProducts,
   listInstalledStorageProducts,
+  resolveProbePaths,
   VERCEL_API_BASE_URL,
   VERCEL_AUTH_REF,
   VERCEL_DEPLOYMENTS_INTEGRATION_ID,

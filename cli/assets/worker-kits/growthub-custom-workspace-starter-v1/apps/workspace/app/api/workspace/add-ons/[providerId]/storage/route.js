@@ -3,11 +3,13 @@
  * POST   /api/workspace/add-ons/[providerId]/storage
  * DELETE /api/workspace/add-ons/[providerId]/storage
  *
- * Governed storage/CDN door for the Supabase Storage product (executionLane
- * "workspace-storage", connectorKind "supabase-storage") — the second
- * Supabase product, a sibling of the /data route. Same provider account, a
- * distinct governed object (the buckets object), gated on a connected
- * provider AND a linked governed data table.
+ * Governed storage/CDN door for workspace-storage products (executionLane
+ * "workspace-storage") — a sibling of the /data route. Provider-agnostic by
+ * lane; the external HTTP legs dispatch on the product's connectorKind
+ * (supabase-storage: Storage API; cloudflare-storage: R2 account-scoped v4
+ * API). Same provider account as the rest of the marketplace, a distinct
+ * governed object (the buckets object), gated on a connected provider AND a
+ * linked governed data table.
  *
  *   GET    → read-only state: readiness, the gate causation state
  *            (deriveBucketProductState), the linkable tables, the live
@@ -28,7 +30,8 @@ import { NextResponse } from "next/server";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
 import {
   getMarketplaceProvider,
-  deriveWorkspaceAddOnsState,
+  findMarketplaceProviderRow,
+  resolveProbePaths,
 } from "@/lib/workspace-add-ons";
 import {
   buildBucketsObject,
@@ -38,6 +41,7 @@ import {
   listLinkableTables,
   mergeBucketsIntoRows,
   parseBucketInventory,
+  parseR2BucketInventory,
   validateBucketRequest,
   withBucketsObject,
 } from "@/lib/workspace-storage-buckets";
@@ -46,7 +50,9 @@ import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
 
 const FETCH_TIMEOUT_MS = 15000;
-const SUPPORTED_CONNECTOR_KIND = "supabase-storage";
+// Connector kinds this door has an external-storage adapter for. Anything
+// else on the lane gets the honest "no storage adapter yet" refusal.
+const SUPPORTED_CONNECTOR_KINDS = new Set(["supabase-storage", "cloudflare-storage"]);
 const STORAGE_LANE = "workspace-storage";
 
 function clean(value) {
@@ -79,24 +85,60 @@ async function readJsonSafe(response) {
   }
 }
 
-/** Resolve the provider's workspace-storage product + runtime env, or error. */
+/**
+ * Resolve the provider's workspace-storage product + runtime env + the
+ * connector-kind adapter, or error. The adapter owns the external HTTP
+ * grammar only (URLs, create payload, inventory parsing, public-access
+ * support); every gate, receipt, and governed write is shared.
+ */
 function resolveStorageProduct(providerId) {
   const provider = getMarketplaceProvider(providerId);
   if (!provider) return { error: "unknown marketplace provider", status: 404 };
   const product = (provider.products || []).find((item) => clean(item.executionLane) === STORAGE_LANE);
   if (!product) return { error: `${provider.label} has no workspace-storage product`, status: 404, provider };
-  if (clean(product.connectorKind) !== SUPPORTED_CONNECTOR_KIND) {
+  const kind = clean(product.connectorKind);
+  if (!SUPPORTED_CONNECTOR_KINDS.has(kind)) {
     return { error: `connectorKind ${product.connectorKind} has no storage adapter yet`, status: 400, provider, product };
   }
   const probe = product.probe || {};
-  const baseUrl = envValue(probe.baseUrlEnv);
   const secret = envValue(probe.tokenEnv);
+  if (kind === "cloudflare-storage") {
+    // Account-scoped R2 paths resolve through the declared pathEnv contract;
+    // the base URL falls back to the public v4 API host.
+    const baseUrl = envValue(probe.baseUrlEnv) || clean(probe.fallbackBaseUrl);
+    const probePaths = resolveProbePaths(probe, process.env);
+    const bucketsPath = probePaths.ok ? probePaths.paths[0] : "";
+    return {
+      provider,
+      product,
+      kind,
+      baseUrl,
+      secret,
+      tokenHeaderName: "",
+      bucketsPath,
+      // R2 buckets are private by default; public access is managed via
+      // custom domains / managed domains in the Cloudflare dashboard.
+      supportsPublicAccess: false,
+      // No anonymous CDN base derivable from the account API — rows keep
+      // cdnUrl empty rather than synthesizing one.
+      cdnBaseUrl: "",
+      parseInventory: parseR2BucketInventory,
+      envReady: Boolean(baseUrl && secret && probePaths.ok),
+      missingEnv: [...(secret ? [] : [probe.tokenEnv]), ...probePaths.missingEnv].filter(Boolean),
+    };
+  }
+  const baseUrl = envValue(probe.baseUrlEnv);
   return {
     provider,
     product,
+    kind,
     baseUrl,
     secret,
     tokenHeaderName: clean(probe.tokenHeaderName),
+    bucketsPath: "/storage/v1/bucket",
+    supportsPublicAccess: true,
+    cdnBaseUrl: baseUrl,
+    parseInventory: parseBucketInventory,
     envReady: Boolean(baseUrl && secret),
     missingEnv: [...(baseUrl ? [] : [probe.baseUrlEnv]), ...(secret ? [] : [probe.tokenEnv])].filter(Boolean),
   };
@@ -111,14 +153,26 @@ function storageHeaders({ secret, tokenHeaderName, extra = {} }) {
   };
 }
 
-function bucketUrl(baseUrl, suffix = "") {
-  return `${clean(baseUrl).replace(/\/+$/, "")}/storage/v1/bucket${suffix ? `/${clean(suffix).replace(/^\/+/, "")}` : ""}`;
+function bucketUrl(resolution, suffix = "") {
+  const base = clean(resolution.baseUrl).replace(/\/+$/, "");
+  const path = clean(resolution.bucketsPath).replace(/\/+$/, "");
+  return `${base}${path.startsWith("/") ? path : `/${path}`}${suffix ? `/${clean(suffix).replace(/^\/+/, "")}` : ""}`;
+}
+
+/** Connector-kind-specific create payload (validated request → provider body). */
+function bucketCreateBody(resolution, validation) {
+  if (resolution.kind === "cloudflare-storage") {
+    // R2 create accepts the bucket name; MIME/size policy is enforced at the
+    // workspace layer and recorded on the governed row.
+    return { name: validation.request.name };
+  }
+  return validation.request;
 }
 
 async function fetchBucketInventory(resolution) {
-  const response = await fetchWithTimeout(bucketUrl(resolution.baseUrl), { headers: storageHeaders(resolution) });
+  const response = await fetchWithTimeout(bucketUrl(resolution), { headers: storageHeaders(resolution) });
   if (!response.ok) return { ok: false, status: response.status, buckets: [] };
-  return { ok: true, status: response.status, buckets: parseBucketInventory(await readJsonSafe(response)) };
+  return { ok: true, status: response.status, buckets: resolution.parseInventory(await readJsonSafe(response)) };
 }
 
 async function appendStorageReceipt({ outcomeStatus, summary, object, bucket, nextActions = [], violationCodes = [] }) {
@@ -140,13 +194,16 @@ async function appendStorageReceipt({ outcomeStatus, summary, object, bucket, ne
 }
 
 function gateContext(resolution, workspaceConfig) {
-  const addOnsState = deriveWorkspaceAddOnsState(workspaceConfig);
-  const providerConnected = Boolean(addOnsState?.hasSupabaseProvider);
+  // Provider-agnostic connect gate: the owning provider's verified registry
+  // row (the same rule every marketplace surface derives from).
+  const providerRow = findMarketplaceProviderRow(workspaceConfig, resolution.provider.providerId);
+  const providerConnected = Boolean(providerRow?.isConnectedProvider);
   const buckets = findBucketsObject(workspaceConfig, resolution.provider.providerId);
   const linkable = listLinkableTables(workspaceConfig, { excludeId: buckets?.id });
   const gate = deriveBucketProductState(workspaceConfig, resolution.provider.providerId, {
     providerConnected,
     linkableCount: linkable.length,
+    providerLabel: resolution.provider.label,
   });
   return { providerConnected, buckets, linkable, gate };
 }
@@ -216,11 +273,11 @@ async function POST(request, context) {
   if (!providerConnected) {
     await appendStorageReceipt({
       outcomeStatus: "blocked",
-      summary: `${resolution.product.label} ${action} blocked: Supabase account not connected.`,
+      summary: `${resolution.product.label} ${action} blocked: ${resolution.provider.label} account not connected.`,
       violationCodes: ["provider_not_connected"],
-      nextActions: ["Connect the Supabase provider account in the marketplace, then retry."],
+      nextActions: [`Connect the ${resolution.provider.label} provider account in the marketplace, then retry.`],
     });
-    return jsonError("Supabase provider account is not connected", 409, { gate });
+    return jsonError(`${resolution.provider.label} provider account is not connected`, 409, { gate });
   }
 
   const integrationId = resolution.product.integrationId;
@@ -228,7 +285,7 @@ async function POST(request, context) {
   // ---- create-linked-table: first-run table owned by the storage install ----
   if (action === "create-linked-table") {
     const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-    const baseId = "supabase-storage-files";
+    const baseId = `${resolution.provider.providerId}-storage-files`;
     const ids = new Set(objects.map((object) => clean(object?.id)).filter(Boolean));
     let objectId = baseId;
     let suffix = 2;
@@ -236,7 +293,7 @@ async function POST(request, context) {
       objectId = `${baseId}-${suffix}`;
       suffix += 1;
     }
-    const label = clean(body.label) || "Supabase Storage Files";
+    const label = clean(body.label) || `${resolution.provider.label} Storage Files`;
     const tableObject = {
       id: objectId,
       label,
@@ -245,10 +302,10 @@ async function POST(request, context) {
       icon: "Database",
       columns: ["Name", "bucketId", "objectPath", "mimeType", "size", "publicUrl", "status"],
       rows: [],
-      binding: { mode: "manual", source: "Supabase Storage" },
+      binding: { mode: "manual", source: `${resolution.provider.label} Storage` },
       fieldSettings: {},
     };
-    const base = buckets || buildBucketsObject({ providerId: resolution.provider.providerId, integrationId });
+    const base = buckets || buildBucketsObject({ providerId: resolution.provider.providerId, integrationId, providerLabel: resolution.provider.label });
     const nextBuckets = {
       ...base,
       ...buildBucketsObject({
@@ -257,6 +314,7 @@ async function POST(request, context) {
         linkedTableObjectId: tableObject.id,
         linkedTableLabel: tableObject.label,
         label: base.label,
+        providerLabel: resolution.provider.label,
       }),
       rows: Array.isArray(base.rows) ? base.rows : [],
     };
@@ -285,7 +343,7 @@ async function POST(request, context) {
     if (!linkedTableObjectId || !match) {
       return jsonError("link-table requires a valid linkedTableObjectId from linkableTables", 400, { linkableTables: linkable });
     }
-    const base = buckets || buildBucketsObject({ providerId: resolution.provider.providerId, integrationId });
+    const base = buckets || buildBucketsObject({ providerId: resolution.provider.providerId, integrationId, providerLabel: resolution.provider.label });
     const nextObject = {
       ...base,
       ...buildBucketsObject({
@@ -294,6 +352,7 @@ async function POST(request, context) {
         linkedTableObjectId,
         linkedTableLabel: match.label,
         label: base.label,
+        providerLabel: resolution.provider.label,
       }),
       rows: Array.isArray(base.rows) ? base.rows : [],
     };
@@ -336,12 +395,26 @@ async function POST(request, context) {
       });
       return jsonError(validation.error, 400);
     }
+    // Honest capability boundary: providers whose bucket API has no anonymous
+    // public mode (Cloudflare R2) refuse a public request instead of writing
+    // a row that claims public CDN access.
+    if (validation.access === "public" && !resolution.supportsPublicAccess) {
+      await appendStorageReceipt({
+        outcomeStatus: "blocked",
+        summary: `create-bucket ${validation.request.id} blocked: ${resolution.provider.label} buckets are private at the API level.`,
+        object: buckets,
+        bucket: validation.request.id,
+        violationCodes: ["public_access_unsupported"],
+        nextActions: [`Create the bucket as private, then manage public access from the ${resolution.provider.label} dashboard (custom/managed domains).`],
+      });
+      return jsonError(`${resolution.provider.label} buckets are private at the API level — create as private and manage public access from the provider dashboard`, 400, { bucket: validation.request.id });
+    }
     let createResponse;
     try {
-      createResponse = await fetchWithTimeout(bucketUrl(resolution.baseUrl), {
+      createResponse = await fetchWithTimeout(bucketUrl(resolution), {
         method: "POST",
         headers: storageHeaders({ ...resolution, extra: { "content-type": "application/json" } }),
-        body: JSON.stringify(validation.request),
+        body: JSON.stringify(bucketCreateBody(resolution, validation)),
       });
     } catch (error) {
       await appendStorageReceipt({ outcomeStatus: "blocked", summary: `create-bucket ${validation.request.id} failed: ${error?.message || "network error"}`, object: buckets, bucket: validation.request.id, violationCodes: ["bucket_create_failed"] });
@@ -365,7 +438,7 @@ async function POST(request, context) {
     const merge = mergeBucketsIntoRows({
       rows: buckets.rows,
       buckets: inventory.ok ? inventory.buckets : [{ id: validation.request.id, name: validation.request.name, public: validation.request.public, allowedMimeTypes: validation.request.allowed_mime_types || [], fileSizeLimit: validation.request.file_size_limit, createdAt: nowIso }],
-      baseUrl: resolution.baseUrl,
+      baseUrl: resolution.cdnBaseUrl,
       registryId: integrationId,
       linkedTableObjectId: clean(buckets.linkedTableObjectId),
       nowIso,
@@ -387,7 +460,7 @@ async function POST(request, context) {
     await appendStorageReceipt({ outcomeStatus: "blocked", summary: `sync-buckets blocked: Storage API returned HTTP ${inventory.status}.`, object: buckets, violationCodes: ["bucket_list_failed"] });
     return jsonError(`bucket list failed (HTTP ${inventory.status})`, 502);
   }
-  const merge = mergeBucketsIntoRows({ rows: buckets.rows, buckets: inventory.buckets, baseUrl: resolution.baseUrl, registryId: integrationId, linkedTableObjectId: clean(buckets.linkedTableObjectId), nowIso });
+  const merge = mergeBucketsIntoRows({ rows: buckets.rows, buckets: inventory.buckets, baseUrl: resolution.cdnBaseUrl, registryId: integrationId, linkedTableObjectId: clean(buckets.linkedTableObjectId), nowIso });
   const summary = buildBucketProof({ action: "sync", httpStatus: inventory.status, count: merge.rows.length });
   const nextObject = { ...buckets, rows: merge.rows };
   const { receipt } = await appendStorageReceipt({ outcomeStatus: "published", summary, object: nextObject });
@@ -419,7 +492,7 @@ async function DELETE(request, context) {
 
   let deleteResponse;
   try {
-    deleteResponse = await fetchWithTimeout(bucketUrl(resolution.baseUrl, bucketId), {
+    deleteResponse = await fetchWithTimeout(bucketUrl(resolution, bucketId), {
       method: "DELETE",
       headers: storageHeaders({ ...resolution, extra: { "content-type": "application/json" } }),
     });

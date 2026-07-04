@@ -154,7 +154,10 @@ function AddOnsSettingsClient({ initialWorkspaceConfig, envSignals }) {
     setErrorMessage("");
     try {
       const method = payload.method || "POST";
-      const response = await fetch("/api/workspace/add-ons/supabase/storage", {
+      // Provider-agnostic storage door: the marketplace drawer names the
+      // owning provider (Supabase Storage, Cloudflare R2 — same lane).
+      const providerId = String(payload.providerId || "supabase").trim();
+      const response = await fetch(`/api/workspace/add-ons/${encodeURIComponent(providerId)}/storage`, {
         method,
         headers: { "content-type": "application/json" },
         ...(method === "GET" ? {} : { body: JSON.stringify(payload.body || {}) }),

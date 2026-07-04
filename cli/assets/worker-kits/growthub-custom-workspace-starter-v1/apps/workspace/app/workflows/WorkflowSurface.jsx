@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { WorkspaceRail } from "../workspace-rail.jsx";
 import { findSandboxRowByWorkflowRef } from "@/lib/nav-workflows";
+import { findInstalledWorkspaceAddOns } from "@/lib/workspace-add-ons";
 import {
   addCanonicalNodeToGraph,
   buildBlankOrchestrationGraphShell,
@@ -155,7 +156,7 @@ function resolveSchedulerRegistryRows(workspaceConfig) {
 
 function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
-  const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call" || n?.type === "supabase-data");
+  const apiNode = graph?.nodes?.find((n) => ["api-registry-call", "supabase-data", "stripe-commerce", "resend-email"].includes(n?.type));
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
   ).trim();
@@ -502,6 +503,43 @@ const WORKFLOW_ACTION_GROUPS = [
   },
 ];
 
+// First-party capability nodes — one palette entry per installed + verified
+// marketplace product that ships an executing canvas node. The section is
+// DERIVED from governed rows (no setup pushed back to the user): install the
+// product in the marketplace and its node appears; nothing to configure by
+// hand. Icons are the product's own marketplace badge, not a generic glyph.
+const CAPABILITY_NODE_ACTIONS = [
+  {
+    integrationId: "stripe-payments",
+    action: {
+      id: "stripe-commerce",
+      label: "Stripe",
+      type: "stripe-commerce",
+      iconSrc: "/integrations/stripe/payments.png",
+      destructive: false,
+    },
+  },
+  {
+    integrationId: "resend-email",
+    action: {
+      id: "resend-email",
+      label: "Resend Email",
+      type: "resend-email",
+      iconSrc: "/integrations/resend/email.png",
+      destructive: false,
+    },
+  },
+];
+
+function installedCapabilityGroup(workspaceConfig) {
+  if (!workspaceConfig) return null;
+  const installed = new Set(findInstalledWorkspaceAddOns(workspaceConfig).map((row) => String(row.integrationId || "").trim()));
+  const items = CAPABILITY_NODE_ACTIONS
+    .filter((entry) => installed.has(entry.integrationId))
+    .map((entry) => entry.action);
+  return items.length ? { label: "Installed capabilities", items } : null;
+}
+
 function getWorkspaceObjectOptions(workspaceConfig) {
   return (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.id && object?.objectType !== "sandbox-environment" && object?.objectType !== "api-registry")
@@ -536,6 +574,39 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
         query: "",
         bodyTemplate: "",
         returnRepresentation: true
+      }
+    };
+  }
+  if (action.type === "stripe-commerce") {
+    // Read-only revenue lookup against the installed stripe-payments row —
+    // defaults run as-is; nothing the user must wire by hand.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "Revenue lookup",
+      config: {
+        registryId: "stripe-payments",
+        operation: "list-payment-intents",
+        queryTemplate: "limit=5"
+      }
+    };
+  }
+  if (action.type === "resend-email") {
+    // Governed outbound send through the installed resend-email row. From
+    // resolves server-side from RESEND_FROM_EMAIL — never asked of the user.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "Send email",
+      config: {
+        registryId: "resend-email",
+        operation: "send",
+        toTemplate: "",
+        subjectTemplate: "",
+        htmlTemplate: "",
+        fromTemplate: ""
       }
     };
   }
@@ -602,7 +673,8 @@ function graphHasNodes(graph) {
   return Array.isArray(graph?.nodes) && graph.nodes.length > 0;
 }
 
-function WorkflowAddStepPanel({ target, onSelect }) {
+function WorkflowAddStepPanel({ target, onSelect, capabilityGroup }) {
+  const groups = capabilityGroup ? [...WORKFLOW_ACTION_GROUPS, capabilityGroup] : WORKFLOW_ACTION_GROUPS;
   return (
     <div className="dm-workflow-add-panel">
       <div className="dm-workflow-add-panel__context">
@@ -610,14 +682,16 @@ function WorkflowAddStepPanel({ target, onSelect }) {
         <strong>{target?.from ? `After ${target.from}` : "At end of workflow"}</strong>
         {target?.to && <em>Before {target.to}</em>}
       </div>
-      {WORKFLOW_ACTION_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.label} className="dm-workflow-action-group">
           <span className="dm-workflow-action-group__label">{group.label}</span>
           {group.items.map((item) => {
             const Icon = item.Icon;
             return (
               <button key={item.id} type="button" className="dm-workflow-action-option" onClick={() => onSelect(item)}>
-                <span aria-hidden="true"><Icon size={16} /></span>
+                {item.iconSrc
+                  ? <span aria-hidden="true"><img src={item.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                  : <span aria-hidden="true"><Icon size={16} /></span>}
                 <strong>{item.label}</strong>
                 {item.destructive && <small>Requires confirmation at run time</small>}
               </button>
@@ -2141,6 +2215,7 @@ export default function WorkflowSurface() {
                   <WorkflowAddStepPanel
                     target={addTarget}
                     onSelect={insertActionNode}
+                    capabilityGroup={installedCapabilityGroup(workspaceConfig)}
                   />
                 </div>
               )}

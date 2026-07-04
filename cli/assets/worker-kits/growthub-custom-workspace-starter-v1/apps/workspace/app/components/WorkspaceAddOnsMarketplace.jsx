@@ -275,7 +275,9 @@ function AddOnsSurface({
   const activeProduct = selectedMarketplaceProvider
     ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, installDrawer) || findDiscoveredProduct(installDrawer))
     : null;
-  const activeProductIsStorage = activeProduct?.connectorKind === "supabase-storage";
+  // Storage drawer detects by LANE (provider-agnostic — Supabase Storage and
+  // Cloudflare R2 share the same governed storage door + install journey).
+  const activeProductIsStorage = activeProduct?.executionLane === "workspace-storage";
   const managedProduct = selectedMarketplaceProvider
     ? (getMarketplaceProduct(selectedMarketplaceProvider.providerId, manageDrawer) || findDiscoveredProduct(manageDrawer))
     : null;
@@ -353,7 +355,7 @@ function AddOnsSurface({
   async function refreshStorageState() {
     if (!activeProductIsStorage || !onStorageAction) return null;
     setStorageMessage("");
-    const result = await onStorageAction({ method: "GET" });
+    const result = await onStorageAction({ method: "GET", providerId: selectedMarketplaceProvider?.providerId });
     if (result?.error) {
       setStorageMessage(result.error);
       return null;
@@ -371,7 +373,7 @@ function AddOnsSurface({
     if (!state) return;
     let linkedTableObjectId = state.linkedTableObjectId || selectedLinkedTableId;
     if (!linkedTableObjectId) {
-      const createdTable = await onStorageAction?.({ body: { action: "create-linked-table" } });
+      const createdTable = await onStorageAction?.({ providerId: selectedMarketplaceProvider?.providerId, body: { action: "create-linked-table" } });
       if (createdTable?.error) {
         setStorageMessage(createdTable.error);
         return;
@@ -390,13 +392,14 @@ function AddOnsSurface({
       return;
     }
     if (!state.linkedTableObjectId) {
-      const linked = await onStorageAction?.({ body: { action: "link-table", linkedTableObjectId } });
+      const linked = await onStorageAction?.({ providerId: selectedMarketplaceProvider?.providerId, body: { action: "link-table", linkedTableObjectId } });
       if (linked?.error) {
         setStorageMessage(linked.error);
         return;
       }
     }
     const created = await onStorageAction?.({
+      providerId: selectedMarketplaceProvider?.providerId,
       body: {
         action: "create-bucket",
         name: bucketName,
@@ -416,7 +419,7 @@ function AddOnsSurface({
       plan: bucketAccess,
       selectedResourceId: created?.bucketId || "",
       selectedResourceLabel: created?.bucketId || bucketName,
-      selectedResourceSource: "/storage/v1/bucket",
+      selectedResourceSource: activeProduct?.endpoint || "/storage/v1/bucket",
     });
   }
 
@@ -1179,7 +1182,7 @@ function AddOnsSurface({
               <div className="dm-cockpit-step-hint">
                 {providerConnected
                   ? activeProductIsStorage
-                    ? "Create bucket calls the governed storage route, creates or binds the file records table, creates the Supabase bucket, reads it back, and records the storage product."
+                    ? `Create bucket calls the governed storage route, creates or binds the file records table, creates the ${selectedMarketplaceProvider?.label || "provider"} bucket, reads it back, and records the storage product.`
                     : activeProductIsDiscovered
                       ? "Install re-reads the live provider integration server-side, validates it with the connected account, and writes a governed API Registry row for this integration."
                       : "Install calls the product sync route, validates the product credentials server-side, and writes the product API Registry row into workspace config."
