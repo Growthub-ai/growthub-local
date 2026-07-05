@@ -191,9 +191,75 @@ test("resend sidecar ships the full editor surface (modes, preview, tokens, temp
   assert.ok(panelSource.includes("ResendTemplateControls"), "template save/load controls");
   assert.ok(panelSource.includes("Draft with AI helper"), "AI-native helper affordance");
   assert.ok(panelSource.includes("helper=open&prompt="), "helper deep-link prefill");
+  // Images are first-class body content: toolbar insertion in Design mode,
+  // and the sanitize boundary must keep <img> (it strips handlers/URLs, not
+  // tags) so images survive sends AND template saves.
+  assert.ok(panelSource.includes("insertOptimizedImage"), "toolbar inserts images through the optimizing path");
+  assert.ok(!/replace\([^)]*img/i.test(panelSource), "sanitizer does not strip img tags");
+  // On-click image controls with automatic sizing optimization: inline
+  // email-client-safe sizing ships with the HTML (not just in-app CSS), and
+  // clicking an image exposes width/align/alt/remove controls. The UI-only
+  // selection marker must never leak into the stored template.
+  assert.ok(panelSource.includes('img.style.maxWidth = "100%"'), "auto-optimization writes INLINE max-width the sent email keeps");
+  assert.ok(panelSource.includes("normalizeSurfaceImages"), "every image (incl. pasted markup) gets normalized");
+  assert.ok(panelSource.includes("serializeSurfaceHtml"), "surface reads go through the marker-stripping serializer");
+  assert.ok(panelSource.includes('removeAttribute("data-dm-selected")'), "selection marker is stripped before persisting");
+  assert.ok(panelSource.includes("IMAGE_WIDTH_PRESETS") && panelSource.includes("IMAGE_ALIGN_PRESETS"), "width + alignment presets exist");
+  assert.ok(panelSource.includes("img.isConnected"), "controls guard against detached images (no broken states)");
+  assert.ok(panelSource.includes('"Remove image"') || panelSource.includes(">Remove<"), "image removal control exists");
+  // Clean interface: the static explainer waterfall stays out of the sidecar
+  // (env-ref context lives in placeholders and the live Test-pane status).
+  for (const removed of ["Design the email visually", "Templates save as governed rows", "One governed send per run"]) {
+    assert.ok(!panelSource.includes(removed), `static hint "${removed}…" stays removed`);
+  }
+  // contentEditable surfaces hold unmanaged children — the mode branches must
+  // stay keyed so React remounts instead of leaking typed content across modes.
+  assert.ok(panelSource.includes('key="design-surface"') && panelSource.includes('key="preview-frame"'), "design/preview branches are keyed against DOM reuse");
   const shellSource = readFileSync(
     path.join(kitLib, "..", "app/data-model/components/DataModelShell.jsx"),
     "utf8",
   );
   assert.ok(shellSource.includes('searchParams?.get("prompt")'), "shell supports the generic prompt prefill param");
+});
+
+test("editor + palette surfaces are STYLED on the design system, not UA defaults (regression)", () => {
+  // The browser proof pack caught the editor tabs/tokens/toolbar rendering as
+  // unstyled user-agent buttons (a class with no CSS anywhere). Guard both
+  // halves: the markup must use the canonical config-tab class, and
+  // globals.css must actually declare the editor/palette rules.
+  const panelSource = readFileSync(
+    path.join(kitLib, "..", "app/data-model/components/OrchestrationNodeConfigPanel.jsx"),
+    "utf8",
+  );
+  assert.ok(panelSource.includes('"dm-orchestration-config__tabs dm-email-editor__tabs"'), "mode tabs reuse the canonical styled tab class");
+  assert.ok(panelSource.includes('"dm-orchestration-config__tabs dm-email-editor__devices"'), "device tabs reuse the canonical styled tab class");
+  assert.ok(!panelSource.includes("dm-workflow-tabs"), "no orphan class with zero CSS rules");
+  const css = readFileSync(path.join(kitLib, "..", "app/globals.css"), "utf8");
+  for (const selector of [
+    ".dm-email-editor__tokens button",
+    ".dm-email-editor__toolbar button",
+    ".dm-email-editor__surface",
+    ".dm-email-editor__frame",
+    ".dm-email-editor__preview",
+    ".dm-workflow-variant-search",
+    ".dm-workflow-capability-list",
+    ".dm-workflow-variant-more",
+  ]) {
+    assert.ok(css.includes(selector), `globals.css styles ${selector}`);
+  }
+});
+
+test("Installed capabilities group stays clean at scale: max 10 per page, scroll area, +10 expand", () => {
+  const surfaceSource = readFileSync(
+    path.join(kitLib, "..", "app/workflows/WorkflowSurface.jsx"),
+    "utf8",
+  );
+  assert.ok(surfaceSource.includes("useState(10)") && surfaceSource.includes("capabilityLimit"), "capability page size starts at 10");
+  assert.ok(surfaceSource.includes("capabilityItems.slice(0, capabilityLimit)"), "visible capabilities are a bounded slice of the governed-row-derived items");
+  assert.ok(surfaceSource.includes('className="dm-workflow-capability-list"'), "capability items render inside the scrollable section");
+  assert.ok(surfaceSource.includes("setCapabilityLimit((current) => current + 10)"), "+10 expand grows the page");
+  assert.ok(surfaceSource.includes("+ Show 10 more"), "expand affordance is explicit");
+  // The bounding is scoped to the capabilities group ONLY — curated groups
+  // keep their native rendering.
+  assert.ok(surfaceSource.includes("WORKFLOW_ACTION_GROUPS.map((group)"), "curated groups render natively, unbounded");
 });

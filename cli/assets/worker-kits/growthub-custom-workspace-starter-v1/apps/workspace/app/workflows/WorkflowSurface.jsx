@@ -664,7 +664,14 @@ function graphHasNodes(graph) {
 
 function WorkflowAddStepPanel({ target, onSelect, capabilityGroup, workspaceConfig }) {
   const [variantQuery, setVariantQuery] = useState("");
-  const groups = capabilityGroup ? [...WORKFLOW_ACTION_GROUPS, capabilityGroup] : WORKFLOW_ACTION_GROUPS;
+  // "Installed capabilities" stays clean at any plugin count: max 10 visible
+  // per page inside its own scroll area, +10 per expand click — the items
+  // themselves stay DERIVED from installed + verified governed rows in the
+  // workspace data model.
+  const [capabilityLimit, setCapabilityLimit] = useState(10);
+  const capabilityItems = Array.isArray(capabilityGroup?.items) ? capabilityGroup.items : [];
+  const visibleCapabilities = capabilityItems.slice(0, capabilityLimit);
+  const capabilityRemaining = capabilityItems.length - visibleCapabilities.length;
   // Long-tail: every installed + verified registry row without a bespoke
   // node becomes a canonical API Request variant — bounded list + search,
   // deterministic at 1K+ discovered products.
@@ -678,7 +685,7 @@ function WorkflowAddStepPanel({ target, onSelect, capabilityGroup, workspaceConf
         <strong>{target?.from ? `After ${target.from}` : "At end of workflow"}</strong>
         {target?.to && <em>Before {target.to}</em>}
       </div>
-      {groups.map((group) => (
+      {WORKFLOW_ACTION_GROUPS.map((group) => (
         <div key={group.label} className="dm-workflow-action-group">
           <span className="dm-workflow-action-group__label">{group.label}</span>
           {group.items.map((item) => {
@@ -695,6 +702,37 @@ function WorkflowAddStepPanel({ target, onSelect, capabilityGroup, workspaceConf
           })}
         </div>
       ))}
+      {capabilityItems.length > 0 && (
+        <div className="dm-workflow-action-group">
+          <span className="dm-workflow-action-group__label">{capabilityGroup.label}</span>
+          <div className="dm-workflow-capability-list">
+            {visibleCapabilities.map((item) => {
+              const Icon = item.Icon;
+              return (
+                <button key={item.id} type="button" className="dm-workflow-action-option" onClick={() => onSelect(item)}>
+                  {item.iconSrc
+                    ? <span aria-hidden="true"><img src={item.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                    : <span aria-hidden="true">{Icon ? <Icon size={16} /> : <Globe2 size={16} />}</span>}
+                  <strong>{item.label}</strong>
+                  {item.destructive && <small>Requires confirmation at run time</small>}
+                </button>
+              );
+            })}
+          </div>
+          {capabilityRemaining > 0 ? (
+            <button
+              type="button"
+              className="dm-workflow-variant-more"
+              onClick={() => setCapabilityLimit((current) => current + 10)}
+            >
+              + Show 10 more ({capabilityRemaining} remaining)
+            </button>
+          ) : null}
+          {capabilityRemaining > 0 ? (
+            <small className="dm-workflow-action-group__hint">Showing {visibleCapabilities.length} of {capabilityItems.length} installed capabilities.</small>
+          ) : null}
+        </div>
+      )}
       {apiVariants.total > 0 && (
         <div className="dm-workflow-action-group">
           <span className="dm-workflow-action-group__label">Installed integrations</span>

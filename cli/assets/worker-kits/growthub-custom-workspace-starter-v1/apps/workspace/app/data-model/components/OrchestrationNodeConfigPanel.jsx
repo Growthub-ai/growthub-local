@@ -171,25 +171,104 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
   const [mode, setMode] = useState("design");
   const [previewDevice, setPreviewDevice] = useState("desktop");
   const [tokenDraft, setTokenDraft] = useState("");
+  const [imageSelected, setImageSelected] = useState(false);
+  const [, setImageTick] = useState(0);
   const editorRef = useRef(null);
+  const selectedImageRef = useRef(null);
   const htmlAreaRef = useRef(null);
   const textAreaRef = useRef(null);
+  // The in-editor selection marker (data-dm-selected) is UI-only chrome —
+  // it must never reach the stored template, so every read of the surface
+  // goes through this serializer instead of raw innerHTML.
+  function serializeSurfaceHtml() {
+    const surface = editorRef.current;
+    if (!surface) return "";
+    const clone = surface.cloneNode(true);
+    clone.querySelectorAll("img[data-dm-selected]").forEach((img) => img.removeAttribute("data-dm-selected"));
+    return clone.innerHTML;
+  }
+  function clearImageSelection() {
+    editorRef.current?.querySelectorAll("img[data-dm-selected]").forEach((img) => img.removeAttribute("data-dm-selected"));
+    selectedImageRef.current = null;
+    setImageSelected(false);
+  }
   // Push external value into the design surface only when it actually
-  // differs — otherwise every keystroke would reset the caret.
+  // differs — otherwise every keystroke would reset the caret. Compare the
+  // SERIALIZED surface (marker stripped) so an active image selection is not
+  // wiped by its own edits.
   useEffect(() => {
     if (mode !== "design" || !editorRef.current) return;
     // innerHTML re-render is the app-execution boundary — always sanitized.
     const safe = sanitizeEmailHtml(html);
-    if (editorRef.current.innerHTML !== safe) {
+    if (serializeSurfaceHtml() !== safe) {
       editorRef.current.innerHTML = safe;
+      selectedImageRef.current = null;
+      setImageSelected(false);
     }
   }, [mode, html]);
+  useEffect(() => {
+    if (mode !== "design") {
+      selectedImageRef.current = null;
+      setImageSelected(false);
+    }
+  }, [mode]);
   function exec(command, argument = null) {
     if (disabled) return;
     editorRef.current?.focus();
     document.execCommand(command, false, argument);
-    onChangeHtml(editorRef.current?.innerHTML || "");
+    onChangeHtml(serializeSurfaceHtml());
   }
+  // Automatic sizing optimization: every inserted image ships INLINE
+  // email-client-safe sizing (max-width 100%, auto height, block display) —
+  // the sent HTML carries it, not just the in-app CSS. Idempotent over all
+  // images so pasted markup gets normalized too.
+  function normalizeSurfaceImages() {
+    editorRef.current?.querySelectorAll("img").forEach((img) => {
+      if (!img.style.maxWidth) img.style.maxWidth = "100%";
+      if (!img.style.height) img.style.height = "auto";
+      if (!img.style.display) img.style.display = "block";
+    });
+  }
+  function insertOptimizedImage(src) {
+    if (disabled) return;
+    editorRef.current?.focus();
+    document.execCommand("insertImage", false, src);
+    normalizeSurfaceImages();
+    onChangeHtml(serializeSurfaceHtml());
+  }
+  function handleSurfaceClick(event) {
+    const target = event.target;
+    if (target && target.tagName === "IMG") {
+      editorRef.current?.querySelectorAll("img[data-dm-selected]").forEach((img) => {
+        if (img !== target) img.removeAttribute("data-dm-selected");
+      });
+      target.setAttribute("data-dm-selected", "1");
+      selectedImageRef.current = target;
+      setImageSelected(true);
+      setImageTick((tick) => tick + 1);
+      return;
+    }
+    clearImageSelection();
+  }
+  // On-click image controls: explicit width presets, alignment, alt text,
+  // remove — every action writes inline styles (what email clients read),
+  // then persists the serialized surface. No broken states: actions guard on
+  // the image still being attached.
+  function withSelectedImage(action) {
+    const img = selectedImageRef.current;
+    if (!img || !img.isConnected) {
+      clearImageSelection();
+      return;
+    }
+    action(img);
+    normalizeSurfaceImages();
+    onChangeHtml(serializeSurfaceHtml());
+    setImageTick((tick) => tick + 1);
+  }
+  const IMAGE_WIDTH_PRESETS = [["Auto", ""], ["25%", "25%"], ["50%", "50%"], ["75%", "75%"], ["Full", "100%"]];
+  const IMAGE_ALIGN_PRESETS = [["Left", "0 auto 0 0"], ["Center", "0 auto"], ["Right", "0 0 0 auto"]];
+  const selectedImageWidth = selectedImageRef.current?.style?.width || "";
+  const selectedImageMargin = selectedImageRef.current?.style?.margin || "";
   function insertToken(name) {
     const token = `{{input.${String(name || "").trim().replace(/[^a-zA-Z0-9_.-]/g, "") || "value"}}}`;
     if (mode === "design") {
@@ -215,7 +294,7 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
   return (
     <div className="dm-orchestration-config__field dm-email-editor">
       <span>Body</span>
-      <div className="dm-workflow-tabs dm-email-editor__tabs" role="tablist">
+      <div className="dm-orchestration-config__tabs dm-email-editor__tabs" role="tablist">
         {modes.map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "is-active" : ""} onClick={() => setMode(id)}>
             {label}
@@ -260,10 +339,73 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
             >
               Link
             </button>
+            <button
+              type="button"
+              title="Insert image"
+              disabled={disabled}
+              onClick={() => {
+                const src = window.prompt("Image URL (https://…)");
+                if (src) insertOptimizedImage(src);
+              }}
+            >
+              Image
+            </button>
             <button type="button" title="Heading" disabled={disabled} onClick={() => exec("formatBlock", "<h2>")}>H2</button>
             <button type="button" title="Paragraph" disabled={disabled} onClick={() => exec("formatBlock", "<p>")}>¶</button>
           </div>
+          {imageSelected ? (
+            <div className="dm-email-editor__toolbar dm-email-editor__imgbar" role="toolbar" aria-label="Image controls">
+              <span className="dm-email-editor__imgbar-label">Image</span>
+              {IMAGE_WIDTH_PRESETS.map(([label, width]) => (
+                <button
+                  key={label}
+                  type="button"
+                  title={width ? `Width ${width}` : "Natural size (capped at 100%)"}
+                  className={selectedImageWidth === width ? "is-active" : ""}
+                  disabled={disabled}
+                  onClick={() => withSelectedImage((img) => { img.style.width = width; })}
+                >
+                  {label}
+                </button>
+              ))}
+              {IMAGE_ALIGN_PRESETS.map(([label, margin]) => (
+                <button
+                  key={label}
+                  type="button"
+                  title={`Align ${label.toLowerCase()}`}
+                  className={selectedImageMargin === margin ? "is-active" : ""}
+                  disabled={disabled}
+                  onClick={() => withSelectedImage((img) => { img.style.margin = margin; })}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                title="Describe the image for text-only clients"
+                disabled={disabled}
+                onClick={() => {
+                  const alt = window.prompt("Alt text (what this image shows)", selectedImageRef.current?.getAttribute("alt") || "");
+                  if (alt !== null) withSelectedImage((img) => img.setAttribute("alt", alt));
+                }}
+              >
+                Alt
+              </button>
+              <button
+                type="button"
+                title="Remove image"
+                disabled={disabled}
+                onClick={() => {
+                  withSelectedImage((img) => img.remove());
+                  clearImageSelection();
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ) : null}
           <div
+            key="design-surface"
             ref={editorRef}
             className="dm-email-editor__surface"
             contentEditable={!disabled}
@@ -271,37 +413,33 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
             role="textbox"
             aria-multiline="true"
             aria-label="Email body design surface"
-            style={{ minHeight: 140, border: "1px solid var(--dm-border, #d5d9e0)", borderRadius: 8, padding: 10, background: "#fff", overflowY: "auto" }}
-            onInput={() => onChangeHtml(editorRef.current?.innerHTML || "")}
+            onInput={() => onChangeHtml(serializeSurfaceHtml())}
+            onClick={handleSurfaceClick}
           />
-          <p className="dm-orchestration-config__hint">Design the email visually — insert variables anywhere; they bind at run time. Switch to HTML for full markup control, Text for the plain-text alternative, Preview to proof it.</p>
         </>
       ) : mode === "html" ? (
         <>
           <textarea ref={htmlAreaRef} rows={8} value={html || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeHtml(e.target.value)} />
-          <p className="dm-orchestration-config__hint">Raw HTML — full control, including inline styles and {"{{input.key}}"} tokens. The Design tab renders exactly this markup (sanitized for in-app display).</p>
         </>
       ) : mode === "text" ? (
         <>
           <textarea ref={textAreaRef} rows={8} value={text || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeText(e.target.value)} />
-          <p className="dm-orchestration-config__hint">Plain-text alternative — sent alongside (or instead of) the HTML body for text-only clients.</p>
         </>
       ) : (
         <>
-          <div className="dm-workflow-tabs dm-email-editor__devices" role="tablist" aria-label="Preview device">
+          <div className="dm-orchestration-config__tabs dm-email-editor__devices" role="tablist" aria-label="Preview device">
             <button type="button" role="tab" aria-selected={previewDevice === "desktop"} className={previewDevice === "desktop" ? "is-active" : ""} onClick={() => setPreviewDevice("desktop")}>Desktop</button>
             <button type="button" role="tab" aria-selected={previewDevice === "mobile"} className={previewDevice === "mobile" ? "is-active" : ""} onClick={() => setPreviewDevice("mobile")}>Mobile</button>
           </div>
-          <div style={{ display: "flex", justifyContent: "center", background: "#f2f3f6", border: "1px solid var(--dm-border, #d5d9e0)", borderRadius: 8, padding: 12 }}>
+          <div key="preview-frame" className="dm-email-editor__frame">
             <div
               className="dm-email-editor__preview"
               aria-label={`Email preview (${previewDevice})`}
-              style={{ width: previewDevice === "mobile" ? 320 : 600, maxWidth: "100%", minHeight: 160, background: "#fff", borderRadius: 6, padding: 14, overflowY: "auto", boxShadow: "0 1px 4px rgba(16,20,28,0.12)" }}
+              style={{ width: previewDevice === "mobile" ? 320 : 600 }}
               // Sanitized above — the same boundary every design-surface render uses.
               dangerouslySetInnerHTML={{ __html: previewHtml || "<p style='color:#8a8f98'>Nothing to preview yet — write a body in Design, HTML, or Text.</p>" }}
             />
           </div>
-          <p className="dm-orchestration-config__hint">Rendered from the sanitized HTML template ({"{{input.key}}"} tokens show literally here; the Test tab sends with live values bound).</p>
         </>
       )}
     </div>
@@ -387,7 +525,6 @@ function ResendTemplateControls({ config, disabled, patchConfig }) {
         </a>
       </div>
       {message ? <p className="dm-orchestration-config__hint">{message}</p> : null}
-      <p className="dm-orchestration-config__hint">Templates save as governed rows (email-templates object) through the messaging door — receipted, server-side, reusable across workflows.</p>
     </div>
   );
 }
@@ -1387,9 +1524,6 @@ export function OrchestrationNodeConfigPanel({
               onChange={(e) => patchConfig({ fromTemplate: e.target.value })}
             />
           </label>
-          <p className="dm-orchestration-config__hint">
-            One governed send per run through the installed Resend product. Sender resolves server-side from RESEND_FROM_EMAIL — nothing to wire by hand. Bind values with {"{{input.key}}"}.
-          </p>
           <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
             <span>Registry ID</span>
             <input value={config.registryId || "resend-email"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />

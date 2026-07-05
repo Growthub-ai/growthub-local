@@ -1,6 +1,6 @@
 # PR #270 Production Proof Pack — Marketplace Provider Capability Stack
 
-One continuous browser journey (54/54 checks GREEN, `qa3-run.log` is the
+One continuous browser journey (65/65 checks GREEN, `qa3-run.log` is the
 unedited run log) performed as a real user on a real boot of the exported
 `growthub-custom-workspace-starter-v1` kit, from a fully reset workspace
 (no providers connected, no products installed, no source objects, no
@@ -46,15 +46,15 @@ Visible surface: Workflow canvas → Resend Email node → Configuration/Test ta
 Live action layer: page.click / page.fill / page.keyboard.type.
 Readback layer: page.request GET/POST /api/workspace/add-ons/resend/messaging + DOM snapshots.
 Screenshots: 01, 03, 08–21.
-Result: send receipt aor_mr77p929_wsbl7d · provider message id email_mock_1 ·
-        blocked receipts aor_mr77oa0p_x0tkae (not connected), aor_mr77pbfk_3oepph
-        (provider failure), aor_mr77ph8p_tx99s9 (missing sender).
+Result: send receipt aor_mr78ve35_cbbb4m · provider message id email_mock_1 ·
+        blocked receipts aor_mr78uama_s8x3pp (not connected), aor_mr78vgl0_viw736
+        (provider failure), aor_mr78vkjq_4gnd9v (missing sender).
 ```
 
 - **Pre-connect blocked state** (`01`): the messaging door reports
   `providerConnected:false`, `missingEnv:["RESEND_API_KEY"]`; `send-test` is
   refused HTTP 409 and the refusal is receipted
-  (`aor_mr77oa0p_x0tkae — "Resend Email send-test blocked: Resend account not
+  (`aor_mr78uama_s8x3pp — "Resend Email send-test blocked: Resend account not
   connected."`) with a repair `nextActions`.
 - **Connect + install** (`03`): credentials verified server-side against the
   provider API (`Resend Email probe /domains returned HTTP 200` stored as
@@ -67,7 +67,7 @@ Result: send receipt aor_mr77p929_wsbl7d · provider message id email_mock_1 ·
   into the active surface; free-form token insert supported.
 - **Templates** (`14`): "Save as template" posts the governed door's
   `save-template` action → sanitized server-side → upserted as a governed
-  `email-templates` row → receipt `aor_mr77p7r6_xpszbx` → immediately
+  `email-templates` row → receipt `aor_mr78vcr0_buft5j` → immediately
   reloadable from the sidecar select.
 - **AI entry point**: "Draft with AI helper" deep-links
   `/data-model?helper=open&prompt=…` with a prefilled email-drafting prompt.
@@ -76,7 +76,7 @@ Result: send receipt aor_mr77p929_wsbl7d · provider message id email_mock_1 ·
   RESEND_FROM_EMAIL · Resolved`), never values.
 - **Verified send** (`16`): real POST through the governed door → provider
   `POST /emails` → HTTP 200, message id `email_mock_1`, receipt
-  `aor_mr77p929_wsbl7d`; the mock's outbox readback confirms the email
+  `aor_mr78ve35_cbbb4m`; the mock's outbox readback confirms the email
   actually arrived at the provider side. The receipt summary carries the
   node-proof key `workflowRef · nodeId · draftHash`.
 - **Publish honesty** (`16`): chip says **"Node tested · Verified 200"** and
@@ -90,13 +90,13 @@ Result: send receipt aor_mr77p929_wsbl7d · provider message id email_mock_1 ·
   (receipted).
 - **Blocked: provider failure** (`19`): with the mock forced to return 422
   "domain is not verified", the door surfaces HTTP 502, no Verified chip is
-  minted, and the blocked outcome is receipted (`aor_mr77pbfk_3oepph`).
+  minted, and the blocked outcome is receipted (`aor_mr78vgl0_viw736`).
 - **Blocked: missing env** (`20`): with `RESEND_API_KEY` stripped from the
   runtime, `send-test` → HTTP 422 `missingEnv:["RESEND_API_KEY"]` (receipted),
   and the pane shows `RESEND_API_KEY · Missing`.
 - **Blocked: missing sender** (`21`): with `RESEND_FROM_EMAIL` stripped,
   `send-test` → HTTP 422 naming `RESEND_FROM_EMAIL`, receipt
-  `aor_mr77ph8p_tx99s9`; pane shows "set in runtime or From field".
+  `aor_mr78vkjq_4gnd9v`; pane shows "set in runtime or From field".
 
 ## Journey 2 — Stripe Commerce Dashboard (seeded empty → resolver → widgets)
 
@@ -205,6 +205,43 @@ review and unit suites had missed — exactly what the proof-pack bar is for:
    stayed blank even with hydrated rows. Template application now recomputes
    data-model-bound chart widgets against the live tables (honest both ways:
    rows present → chart lands live; nothing refreshed → stays empty).
+
+## Production-UI pass (operator-reported, fixed and re-proven)
+
+A second round of operator review on the live surfaces flagged real interface
+defects. All fixed, unit-guarded, and re-proven in the same 65/65 run:
+
+1. **Editor controls rendered as UA-default dark buttons.** The editor's mode
+   tabs / token chips / formatting toolbar / palette search carried a class
+   with **zero authored CSS** and fell back to user-agent button styling.
+   Mode/device tabs now reuse the canonical `dm-orchestration-config__tabs`
+   grammar and every editor control is styled on the design system
+   (browser-verified by computed-style readback, D3b).
+2. **Static hint waterfall removed.** The sidecar stacked three explainer
+   paragraphs (editor / templates / sender); all removed — env-ref context
+   lives in placeholders and the live Test-pane status.
+3. **Images are first-class body content with full on-click controls.**
+   Toolbar **Image** insertion applies automatic sizing optimization as
+   INLINE email-client-safe styles (`max-width:100%; height:auto;
+   display:block` — shipped with the HTML, not just in-app CSS). Clicking an
+   image opens a control bar: width presets (Auto/25/50/75/Full), alignment
+   (Left/Center/Right), Alt text, Remove — all writing inline styles, all
+   guarded against detached nodes (D3c–D3c4). Images survive the sanitize
+   boundary into preview and template saves (D3e, D7b–D7d); the UI selection
+   marker is stripped before anything persists (D7c).
+4. **contentEditable DOM-reuse bug.** Switching Design → Preview directly
+   leaked typed content into the preview frame as a stray text node (React
+   reused the surface's DOM node whose children React never managed). The
+   mode-owned elements are now keyed; a direct-switch renders exactly one
+   clean preview card (D3d).
+5. **"Installed capabilities" stays clean at any plugin count.** The group
+   renders max 10 entries per page inside its own scroll area with an
+   explicit "+ Show 10 more (N remaining)" expand — items remain derived from
+   installed + verified governed rows; curated palette groups are untouched
+   (D2b; unit-guarded).
+6. **Preview frame layout overflow** at desktop width fixed
+   (`min-width: 0` + scrollable frame) — no horizontal page scroll (verified
+   by scrollWidth readback).
 
 ## Reviewer acceptance checklist mapping
 
