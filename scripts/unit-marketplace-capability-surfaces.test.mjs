@@ -166,6 +166,64 @@ test("email templates: validate → upsert (idempotent) → list round-trip", ()
   assert.equal(object.objectType, "data-source", "templates live on the governed object grammar");
 });
 
+test("email templates are ATOMIC rows mirroring the CEO agent-teams grammar (identity, version, performance state)", () => {
+  // Same atomic pattern as ceo-agent-teams: explicit slug `id`, capital-N
+  // identity column, `status`, createdAt/updatedAt — plus built-in
+  // performance-tracking counters so opens/clicks/replies/deliverability
+  // land ON the governed row when a tracking lane writes them. Counters are
+  // honest zeros at creation and SURVIVE content edits (version increments).
+  const good = emailTemplates.validateEmailTemplate({
+    name: "Launch Welcome", subject: "Hi {{input.name}}", previewText: "Your workspace is live", html: "<p>Hello</p>",
+  });
+  assert.equal(good.ok, true);
+  assert.equal(good.template.previewText, "Your workspace is live", "preview text (preheader) is a first-class field");
+
+  let config = emptyConfig();
+  ({ config } = emailTemplates.withEmailTemplateUpsert(config, { ...good.template, nowIso: "2026-07-05T01:00:00.000Z" }));
+  let row = emailTemplates.findEmailTemplatesObject(config).rows[0];
+  assert.equal(row.id, "email-template-launch-welcome", "explicit slug identity, agent-teams style");
+  assert.equal(row.status, "ready", "atomic status column");
+  assert.equal(row.version, 1, "starts at version 1");
+  assert.equal(row.createdAt, "2026-07-05T01:00:00.000Z");
+  for (const counter of ["sends", "delivered", "opens", "clicks", "replies", "bounces"]) {
+    assert.equal(row[counter], 0, `${counter} starts at an honest zero — never invented`);
+  }
+
+  // Simulate the tracking lane having recorded engagement, then edit content:
+  // identity + counters + createdAt survive, version increments.
+  config.dataModel.objects[0].rows[0] = { ...row, sends: 12, opens: 7, clicks: 3 };
+  ({ config } = emailTemplates.withEmailTemplateUpsert(config, { ...good.template, subject: "Hi v2", nowIso: "2026-07-05T02:00:00.000Z" }));
+  row = emailTemplates.findEmailTemplatesObject(config).rows[0];
+  assert.equal(row.version, 2, "content edit bumps the version");
+  assert.equal(row.sends, 12, "engagement history survives edits");
+  assert.equal(row.opens, 7, "engagement history survives edits");
+  assert.equal(row.createdAt, "2026-07-05T01:00:00.000Z", "creation stamp is stable");
+  assert.equal(row.subject, "Hi v2");
+  for (const column of ["id", "Name", "status", "previewText", "version", "sends", "opens", "clicks", "replies", "bounces", "lastUsedAt"]) {
+    assert.ok(emailTemplates.EMAIL_TEMPLATE_COLUMNS.includes(column), `data-table column ${column} declared`);
+  }
+});
+
+test("email editor 2026 chrome: single action bar + intentional envelope, separate from editing", () => {
+  const panelSource = readFileSync(
+    path.join(kitLib, "..", "app/data-model/components/OrchestrationNodeConfigPanel.jsx"),
+    "utf8",
+  );
+  // One Notion-style action bar hosts modes, formatting, variable menu, and
+  // expand — no stacked chip rows above the surface.
+  assert.ok(panelSource.includes('className="dm-email-editor__bar"'), "single action bar wraps the editor chrome");
+  assert.ok(panelSource.includes("variableOpen"), "variable insertion is a menu, not a persistent chip row");
+  // Envelope: To / From / Subject / Preview text live OUTSIDE the editing
+  // experience as breadcrumbs; fields open only intentionally.
+  assert.ok(panelSource.includes("function EmailEnvelope"), "envelope is its own surface");
+  assert.ok(panelSource.includes("dm-email-envelope__crumb"), "envelope renders breadcrumb chips");
+  assert.ok(panelSource.includes("previewTextTemplate"), "preview text (preheader) is part of the envelope + template state");
+  const css = readFileSync(path.join(kitLib, "..", "app/globals.css"), "utf8");
+  for (const selector of [".dm-email-editor__bar", ".dm-email-editor__divider", ".dm-email-envelope__bar", ".dm-email-envelope__crumb"]) {
+    assert.ok(css.includes(selector), `globals.css styles ${selector}`);
+  }
+});
+
 test("messaging door: save-template is a governed receipted action with the sanitize boundary", () => {
   const doorSource = readFileSync(
     path.join(kitLib, "..", "app/api/workspace/add-ons/[providerId]/messaging/route.js"),
@@ -207,6 +265,17 @@ test("resend sidecar ships the full editor surface (modes, preview, tokens, temp
   assert.ok(panelSource.includes("IMAGE_WIDTH_PRESETS") && panelSource.includes("IMAGE_ALIGN_PRESETS"), "width + alignment presets exist");
   assert.ok(panelSource.includes("img.isConnected"), "controls guard against detached images (no broken states)");
   assert.ok(panelSource.includes('"Remove image"') || panelSource.includes(">Remove<"), "image removal control exists");
+  // Editor ergonomics: bottom-left drag grip resizes the active writing
+  // surface; the top-right expand opens a full-width modal (portal, same
+  // pattern as WorkspaceHelperSetupModal) editing the SAME node state live.
+  assert.ok(panelSource.includes("startSurfaceResize") && panelSource.includes("dm-email-editor__resize"), "drag-to-resize grip exists");
+  assert.ok(panelSource.includes("dm-email-editor__expand"), "expand affordance in the editor chrome");
+  assert.ok(panelSource.includes("createPortal(") && panelSource.includes("dm-email-editor-modal"), "full view renders as a body-level modal portal");
+  assert.ok(panelSource.includes('event.key === "Escape"'), "Escape closes the full view");
+  const cssSurfaces = readFileSync(path.join(kitLib, "..", "app/globals.css"), "utf8");
+  for (const selector of [".dm-email-editor__resize", ".dm-email-editor-modal__panel", ".dm-email-editor__surface-wrap"]) {
+    assert.ok(cssSurfaces.includes(selector), `globals.css styles ${selector}`);
+  }
   // Clean interface: the static explainer waterfall stays out of the sidecar
   // (env-ref context lives in placeholders and the live Test-pane status).
   for (const removed of ["Design the email visually", "Templates save as governed rows", "One governed send per run"]) {
@@ -214,7 +283,7 @@ test("resend sidecar ships the full editor surface (modes, preview, tokens, temp
   }
   // contentEditable surfaces hold unmanaged children — the mode branches must
   // stay keyed so React remounts instead of leaking typed content across modes.
-  assert.ok(panelSource.includes('key="design-surface"') && panelSource.includes('key="preview-frame"'), "design/preview branches are keyed against DOM reuse");
+  assert.ok(panelSource.includes('key="design-surface-wrap"') && panelSource.includes('key="preview-frame"'), "design/preview branches are keyed against DOM reuse");
   const shellSource = readFileSync(
     path.join(kitLib, "..", "app/data-model/components/DataModelShell.jsx"),
     "utf8",

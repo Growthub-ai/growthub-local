@@ -13,7 +13,7 @@
     {
       "name": "A3 blocked outcome is receipted to workspace:agent-outcomes",
       "ok": true,
-      "detail": "aor_mr78uama_s8x3pp — Resend Email send-test blocked: Resend account not connected."
+      "detail": "aor_mr79k8nw_i5mk7s — Resend Email send-test blocked: Resend account not connected."
     },
     {
       "name": "B1 stripe connect (Verify and save account)",
@@ -111,14 +111,34 @@
       "detail": "items=2"
     },
     {
+      "name": "D3a envelope renders as a breadcrumb bar separate from the editor",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D3a2 envelope collapses to intentional crumbs after Done",
+      "ok": true,
+      "detail": "To{{input.email}}›FromRESEND_FROM_EMAIL›SubjectWelcome {{input.name}} — your workspace is live›PreviewYour governed work"
+    },
+    {
       "name": "D3 editor offers Design / HTML / Text / Preview modes",
       "ok": true,
       "detail": "Design,HTML,Text,Preview"
     },
     {
-      "name": "D3b editor tabs + token chips are design-system styled (no UA-default dark buttons)",
+      "name": "D3b1 ONE action bar hosts modes + formatting + variable + expand (no stacked chip rows)",
       "ok": true,
-      "detail": "{\"tabStyle\":{\"background\":\"rgb(255, 255, 255)\",\"radius\":\"6px\",\"border\":\"solid\"},\"tokenStyle\":{\"background\":\"rgb(250, 250, 250)\",\"radius\":\"5px\"}}"
+      "detail": "bars=1"
+    },
+    {
+      "name": "D3b editor action bar is design-system styled (no UA-default dark buttons)",
+      "ok": true,
+      "detail": "{\"activeTabStyle\":{\"background\":\"rgb(255, 255, 255)\",\"radius\":\"6px\"},\"boldStyle\":{\"background\":\"rgba(0, 0, 0, 0)\",\"radius\":\"5px\"}}"
+    },
+    {
+      "name": "D3b2 Variable menu opens with the node's tokens",
+      "ok": true,
+      "detail": ""
     },
     {
       "name": "D3c toolbar inserts an image into the body",
@@ -151,6 +171,21 @@
       "detail": "imgs=1"
     },
     {
+      "name": "D3f top-right expand opens the full-width modal editor",
+      "ok": true,
+      "detail": "modal=1"
+    },
+    {
+      "name": "D3g Close returns to the sidecar editor with content intact",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "D3h bottom-left grip drags the surface taller",
+      "ok": true,
+      "detail": "before=180 after=320"
+    },
+    {
       "name": "D4 HTML mode exposes the (sanitized) source of the same draft",
       "ok": true,
       "detail": "Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is "
@@ -163,7 +198,7 @@
     {
       "name": "D6 template save lands through the governed door with a receipt",
       "ok": true,
-      "detail": "receipt=aor_mr78vcr0_buft5j"
+      "detail": "receipt=aor_mr79l9vt_txf0gb"
     },
     {
       "name": "D7 template persists as a governed email-templates row",
@@ -184,6 +219,16 @@
       "name": "D7d saved template html keeps the inline sizing optimization",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "D7e template row is ATOMIC (agent-teams grammar): id + status + version + zeroed performance counters",
+      "ok": true,
+      "detail": "{\"id\":\"email-template-launch-welcome\",\"status\":\"ready\",\"version\":1,\"sends\":0}"
+    },
+    {
+      "name": "D7f preview text (preheader) persists on the atomic row",
+      "ok": true,
+      "detail": "Your governed workspace is ready"
     },
     {
       "name": "D8 saved template is reloadable from the sidecar",
@@ -208,7 +253,7 @@
     {
       "name": "D12 governed test send succeeds with provider message id + receipt id",
       "ok": true,
-      "detail": "receipt=aor_mr78ve35_cbbb4m messageId=email_mock_1"
+      "detail": "receipt=aor_mr79lb8a_p64doy messageId=email_mock_1"
     },
     {
       "name": "D13 Verified chip appears ONLY as node-level proof",
@@ -223,7 +268,7 @@
     {
       "name": "D15 provider mock actually received the email (protocol-shaped)",
       "ok": true,
-      "detail": "[{\"from\":\"workflows@growthub.example\",\"to\":[\"qa@growthub.example\"],\"subject\":\"Welcome  — your workspace is live\",\"at\":\"2026-07-05T03:41:37.935Z\"}]"
+      "detail": "[{\"from\":\"workflows@growthub.example\",\"to\":[\"qa@growthub.example\"],\"subject\":\"Welcome  — your workspace is live\",\"at\":\"2026-07-05T04:01:47.288Z\"}]"
     },
     {
       "name": "D16 editing send-shaping fields revokes the stored Verified chip (draft-hash honesty)",
@@ -243,7 +288,7 @@
     {
       "name": "D19 provider failure surfaces as an honest blocked outcome (no fake success)",
       "ok": true,
-      "detail": "status=502 {\"error\":\"send-test failed (HTTP 422)\",\"httpStatus\":422,\"testedAt\":\"2026-07-05T03:41:41.172Z\"}"
+      "detail": "status=502 {\"error\":\"send-test failed (HTTP 422)\",\"httpStatus\":422,\"testedAt\":\"2026-07-05T04:01:50.728Z\"}"
     },
     {
       "name": "D20 failed send does NOT mint a Verified chip",
@@ -253,7 +298,7 @@
     {
       "name": "D21 provider-failure blocked outcome is receipted",
       "ok": true,
-      "detail": "aor_mr78vgl0_viw736 — Resend Email send-test blocked: provider returned HTTP 422."
+      "detail": "aor_mr79ldvt_aeko0q — Resend Email send-test blocked: provider returned HTTP 422."
     },
     {
       "name": "E1 missing-env send-test refused 422 naming the env ref",
@@ -268,7 +313,7 @@
     {
       "name": "E3 missing-sender blocked outcome is receipted",
       "ok": true,
-      "detail": "aor_mr78vkjq_4gnd9v"
+      "detail": "aor_mr79lfv9_29kq4r"
     },
     {
       "name": "E4 runtime env restored (readiness green again)",
@@ -278,7 +323,7 @@
     {
       "name": "F1 deterministic install: re-sync of svc-500 creates ZERO duplicate rows",
       "ok": true,
-      "detail": "rows before=1006 after=1006 (42ms for 1001 installs)"
+      "detail": "rows before=1006 after=1006 (50ms for 1001 installs)"
     },
     {
       "name": "F2 all registry integrationIds stay unique at scale",
@@ -345,7 +390,7 @@
       "templates": []
     },
     "preconnect-blocked-receipt": {
-      "receiptId": "aor_mr78uama_s8x3pp",
+      "receiptId": "aor_mr79k8nw_i5mk7s",
       "summary": "Resend Email send-test blocked: Resend account not connected.",
       "nextActions": [
         "Connect the Resend provider account in the marketplace, then retry."
@@ -419,7 +464,7 @@
           "sourceId": "stripe-payments-feed",
           "integrationId": "stripe-payments",
           "recordCount": 4,
-          "fetchedAt": "2026-07-05T03:41:14.379Z",
+          "fetchedAt": "2026-07-05T04:01:21.081Z",
           "objectId": "stripe-payments-feed",
           "objectSourceId": "stripe-payments-feed",
           "bindingSourceId": "payment-intents"
@@ -428,7 +473,7 @@
           "sourceId": "stripe-customers",
           "integrationId": "stripe-payments",
           "recordCount": 3,
-          "fetchedAt": "2026-07-05T03:41:14.390Z",
+          "fetchedAt": "2026-07-05T04:01:21.091Z",
           "objectId": "stripe-customers",
           "objectSourceId": "stripe-customers",
           "bindingSourceId": "customers"
@@ -437,7 +482,7 @@
           "sourceId": "stripe-products",
           "integrationId": "stripe-payments",
           "recordCount": 2,
-          "fetchedAt": "2026-07-05T03:41:14.397Z",
+          "fetchedAt": "2026-07-05T04:01:21.098Z",
           "objectId": "stripe-products",
           "objectSourceId": "stripe-products",
           "bindingSourceId": "products"
@@ -446,7 +491,7 @@
           "sourceId": "stripe-balance",
           "integrationId": "stripe-payments",
           "recordCount": 2,
-          "fetchedAt": "2026-07-05T03:41:14.403Z",
+          "fetchedAt": "2026-07-05T04:01:21.104Z",
           "objectId": "stripe-balance",
           "objectSourceId": "stripe-balance",
           "bindingSourceId": "balance"
@@ -458,7 +503,7 @@
     "widget-panel-text": "xRecent PaymentsViewDuplicateRemoveTitleSettingsLayoutTableGanttBoardCalendarTimelineSourceStripe PaymentsFields7 shownFilter›Sort›Config bindings and data model syncchatToCanvastrueworkflowOutputsToArtifactstruesessionContexttrueconfigDrivenCanvastrueintegrationAdapterstaticworkspaceSourceRecords7 sourcesdataModelObjects12 synced",
     "template-save": {
       "status": 200,
-      "receiptId": "aor_mr78vcr0_buft5j",
+      "receiptId": "aor_mr79l9vt_txf0gb",
       "template": "Launch Welcome"
     },
     "ai-helper-href": "/data-model?helper=open&prompt=Draft%20a%20marketing%20email%20for%20the%20resend-email%20workflow%20node%3A%20give%20me%20a%20subject%20line%2C%20preview%20text%2C%20and%20an%20HTML%20body%20with%20%7B%7Binput.*%7D%7D%20personalization%20tokens.%20Topic%3A%20",
@@ -474,14 +519,18 @@
       "senderEnvRef": "RESEND_FROM_EMAIL",
       "senderReady": true,
       "syncProof": "Resend Email probe /domains returned HTTP 200",
-      "syncCheckedAt": "2026-07-05T03:41:01.071Z",
+      "syncCheckedAt": "2026-07-05T04:01:10.586Z",
       "templates": [
         {
+          "id": "email-template-launch-welcome",
           "name": "Launch Welcome",
+          "status": "ready",
           "subject": "Welcome {{input.name}} — your workspace is live",
+          "previewText": "Your governed workspace is ready",
           "html": "Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is already live.{{input.name}}<img src=\"/integrations/resend/email.png\" style=\"max-width: 100%; height: auto; display: block; width: 50%; margin: 0px auto;\">",
           "text": "Hi {{input.name}} — plain text fallback for the welcome email.",
-          "updatedAt": "2026-07-05T03:41:36.197Z"
+          "version": 1,
+          "updatedAt": "2026-07-05T04:01:45.535Z"
         }
       ]
     },
@@ -491,9 +540,9 @@
       "httpStatus": 200,
       "providerMessageId": "email_mock_1",
       "recipientCount": 1,
-      "testedAt": "2026-07-05T03:41:37.937Z",
-      "summary": "Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-workflow · resend-email · 164eec80",
-      "receiptId": "aor_mr78ve35_cbbb4m"
+      "testedAt": "2026-07-05T04:01:47.290Z",
+      "summary": "Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-workflow · resend-email · 6c21b096",
+      "receiptId": "aor_mr79lb8a_p64doy"
     },
     "mock-sent-emails": [
       {
@@ -502,7 +551,7 @@
           "qa@growthub.example"
         ],
         "subject": "Welcome  — your workspace is live",
-        "at": "2026-07-05T03:41:37.935Z"
+        "at": "2026-07-05T04:01:47.288Z"
       }
     ],
     "blocked-bad-recipient": {
@@ -516,11 +565,11 @@
       "body": {
         "error": "send-test failed (HTTP 422)",
         "httpStatus": 422,
-        "testedAt": "2026-07-05T03:41:41.172Z"
+        "testedAt": "2026-07-05T04:01:50.728Z"
       }
     },
     "provider-failure-receipt": {
-      "receiptId": "aor_mr78vgl0_viw736",
+      "receiptId": "aor_mr79ldvt_aeko0q",
       "summary": "Resend Email send-test blocked: provider returned HTTP 422."
     },
     "blocked-missing-env": {
@@ -542,7 +591,7 @@
       }
     },
     "missing-sender-receipt": {
-      "receiptId": "aor_mr78vkjq_4gnd9v",
+      "receiptId": "aor_mr79lfv9_29kq4r",
       "summary": "Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."
     },
     "scale-registry-rows": {
@@ -551,61 +600,61 @@
     },
     "receipt-ids-cited": [
       {
-        "receiptId": "aor_mr78vkjq_4gnd9v",
+        "receiptId": "aor_mr79lfv9_29kq4r",
         "kind": "workspace-add-on-messaging",
         "status": "blocked",
         "summary": "Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."
       },
       {
-        "receiptId": "aor_mr78vj9y_9bu3zy",
+        "receiptId": "aor_mr79lekf_l3ne2o",
         "kind": "workspace-add-on-messaging",
         "status": "blocked",
         "summary": "Resend Email send-test blocked: runtime env not resolved."
       },
       {
-        "receiptId": "aor_mr78vgl0_viw736",
+        "receiptId": "aor_mr79ldvt_aeko0q",
         "kind": "workspace-add-on-messaging",
         "status": "blocked",
         "summary": "Resend Email send-test blocked: provider returned HTTP 422."
       },
       {
-        "receiptId": "aor_mr78vgel_b96nlw",
+        "receiptId": "aor_mr79ldth_id0v0k",
         "kind": "workspace-add-on-messaging",
         "status": "blocked",
         "summary": "Resend Email send-test blocked: To, Subject, and an HTML or text body are required."
       },
       {
-        "receiptId": "aor_mr78ve35_cbbb4m",
+        "receiptId": "aor_mr79lb8a_p64doy",
         "kind": "workspace-add-on-messaging",
         "status": "published",
         "summary": "Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-wo"
       },
       {
-        "receiptId": "aor_mr78vcr0_buft5j",
+        "receiptId": "aor_mr79l9vt_txf0gb",
         "kind": "workspace-add-on-messaging",
         "status": "published",
         "summary": "Resend Email template \"Launch Welcome\" saved to the governed email-templates object."
       },
       {
-        "receiptId": "aor_mr78ulnb_3e33fu",
+        "receiptId": "aor_mr79kix1_v8pvyl",
         "kind": "workspace-add-on-sync",
         "status": "published",
         "summary": "Resend Email installed after provider sync probe."
       },
       {
-        "receiptId": "aor_mr78ujk7_wiu268",
+        "receiptId": "aor_mr79kgsi_as6i4x",
         "kind": "workspace-add-on-provider-credentials",
         "status": "published",
         "summary": "Resend provider account verified and stored as local runtime env refs."
       },
       {
-        "receiptId": "aor_mr78uiiq_9qolhl",
+        "receiptId": "aor_mr79kfgk_ty0oys",
         "kind": "workspace-add-on-sync",
         "status": "published",
         "summary": "Stripe Payments installed after provider sync probe."
       },
       {
-        "receiptId": "aor_mr78ufr8_v2k0bz",
+        "receiptId": "aor_mr79kcnw_sqnh7p",
         "kind": "workspace-add-on-provider-credentials",
         "status": "published",
         "summary": "Stripe provider account verified and stored as local runtime env refs."

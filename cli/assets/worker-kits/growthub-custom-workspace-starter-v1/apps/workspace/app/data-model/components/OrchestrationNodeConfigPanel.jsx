@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
   CAPABILITY_NODE_TYPES,
@@ -173,6 +174,8 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
   const [tokenDraft, setTokenDraft] = useState("");
   const [imageSelected, setImageSelected] = useState(false);
   const [, setImageTick] = useState(0);
+  const [fullView, setFullView] = useState(false);
+  const [surfaceHeight, setSurfaceHeight] = useState(180);
   const editorRef = useRef(null);
   const selectedImageRef = useRef(null);
   const htmlAreaRef = useRef(null);
@@ -205,13 +208,40 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
       selectedImageRef.current = null;
       setImageSelected(false);
     }
-  }, [mode, html]);
+    // fullView is a dep because toggling it REMOUNTS the surface (inline ↔
+    // modal portal) with empty DOM — the effect must refill it.
+  }, [mode, html, fullView]);
   useEffect(() => {
     if (mode !== "design") {
       selectedImageRef.current = null;
       setImageSelected(false);
     }
   }, [mode]);
+  useEffect(() => {
+    if (!fullView) return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") setFullView(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fullView]);
+  // Bottom-left drag grip: vertical expand of whichever writing surface is
+  // active (design / HTML / text). Pointer-tracked, clamped, no layout jumps.
+  function startSurfaceResize(event) {
+    if (disabled) return;
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = surfaceHeight;
+    function onMove(moveEvent) {
+      setSurfaceHeight(Math.min(680, Math.max(140, startHeight + (moveEvent.clientY - startY))));
+    }
+    function onUp() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
   function exec(command, argument = null) {
     if (disabled) return;
     editorRef.current?.focus();
@@ -291,121 +321,160 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
   ];
   const modes = [["design", "Design"], ["html", "HTML"], ["text", "Text"], ["preview", "Preview"]];
   const previewHtml = sanitizeEmailHtml(html) || (text ? `<pre style="white-space:pre-wrap;font-family:inherit">${String(text).replace(/[<>&]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[ch]))}</pre>` : "");
-  return (
-    <div className="dm-orchestration-config__field dm-email-editor">
-      <span>Body</span>
-      <div className="dm-orchestration-config__tabs dm-email-editor__tabs" role="tablist">
-        {modes.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "is-active" : ""} onClick={() => setMode(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {mode !== "preview" ? (
-        <div className="dm-email-editor__tokens" role="toolbar" aria-label="Insert variable">
-          {Array.from(new Set(tokens)).slice(0, 6).map((name) => (
-            <button key={name} type="button" title={`Insert {{input.${name}}}`} disabled={disabled} onClick={() => insertToken(name)}>
-              {`{{${name}}}`}
+  const [variableOpen, setVariableOpen] = useState(false);
+  const editorBody = (
+    <>
+      <div className="dm-email-editor__bar" role="toolbar" aria-label="Email editor actions">
+        <div className="dm-orchestration-config__tabs dm-email-editor__tabs" role="tablist">
+          {modes.map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "is-active" : ""} onClick={() => { setMode(id); setVariableOpen(false); }}>
+              {label}
             </button>
           ))}
-          <input
-            value={tokenDraft}
-            placeholder="variable name"
+        </div>
+        {mode === "design" ? (
+          <>
+            <i className="dm-email-editor__divider" aria-hidden="true" />
+            <div className="dm-email-editor__toolbar" role="group" aria-label="Formatting">
+              {toolbar.map((tool) => (
+                <button key={tool.id} type="button" title={tool.title} style={tool.style} disabled={disabled} onClick={() => exec(tool.id)}>
+                  {tool.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                title="Insert link"
+                disabled={disabled}
+                onClick={() => {
+                  const href = window.prompt("Link URL (https://…)");
+                  if (href) exec("createLink", href);
+                }}
+              >
+                Link
+              </button>
+              <button
+                type="button"
+                title="Insert image"
+                disabled={disabled}
+                onClick={() => {
+                  const src = window.prompt("Image URL (https://…)");
+                  if (src) insertOptimizedImage(src);
+                }}
+              >
+                Image
+              </button>
+              <button type="button" title="Heading" disabled={disabled} onClick={() => exec("formatBlock", "<h2>")}>H2</button>
+              <button type="button" title="Paragraph" disabled={disabled} onClick={() => exec("formatBlock", "<p>")}>¶</button>
+            </div>
+          </>
+        ) : null}
+        {mode !== "preview" ? (
+          <>
+            <i className="dm-email-editor__divider" aria-hidden="true" />
+            <div className="dm-email-editor__variable">
+              <button
+                type="button"
+                className={variableOpen ? "is-active" : ""}
+                title="Insert a {{input.*}} variable"
+                disabled={disabled}
+                onClick={() => setVariableOpen((open) => !open)}
+              >
+                {"{{…}}"} Variable
+              </button>
+              {variableOpen ? (
+                <div className="dm-email-editor__tokens" role="menu" aria-label="Insert variable">
+                  {Array.from(new Set(tokens)).slice(0, 6).map((name) => (
+                    <button key={name} type="button" role="menuitem" title={`Insert {{input.${name}}}`} disabled={disabled} onClick={() => { insertToken(name); setVariableOpen(false); }}>
+                      {`{{${name}}}`}
+                    </button>
+                  ))}
+                  <input
+                    value={tokenDraft}
+                    placeholder="variable name"
+                    disabled={disabled}
+                    onChange={(event) => setTokenDraft(event.target.value)}
+                  />
+                  <button type="button" disabled={disabled || !tokenDraft.trim()} onClick={() => { insertToken(tokenDraft); setTokenDraft(""); setVariableOpen(false); }}>
+                    Insert variable
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+        {mode === "preview" ? (
+          <>
+            <i className="dm-email-editor__divider" aria-hidden="true" />
+            <div className="dm-orchestration-config__tabs dm-email-editor__devices" role="tablist" aria-label="Preview device">
+              <button type="button" role="tab" aria-selected={previewDevice === "desktop"} className={previewDevice === "desktop" ? "is-active" : ""} onClick={() => setPreviewDevice("desktop")}>Desktop</button>
+              <button type="button" role="tab" aria-selected={previewDevice === "mobile"} className={previewDevice === "mobile" ? "is-active" : ""} onClick={() => setPreviewDevice("mobile")}>Mobile</button>
+            </div>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="dm-email-editor__expand"
+          title={fullView ? "Close full view" : "Expand to full-width view"}
+          aria-label={fullView ? "Close full view" : "Expand editor to full view"}
+          onClick={() => setFullView((open) => !open)}
+        >
+          {fullView ? "✕ Close" : "⛶ Expand"}
+        </button>
+      </div>
+      {mode === "design" && imageSelected ? (
+        <div className="dm-email-editor__toolbar dm-email-editor__imgbar" role="toolbar" aria-label="Image controls">
+          <span className="dm-email-editor__imgbar-label">Image</span>
+          {IMAGE_WIDTH_PRESETS.map(([label, width]) => (
+            <button
+              key={label}
+              type="button"
+              title={width ? `Width ${width}` : "Natural size (capped at 100%)"}
+              className={selectedImageWidth === width ? "is-active" : ""}
+              disabled={disabled}
+              onClick={() => withSelectedImage((img) => { img.style.width = width; })}
+            >
+              {label}
+            </button>
+          ))}
+          {IMAGE_ALIGN_PRESETS.map(([label, margin]) => (
+            <button
+              key={label}
+              type="button"
+              title={`Align ${label.toLowerCase()}`}
+              className={selectedImageMargin === margin ? "is-active" : ""}
+              disabled={disabled}
+              onClick={() => withSelectedImage((img) => { img.style.margin = margin; })}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type="button"
+            title="Describe the image for text-only clients"
             disabled={disabled}
-            style={{ width: 110 }}
-            onChange={(event) => setTokenDraft(event.target.value)}
-          />
-          <button type="button" disabled={disabled || !tokenDraft.trim()} onClick={() => { insertToken(tokenDraft); setTokenDraft(""); }}>
-            Insert variable
+            onClick={() => {
+              const alt = window.prompt("Alt text (what this image shows)", selectedImageRef.current?.getAttribute("alt") || "");
+              if (alt !== null) withSelectedImage((img) => img.setAttribute("alt", alt));
+            }}
+          >
+            Alt
+          </button>
+          <button
+            type="button"
+            title="Remove image"
+            disabled={disabled}
+            onClick={() => {
+              withSelectedImage((img) => img.remove());
+              clearImageSelection();
+            }}
+          >
+            Remove
           </button>
         </div>
       ) : null}
       {mode === "design" ? (
-        <>
-          <div className="dm-email-editor__toolbar" role="toolbar" aria-label="Formatting">
-            {toolbar.map((tool) => (
-              <button key={tool.id} type="button" title={tool.title} style={tool.style} disabled={disabled} onClick={() => exec(tool.id)}>
-                {tool.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              title="Insert link"
-              disabled={disabled}
-              onClick={() => {
-                const href = window.prompt("Link URL (https://…)");
-                if (href) exec("createLink", href);
-              }}
-            >
-              Link
-            </button>
-            <button
-              type="button"
-              title="Insert image"
-              disabled={disabled}
-              onClick={() => {
-                const src = window.prompt("Image URL (https://…)");
-                if (src) insertOptimizedImage(src);
-              }}
-            >
-              Image
-            </button>
-            <button type="button" title="Heading" disabled={disabled} onClick={() => exec("formatBlock", "<h2>")}>H2</button>
-            <button type="button" title="Paragraph" disabled={disabled} onClick={() => exec("formatBlock", "<p>")}>¶</button>
-          </div>
-          {imageSelected ? (
-            <div className="dm-email-editor__toolbar dm-email-editor__imgbar" role="toolbar" aria-label="Image controls">
-              <span className="dm-email-editor__imgbar-label">Image</span>
-              {IMAGE_WIDTH_PRESETS.map(([label, width]) => (
-                <button
-                  key={label}
-                  type="button"
-                  title={width ? `Width ${width}` : "Natural size (capped at 100%)"}
-                  className={selectedImageWidth === width ? "is-active" : ""}
-                  disabled={disabled}
-                  onClick={() => withSelectedImage((img) => { img.style.width = width; })}
-                >
-                  {label}
-                </button>
-              ))}
-              {IMAGE_ALIGN_PRESETS.map(([label, margin]) => (
-                <button
-                  key={label}
-                  type="button"
-                  title={`Align ${label.toLowerCase()}`}
-                  className={selectedImageMargin === margin ? "is-active" : ""}
-                  disabled={disabled}
-                  onClick={() => withSelectedImage((img) => { img.style.margin = margin; })}
-                >
-                  {label}
-                </button>
-              ))}
-              <button
-                type="button"
-                title="Describe the image for text-only clients"
-                disabled={disabled}
-                onClick={() => {
-                  const alt = window.prompt("Alt text (what this image shows)", selectedImageRef.current?.getAttribute("alt") || "");
-                  if (alt !== null) withSelectedImage((img) => img.setAttribute("alt", alt));
-                }}
-              >
-                Alt
-              </button>
-              <button
-                type="button"
-                title="Remove image"
-                disabled={disabled}
-                onClick={() => {
-                  withSelectedImage((img) => img.remove());
-                  clearImageSelection();
-                }}
-              >
-                Remove
-              </button>
-            </div>
-          ) : null}
+        <div key="design-surface-wrap" className="dm-email-editor__surface-wrap">
           <div
-            key="design-surface"
             ref={editorRef}
             className="dm-email-editor__surface"
             contentEditable={!disabled}
@@ -413,35 +482,139 @@ function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tok
             role="textbox"
             aria-multiline="true"
             aria-label="Email body design surface"
+            style={{ height: surfaceHeight }}
             onInput={() => onChangeHtml(serializeSurfaceHtml())}
             onClick={handleSurfaceClick}
           />
-        </>
+          <button type="button" className="dm-email-editor__resize" title="Drag to resize" aria-label="Drag to resize the editor" onPointerDown={startSurfaceResize}>⋮⋮</button>
+        </div>
       ) : mode === "html" ? (
-        <>
-          <textarea ref={htmlAreaRef} rows={8} value={html || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeHtml(e.target.value)} />
-        </>
+        <div className="dm-email-editor__surface-wrap">
+          <textarea ref={htmlAreaRef} value={html || ""} disabled={disabled} spellCheck={false} style={{ height: surfaceHeight }} onChange={(e) => onChangeHtml(e.target.value)} />
+          <button type="button" className="dm-email-editor__resize" title="Drag to resize" aria-label="Drag to resize the editor" onPointerDown={startSurfaceResize}>⋮⋮</button>
+        </div>
       ) : mode === "text" ? (
+        <div className="dm-email-editor__surface-wrap">
+          <textarea ref={textAreaRef} value={text || ""} disabled={disabled} spellCheck={false} style={{ height: surfaceHeight }} onChange={(e) => onChangeText(e.target.value)} />
+          <button type="button" className="dm-email-editor__resize" title="Drag to resize" aria-label="Drag to resize the editor" onPointerDown={startSurfaceResize}>⋮⋮</button>
+        </div>
+      ) : (
+        <div key="preview-frame" className="dm-email-editor__frame">
+          <div
+            className="dm-email-editor__preview"
+            aria-label={`Email preview (${previewDevice})`}
+            style={{ width: previewDevice === "mobile" ? 320 : 600 }}
+            // Sanitized above — the same boundary every design-surface render uses.
+            dangerouslySetInnerHTML={{ __html: previewHtml || "<p style='color:#8a8f98'>Nothing to preview yet — write a body in Design, HTML, or Text.</p>" }}
+          />
+        </div>
+      )}
+    </>
+  );
+  return (
+    <div className="dm-orchestration-config__field dm-email-editor">
+      <span>Body</span>
+      {fullView && typeof document !== "undefined" ? (
         <>
-          <textarea ref={textAreaRef} rows={8} value={text || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeText(e.target.value)} />
+          <p className="dm-email-editor__fullnote">Editing in full view — changes apply to this node live.</p>
+          {createPortal(
+            <div className="dm-email-editor-modal" role="dialog" aria-modal="true" aria-label="Email editor full view">
+              <div className="dm-email-editor-modal__backdrop" role="presentation" onClick={() => setFullView(false)} />
+              <section className="dm-email-editor-modal__panel">
+                <div className="dm-email-editor-modal__head">
+                  <strong>Email body — full view</strong>
+                  <span>Esc or ✕ Close returns to the node sidecar.</span>
+                </div>
+                {editorBody}
+              </section>
+            </div>,
+            document.body,
+          )}
         </>
       ) : (
-        <>
-          <div className="dm-orchestration-config__tabs dm-email-editor__devices" role="tablist" aria-label="Preview device">
-            <button type="button" role="tab" aria-selected={previewDevice === "desktop"} className={previewDevice === "desktop" ? "is-active" : ""} onClick={() => setPreviewDevice("desktop")}>Desktop</button>
-            <button type="button" role="tab" aria-selected={previewDevice === "mobile"} className={previewDevice === "mobile" ? "is-active" : ""} onClick={() => setPreviewDevice("mobile")}>Mobile</button>
-          </div>
-          <div key="preview-frame" className="dm-email-editor__frame">
-            <div
-              className="dm-email-editor__preview"
-              aria-label={`Email preview (${previewDevice})`}
-              style={{ width: previewDevice === "mobile" ? 320 : 600 }}
-              // Sanitized above — the same boundary every design-surface render uses.
-              dangerouslySetInnerHTML={{ __html: previewHtml || "<p style='color:#8a8f98'>Nothing to preview yet — write a body in Design, HTML, or Text.</p>" }}
-            />
-          </div>
-        </>
+        editorBody
       )}
+    </div>
+  );
+}
+
+/**
+ * Envelope for the resend-email node — To / From / Subject / Preview text as
+ * a compact breadcrumb bar, SEPARATE from the body-editing experience.
+ * Editing the envelope is intentional: click a crumb (or Edit) to open the
+ * fields; the bar stays collapsed while agents and humans work on content.
+ * Opens automatically only while required fields are missing.
+ */
+function EmailEnvelope({ config, disabled, patchConfig, flagFieldClass = () => "" }) {
+  const to = String(config.toTemplate || config.to || "");
+  const from = String(config.fromTemplate || config.from || "");
+  const subject = String(config.subjectTemplate || config.subject || "");
+  const previewText = String(config.previewTextTemplate || "");
+  const [open, setOpen] = useState(!(to.trim() && subject.trim()));
+  const crumb = (label, value, placeholder) => (
+    <button key={label} type="button" className="dm-email-envelope__crumb" title={`Edit ${label.toLowerCase()}`} onClick={() => setOpen(true)}>
+      <span>{label}</span>
+      <strong className={value ? "" : "is-empty"}>{value || placeholder}</strong>
+    </button>
+  );
+  return (
+    <div className="dm-email-envelope">
+      <div className="dm-email-envelope__bar" role="group" aria-label="Email envelope">
+        {crumb("To", to, "Set recipient")}
+        <span className="dm-email-envelope__sep" aria-hidden="true">›</span>
+        {crumb("From", from, "RESEND_FROM_EMAIL")}
+        <span className="dm-email-envelope__sep" aria-hidden="true">›</span>
+        {crumb("Subject", subject, "Set subject")}
+        <span className="dm-email-envelope__sep" aria-hidden="true">›</span>
+        {crumb("Preview", previewText, "Inbox preview line")}
+        <button type="button" className="dm-email-envelope__toggle" onClick={() => setOpen((current) => !current)}>
+          {open ? "Done" : "Edit"}
+        </button>
+      </div>
+      {open ? (
+        <div className="dm-email-envelope__fields">
+          <label className={`dm-orchestration-config__field${flagFieldClass("toTemplate", "to")}`}>
+            <span>To</span>
+            <input
+              value={to}
+              placeholder="{{input.email}} or ops@yourdomain.com"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ toTemplate: e.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>From (optional)</span>
+            <input
+              value={from}
+              placeholder="Resolved from RESEND_FROM_EMAIL when empty"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ fromTemplate: e.target.value })}
+            />
+          </label>
+          <label className={`dm-orchestration-config__field${flagFieldClass("subjectTemplate", "subject")}`}>
+            <span>Subject</span>
+            <input
+              value={subject}
+              placeholder="Order {{input.id}} received"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ subjectTemplate: e.target.value })}
+            />
+          </label>
+          <label className="dm-orchestration-config__field">
+            <span>Preview text</span>
+            <input
+              value={previewText}
+              placeholder="The inbox preview line shown under the subject"
+              disabled={disabled}
+              onChange={(e) => patchConfig({ previewTextTemplate: e.target.value })}
+            />
+          </label>
+          <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
+            <span>Registry ID</span>
+            <input value={config.registryId || "resend-email"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />
+          </label>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -477,6 +650,7 @@ function ResendTemplateControls({ config, disabled, patchConfig }) {
           action: "save-template",
           name,
           subject: config.subjectTemplate || config.subject || "",
+          previewText: config.previewTextTemplate || "",
           html: config.htmlTemplate || config.html || "",
           text: config.textTemplate || config.text || "",
         }),
@@ -499,6 +673,7 @@ function ResendTemplateControls({ config, disabled, patchConfig }) {
     if (!template) return;
     patchConfig({
       subjectTemplate: template.subject,
+      previewTextTemplate: template.previewText || "",
       htmlTemplate: template.html,
       textTemplate: template.text,
     });
@@ -1488,24 +1663,7 @@ export function OrchestrationNodeConfigPanel({
           {registryConnected && (
             <span className="dm-orchestration-config__badge is-connected">Connected</span>
           )}
-          <label className={`dm-orchestration-config__field${flagFieldClass("toTemplate", "to")}`}>
-            <span>To</span>
-            <input
-              value={config.toTemplate || config.to || ""}
-              placeholder="{{input.email}} or ops@yourdomain.com"
-              disabled={disabled}
-              onChange={(e) => patchConfig({ toTemplate: e.target.value })}
-            />
-          </label>
-          <label className={`dm-orchestration-config__field${flagFieldClass("subjectTemplate", "subject")}`}>
-            <span>Subject</span>
-            <input
-              value={config.subjectTemplate || config.subject || ""}
-              placeholder="Order {{input.id}} received"
-              disabled={disabled}
-              onChange={(e) => patchConfig({ subjectTemplate: e.target.value })}
-            />
-          </label>
+          <EmailEnvelope config={config} disabled={disabled} patchConfig={patchConfig} flagFieldClass={flagFieldClass} />
           <EmailBodyEditor
             html={config.htmlTemplate || config.html || ""}
             text={config.textTemplate || config.text || ""}
@@ -1515,19 +1673,6 @@ export function OrchestrationNodeConfigPanel({
             tokens={usedEmailTokens(config)}
           />
           <ResendTemplateControls config={config} disabled={disabled} patchConfig={patchConfig} />
-          <label className="dm-orchestration-config__field">
-            <span>From (optional)</span>
-            <input
-              value={config.fromTemplate || config.from || ""}
-              placeholder="Resolved from RESEND_FROM_EMAIL when empty"
-              disabled={disabled}
-              onChange={(e) => patchConfig({ fromTemplate: e.target.value })}
-            />
-          </label>
-          <label className={`dm-orchestration-config__field${flagFieldClass("registryId", "integrationId")}`}>
-            <span>Registry ID</span>
-            <input value={config.registryId || "resend-email"} disabled={disabled} onChange={(e) => patchConfig({ registryId: e.target.value })} />
-          </label>
         </div>
       )}
 

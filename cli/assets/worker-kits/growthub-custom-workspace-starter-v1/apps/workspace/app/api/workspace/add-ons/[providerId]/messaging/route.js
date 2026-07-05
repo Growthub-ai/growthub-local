@@ -206,7 +206,7 @@ async function POST(request, context) {
     return NextResponse.json({
       ok: true,
       action,
-      template: { name: row.Name, updatedAt: row.updatedAt },
+      template: { id: row.id, name: row.Name, version: row.version, status: row.status, updatedAt: row.updatedAt },
       templates: listEmailTemplates(config),
       workspaceConfig: persisted,
       receiptId: receipt.receiptId,

@@ -1,6 +1,6 @@
 # PR #270 Production Proof Pack — Marketplace Provider Capability Stack
 
-One continuous browser journey (65/65 checks GREEN, `qa3-run.log` is the
+One continuous browser journey (74/74 checks GREEN, `qa3-run.log` is the
 unedited run log) performed as a real user on a real boot of the exported
 `growthub-custom-workspace-starter-v1` kit, from a fully reset workspace
 (no providers connected, no products installed, no source objects, no
@@ -29,7 +29,7 @@ structure with the real driver named explicitly:
   `page.keyboard` — real UI interactions, no API shortcuts for user steps.
 - **Readback layer**: `page.request` JSON readbacks against the workspace
   routes plus DOM snapshots; all captured in `readbacks.json`.
-- **Screenshots**: 24 PNGs in this directory, numbered in journey order.
+- **Screenshots**: 25 PNGs in this directory, numbered in journey order.
 
 Every `check(...)` line below cites the run log. Receipt ids are real ids
 from `workspace:agent-outcomes` on this boot.
@@ -46,15 +46,15 @@ Visible surface: Workflow canvas → Resend Email node → Configuration/Test ta
 Live action layer: page.click / page.fill / page.keyboard.type.
 Readback layer: page.request GET/POST /api/workspace/add-ons/resend/messaging + DOM snapshots.
 Screenshots: 01, 03, 08–21.
-Result: send receipt aor_mr78ve35_cbbb4m · provider message id email_mock_1 ·
-        blocked receipts aor_mr78uama_s8x3pp (not connected), aor_mr78vgl0_viw736
-        (provider failure), aor_mr78vkjq_4gnd9v (missing sender).
+Result: send receipt aor_mr79lb8a_p64doy · provider message id email_mock_1 ·
+        blocked receipts aor_mr79k8nw_i5mk7s (not connected), aor_mr79ldvt_aeko0q
+        (provider failure), aor_mr79lfv9_29kq4r (missing sender).
 ```
 
 - **Pre-connect blocked state** (`01`): the messaging door reports
   `providerConnected:false`, `missingEnv:["RESEND_API_KEY"]`; `send-test` is
   refused HTTP 409 and the refusal is receipted
-  (`aor_mr78uama_s8x3pp — "Resend Email send-test blocked: Resend account not
+  (`aor_mr79k8nw_i5mk7s — "Resend Email send-test blocked: Resend account not
   connected."`) with a repair `nextActions`.
 - **Connect + install** (`03`): credentials verified server-side against the
   provider API (`Resend Email probe /domains returned HTTP 200` stored as
@@ -67,7 +67,7 @@ Result: send receipt aor_mr78ve35_cbbb4m · provider message id email_mock_1 ·
   into the active surface; free-form token insert supported.
 - **Templates** (`14`): "Save as template" posts the governed door's
   `save-template` action → sanitized server-side → upserted as a governed
-  `email-templates` row → receipt `aor_mr78vcr0_buft5j` → immediately
+  `email-templates` row → receipt `aor_mr79l9vt_txf0gb` → immediately
   reloadable from the sidecar select.
 - **AI entry point**: "Draft with AI helper" deep-links
   `/data-model?helper=open&prompt=…` with a prefilled email-drafting prompt.
@@ -76,7 +76,7 @@ Result: send receipt aor_mr78ve35_cbbb4m · provider message id email_mock_1 ·
   RESEND_FROM_EMAIL · Resolved`), never values.
 - **Verified send** (`16`): real POST through the governed door → provider
   `POST /emails` → HTTP 200, message id `email_mock_1`, receipt
-  `aor_mr78ve35_cbbb4m`; the mock's outbox readback confirms the email
+  `aor_mr79lb8a_p64doy`; the mock's outbox readback confirms the email
   actually arrived at the provider side. The receipt summary carries the
   node-proof key `workflowRef · nodeId · draftHash`.
 - **Publish honesty** (`16`): chip says **"Node tested · Verified 200"** and
@@ -90,13 +90,13 @@ Result: send receipt aor_mr78ve35_cbbb4m · provider message id email_mock_1 ·
   (receipted).
 - **Blocked: provider failure** (`19`): with the mock forced to return 422
   "domain is not verified", the door surfaces HTTP 502, no Verified chip is
-  minted, and the blocked outcome is receipted (`aor_mr78vgl0_viw736`).
+  minted, and the blocked outcome is receipted (`aor_mr79ldvt_aeko0q`).
 - **Blocked: missing env** (`20`): with `RESEND_API_KEY` stripped from the
   runtime, `send-test` → HTTP 422 `missingEnv:["RESEND_API_KEY"]` (receipted),
   and the pane shows `RESEND_API_KEY · Missing`.
 - **Blocked: missing sender** (`21`): with `RESEND_FROM_EMAIL` stripped,
   `send-test` → HTTP 422 naming `RESEND_FROM_EMAIL`, receipt
-  `aor_mr78vkjq_4gnd9v`; pane shows "set in runtime or From field".
+  `aor_mr79lfv9_29kq4r`; pane shows "set in runtime or From field".
 
 ## Journey 2 — Stripe Commerce Dashboard (seeded empty → resolver → widgets)
 
@@ -242,6 +242,34 @@ defects. All fixed, unit-guarded, and re-proven in the same 65/65 run:
 6. **Preview frame layout overflow** at desktop width fixed
    (`min-width: 0` + scrollable frame) — no horizontal page scroll (verified
    by scrollWidth readback).
+
+## Email product surface — 2026 pass (operator-directed, re-proven)
+
+A third operator pass raised the product bar on the email surface itself.
+All shipped and browser-proven in the same 74/74 run:
+
+1. **One Notion-style action bar** (`09`, `09b`): modes (Design/HTML/Text/
+   Preview), formatting, Link/Image, a `{{…}} Variable` menu, and the expand
+   control live in a single compact row — no stacked chip rows above the
+   surface. Styling verified by computed-style readback (D3b/D3b1).
+2. **Envelope separated from editing** (`09`): To / From / Subject / Preview
+   text render as a collapsed breadcrumb bar (`To {{input.email}} › From
+   RESEND_FROM_EMAIL › Subject … › Preview …`); the fields open only on an
+   intentional Edit and collapse on Done (D3a/D3a2). Preview text (the inbox
+   preheader) is a first-class envelope + template field (D7f).
+3. **Full-width modal editing** (`09b`): the top-right expand opens a clean
+   on-screen modal (portal, mirrors the workspace helper modal) editing the
+   SAME node state live; Esc/Close returns to the sidecar with content intact
+   (D3f/D3g). A bottom-left drag grip resizes the writing surface (180→320px
+   proven in D3h) across Design/HTML/Text modes.
+4. **Atomic template rows (agent-teams grammar)** (D7e): every saved template
+   is an atomic governed row — slug `id`, capital-N identity, `status`,
+   `version` (increments on content edits), `createdAt`/`updatedAt` — with
+   built-in performance-tracking columns (`sends`, `delivered`, `opens`,
+   `clicks`, `replies`, `bounces`, `lastUsedAt`) initialized at honest zeros.
+   Engagement history SURVIVES content edits (unit-proven), so deliverability
+   and engagement land on the row the moment a tracking lane writes them —
+   reusability and performance tracking are structural, not bolted on.
 
 ## Reviewer acceptance checklist mapping
 

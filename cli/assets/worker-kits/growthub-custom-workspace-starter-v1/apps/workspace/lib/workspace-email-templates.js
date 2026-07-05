@@ -16,7 +16,36 @@ function clean(value) {
   return String(value == null ? "" : value).trim();
 }
 
-const EMAIL_TEMPLATE_COLUMNS = ["Name", "subject", "html", "text", "updatedAt", "registryId"];
+// Atomic row grammar — mirrors the CEO Agent Teams pattern: explicit `id`
+// (slug of Name), capital-N identity column, `status`, versioned content
+// fields, and built-in performance-tracking counters (sends/delivered/opens/
+// clicks/replies/bounces) so deliverability + engagement land ON the
+// governed row the moment a tracking lane starts writing them. Counters are
+// initialized honestly at 0 and never invented.
+const EMAIL_TEMPLATE_COLUMNS = [
+  "id",
+  "Name",
+  "status",
+  "subject",
+  "previewText",
+  "html",
+  "text",
+  "version",
+  "sends",
+  "delivered",
+  "opens",
+  "clicks",
+  "replies",
+  "bounces",
+  "lastUsedAt",
+  "createdAt",
+  "updatedAt",
+  "registryId",
+];
+
+function slugify(value) {
+  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
 
 function buildEmailTemplatesObject({ integrationId = "resend-email" } = {}) {
   return {
@@ -57,40 +86,70 @@ function validateEmailTemplate(input = {}) {
   const name = clean(input.name).slice(0, 120);
   if (name.length < 2) return { ok: false, error: "template name must be at least 2 characters" };
   const subject = clean(input.subject).slice(0, 500);
+  const previewText = clean(input.previewText).slice(0, 300);
   const html = String(input.html || "").slice(0, MAX_FIELD_CHARS).trim();
   const text = String(input.text || "").slice(0, MAX_FIELD_CHARS).trim();
   if (!subject && !html && !text) return { ok: false, error: "template needs a subject or a body" };
-  return { ok: true, template: { name, subject, html, text } };
+  return { ok: true, template: { name, subject, previewText, html, text } };
 }
 
-/** Upsert a template row by Name (pure). Returns { config, row, created }. */
-function withEmailTemplateUpsert(workspaceConfig, { name, subject, html, text, integrationId = "resend-email", nowIso = "" } = {}) {
-  const row = {
+/** Upsert a template row by Name (pure, atomic). Returns { config, row, created }.
+ * Create: id slug + status "ready" + version 1 + zeroed performance counters.
+ * Update: identity, counters, and createdAt are PRESERVED; version increments —
+ * a template is a stable atomic unit whose engagement history survives edits. */
+function withEmailTemplateUpsert(workspaceConfig, { name, subject, previewText, html, text, integrationId = "resend-email", nowIso = "" } = {}) {
+  const content = {
     Name: clean(name),
     subject: clean(subject),
+    previewText: clean(previewText),
     html: String(html || ""),
     text: String(text || ""),
     updatedAt: clean(nowIso),
     registryId: clean(integrationId),
   };
-  if (!row.Name) return { config: workspaceConfig, row: null, created: false };
+  if (!content.Name) return { config: workspaceConfig, row: null, created: false };
+  const freshRow = () => ({
+    id: `email-template-${slugify(content.Name) || "untitled"}`,
+    status: "ready",
+    version: 1,
+    sends: 0,
+    delivered: 0,
+    opens: 0,
+    clicks: 0,
+    replies: 0,
+    bounces: 0,
+    lastUsedAt: "",
+    createdAt: clean(nowIso),
+    ...content,
+  });
   const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
   const objects = Array.isArray(dm.objects) ? dm.objects : [];
   let found = false;
   let created = false;
+  let row = null;
   const nextObjects = objects.map((object) => {
     if (clean(object?.id) !== EMAIL_TEMPLATES_OBJECT_ID || found) return object;
     found = true;
     const rows = Array.isArray(object.rows) ? object.rows : [];
-    const has = rows.some((existing) => clean(existing?.Name) === row.Name);
+    const has = rows.some((existing) => clean(existing?.Name) === content.Name);
     created = !has;
     const nextRows = has
-      ? rows.map((existing) => (clean(existing?.Name) === row.Name ? { ...existing, ...row } : existing))
-      : [row, ...rows].slice(0, MAX_TEMPLATES);
+      ? rows.map((existing) => {
+          if (clean(existing?.Name) !== content.Name) return existing;
+          row = {
+            ...freshRow(),
+            ...existing,
+            ...content,
+            version: (Number(existing?.version) || 1) + 1,
+          };
+          return row;
+        })
+      : [(row = freshRow()), ...rows].slice(0, MAX_TEMPLATES);
     return { ...object, columns: EMAIL_TEMPLATE_COLUMNS.slice(), rows: nextRows };
   });
   if (!found) {
     created = true;
+    row = freshRow();
     nextObjects.push({ ...buildEmailTemplatesObject({ integrationId }), rows: [row] });
   }
   return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, row, created };
@@ -101,10 +160,14 @@ function listEmailTemplates(workspaceConfig) {
   const object = findEmailTemplatesObject(workspaceConfig);
   return (Array.isArray(object?.rows) ? object.rows : [])
     .map((row) => ({
+      id: clean(row?.id),
       name: clean(row?.Name),
+      status: clean(row?.status),
       subject: clean(row?.subject),
+      previewText: clean(row?.previewText),
       html: String(row?.html || ""),
       text: String(row?.text || ""),
+      version: Number(row?.version) || 1,
       updatedAt: clean(row?.updatedAt),
     }))
     .filter((row) => row.name);
