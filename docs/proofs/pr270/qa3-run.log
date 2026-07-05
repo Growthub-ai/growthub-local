@@ -1,0 +1,99 @@
+PASS  A1 pre-connect readiness readback: provider not connected — {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
+READBACK preconnect-door-get: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
+PASS  A2 pre-connect send-test is refused (409, provider not connected) — status=409 body={"error":"Resend provider account is not connected"}
+PASS  A3 blocked outcome is receipted to workspace:agent-outcomes — aor_mr77oa0p_x0tkae — Resend Email send-test blocked: Resend account not connected.
+READBACK preconnect-blocked-receipt: {"receiptId":"aor_mr77oa0p_x0tkae","summary":"Resend Email send-test blocked: Resend account not connected.","nextActions":["Connect the Resend provider account in the marketplace, then retry."]}
+SHOT 01-resend-preconnect.png
+PASS  B1 stripe connect (Verify and save account)
+PASS  B2 stripe install (stripe-payments)
+SHOT 02-stripe-installed.png
+PASS  B3 resend connect
+PASS  B4 resend install (resend-email)
+SHOT 03-resend-installed.png
+PASS  B5 governed rows verified with server-side sync proof — stripe: Stripe Payments probe /v1/account returned HTTP 200 | resend: Resend Email probe /domains returned HTTP 200
+READBACK verified-rows: {"stripe":{"integrationId":"stripe-payments","syncStatus":"verified","syncProof":"Stripe Payments probe /v1/account returned HTTP 200"},"resend":{"integrationId":"resend-email","syncStatus":"verified","syncProof":"Resend Email probe /domains returned HTTP 200"}}
+PASS  B6 install seeded the four governed Stripe source objects — stripe-payments-feed,stripe-customers,stripe-products,stripe-balance
+PASS  B7 seeded objects are HONESTLY EMPTY pre-refresh (no fake sample rows) — stripe-payments-feed:0 stripe-customers:0 stripe-products:0 stripe-balance:0
+PASS  B8 seeded objects bind to the native refresh lane
+READBACK seeded-empty-objects: [{"id":"stripe-payments-feed","rows":0,"binding":{"mode":"integration","sourceType":"managed-integrations","sourceStorage":"workspace-source-records","integrationId":"stripe-payments","sourceId":"payment-intents","source":"Stripe Payments"}},{"id":"stripe-customers","rows":0,"binding":{"mode":"integration","sourceType":"managed-integrations","sourceStorage":"workspace-source-records","integrationId":"stripe-payments","sourceId":"customers","source":"Stripe Customers"}},{"id":"stripe-products","rows":0,"binding":{"mode":"integration","sourceType":"managed-integrations","sourceStorage":"workspace-source-records","integrationId":"stripe-payments","sourceId":"products","source":"Stripe Products"}},{"id":"stripe-balance","rows":0,"binding":{"mode":"integration","sourceType":"managed-integrations","sourceStorage":"workspace-source-records","integrationId":"stripe-payments","sourceId":"balance","source":"Stripe Balance"}}]
+PASS  B9 no provider secret material lands in the governed config
+PASS  C1 Stripe Commerce ships in the NATIVE template gallery
+SHOT 04-template-gallery-stripe.png
+PASS  C2a template APPLIES cleanly (gallery closes, no validator error)
+PASS  C2b applied dashboard shows the Stripe widgets honestly EMPTY (no mock records yet)
+SHOT 05-stripe-dashboard-empty.png
+PASS  C3 resolver refresh populates all four governed sources server-side — ["stripe-payments-feed:4","stripe-customers:3","stripe-products:2","stripe-balance:2"]
+READBACK refresh-sources: {"refreshed":[{"sourceId":"stripe-payments-feed","integrationId":"stripe-payments","recordCount":4,"fetchedAt":"2026-07-05T03:08:30.832Z","objectId":"stripe-payments-feed","objectSourceId":"stripe-payments-feed","bindingSourceId":"payment-intents"},{"sourceId":"stripe-customers","integrationId":"stripe-payments","recordCount":3,"fetchedAt":"2026-07-05T03:08:30.843Z","objectId":"stripe-customers","objectSourceId":"stripe-customers","bindingSourceId":"customers"},{"sourceId":"stripe-products","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T03:08:30.849Z","objectId":"stripe-products","objectSourceId":"stripe-products","bindingSourceId":"products"},{"sourceId":"stripe-balance","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T03:08:30.855Z","objectId":"stripe-balance","objectSourceId":"stripe-balance","bindingSourceId":"balance"}],"skipped":[],"skippedDetail":[]}
+PASS  C4 widgets hydrate from governed rows after refresh (mock-only records visible)
+PASS  C4b revenue chart recomputes values from bound rows at apply time — bars=4
+SHOT 06-stripe-dashboard-hydrated.png
+PASS  C5 widget config panel exposes source-object binding state — xRecent PaymentsViewDuplicateRemoveTitleSettingsLayoutTableGanttBoardCalendarTimelineSourceStripe PaymentsFields7 shownF
+READBACK widget-panel-text: xRecent PaymentsViewDuplicateRemoveTitleSettingsLayoutTableGanttBoardCalendarTimelineSourceStripe PaymentsFields7 shownFilter›Sort›Config bindings and data model syncchatToCanvastrueworkflowOutputsToArtifactstruesessionContexttrueconfigDrivenCanvastrueintegrationAdapterstaticworkspaceSourceRecords7 sourcesdataModelObjects12 synced
+SHOT 07-stripe-widget-config.png
+PASS  D1 installed-capability palette lists Stripe + Resend nodes
+PASS  D2 palette entries carry the product logos (manifest iconSrc) — logos=2
+SHOT 08-palette-installed-capabilities.png
+PASS  D3 editor offers Design / HTML / Text / Preview modes — Design,HTML,Text,Preview
+SHOT 09-editor-design-mode.png
+PASS  D4 HTML mode exposes the (sanitized) source of the same draft — Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is 
+SHOT 10-editor-html-mode.png
+SHOT 11-editor-text-mode.png
+PASS  D5 desktop preview renders the sanitized body
+SHOT 12-editor-preview-desktop.png
+SHOT 13-editor-preview-mobile.png
+PASS  D6 template save lands through the governed door with a receipt — receipt=aor_mr77p7r6_xpszbx
+READBACK template-save: {"status":200,"receiptId":"aor_mr77p7r6_xpszbx","template":"Launch Welcome"}
+PASS  D7 template persists as a governed email-templates row
+PASS  D8 saved template is reloadable from the sidecar — Load template (1),Launch Welcome
+SHOT 14-templates-save-reload.png
+PASS  D9 AI helper entry point deep-links with a prefilled prompt — /data-model?helper=open&prompt=Draft%20a%20marketing%20email%20for%20the%20resend-email%20workflow%2
+READBACK ai-helper-href: /data-model?helper=open&prompt=Draft%20a%20marketing%20email%20for%20the%20resend-email%20workflow%20node%3A%20give%20me%20a%20subject%20line%2C%20preview%20text%2C%20and%20an%20HTML%20body%20with%20%7B%7Binput.*%7D%7D%20personalization%20tokens.%20Topic%3A%20
+PASS  D10 sender/domain readiness derives from the server door — {"envReady":true,"senderReady":true,"senderEnvRef":"RESEND_FROM_EMAIL","syncProof":"Resend Email probe /domains returned HTTP 200"}
+READBACK sender-readiness: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":true,"productVerified":true,"envReady":true,"missingEnv":[],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"Resend Email probe /domains returned HTTP 200","syncCheckedAt":"2026-07-05T03:08:19.253Z","templates":[{"name":"Launch Welcome","subject":"Welcome {{input.name}} — your workspace is live","html":"Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is already live.{{input.name}}","text":"Hi {{input.name}} — plain text fallback for the welcome email.","updatedAt":"2026-07-05T03:08:50.172Z"}]}
+PASS  D11 pane shows env-ref readiness (never a secret) — 1 · ConnectSending laneRESEND_API_KEY · Configured — RESEND_FROM_EMAIL · ResolvedProduct installed + verified — Resend Email probe /domains returned HTTP 200.2 
+SHOT 15-sender-readiness.png
+PASS  D12 governed test send succeeds with provider message id + receipt id — receipt=aor_mr77p929_wsbl7d messageId=email_mock_1
+READBACK send-success: {"ok":true,"action":"send-test","httpStatus":200,"providerMessageId":"email_mock_1","recipientCount":1,"testedAt":"2026-07-05T03:08:51.873Z","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-workflow · resend-email · 9ad03680","receiptId":"aor_mr77p929_wsbl7d"}
+PASS  D13 Verified chip appears ONLY as node-level proof — Node tested · Verified 200
+PASS  D14 publish-honesty copy: node proof does not gate publish
+SHOT 16-send-success-receipt.png
+PASS  D15 provider mock actually received the email (protocol-shaped) — [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T03:08:51.870Z"}]
+READBACK mock-sent-emails: [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T03:08:51.870Z"}]
+PASS  D16 editing send-shaping fields revokes the stored Verified chip (draft-hash honesty) — chips=0
+SHOT 17-stale-proof-revoked.png
+PASS  D17 bad recipient keeps Send disabled (obvious blocked state)
+SHOT 18-blocked-bad-recipient.png
+PASS  D18 server door independently refuses missing recipient (400, receipted) — status=400 {"error":"send-test requires valid To address(es), Subject, and an HTML or text body"}
+READBACK blocked-bad-recipient: {"status":400,"body":{"error":"send-test requires valid To address(es), Subject, and an HTML or text body"}}
+PASS  D19 provider failure surfaces as an honest blocked outcome (no fake success) — status=502 {"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T03:08:54.944Z"}
+READBACK blocked-provider-failure: {"status":502,"body":{"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T03:08:54.944Z"}}
+PASS  D20 failed send does NOT mint a Verified chip
+SHOT 19-blocked-provider-failure.png
+PASS  D21 provider-failure blocked outcome is receipted — aor_mr77pbfk_3oepph — Resend Email send-test blocked: provider returned HTTP 422.
+READBACK provider-failure-receipt: {"receiptId":"aor_mr77pbfk_3oepph","summary":"Resend Email send-test blocked: provider returned HTTP 422."}
+PASS  E1 missing-env send-test refused 422 naming the env ref — status=422 {"error":"messaging runtime env is not resolved","missingEnv":["RESEND_API_KEY"]}
+READBACK blocked-missing-env: {"status":422,"body":{"error":"messaging runtime env is not resolved","missingEnv":["RESEND_API_KEY"]}}
+SHOT 20-blocked-missing-env.png
+PASS  E2 missing-sender send-test refused 422 naming RESEND_FROM_EMAIL — status=422 {"error":"sender is not resolved — set RESEND_FROM_EMAIL in the runtime or pass a From value","missingEnv":["RESEND_FROM_EMAIL"]}
+READBACK blocked-missing-sender: {"status":422,"body":{"error":"sender is not resolved — set RESEND_FROM_EMAIL in the runtime or pass a From value","missingEnv":["RESEND_FROM_EMAIL"]}}
+SHOT 21-blocked-missing-sender.png
+PASS  E3 missing-sender blocked outcome is receipted — aor_mr77ph8p_tx99s9
+READBACK missing-sender-receipt: {"receiptId":"aor_mr77ph8p_tx99s9","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."}
+PASS  E4 runtime env restored (readiness green again) — {"envReady":true,"senderReady":true}
+PASS  F1 deterministic install: re-sync of svc-500 creates ZERO duplicate rows — rows before=1006 after=1006 (44ms for 1001 installs)
+PASS  F2 all registry integrationIds stay unique at scale — rows=1006
+READBACK scale-registry-rows: {"totalRegistryRows":1006,"discovered":1000}
+PASS  F3 long-tail group renders BOUNDED at 1,000 installed products — Showing 8 of 1000 — refine the search.
+PASS  F4 render list stays capped (no 1,000-button over-render) — rendered=8
+SHOT 22-palette-1000-bounded.png
+PASS  F5 palette search narrows deterministically
+SHOT 23-palette-search-777.png
+PASS  F6 discovered product inserts as an api-registry-call variant (no new node type) — Service 777api-registry-call
+SHOT 24-longtail-node-inserted.png
+PASS  F7 curated bespoke node surfaces stay a declared Tier-1 set — ["resend-email","stripe-commerce"]
+PASS  G1 browser made ZERO requests to the provider host (server-only lane)
+PASS  G2 governed config still holds no provider secrets after full journey
+PASS  G3 receipt stream holds no provider secrets — receipts scanned=50
+READBACK receipt-ids-cited: [{"receiptId":"aor_mr77ph8p_tx99s9","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."},{"receiptId":"aor_mr77pe1t_4xrxph","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: runtime env not resolved."},{"receiptId":"aor_mr77pbfk_3oepph","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: provider returned HTTP 422."},{"receiptId":"aor_mr77pbd2_8hskms","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: To, Subject, and an HTML or text body are required."},{"receiptId":"aor_mr77p929_wsbl7d","kind":"workspace-add-on-messaging","status":"published","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-wo"},{"receiptId":"aor_mr77p7r6_xpszbx","kind":"workspace-add-on-messaging","status":"published","summary":"Resend Email template \"Launch Welcome\" saved to the governed email-templates object."},{"receiptId":"aor_mr77ojwp_r4035o","kind":"workspace-add-on-sync","status":"published","summary":"Resend Email installed after provider sync probe."},{"receiptId":"aor_mr77ohsu_ca72qp","kind":"workspace-add-on-provider-credentials","status":"published","summary":"Resend provider account verified and stored as local runtime env refs."},{"receiptId":"aor_mr77ogfi_ik2dfe","kind":"workspace-add-on-sync","status":"published","summary":"Stripe Payments installed after provider sync probe."},{"receiptId":"aor_mr77odcv_r9m1dp","kind":"workspace-add-on-provider-credentials","status":"published","summary":"Stripe provider account verified and stored as local runtime env refs."}]
+
+=== QA3 GREEN: 54/54 ===

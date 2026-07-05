@@ -98,6 +98,34 @@ test("Stripe Commerce ships as a native dashboard template bound to governed obj
   assert.ok(!/sk_test|sk_live|STRIPE_SECRET/.test(templateText), "template carries no secret material or env names");
 });
 
+test("Stripe Commerce template APPLIES through the real gallery clone path (regression: validator grammar)", () => {
+  // The browser proof pack caught the template failing validateWorkspaceTemplate
+  // on the actual "Use Here"/"New Dashboard" click (invalid chartType, string
+  // axes, integration-mode bindings without integrationId/lane). Exercise the
+  // exact clone path the gallery buttons call so a grammar drift can never
+  // ship as a dead gallery card again.
+  const template = (schema.DASHBOARD_TEMPLATES || []).find((entry) => entry.id === "stripe-commerce");
+  assert.ok(template, "stripe-commerce template registered");
+  let counter = 0;
+  const idFactory = (prefix) => `${prefix}-test-${counter += 1}`;
+  const tab = schema.cloneTemplateToTab(template, { tabName: template.name, idFactory });
+  assert.equal(tab.widgets.length, template.widgets.length, "Use Here clone keeps every widget");
+  const { dashboard } = schema.cloneTemplateToDashboard(template, { idFactory });
+  assert.equal(dashboard.name, "Stripe Commerce", "New Dashboard clone carries the template name");
+  // Every non-manual-text widget binds the builder's own data-model grammar
+  // (mode manual + sourceType workspace-data-model + objectId), mirroring how
+  // the builder itself writes bindings when a user picks a data-model source.
+  const bound = template.widgets.filter((widget) => widget.config?.binding?.sourceType === "workspace-data-model");
+  for (const widget of bound) {
+    assert.equal(widget.config.binding.mode, "manual", `${widget.title} uses the builder's data-model binding mode`);
+    assert.equal(widget.config.binding.sourceAuthority, "workspace-config", `${widget.title} declares workspace-config authority`);
+  }
+  const chart = template.widgets.find((widget) => widget.kind === "chart");
+  assert.ok(schema.KNOWN_CHART_TYPES.includes(chart.config.chartType), "chart type comes from the validator's allowlist");
+  assert.equal(typeof chart.config.xAxis, "object", "xAxis is ChartAxisConfig, not a bare string");
+  assert.ok(schema.KNOWN_AGGREGATIONS.includes(chart.config.yAxis.aggregation), "yAxis aggregation is a known aggregation");
+});
+
 // ---------------------------------------------------------------------------
 // stripe-payments source resolver (read-only, server-side)
 // ---------------------------------------------------------------------------
