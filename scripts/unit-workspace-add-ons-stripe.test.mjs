@@ -257,11 +257,12 @@ test("runner keeps the stripe-commerce node read-only and additive", async () =>
   assert.ok(runnerSource.includes('const STRIPE_COMMERCE_OPERATIONS = ["list-payment-intents", "list-customers", "list-products", "retrieve-balance"]'), "read-only allowlist");
   assert.ok(runnerSource.includes("executeStripeCommerce"), "dedicated executor present");
   assert.ok(/executeStripeCommerce[\s\S]*?method: "GET"/.test(runnerSource), "executor only issues GET requests");
-  assert.ok(runnerSource.includes("registryCallNode?.config\n    ? registryCallNode\n    : supabaseDataNode?.config"), "api-registry-call and supabase-data keep precedence (additive dispatch)");
+  assert.ok(runnerSource.includes("CAPABILITY_NODE_EXECUTORS"), "bespoke executors bind through the single dispatch registry");
+  assert.ok(/registryCallNode\?\.config \? registryCallNode : null/.test(runnerSource), "api-registry-call keeps precedence (additive dispatch)");
   const surfaceSource = readFileSync(path.join(kitLib, "..", "app/workflows/WorkflowSurface.jsx"), "utf8");
-  assert.ok(surfaceSource.includes('label: "Installed capabilities"'), "dedicated grouped palette section");
-  assert.ok(surfaceSource.includes("findInstalledWorkspaceAddOns"), "palette section derives from governed rows — no setup pushed to the user");
-  assert.ok(surfaceSource.includes('iconSrc: "/integrations/stripe/payments.png"'), "palette entry uses the product badge as its icon");
+  assert.ok(surfaceSource.includes("listInstalledNodeSurfaces"), "palette section derives from the manifest layer + governed rows");
+  assert.ok(surfaceSource.includes("listInstalledApiRequestVariants"), "long-tail rows surface as bounded API Request variants");
+  assert.ok(!surfaceSource.includes("CAPABILITY_NODE_ACTIONS"), "no hardcoded palette entries remain in the canvas surface");
 });
 
 // ---------------------------------------------------------------------------

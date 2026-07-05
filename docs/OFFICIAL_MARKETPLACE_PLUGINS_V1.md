@@ -692,11 +692,43 @@ The two-tier contract:
   Installing 1,000 discovered products adds ZERO node types
   (regression-tested in `scripts/unit-marketplace-capability-nodes.test.mjs`).
 
-Reserved product-definition keys for a future declarative node surface
-(`nodeSurface`, `sidecarVariant`, `testDoor`, `publishProofPolicy`,
-`runtimeAdapter`) must be introduced as declared contract keys interpreted by
-the generic surfaces — the same extension class as `probe.pathEnv` /
-`aliasEnv` — never as per-product forks.
+The declarative layer is the product definition's `surfaces` block —
+declared contract keys interpreted by generic code, never per-product forks:
+
+- `surfaces.node` `{ type, label, iconSrc, group }` — palette entry + canvas
+  badge derive from this (`listInstalledNodeSurfaces`,
+  `MANIFEST_NODE_SURFACES`); the executor binds in ONE registry
+  (`CAPABILITY_NODE_EXECUTORS` in the runner).
+- `surfaces.sidecarVariant` — which curated config/test pane the node uses.
+- `surfaces.testDoor` — the governed door the sidecar test drives.
+- `surfaces.publishProofPolicy` — today always `draft-test` (node receipts
+  never gate publish until the publish contract explicitly verifies them).
+- `surfaces.widgets` — no-code dashboard widget templates bound to the
+  governed row (`listInstalledWidgetSurfaces`).
+- `surfaces.sourceObjects` — data-source objects seeded on install
+  (`withDeclaredSourceObjects`), hydrated server-side through the product's
+  source resolver + the refresh-sources lane; rows start empty (honest).
+- `surfaces.dashboardTemplateId` — the native `DASHBOARD_TEMPLATES` gallery
+  entry whose widgets bind those objects.
+
+### Decision ladder — which surface a product gets
+
+1. **Generic API Registry node** (default, the 1K+ long tail): every
+   installed + verified row — including all live-discovered products —
+   surfaces as a bounded, searchable `api-registry-call` variant in the
+   Workflow Canvas ("Installed integrations",
+   `listInstalledApiRequestVariants`). Zero code.
+2. **Manifest-declared node variant**: declare `surfaces.node` when the
+   product deserves its own palette identity but the generic request
+   executor suffices.
+3. **Bespoke curated node**: only when lane semantics can't be a generic
+   request (governed data ops, receipted sends, read-only commerce) — one
+   `CAPABILITY_NODE_EXECUTORS` entry + a curated sidecar pane.
+4. **Dashboard/widget surface**: declare `surfaces.sourceObjects` +
+   `surfaces.widgets` + a `DASHBOARD_TEMPLATES` entry and ship a source
+   resolver — data hydrates server-side; widgets never call providers.
+5. **Provider-specific adapter**: last resort, only inside an existing
+   governed door (storage/messaging/data), dispatched by connectorKind.
 
 Node-level test proof (e.g. the resend-email sidecar send) is NODE proof:
 receipts carry a `workflowRef · nodeId · draftHash` correlation key, the

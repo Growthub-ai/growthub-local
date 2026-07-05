@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
+  CAPABILITY_NODE_TYPES,
   detectFieldIdsFromLastResponse,
   FILTER_CONJUNCTIONS,
   FILTER_OPERATORS,
@@ -76,9 +77,7 @@ function inferDeltaTagsForNode(node, config) {
   if (type === "thinAdapter") tags.push("model", "prompt", "routing");
   if (type === "ai-agent") tags.push("model", "prompt", "output");
   if (type === "data-action" || type === "data-trigger") tags.push("input", "output");
-  if (type === "supabase-data") tags.push("input", "output");
-  if (type === "stripe-commerce") tags.push("input", "output");
-  if (type === "resend-email") tags.push("input", "output");
+  if (CAPABILITY_NODE_TYPES.includes(type)) tags.push("input", "output");
   if (type === "flow-control") tags.push("routing");
   if (type === "core-action") tags.push("runtime");
   if (type === "human-input") tags.push("input");
@@ -160,30 +159,49 @@ function sanitizeEmailHtml(html) {
 }
 
 /**
- * Email body editor for the resend-email node — Design (rich text) and HTML
- * tabs over ONE stored value (config.htmlTemplate). Design edits a
- * contentEditable surface with a compact formatting toolbar; HTML edits the
- * raw markup; both stay in lockstep so a user can move between designing and
- * hand-tuning without losing work. {{input.key}} tokens survive both views.
+ * Email body editor for the resend-email node — Design (rich text), HTML,
+ * Plain text, and Preview modes over the stored templates
+ * (config.htmlTemplate / config.textTemplate). Design edits a contentEditable
+ * surface with a formatting toolbar and token insertion; HTML edits raw
+ * markup; Text edits the plain-text alternative; Preview renders the
+ * sanitized HTML at desktop/mobile widths. {{input.key}} tokens survive
+ * every view.
  */
-function EmailBodyEditor({ value, disabled, onChange }) {
+function EmailBodyEditor({ html, text, disabled, onChangeHtml, onChangeText, tokens = [] }) {
   const [mode, setMode] = useState("design");
+  const [previewDevice, setPreviewDevice] = useState("desktop");
+  const [tokenDraft, setTokenDraft] = useState("");
   const editorRef = useRef(null);
+  const htmlAreaRef = useRef(null);
+  const textAreaRef = useRef(null);
   // Push external value into the design surface only when it actually
   // differs — otherwise every keystroke would reset the caret.
   useEffect(() => {
     if (mode !== "design" || !editorRef.current) return;
     // innerHTML re-render is the app-execution boundary — always sanitized.
-    const safe = sanitizeEmailHtml(value);
+    const safe = sanitizeEmailHtml(html);
     if (editorRef.current.innerHTML !== safe) {
       editorRef.current.innerHTML = safe;
     }
-  }, [mode, value]);
+  }, [mode, html]);
   function exec(command, argument = null) {
     if (disabled) return;
     editorRef.current?.focus();
     document.execCommand(command, false, argument);
-    onChange(editorRef.current?.innerHTML || "");
+    onChangeHtml(editorRef.current?.innerHTML || "");
+  }
+  function insertToken(name) {
+    const token = `{{input.${String(name || "").trim().replace(/[^a-zA-Z0-9_.-]/g, "") || "value"}}}`;
+    if (mode === "design") {
+      exec("insertText", token);
+      return;
+    }
+    const areaRef = mode === "text" ? textAreaRef : htmlAreaRef;
+    const value = mode === "text" ? String(text || "") : String(html || "");
+    const setValue = mode === "text" ? onChangeText : onChangeHtml;
+    const area = areaRef.current;
+    const at = area && typeof area.selectionStart === "number" ? area.selectionStart : value.length;
+    setValue(`${value.slice(0, at)}${token}${value.slice(at)}`);
   }
   const toolbar = [
     { id: "bold", label: "B", title: "Bold", style: { fontWeight: 700 } },
@@ -192,21 +210,37 @@ function EmailBodyEditor({ value, disabled, onChange }) {
     { id: "insertUnorderedList", label: "• List", title: "Bulleted list" },
     { id: "insertOrderedList", label: "1. List", title: "Numbered list" },
   ];
+  const modes = [["design", "Design"], ["html", "HTML"], ["text", "Text"], ["preview", "Preview"]];
+  const previewHtml = sanitizeEmailHtml(html) || (text ? `<pre style="white-space:pre-wrap;font-family:inherit">${String(text).replace(/[<>&]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[ch]))}</pre>` : "");
   return (
     <div className="dm-orchestration-config__field dm-email-editor">
       <span>Body</span>
       <div className="dm-workflow-tabs dm-email-editor__tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={mode === "design"} className={mode === "design" ? "is-active" : ""} onClick={() => setMode("design")}>Design</button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === "html"}
-          className={mode === "html" ? "is-active" : ""}
-          onClick={() => setMode("html")}
-        >
-          HTML
-        </button>
+        {modes.map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "is-active" : ""} onClick={() => setMode(id)}>
+            {label}
+          </button>
+        ))}
       </div>
+      {mode !== "preview" ? (
+        <div className="dm-email-editor__tokens" role="toolbar" aria-label="Insert variable">
+          {Array.from(new Set(tokens)).slice(0, 6).map((name) => (
+            <button key={name} type="button" title={`Insert {{input.${name}}}`} disabled={disabled} onClick={() => insertToken(name)}>
+              {`{{${name}}}`}
+            </button>
+          ))}
+          <input
+            value={tokenDraft}
+            placeholder="variable name"
+            disabled={disabled}
+            style={{ width: 110 }}
+            onChange={(event) => setTokenDraft(event.target.value)}
+          />
+          <button type="button" disabled={disabled || !tokenDraft.trim()} onClick={() => { insertToken(tokenDraft); setTokenDraft(""); }}>
+            Insert variable
+          </button>
+        </div>
+      ) : null}
       {mode === "design" ? (
         <>
           <div className="dm-email-editor__toolbar" role="toolbar" aria-label="Formatting">
@@ -238,18 +272,139 @@ function EmailBodyEditor({ value, disabled, onChange }) {
             aria-multiline="true"
             aria-label="Email body design surface"
             style={{ minHeight: 140, border: "1px solid var(--dm-border, #d5d9e0)", borderRadius: 8, padding: 10, background: "#fff", overflowY: "auto" }}
-            onInput={() => onChange(editorRef.current?.innerHTML || "")}
+            onInput={() => onChangeHtml(editorRef.current?.innerHTML || "")}
           />
-          <p className="dm-orchestration-config__hint">Design the email visually — bind live values with {"{{input.key}}"} anywhere in the text. Switch to HTML for full markup control.</p>
+          <p className="dm-orchestration-config__hint">Design the email visually — insert variables anywhere; they bind at run time. Switch to HTML for full markup control, Text for the plain-text alternative, Preview to proof it.</p>
+        </>
+      ) : mode === "html" ? (
+        <>
+          <textarea ref={htmlAreaRef} rows={8} value={html || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeHtml(e.target.value)} />
+          <p className="dm-orchestration-config__hint">Raw HTML — full control, including inline styles and {"{{input.key}}"} tokens. The Design tab renders exactly this markup (sanitized for in-app display).</p>
+        </>
+      ) : mode === "text" ? (
+        <>
+          <textarea ref={textAreaRef} rows={8} value={text || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChangeText(e.target.value)} />
+          <p className="dm-orchestration-config__hint">Plain-text alternative — sent alongside (or instead of) the HTML body for text-only clients.</p>
         </>
       ) : (
         <>
-          <textarea rows={8} value={value || ""} disabled={disabled} spellCheck={false} onChange={(e) => onChange(e.target.value)} />
-          <p className="dm-orchestration-config__hint">Raw HTML — full control, including inline styles and {"{{input.key}}"} tokens. The Design tab renders exactly this markup.</p>
+          <div className="dm-workflow-tabs dm-email-editor__devices" role="tablist" aria-label="Preview device">
+            <button type="button" role="tab" aria-selected={previewDevice === "desktop"} className={previewDevice === "desktop" ? "is-active" : ""} onClick={() => setPreviewDevice("desktop")}>Desktop</button>
+            <button type="button" role="tab" aria-selected={previewDevice === "mobile"} className={previewDevice === "mobile" ? "is-active" : ""} onClick={() => setPreviewDevice("mobile")}>Mobile</button>
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", background: "#f2f3f6", border: "1px solid var(--dm-border, #d5d9e0)", borderRadius: 8, padding: 12 }}>
+            <div
+              className="dm-email-editor__preview"
+              aria-label={`Email preview (${previewDevice})`}
+              style={{ width: previewDevice === "mobile" ? 320 : 600, maxWidth: "100%", minHeight: 160, background: "#fff", borderRadius: 6, padding: 14, overflowY: "auto", boxShadow: "0 1px 4px rgba(16,20,28,0.12)" }}
+              // Sanitized above — the same boundary every design-surface render uses.
+              dangerouslySetInnerHTML={{ __html: previewHtml || "<p style='color:#8a8f98'>Nothing to preview yet — write a body in Design, HTML, or Text.</p>" }}
+            />
+          </div>
+          <p className="dm-orchestration-config__hint">Rendered from the sanitized HTML template ({"{{input.key}}"} tokens show literally here; the Test tab sends with live values bound).</p>
         </>
       )}
     </div>
   );
+}
+
+/**
+ * Template save/reuse controls for the resend-email node — governed rows on
+ * the email-templates object, written only through the messaging door
+ * (one receipted save per call), listed from the door's GET. Loading a
+ * template patches the draft node config; nothing is optimistic.
+ */
+function ResendTemplateControls({ config, disabled, patchConfig }) {
+  const [templates, setTemplates] = useState([]);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/workspace/add-ons/resend/messaging")
+      .then((response) => response.json())
+      .then((body) => { if (alive && Array.isArray(body?.templates)) setTemplates(body.templates); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  async function saveTemplate() {
+    const name = window.prompt("Template name");
+    if (!name) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/workspace/add-ons/resend/messaging", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "save-template",
+          name,
+          subject: config.subjectTemplate || config.subject || "",
+          html: config.htmlTemplate || config.html || "",
+          text: config.textTemplate || config.text || "",
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(body?.error || `Save failed (HTTP ${response.status})`);
+        return;
+      }
+      if (Array.isArray(body.templates)) setTemplates(body.templates);
+      setMessage(`Saved "${body?.template?.name || name}" · receipt ${body?.receiptId || ""}`);
+    } catch (error) {
+      setMessage(error?.message || "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function loadTemplate(name) {
+    const template = templates.find((entry) => entry.name === name);
+    if (!template) return;
+    patchConfig({
+      subjectTemplate: template.subject,
+      htmlTemplate: template.html,
+      textTemplate: template.text,
+    });
+    setMessage(`Loaded "${template.name}"`);
+  }
+  return (
+    <div className="dm-orchestration-config__field dm-email-templates">
+      <span>Templates</span>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <select disabled={disabled || !templates.length} defaultValue="" onChange={(event) => { if (event.target.value) loadTemplate(event.target.value); event.target.value = ""; }}>
+          <option value="" disabled>{templates.length ? `Load template (${templates.length})` : "No saved templates yet"}</option>
+          {templates.map((template) => (
+            <option key={template.name} value={template.name}>{template.name}</option>
+          ))}
+        </select>
+        <button type="button" className="dm-btn-outline" disabled={disabled || busy} onClick={saveTemplate}>
+          {busy ? "Saving…" : "Save as template"}
+        </button>
+        <a
+          className="dm-btn-outline"
+          href={`/data-model?helper=open&prompt=${encodeURIComponent("Draft a marketing email for the resend-email workflow node: give me a subject line, preview text, and an HTML body with {{input.*}} personalization tokens. Topic: ")}`}
+        >
+          Draft with AI helper
+        </a>
+      </div>
+      {message ? <p className="dm-orchestration-config__hint">{message}</p> : null}
+      <p className="dm-orchestration-config__hint">Templates save as governed rows (email-templates object) through the messaging door — receipted, server-side, reusable across workflows.</p>
+    </div>
+  );
+}
+
+/** Variable names already used across the node's send fields + defaults. */
+function usedEmailTokens(config) {
+  const material = [config?.toTemplate, config?.subjectTemplate, config?.htmlTemplate, config?.textTemplate]
+    .map((value) => String(value || ""))
+    .join(" ");
+  const used = [];
+  const pattern = /\{\{\s*input\.([a-zA-Z0-9_.-]+)\s*\}\}/g;
+  let match = pattern.exec(material);
+  while (match) {
+    used.push(match[1]);
+    match = pattern.exec(material);
+  }
+  return Array.from(new Set([...used, "email", "name"]));
 }
 
 // Stable short hash of the node's send-shaping fields — the receipt key that
@@ -915,7 +1070,7 @@ export function OrchestrationNodeConfigPanel({
     return keys.some((k) => readinessFieldSet.has(k)) ? ` dm-field--readiness is-${readinessSeverity}` : "";
   }
 
-  const tabsForType = type === "api-registry-call" || type === "supabase-data" || type === "stripe-commerce" || type === "resend-email" || type === "core-action"
+  const tabsForType = type === "api-registry-call" || CAPABILITY_NODE_TYPES.includes(type) || type === "core-action"
     ? ["configuration", "test", "advanced"]
     : type === "input" || type === "transform-filter" || type === "data-action" || type === "data-trigger" || type === "ai-agent" || type === "flow-control" || type === "human-input"
       ? ["configuration", "advanced"]
@@ -1215,10 +1370,14 @@ export function OrchestrationNodeConfigPanel({
             />
           </label>
           <EmailBodyEditor
-            value={config.htmlTemplate || config.html || ""}
+            html={config.htmlTemplate || config.html || ""}
+            text={config.textTemplate || config.text || ""}
             disabled={disabled}
-            onChange={(htmlTemplate) => patchConfig({ htmlTemplate })}
+            onChangeHtml={(htmlTemplate) => patchConfig({ htmlTemplate })}
+            onChangeText={(textTemplate) => patchConfig({ textTemplate })}
+            tokens={usedEmailTokens(config)}
           />
+          <ResendTemplateControls config={config} disabled={disabled} patchConfig={patchConfig} />
           <label className="dm-orchestration-config__field">
             <span>From (optional)</span>
             <input
@@ -1912,7 +2071,7 @@ export function OrchestrationNodeConfigPanel({
               </label>
             </>
           )}
-          {(type === "supabase-data" || type === "stripe-commerce" || type === "resend-email") && (
+          {CAPABILITY_NODE_TYPES.includes(type) && (
             <label className="dm-orchestration-config__field">
               <span>Timeout (ms)</span>
               <input

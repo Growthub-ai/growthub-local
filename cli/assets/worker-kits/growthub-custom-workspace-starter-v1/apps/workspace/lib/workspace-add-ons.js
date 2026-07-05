@@ -450,6 +450,39 @@ const STRIPE_PRODUCTS = [
     requiredEnv: ["STRIPE_SECRET_KEY"],
     optionalEnv: ["STRIPE_WEBHOOK_SECRET", "STRIPE_PUBLISHABLE_KEY", "STRIPE_API_URL"],
     consoleUrl: "https://dashboard.stripe.com",
+    // Declarative capability surfaces (the manifest layer). Generic UI
+    // surfaces interpret these keys — palette entries, canvas badges, widget
+    // templates, and proof policy all derive from THIS block instead of
+    // hardcoded branches. Bespoke executors/panes remain curated code keyed
+    // by node.type / sidecarVariant; everything declarative lives here.
+    surfaces: {
+      node: {
+        type: "stripe-commerce",
+        label: "Stripe",
+        iconSrc: "/integrations/stripe/payments.png",
+        group: "Installed capabilities",
+      },
+      sidecarVariant: "stripe-commerce",
+      publishProofPolicy: "draft-test",
+      // Governed data-source objects seeded on install (declared contract
+      // key — the generic product-sync route interprets it). Each hydrates
+      // through the stripe-payments source resolver + refresh-sources lane;
+      // dashboard widgets bind these objects, never the provider directly.
+      sourceObjects: [
+        { id: "stripe-payments-feed", label: "Stripe Payments", sourceId: "payment-intents", columns: ["id", "amount", "currency", "status", "description", "customer", "created"] },
+        { id: "stripe-customers", label: "Stripe Customers", sourceId: "customers", columns: ["id", "name", "email", "created", "delinquent"] },
+        { id: "stripe-products", label: "Stripe Products", sourceId: "products", columns: ["id", "name", "active", "description", "created"] },
+        { id: "stripe-balance", label: "Stripe Balance", sourceId: "balance", columns: ["id", "bucket", "currency", "amount"] },
+      ],
+      widgets: [
+        { id: "stripe-revenue", label: "Revenue (payment intents)", operation: "list-payment-intents", display: "chart", objectId: "stripe-payments-feed" },
+        { id: "stripe-balance", label: "Available balance", operation: "retrieve-balance", display: "table", objectId: "stripe-balance" },
+        { id: "stripe-payments-feed", label: "Recent payments", operation: "list-payment-intents", display: "table", objectId: "stripe-payments-feed" },
+        { id: "stripe-customers", label: "Customers", operation: "list-customers", display: "table", objectId: "stripe-customers" },
+        { id: "stripe-products", label: "Products", operation: "list-products", display: "table", objectId: "stripe-products" },
+      ],
+      dashboardTemplateId: "stripe-commerce",
+    },
     probe: {
       baseUrlEnv: "STRIPE_API_URL",
       tokenEnv: "STRIPE_SECRET_KEY",
@@ -497,6 +530,18 @@ const RESEND_PRODUCTS = [
     requiredEnv: ["RESEND_API_KEY"],
     optionalEnv: ["RESEND_FROM_EMAIL", "RESEND_API_URL"],
     consoleUrl: "https://resend.com/domains",
+    // Declarative capability surfaces (manifest layer — see stripe-payments).
+    surfaces: {
+      node: {
+        type: "resend-email",
+        label: "Resend Email",
+        iconSrc: "/integrations/resend/email.png",
+        group: "Installed capabilities",
+      },
+      sidecarVariant: "resend-email",
+      testDoor: "/api/workspace/add-ons/resend/messaging",
+      publishProofPolicy: "draft-test",
+    },
     probe: {
       baseUrlEnv: "RESEND_API_URL",
       tokenEnv: "RESEND_API_KEY",
@@ -2595,6 +2640,154 @@ function listInstalledMessagingProducts(workspaceConfig) {
 }
 
 /**
+ * Declared capability surfaces (the manifest layer) — every product's
+ * `surfaces` block, flattened with provider/product identity. Pure and
+ * static: this is the single source generic UI surfaces derive from
+ * (palette groups, canvas badges, widget templates, sidecar variants,
+ * publish proof policy). Returns [] entries only for products that declare
+ * surfaces — the long tail declares nothing and rides the row-driven lanes.
+ */
+function listCapabilitySurfaces() {
+  const out = [];
+  for (const provider of MARKETPLACE_PROVIDERS) {
+    for (const product of provider.products || []) {
+      const surfaces = product.surfaces;
+      if (!surfaces || typeof surfaces !== "object") continue;
+      out.push({
+        providerId: provider.providerId,
+        productId: product.productId,
+        integrationId: product.integrationId,
+        productLabel: product.label,
+        iconSrc: product.iconSrc || provider.iconSrc || "",
+        surfaces,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Palette entries for installed + verified products that declare a NODE
+ * surface. This is what makes first-class nodes appear/disappear purely from
+ * governed rows — install the product, get the node; nothing hardcoded in
+ * the canvas surface.
+ */
+function listInstalledNodeSurfaces(workspaceConfig) {
+  const installed = new Set(findInstalledWorkspaceAddOns(workspaceConfig).map((row) => String(row.integrationId || "").trim()));
+  return listCapabilitySurfaces()
+    .filter((entry) => entry.surfaces.node && installed.has(entry.integrationId))
+    .map((entry) => ({
+      id: String(entry.surfaces.node.type),
+      type: String(entry.surfaces.node.type),
+      label: String(entry.surfaces.node.label || entry.productLabel),
+      iconSrc: String(entry.surfaces.node.iconSrc || entry.iconSrc || ""),
+      group: String(entry.surfaces.node.group || "Installed capabilities"),
+      integrationId: entry.integrationId,
+      destructive: false,
+    }));
+}
+
+/**
+ * Long-tail node variants: EVERY installed + verified registry row (static
+ * or live-discovered) that has no bespoke node surface becomes a canonical
+ * `api-registry-call` node preset bound to its row. Deterministic at 1K+:
+ * results sort by label then integrationId, filter by a case-insensitive
+ * query substring, and cap at `limit` while reporting the true total —
+ * callers render a bounded list plus a search box, never the full set.
+ */
+function listInstalledApiRequestVariants(workspaceConfig, { query = "", limit = 8 } = {}) {
+  const bespoke = new Set(listCapabilitySurfaces().filter((entry) => entry.surfaces.node).map((entry) => entry.integrationId));
+  const providerRows = new Set(MARKETPLACE_PROVIDERS.map((provider) => provider.integrationId));
+  const products = listMarketplaceProducts();
+  const rows = [
+    ...findInstalledWorkspaceAddOns(workspaceConfig),
+    ...MARKETPLACE_PROVIDERS.filter((provider) => getProviderProductDiscovery(provider))
+      .flatMap((provider) => findDiscoveredAddOnRows(workspaceConfig, provider.providerId).filter((row) => row.isVerifiedAddOn)),
+  ];
+  const seen = new Set();
+  const variants = [];
+  for (const row of rows) {
+    const integrationId = String(row.integrationId || "").trim();
+    if (!integrationId || seen.has(integrationId) || bespoke.has(integrationId) || providerRows.has(integrationId)) continue;
+    seen.add(integrationId);
+    const product = products.find((item) => item.integrationId === integrationId);
+    variants.push({
+      integrationId,
+      label: String(row.Name || product?.label || integrationId),
+      iconSrc: String(product?.iconSrc || ""),
+      connectorKind: String(row.connectorKind || ""),
+      executionLane: String(row.executionLane || ""),
+    });
+  }
+  variants.sort((a, b) => a.label.localeCompare(b.label) || a.integrationId.localeCompare(b.integrationId));
+  const needle = String(query || "").trim().toLowerCase();
+  const filtered = needle
+    ? variants.filter((variant) => variant.label.toLowerCase().includes(needle) || variant.integrationId.toLowerCase().includes(needle))
+    : variants;
+  const cap = Math.max(1, Number(limit) || 8);
+  return { total: filtered.length, variants: filtered.slice(0, cap) };
+}
+
+/**
+ * Widget surface templates for installed + verified products that declare
+ * `surfaces.widgets` (Stripe commerce today). Dashboard surfaces consume
+ * these to offer no-code widgets bound to the governed row — metric,
+ * operation, and display come from the manifest, data flows through the
+ * existing server-side executors, never a browser provider call.
+ */
+function listInstalledWidgetSurfaces(workspaceConfig) {
+  const installed = new Set(findInstalledWorkspaceAddOns(workspaceConfig).map((row) => String(row.integrationId || "").trim()));
+  return listCapabilitySurfaces()
+    .filter((entry) => Array.isArray(entry.surfaces.widgets) && entry.surfaces.widgets.length && installed.has(entry.integrationId))
+    .flatMap((entry) => entry.surfaces.widgets.map((widget) => ({
+      ...widget,
+      providerId: entry.providerId,
+      integrationId: entry.integrationId,
+      productLabel: entry.productLabel,
+      iconSrc: entry.iconSrc,
+    })));
+}
+
+/**
+ * Seed the data-source objects a product declares in
+ * `surfaces.sourceObjects` (pure). Objects hydrate through the product's
+ * source resolver + the refresh-sources lane (binding.sourceStorage =
+ * workspace-source-records); rows start EMPTY — honest until the first
+ * refresh. Existing objects are never clobbered: seeding is add-if-absent by
+ * object id, so re-installs and re-syncs are no-ops here.
+ */
+function withDeclaredSourceObjects(workspaceConfig, product) {
+  const declared = Array.isArray(product?.surfaces?.sourceObjects) ? product.surfaces.sourceObjects : [];
+  if (!declared.length) return workspaceConfig;
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  const existingIds = new Set(objects.map((object) => String(object?.id || "").trim()).filter(Boolean));
+  const additions = declared
+    .filter((entry) => String(entry?.id || "").trim() && !existingIds.has(String(entry.id).trim()))
+    .map((entry) => ({
+      id: String(entry.id).trim(),
+      label: String(entry.label || entry.id),
+      name: String(entry.label || entry.id),
+      source: String(entry.label || entry.id),
+      objectType: "data-source",
+      icon: "Database",
+      columns: Array.isArray(entry.columns) ? [...entry.columns] : [],
+      rows: [],
+      binding: {
+        mode: "integration",
+        sourceType: "managed-integrations",
+        sourceStorage: "workspace-source-records",
+        integrationId: String(product.integrationId),
+        sourceId: String(entry.sourceId || entry.id),
+        source: String(entry.label || entry.id),
+      },
+      fieldSettings: {},
+    }));
+  if (!additions.length) return workspaceConfig;
+  return { ...workspaceConfig, dataModel: { ...dm, objects: [...objects, ...additions] } };
+}
+
+/**
  * Resolve a product probe's declared path templates against the run env.
  * `probe.pathEnv` maps `{placeholder}` names to concrete env-ref NAMES (e.g.
  * `{ accountId: "CLOUDFLARE_ACCOUNT_ID" }`); each placeholder substitutes the
@@ -2744,10 +2937,15 @@ export {
   WORKSPACE_COMMERCE_LANE,
   WORKSPACE_MESSAGING_LANE,
   WORKSPACE_STORAGE_LANE,
+  listCapabilitySurfaces,
+  listInstalledApiRequestVariants,
   listInstalledCommerceProducts,
   listInstalledMessagingProducts,
+  listInstalledNodeSurfaces,
   listInstalledStorageProducts,
+  listInstalledWidgetSurfaces,
   resolveProbePaths,
+  withDeclaredSourceObjects,
   VERCEL_API_BASE_URL,
   VERCEL_AUTH_REF,
   VERCEL_DEPLOYMENTS_INTEGRATION_ID,

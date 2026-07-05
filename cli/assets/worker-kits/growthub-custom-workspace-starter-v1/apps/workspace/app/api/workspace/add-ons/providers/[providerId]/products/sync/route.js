@@ -10,6 +10,7 @@ import {
   makeDiscoveredMarketplaceProduct,
   resolveProbePaths,
   resolveProviderAccountAuth,
+  withDeclaredSourceObjects,
   withDiscoveredMarketplaceProductRegistry,
   withMarketplaceProductRegistry,
 } from "@/lib/workspace-add-ons";
@@ -523,13 +524,16 @@ async function POST(request, context) {
   }
 
   const currentConfig = await readWorkspaceConfig();
-  const nextConfig = withMarketplaceProductRegistry(currentConfig, {
+  let nextConfig = withMarketplaceProductRegistry(currentConfig, {
     providerId: provider.providerId,
     productId: product.productId,
     region,
     plan,
     syncResult,
   });
+  // Declared source objects (surfaces.sourceObjects) seed on install —
+  // add-if-absent, rows empty until the first governed refresh.
+  nextConfig = withDeclaredSourceObjects(nextConfig, product);
   const persisted = await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
   const { receipt } = await appendOutcomeReceipt({
     kind: "workspace-add-on-sync",

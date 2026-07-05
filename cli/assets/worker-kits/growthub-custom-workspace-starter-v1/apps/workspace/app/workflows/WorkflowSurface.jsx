@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { WorkspaceRail } from "../workspace-rail.jsx";
 import { findSandboxRowByWorkflowRef } from "@/lib/nav-workflows";
-import { findInstalledWorkspaceAddOns } from "@/lib/workspace-add-ons";
+import { listInstalledApiRequestVariants, listInstalledNodeSurfaces } from "@/lib/workspace-add-ons";
 import {
   addCanonicalNodeToGraph,
   buildBlankOrchestrationGraphShell,
@@ -503,41 +503,15 @@ const WORKFLOW_ACTION_GROUPS = [
   },
 ];
 
-// First-party capability nodes — one palette entry per installed + verified
-// marketplace product that ships an executing canvas node. The section is
-// DERIVED from governed rows (no setup pushed back to the user): install the
-// product in the marketplace and its node appears; nothing to configure by
-// hand. Icons are the product's own marketplace badge, not a generic glyph.
-const CAPABILITY_NODE_ACTIONS = [
-  {
-    integrationId: "stripe-payments",
-    action: {
-      id: "stripe-commerce",
-      label: "Stripe",
-      type: "stripe-commerce",
-      iconSrc: "/integrations/stripe/payments.png",
-      destructive: false,
-    },
-  },
-  {
-    integrationId: "resend-email",
-    action: {
-      id: "resend-email",
-      label: "Resend Email",
-      type: "resend-email",
-      iconSrc: "/integrations/resend/email.png",
-      destructive: false,
-    },
-  },
-];
-
+// First-party capability nodes — DERIVED from the manifest layer
+// (product `surfaces.node` declarations in workspace-add-ons.js) crossed
+// with installed + verified governed rows. Install the product in the
+// marketplace and its node appears with the product badge; no hardcoded
+// palette entries, nothing pushed back to the user.
 function installedCapabilityGroup(workspaceConfig) {
   if (!workspaceConfig) return null;
-  const installed = new Set(findInstalledWorkspaceAddOns(workspaceConfig).map((row) => String(row.integrationId || "").trim()));
-  const items = CAPABILITY_NODE_ACTIONS
-    .filter((entry) => installed.has(entry.integrationId))
-    .map((entry) => entry.action);
-  return items.length ? { label: "Installed capabilities", items } : null;
+  const items = listInstalledNodeSurfaces(workspaceConfig);
+  return items.length ? { label: items[0].group || "Installed capabilities", items } : null;
 }
 
 function getWorkspaceObjectOptions(workspaceConfig) {
@@ -560,6 +534,21 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
     index += 1;
   }
   const isData = action.type === "data-action";
+  if (action.type === "api-registry-call" && action.registryId) {
+    // Long-tail variant: a canonical API Request node bound to the selected
+    // governed row — endpoint/method/auth all resolve from the row at run
+    // time; the node stores only the registry binding.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "API request via governed row",
+      config: {
+        registryId: String(action.registryId),
+        integrationId: String(action.registryId),
+      }
+    };
+  }
   if (action.type === "supabase-data") {
     // Subtitle stays empty so the canvas derives it from operation/table config.
     return {
@@ -673,8 +662,15 @@ function graphHasNodes(graph) {
   return Array.isArray(graph?.nodes) && graph.nodes.length > 0;
 }
 
-function WorkflowAddStepPanel({ target, onSelect, capabilityGroup }) {
+function WorkflowAddStepPanel({ target, onSelect, capabilityGroup, workspaceConfig }) {
+  const [variantQuery, setVariantQuery] = useState("");
   const groups = capabilityGroup ? [...WORKFLOW_ACTION_GROUPS, capabilityGroup] : WORKFLOW_ACTION_GROUPS;
+  // Long-tail: every installed + verified registry row without a bespoke
+  // node becomes a canonical API Request variant — bounded list + search,
+  // deterministic at 1K+ discovered products.
+  const apiVariants = workspaceConfig
+    ? listInstalledApiRequestVariants(workspaceConfig, { query: variantQuery, limit: 8 })
+    : { total: 0, variants: [] };
   return (
     <div className="dm-workflow-add-panel">
       <div className="dm-workflow-add-panel__context">
@@ -699,6 +695,41 @@ function WorkflowAddStepPanel({ target, onSelect, capabilityGroup }) {
           })}
         </div>
       ))}
+      {apiVariants.total > 0 && (
+        <div className="dm-workflow-action-group">
+          <span className="dm-workflow-action-group__label">Installed integrations</span>
+          {apiVariants.total > 8 || variantQuery ? (
+            <input
+              className="dm-workflow-variant-search"
+              value={variantQuery}
+              placeholder={`Search ${apiVariants.total} installed integrations`}
+              onChange={(event) => setVariantQuery(event.target.value)}
+            />
+          ) : null}
+          {apiVariants.variants.map((variant) => (
+            <button
+              key={variant.integrationId}
+              type="button"
+              className="dm-workflow-action-option"
+              onClick={() => onSelect({
+                id: `api-variant-${variant.integrationId}`,
+                type: "api-registry-call",
+                label: variant.label,
+                registryId: variant.integrationId,
+              })}
+            >
+              {variant.iconSrc
+                ? <span aria-hidden="true"><img src={variant.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                : <span aria-hidden="true"><Globe2 size={16} /></span>}
+              <strong>{variant.label}</strong>
+              <small>API request via governed row</small>
+            </button>
+          ))}
+          {apiVariants.total > apiVariants.variants.length ? (
+            <small className="dm-workflow-action-group__hint">Showing {apiVariants.variants.length} of {apiVariants.total} — refine the search.</small>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -2216,6 +2247,7 @@ export default function WorkflowSurface() {
                     target={addTarget}
                     onSelect={insertActionNode}
                     capabilityGroup={installedCapabilityGroup(workspaceConfig)}
+                    workspaceConfig={workspaceConfig}
                   />
                 </div>
               )}

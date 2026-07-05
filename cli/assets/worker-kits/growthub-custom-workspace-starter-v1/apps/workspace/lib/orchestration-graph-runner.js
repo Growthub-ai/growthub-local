@@ -733,6 +733,19 @@ async function executeResendEmail(workspaceConfig, nodeConfig, inputPayload, tim
 }
 
 /**
+ * Curated capability-node executor registry — the ONLY place a bespoke node
+ * type binds to its server-side executor. Order = dispatch precedence after
+ * api-registry-call. Adding a Tier-1 node: one entry here + a manifest
+ * `surfaces.node` declaration in workspace-add-ons.js; the palette, canvas
+ * badge, and validator derive from those two places.
+ */
+const CAPABILITY_NODE_EXECUTORS = [
+  ["supabase-data", extractSupabaseDataNode, executeSupabaseData],
+  ["stripe-commerce", extractStripeCommerceNode, executeStripeCommerce],
+  ["resend-email", extractResendEmailNode, executeResendEmail],
+];
+
+/**
  * Run a growthub-native orchestration graph when present on the sandbox row.
  * Returns null when the row has no executable graph (caller falls back to adapter path).
  *
@@ -756,23 +769,25 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     });
   }
 
-  // The single executing HTTP stage: api-registry-call (generic registry row)
-  // or a marketplace capability node (supabase-data database operations,
-  // stripe-commerce read-only revenue lookups, resend-email governed sends).
-  // Precedence is strictly additive — api-registry-call, then supabase-data,
-  // then the newer capability nodes — so pre-existing graphs never change
-  // behavior.
+  // The single executing HTTP stage: api-registry-call (generic registry row
+  // — also the long-tail node-variant lane) or a curated capability node.
+  // Precedence is strictly additive — api-registry-call first, then the
+  // capability node types in their declared order — so pre-existing graphs
+  // never change behavior. Adding a bespoke node = one registry entry here
+  // + a manifest `surfaces.node` declaration; nothing else branches.
   const registryCallNode = extractApiRegistryCallNode(graph);
-  const supabaseDataNode = extractSupabaseDataNode(graph);
-  const stripeCommerceNode = extractStripeCommerceNode(graph);
-  const resendEmailNode = extractResendEmailNode(graph);
-  const apiNode = registryCallNode?.config
-    ? registryCallNode
-    : supabaseDataNode?.config
-      ? supabaseDataNode
-      : stripeCommerceNode?.config
-        ? stripeCommerceNode
-        : resendEmailNode;
+  let apiNode = registryCallNode?.config ? registryCallNode : null;
+  let runHttpStage = executeApiRegistryCall;
+  if (!apiNode) {
+    for (const [, extract, executor] of CAPABILITY_NODE_EXECUTORS) {
+      const candidate = extract(graph);
+      if (candidate?.config) {
+        apiNode = candidate;
+        runHttpStage = executor;
+        break;
+      }
+    }
+  }
   if (!apiNode?.config) {
     if ((Array.isArray(graph.nodes) ? graph.nodes : []).some((node) => node?.type === "ai-agent")) {
       return null;
@@ -783,17 +798,10 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
       durationMs: 0,
       stdout: "",
       stderr: "",
-      error: "orchestrationGraph is missing an api-registry-call, supabase-data, stripe-commerce, or resend-email node",
+      error: `orchestrationGraph is missing an executing node (api-registry-call or one of: ${CAPABILITY_NODE_EXECUTORS.map(([type]) => type).join(", ")})`,
       adapterMeta: { mode: "orchestration-graph", provider: graph.provider }
     };
   }
-  const runHttpStage = apiNode === supabaseDataNode
-    ? executeSupabaseData
-    : apiNode === stripeCommerceNode
-      ? executeStripeCommerce
-      : apiNode === resendEmailNode
-        ? executeResendEmail
-        : executeApiRegistryCall;
 
   const inputNode = extractInputNode(graph);
   const baseInputPayload = parseInputPayload(inputNode);

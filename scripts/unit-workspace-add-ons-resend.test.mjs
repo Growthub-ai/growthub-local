@@ -237,10 +237,11 @@ test("runner send discipline: required fields + server-side sender fallback", as
   assert.ok(runnerSource.includes('readEnvVar("RESEND_FROM_EMAIL")'), "sender falls back to the env ref server-side (no-code)");
   assert.ok(runnerSource.includes("recipientCount"), "adapterMeta carries counts, never message bodies");
   const surfaceSource = readFileSync(path.join(kitLib, "..", "app/workflows/WorkflowSurface.jsx"), "utf8");
-  assert.ok(surfaceSource.includes('iconSrc: "/integrations/resend/email.png"'), "palette entry uses the product badge as its icon");
+  assert.ok(surfaceSource.includes("listInstalledNodeSurfaces"), "palette entry derives from the manifest (badge included)");
   const canvasSource = readFileSync(path.join(kitLib, "..", "app/data-model/components/OrchestrationGraphCanvas.jsx"), "utf8");
-  assert.ok(canvasSource.includes('"resend-email": "/integrations/resend/email.png"'), "canvas chip renders the product badge");
-  assert.ok(canvasSource.includes('"stripe-commerce": "/integrations/stripe/payments.png"'), "canvas chip renders the product badge");
+  assert.ok(canvasSource.includes("listCapabilitySurfaces"), "canvas badges derive from the manifest layer");
+  assert.ok(canvasSource.includes("MANIFEST_NODE_SURFACES"), "no hardcoded per-provider badge literals in the canvas");
+  assert.ok(!canvasSource.includes('"resend-email": "/integrations'), "provider badge paths live only in the manifest");
 });
 
 // ---------------------------------------------------------------------------
@@ -283,7 +284,7 @@ test("resend sidecar ships the webhook-mirror test pane + Design/HTML editor", a
   assert.ok(panelSource.includes("lastTestDraftHash"), "stored Verified chip goes stale when send fields change");
   assert.ok(panelSource.includes("Node tested"), "chip copy says node proof, not publish proof");
   assert.ok(panelSource.includes("full draft test still gates publish"), "publish honesty stated in the pane");
-  assert.ok(panelSource.includes(">Design<") && /aria-selected=\{mode === "html"\}/.test(panelSource), "Design + HTML tab options");
+  assert.ok(panelSource.includes('["design", "Design"]') && panelSource.includes('["html", "HTML"]'), "Design + HTML tab options");
   assert.ok(panelSource.includes("contentEditable"), "design surface is a rich-text editor");
   assert.ok(panelSource.includes('type === "resend-email" && ('), "test tab routes to the resend pane by node type");
 });

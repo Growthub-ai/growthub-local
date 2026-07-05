@@ -30,6 +30,10 @@ const addOns = await import(pathToFileURL(path.join(kitLib, "workspace-add-ons.j
 const { executeStripeCommerce, executeResendEmail } = runner;
 const {
   getMarketplaceProvider,
+  listCapabilitySurfaces,
+  listInstalledApiRequestVariants,
+  listInstalledNodeSurfaces,
+  listInstalledWidgetSurfaces,
   makeDiscoveredMarketplaceProduct,
   withDiscoveredMarketplaceProductRegistry,
   withMarketplaceProductRegistry,
@@ -187,6 +191,64 @@ test("resend-email runtime: provider failure surfaces honestly with redaction in
   assert.equal(result.ok, false);
   assert.equal(result.httpStatus, 422);
   assert.ok(!JSON.stringify(result).includes(RESEND_SECRET));
+});
+
+// ---------------------------------------------------------------------------
+// Manifest layer: surfaces declared once, derived everywhere
+// ---------------------------------------------------------------------------
+
+test("manifest: node surfaces derive from product definitions and governed rows", () => {
+  const declared = listCapabilitySurfaces();
+  const byIntegration = Object.fromEntries(declared.map((entry) => [entry.integrationId, entry]));
+  assert.ok(byIntegration["stripe-payments"]?.surfaces.node.type === "stripe-commerce", "stripe declares its node surface");
+  assert.ok(byIntegration["resend-email"]?.surfaces.node.type === "resend-email", "resend declares its node surface");
+  assert.equal(byIntegration["resend-email"].surfaces.testDoor, "/api/workspace/add-ons/resend/messaging", "test door declared, not hardcoded in the pane contractless");
+  assert.ok(declared.every((entry) => entry.surfaces.publishProofPolicy === "draft-test" || !entry.surfaces.publishProofPolicy), "publish proof policy stays the draft-test contract");
+
+  // Palette derivation: nothing installed → no entries; installed → entry with badge.
+  assert.deepEqual(listInstalledNodeSurfaces({ dataModel: { objects: [] } }), []);
+  const config = verifiedConfig("stripe", "stripe-payments");
+  const surfacesInstalled = listInstalledNodeSurfaces(config);
+  assert.equal(surfacesInstalled.length, 1);
+  assert.equal(surfacesInstalled[0].type, "stripe-commerce");
+  assert.ok(surfacesInstalled[0].iconSrc.includes("stripe"), "palette entry carries the product badge");
+});
+
+test("manifest: widget surfaces gate on installed rows (stripe commerce)", () => {
+  assert.deepEqual(listInstalledWidgetSurfaces({ dataModel: { objects: [] } }), []);
+  const config = verifiedConfig("stripe", "stripe-payments");
+  const widgets = listInstalledWidgetSurfaces(config);
+  assert.ok(widgets.length >= 5, "stripe declares the commerce widget set");
+  assert.ok(widgets.every((widget) => widget.integrationId === "stripe-payments"), "widgets bind to the governed row");
+  const operations = new Set(widgets.map((widget) => widget.operation));
+  for (const operation of operations) {
+    assert.ok(["list-payment-intents", "retrieve-balance", "list-customers", "list-products"].includes(operation), `widget operation ${operation} stays inside the read-only allowlist`);
+  }
+});
+
+test("long-tail variants: installed rows become bounded, searchable api-registry-call presets", () => {
+  let config = verifiedConfig("stripe", "stripe-payments");
+  config = withMarketplaceProductRegistry(config, {
+    providerId: "resend",
+    productId: "resend-email",
+    syncResult: { ok: true, testedAt: "2026-07-05T00:00:00.000Z", proof: "probe ok", summary: "verified" },
+  });
+  const provider = getMarketplaceProvider("nango");
+  for (let index = 0; index < 40; index += 1) {
+    const product = makeDiscoveredMarketplaceProduct(provider, { unique_key: `svc-${index}`, provider: `svc-${index}`, display_name: `Service ${String(index).padStart(2, "0")}` });
+    config = withDiscoveredMarketplaceProductRegistry(config, {
+      providerId: "nango",
+      product,
+      syncResult: { ok: true, testedAt: "2026-07-05T00:00:00.000Z", proof: "probe ok", summary: "verified" },
+    });
+  }
+  const page = listInstalledApiRequestVariants(config, { limit: 8 });
+  assert.equal(page.total, 40, "bespoke-node products are EXCLUDED from the long-tail variants");
+  assert.equal(page.variants.length, 8, "render list is bounded");
+  assert.deepEqual(page.variants.map((v) => v.label), [...page.variants.map((v) => v.label)].sort(), "deterministic label order");
+  const searched = listInstalledApiRequestVariants(config, { query: "Service 07", limit: 8 });
+  assert.equal(searched.total, 1, "search narrows deterministically");
+  assert.equal(searched.variants[0].integrationId, "nango-svc-7");
 });
 
 // ---------------------------------------------------------------------------

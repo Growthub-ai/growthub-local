@@ -17,13 +17,21 @@ import {
   ZoomOut
 } from "lucide-react";
 import { orderedGraphNodes, parseOrchestrationGraph } from "@/lib/orchestration-graph";
+import { listCapabilitySurfaces } from "@/lib/workspace-add-ons";
+
+// Manifest-declared node surfaces (workspace-add-ons `surfaces.node`) —
+// labels and badge images for capability nodes derive from the ONE provider
+// definition instead of hardcoded literals here.
+const MANIFEST_NODE_SURFACES = listCapabilitySurfaces().filter((entry) => entry.surfaces?.node);
+const MANIFEST_NODE_LABELS = Object.fromEntries(
+  MANIFEST_NODE_SURFACES.map((entry) => [entry.surfaces.node.type, entry.surfaces.node.label]),
+);
 
 const NODE_TYPE_LABELS = {
   input: "Input",
   "api-registry-call": "API Registry",
   "supabase-data": "Supabase",
-  "stripe-commerce": "Stripe",
-  "resend-email": "Resend",
+  ...MANIFEST_NODE_LABELS,
   "transform-filter": "Transform",
   "normalize-output": "Transform",
   "tool-result": "Result",
@@ -40,8 +48,7 @@ const NODE_ICONS = {
   input: SlidersHorizontal,
   "api-registry-call": Globe,
   "supabase-data": Database,
-  "stripe-commerce": Globe,
-  "resend-email": Globe,
+  ...Object.fromEntries(MANIFEST_NODE_SURFACES.map((entry) => [entry.surfaces.node.type, Globe])),
   "transform-filter": Filter,
   "normalize-output": Filter,
   "tool-result": Target,
@@ -55,11 +62,13 @@ const NODE_ICONS = {
 };
 
 // First-party capability nodes render the product's own marketplace badge in
-// place of the generic glyph (brand logo = the node's identity on canvas).
-const NODE_ICON_IMAGES = {
-  "stripe-commerce": "/integrations/stripe/payments.png",
-  "resend-email": "/integrations/resend/email.png",
-};
+// place of the generic glyph (brand logo = the node's identity on canvas) —
+// derived from the manifest, never hardcoded per provider.
+const NODE_ICON_IMAGES = Object.fromEntries(
+  MANIFEST_NODE_SURFACES
+    .filter((entry) => entry.surfaces.node.iconSrc || entry.iconSrc)
+    .map((entry) => [entry.surfaces.node.type, entry.surfaces.node.iconSrc || entry.iconSrc]),
+);
 
 const CONNECTOR_OPTIONS = [
   { id: "filter", label: "Add filter" },

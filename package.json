@@ -19,6 +19,7 @@
     "test:add-ons-neon": "node --test ./scripts/unit-workspace-add-ons-neon.test.mjs",
     "test:add-ons-cloudflare": "node --test ./scripts/unit-workspace-add-ons-cloudflare.test.mjs",
     "test:capability-nodes": "node --test ./scripts/unit-marketplace-capability-nodes.test.mjs",
+    "test:capability-surfaces": "node --test ./scripts/unit-marketplace-capability-surfaces.test.mjs",
     "test:scheduler-orchestration": "node --test ./scripts/unit-scheduler-orchestration.test.mjs",
     "test:serverless-readiness": "node --test ./scripts/unit-serverless-readiness.test.mjs",
     "test:schedule-cockpit": "node --test ./scripts/unit-schedule-cockpit.test.mjs",

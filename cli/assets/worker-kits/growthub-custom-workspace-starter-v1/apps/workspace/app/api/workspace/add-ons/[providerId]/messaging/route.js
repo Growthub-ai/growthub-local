@@ -21,12 +21,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
 import {
   getMarketplaceProvider,
   findMarketplaceProviderRow,
   findRegistryRowByIntegrationId,
 } from "@/lib/workspace-add-ons";
+import { listEmailTemplates, validateEmailTemplate, withEmailTemplateUpsert } from "@/lib/workspace-email-templates";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
@@ -150,6 +151,8 @@ async function GET(request, context) {
     senderReady: Boolean(resolution.fromEnv),
     syncProof: clean(productRow?.syncProof || ""),
     syncCheckedAt: clean(productRow?.syncCheckedAt || ""),
+    // Saved templates (governed rows — user content, never secrets).
+    templates: listEmailTemplates(workspaceConfig),
   });
 }
 
@@ -167,12 +170,48 @@ async function POST(request, context) {
     return jsonError("invalid json body", 400);
   }
   const action = clean(body.action);
-  if (action !== "send-test") {
-    return jsonError("action must be send-test", 400);
+  if (!["send-test", "save-template"].includes(action)) {
+    return jsonError("action must be send-test | save-template", 400);
   }
 
   const workspaceConfig = await readWorkspaceConfig();
   const providerRow = findMarketplaceProviderRow(workspaceConfig, resolution.provider.providerId);
+
+  // ---- save-template: one governed template upsert per call, receipted ----
+  if (action === "save-template") {
+    const validation = validateEmailTemplate(body);
+    if (!validation.ok) {
+      await appendMessagingReceipt({
+        outcomeStatus: "blocked",
+        summary: `${resolution.product.label} save-template blocked: ${validation.error}.`,
+        product: resolution.product,
+        violationCodes: ["invalid_template_request"],
+      });
+      return jsonError(validation.error, 400);
+    }
+    const nowIso = new Date().toISOString();
+    const { config, row } = withEmailTemplateUpsert(workspaceConfig, {
+      ...validation.template,
+      html: sanitizeEmailHtml(validation.template.html),
+      integrationId: resolution.product.integrationId,
+      nowIso,
+    });
+    const persisted = await writeWorkspaceConfig({ dataModel: config.dataModel });
+    const { receipt } = await appendMessagingReceipt({
+      outcomeStatus: "published",
+      summary: `${resolution.product.label} template "${row.Name}" saved to the governed email-templates object.`,
+      product: resolution.product,
+      nextActions: ["Load the template from the resend-email node sidecar to reuse it."],
+    });
+    return NextResponse.json({
+      ok: true,
+      action,
+      template: { name: row.Name, updatedAt: row.updatedAt },
+      templates: listEmailTemplates(config),
+      workspaceConfig: persisted,
+      receiptId: receipt.receiptId,
+    });
+  }
 
   // Hard gate 1: provider must be connected for any messaging action.
   if (!providerRow?.isConnectedProvider) {
@@ -207,8 +246,8 @@ async function POST(request, context) {
   const from = clean(body.from) || resolution.fromEnv;
   // Node-proof correlation key (workflow row + node id + draft hash) — the
   // sidecar sends it so the receipt can anchor a future publish contract.
-  const context = body.context && typeof body.context === "object" && !Array.isArray(body.context) ? body.context : {};
-  const proofKey = [clean(context.workflowRef), clean(context.nodeId), clean(context.draftHash)].filter(Boolean).join(" · ");
+  const proofContext = body.context && typeof body.context === "object" && !Array.isArray(body.context) ? body.context : {};
+  const proofKey = [clean(proofContext.workflowRef), clean(proofContext.nodeId), clean(proofContext.draftHash)].filter(Boolean).join(" · ");
   if (!recipients.length || recipients.some((value) => !looksLikeEmail(value)) || !subject || (!html && !text)) {
     await appendMessagingReceipt({
       outcomeStatus: "blocked",
