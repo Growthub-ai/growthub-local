@@ -1,8 +1,8 @@
-PASS  A1 pre-connect readiness readback: provider not connected — {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
-READBACK preconnect-door-get: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
+PASS  A1 pre-connect readiness readback: provider not connected — {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"trackingEnvRef":"RESEND_WEBHOOK_SECRET","trackingReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
+READBACK preconnect-door-get: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":false,"productVerified":false,"envReady":false,"missingEnv":["RESEND_API_KEY"],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"trackingEnvRef":"RESEND_WEBHOOK_SECRET","trackingReady":true,"syncProof":"","syncCheckedAt":"","templates":[]}
 PASS  A2 pre-connect send-test is refused (409, provider not connected) — status=409 body={"error":"Resend provider account is not connected"}
-PASS  A3 blocked outcome is receipted to workspace:agent-outcomes — aor_mr79k8nw_i5mk7s — Resend Email send-test blocked: Resend account not connected.
-READBACK preconnect-blocked-receipt: {"receiptId":"aor_mr79k8nw_i5mk7s","summary":"Resend Email send-test blocked: Resend account not connected.","nextActions":["Connect the Resend provider account in the marketplace, then retry."]}
+PASS  A3 blocked outcome is receipted to workspace:agent-outcomes — aor_mr7wzlny_xfg6hq — Resend Email send-test blocked: Resend account not connected.
+READBACK preconnect-blocked-receipt: {"receiptId":"aor_mr7wzlny_xfg6hq","summary":"Resend Email send-test blocked: Resend account not connected.","nextActions":["Connect the Resend provider account in the marketplace, then retry."]}
 SHOT 01-resend-preconnect.png
 PASS  B1 stripe connect (Verify and save account)
 PASS  B2 stripe install (stripe-payments)
@@ -23,7 +23,7 @@ PASS  C2a template APPLIES cleanly (gallery closes, no validator error)
 PASS  C2b applied dashboard shows the Stripe widgets honestly EMPTY (no mock records yet)
 SHOT 05-stripe-dashboard-empty.png
 PASS  C3 resolver refresh populates all four governed sources server-side — ["stripe-payments-feed:4","stripe-customers:3","stripe-products:2","stripe-balance:2"]
-READBACK refresh-sources: {"refreshed":[{"sourceId":"stripe-payments-feed","integrationId":"stripe-payments","recordCount":4,"fetchedAt":"2026-07-05T04:01:21.081Z","objectId":"stripe-payments-feed","objectSourceId":"stripe-payments-feed","bindingSourceId":"payment-intents"},{"sourceId":"stripe-customers","integrationId":"stripe-payments","recordCount":3,"fetchedAt":"2026-07-05T04:01:21.091Z","objectId":"stripe-customers","objectSourceId":"stripe-customers","bindingSourceId":"customers"},{"sourceId":"stripe-products","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T04:01:21.098Z","objectId":"stripe-products","objectSourceId":"stripe-products","bindingSourceId":"products"},{"sourceId":"stripe-balance","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T04:01:21.104Z","objectId":"stripe-balance","objectSourceId":"stripe-balance","bindingSourceId":"balance"}],"skipped":[],"skippedDetail":[]}
+READBACK refresh-sources: {"refreshed":[{"sourceId":"stripe-payments-feed","integrationId":"stripe-payments","recordCount":4,"fetchedAt":"2026-07-05T14:57:43.469Z","objectId":"stripe-payments-feed","objectSourceId":"stripe-payments-feed","bindingSourceId":"payment-intents"},{"sourceId":"stripe-customers","integrationId":"stripe-payments","recordCount":3,"fetchedAt":"2026-07-05T14:57:43.483Z","objectId":"stripe-customers","objectSourceId":"stripe-customers","bindingSourceId":"customers"},{"sourceId":"stripe-products","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T14:57:43.492Z","objectId":"stripe-products","objectSourceId":"stripe-products","bindingSourceId":"products"},{"sourceId":"stripe-balance","integrationId":"stripe-payments","recordCount":2,"fetchedAt":"2026-07-05T14:57:43.502Z","objectId":"stripe-balance","objectSourceId":"stripe-balance","bindingSourceId":"balance"}],"skipped":[],"skippedDetail":[]}
 PASS  C4 widgets hydrate from governed rows after refresh (mock-only records visible)
 PASS  C4b revenue chart recomputes values from bound rows at apply time — bars=4
 SHOT 06-stripe-dashboard-hydrated.png
@@ -57,51 +57,61 @@ SHOT 11-editor-text-mode.png
 PASS  D5 desktop preview renders the sanitized body
 SHOT 12-editor-preview-desktop.png
 SHOT 13-editor-preview-mobile.png
-PASS  D6 template save lands through the governed door with a receipt — receipt=aor_mr79l9vt_txf0gb
-READBACK template-save: {"status":200,"receiptId":"aor_mr79l9vt_txf0gb","template":"Launch Welcome"}
+PASS  D6 template save lands through the governed door with a receipt — receipt=aor_mr7x1e0o_kcuuyj
+READBACK template-save: {"status":200,"receiptId":"aor_mr7x1e0o_kcuuyj","template":"Launch Welcome"}
 PASS  D7 template persists as a governed email-templates row
 PASS  D7b image survives the template save (sanitized, not stripped)
 PASS  D7c UI selection marker never leaks into the governed template
 PASS  D7d saved template html keeps the inline sizing optimization
-PASS  D7e template row is ATOMIC (agent-teams grammar): id + status + version + zeroed performance counters — {"id":"email-template-launch-welcome","status":"ready","version":1,"sends":0}
+PASS  D7e template row is an ATOMIC blueprint (agent-teams grammar) with NO performance counters — {"id":"email-template-launch-welcome","status":"ready","version":1}
 PASS  D7f preview text (preheader) persists on the atomic row — Your governed workspace is ready
 PASS  D8 saved template is reloadable from the sidecar — Load template (1),Launch Welcome
 SHOT 14-templates-save-reload.png
 PASS  D9 AI helper entry point deep-links with a prefilled prompt — /data-model?helper=open&prompt=Draft%20a%20marketing%20email%20for%20the%20resend-email%20workflow%2
 READBACK ai-helper-href: /data-model?helper=open&prompt=Draft%20a%20marketing%20email%20for%20the%20resend-email%20workflow%20node%3A%20give%20me%20a%20subject%20line%2C%20preview%20text%2C%20and%20an%20HTML%20body%20with%20%7B%7Binput.*%7D%7D%20personalization%20tokens.%20Topic%3A%20
 PASS  D10 sender/domain readiness derives from the server door — {"envReady":true,"senderReady":true,"senderEnvRef":"RESEND_FROM_EMAIL","syncProof":"Resend Email probe /domains returned HTTP 200"}
-READBACK sender-readiness: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":true,"productVerified":true,"envReady":true,"missingEnv":[],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"syncProof":"Resend Email probe /domains returned HTTP 200","syncCheckedAt":"2026-07-05T04:01:10.586Z","templates":[{"id":"email-template-launch-welcome","name":"Launch Welcome","status":"ready","subject":"Welcome {{input.name}} — your workspace is live","previewText":"Your governed workspace is ready","html":"Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is already live.{{input.name}}<img src=\"/integrations/resend/email.png\" style=\"max-width: 100%; height: auto; display: block; width: 50%; margin: 0px auto;\">","text":"Hi {{input.name}} — plain text fallback for the welcome email.","version":1,"updatedAt":"2026-07-05T04:01:45.535Z"}]}
-PASS  D11 pane shows env-ref readiness (never a secret) — 1 · ConnectSending laneRESEND_API_KEY · Configured — RESEND_FROM_EMAIL · ResolvedProduct installed + verified — Resend Email probe /domains returned HTTP 200.2 
+PASS  D10b tracking readiness (RESEND_WEBHOOK_SECRET) reports live
+READBACK sender-readiness: {"ok":true,"providerId":"resend","productId":"resend-email","integrationId":"resend-email","providerConnected":true,"productVerified":true,"envReady":true,"missingEnv":[],"senderEnvRef":"RESEND_FROM_EMAIL","senderReady":true,"trackingEnvRef":"RESEND_WEBHOOK_SECRET","trackingReady":true,"syncProof":"Resend Email probe /domains returned HTTP 200","syncCheckedAt":"2026-07-05T14:57:27.145Z","templates":[{"id":"email-template-launch-welcome","name":"Launch Welcome","status":"ready","subject":"Welcome {{input.name}} — your workspace is live","previewText":"Your governed workspace is ready","html":"Hi there — welcome to the governed workspace. Your Stripe commerce dashboard is already live.{{input.name}}<img src=\"/integrations/resend/email.png\" style=\"max-width: 100%; height: auto; display: block; width: 50%; margin: 0px auto;\">","text":"Hi {{input.name}} — plain text fallback for the welcome email.","version":1,"updatedAt":"2026-07-05T14:58:08.560Z"}]}
+PASS  D11 pane shows env-ref readiness (never a secret) — 1 · ConnectSending laneRESEND_API_KEY · Configured — RESEND_FROM_EMAIL · Resolved — RESEND_WEBHOOK_SECRET · Tracking liveProduct installed + verified — Resend E
 SHOT 15-sender-readiness.png
-PASS  D12 governed test send succeeds with provider message id + receipt id — receipt=aor_mr79lb8a_p64doy messageId=email_mock_1
-READBACK send-success: {"ok":true,"action":"send-test","httpStatus":200,"providerMessageId":"email_mock_1","recipientCount":1,"testedAt":"2026-07-05T04:01:47.290Z","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-workflow · resend-email · 6c21b096","receiptId":"aor_mr79lb8a_p64doy"}
+PASS  D12 governed test send succeeds with provider message id + receipt id — receipt=aor_mr7x1fq0_8t4e37 messageId=email_mock_1
+READBACK send-success: {"ok":true,"action":"send-test","httpStatus":200,"providerMessageId":"email_mock_1","activityRowId":"email_mock_1","recipientCount":1,"testedAt":"2026-07-05T14:58:10.761Z","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-workflow · resend-email · 6c21b096","receiptId":"aor_mr7x1fq0_8t4e37"}
+PASS  D12b real send lands ONE atomic email-activity row keyed by the provider message id — {"activityRowId":"email_mock_1","status":"sent"}
+PASS  D12c the send row carries the template linkage (per-template performance = aggregation over sends) — email-template-launch-welcome
+PASS  D12d template blueprint got a lastUsedAt stamp (reuse signal, not counters) — 2026-07-05T14:58:10.761Z
+PASS  D12e Svix-signed Resend events are accepted and receipted — {"ok":true,"applied":true,"created":false,"type":"email.delivered","activity":{"id":"email_mock_1","status":"delivered","opens":0,"clicks":0
+READBACK webhook-delivered: {"ok":true,"applied":true,"created":false,"type":"email.delivered","activity":{"id":"email_mock_1","status":"delivered","opens":0,"clicks":0,"lastEventType":"email.delivered","lastEventAt":"2026-07-05T14:58:10.855Z"},"receiptId":"aor_mr7x1gah_jw3cee"}
+PASS  D12f lifecycle lands on the exact send row: delivered + opens 2 + clicks 1 — {"status":"delivered","opens":2,"clicks":1}
+PASS  D12g forged signatures are refused 401 and receipted blocked — no row is touched — status=401 {"error":"invalid signature","reason":"signature-mismatch"}
+PASS  D12h forged event changed nothing
+PASS  D12i signed events outside the email surface are honestly skipped (202) — {"ok":true,"skipped":true,"reason":"event type contact.created is outside the email tracking surface"}
 PASS  D13 Verified chip appears ONLY as node-level proof — Node tested · Verified 200
 PASS  D14 publish-honesty copy: node proof does not gate publish
 SHOT 16-send-success-receipt.png
-PASS  D15 provider mock actually received the email (protocol-shaped) — [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T04:01:47.288Z"}]
-READBACK mock-sent-emails: [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T04:01:47.288Z"}]
+PASS  D15 provider mock actually received the email (protocol-shaped) — [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T14:58:10.759Z"}]
+READBACK mock-sent-emails: [{"from":"workflows@growthub.example","to":["qa@growthub.example"],"subject":"Welcome  — your workspace is live","at":"2026-07-05T14:58:10.759Z"}]
 PASS  D16 editing send-shaping fields revokes the stored Verified chip (draft-hash honesty) — chips=0
 SHOT 17-stale-proof-revoked.png
 PASS  D17 bad recipient keeps Send disabled (obvious blocked state)
 SHOT 18-blocked-bad-recipient.png
 PASS  D18 server door independently refuses missing recipient (400, receipted) — status=400 {"error":"send-test requires valid To address(es), Subject, and an HTML or text body"}
 READBACK blocked-bad-recipient: {"status":400,"body":{"error":"send-test requires valid To address(es), Subject, and an HTML or text body"}}
-PASS  D19 provider failure surfaces as an honest blocked outcome (no fake success) — status=502 {"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T04:01:50.728Z"}
-READBACK blocked-provider-failure: {"status":502,"body":{"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T04:01:50.728Z"}}
+PASS  D19 provider failure surfaces as an honest blocked outcome (no fake success) — status=502 {"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T14:58:15.412Z"}
+READBACK blocked-provider-failure: {"status":502,"body":{"error":"send-test failed (HTTP 422)","httpStatus":422,"testedAt":"2026-07-05T14:58:15.412Z"}}
 PASS  D20 failed send does NOT mint a Verified chip
 SHOT 19-blocked-provider-failure.png
-PASS  D21 provider-failure blocked outcome is receipted — aor_mr79ldvt_aeko0q — Resend Email send-test blocked: provider returned HTTP 422.
-READBACK provider-failure-receipt: {"receiptId":"aor_mr79ldvt_aeko0q","summary":"Resend Email send-test blocked: provider returned HTTP 422."}
+PASS  D21 provider-failure blocked outcome is receipted — aor_mr7x1jas_m7v6sj — Resend Email send-test blocked: provider returned HTTP 422.
+READBACK provider-failure-receipt: {"receiptId":"aor_mr7x1jas_m7v6sj","summary":"Resend Email send-test blocked: provider returned HTTP 422."}
 PASS  E1 missing-env send-test refused 422 naming the env ref — status=422 {"error":"messaging runtime env is not resolved","missingEnv":["RESEND_API_KEY"]}
 READBACK blocked-missing-env: {"status":422,"body":{"error":"messaging runtime env is not resolved","missingEnv":["RESEND_API_KEY"]}}
 SHOT 20-blocked-missing-env.png
 PASS  E2 missing-sender send-test refused 422 naming RESEND_FROM_EMAIL — status=422 {"error":"sender is not resolved — set RESEND_FROM_EMAIL in the runtime or pass a From value","missingEnv":["RESEND_FROM_EMAIL"]}
 READBACK blocked-missing-sender: {"status":422,"body":{"error":"sender is not resolved — set RESEND_FROM_EMAIL in the runtime or pass a From value","missingEnv":["RESEND_FROM_EMAIL"]}}
 SHOT 21-blocked-missing-sender.png
-PASS  E3 missing-sender blocked outcome is receipted — aor_mr79lfv9_29kq4r
-READBACK missing-sender-receipt: {"receiptId":"aor_mr79lfv9_29kq4r","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."}
+PASS  E3 missing-sender blocked outcome is receipted — aor_mr7x1nyh_p8qpl4
+READBACK missing-sender-receipt: {"receiptId":"aor_mr7x1nyh_p8qpl4","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."}
 PASS  E4 runtime env restored (readiness green again) — {"envReady":true,"senderReady":true}
-PASS  F1 deterministic install: re-sync of svc-500 creates ZERO duplicate rows — rows before=1006 after=1006 (50ms for 1001 installs)
+PASS  F1 deterministic install: re-sync of svc-500 creates ZERO duplicate rows — rows before=1006 after=1006 (67ms for 1001 installs)
 PASS  F2 all registry integrationIds stay unique at scale — rows=1006
 READBACK scale-registry-rows: {"totalRegistryRows":1006,"discovered":1000}
 PASS  F3 long-tail group renders BOUNDED at 1,000 installed products — Showing 8 of 1000 — refine the search.
@@ -115,6 +125,6 @@ PASS  F7 curated bespoke node surfaces stay a declared Tier-1 set — ["resend-e
 PASS  G1 browser made ZERO requests to the provider host (server-only lane)
 PASS  G2 governed config still holds no provider secrets after full journey
 PASS  G3 receipt stream holds no provider secrets — receipts scanned=50
-READBACK receipt-ids-cited: [{"receiptId":"aor_mr79lfv9_29kq4r","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."},{"receiptId":"aor_mr79lekf_l3ne2o","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: runtime env not resolved."},{"receiptId":"aor_mr79ldvt_aeko0q","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: provider returned HTTP 422."},{"receiptId":"aor_mr79ldth_id0v0k","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: To, Subject, and an HTML or text body are required."},{"receiptId":"aor_mr79lb8a_p64doy","kind":"workspace-add-on-messaging","status":"published","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-wo"},{"receiptId":"aor_mr79l9vt_txf0gb","kind":"workspace-add-on-messaging","status":"published","summary":"Resend Email template \"Launch Welcome\" saved to the governed email-templates object."},{"receiptId":"aor_mr79kix1_v8pvyl","kind":"workspace-add-on-sync","status":"published","summary":"Resend Email installed after provider sync probe."},{"receiptId":"aor_mr79kgsi_as6i4x","kind":"workspace-add-on-provider-credentials","status":"published","summary":"Resend provider account verified and stored as local runtime env refs."},{"receiptId":"aor_mr79kfgk_ty0oys","kind":"workspace-add-on-sync","status":"published","summary":"Stripe Payments installed after provider sync probe."},{"receiptId":"aor_mr79kcnw_sqnh7p","kind":"workspace-add-on-provider-credentials","status":"published","summary":"Stripe provider account verified and stored as local runtime env refs."}]
+READBACK receipt-ids-cited: [{"receiptId":"aor_mr7x1nyh_p8qpl4","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: sender is not resolved (RESEND_FROM_EMAIL)."},{"receiptId":"aor_mr7x1khx_8ocv20","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: runtime env not resolved."},{"receiptId":"aor_mr7x1jas_m7v6sj","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: provider returned HTTP 422."},{"receiptId":"aor_mr7x1j6m_t503wf","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend Email send-test blocked: To, Subject, and an HTML or text body are required."},{"receiptId":"aor_mr7x1gex_c35zzf","kind":"workspace-add-on-messaging","status":"blocked","summary":"Resend event rejected: signature verification failed (signature-mismatch)."},{"receiptId":"aor_mr7x1gcw_6eoz50","kind":"workspace-add-on-messaging","status":"published","summary":"Resend email.clicked applied to email-activity email_mock_1 · status delivered · opens 2 ·"},{"receiptId":"aor_mr7x1gc6_1bx08r","kind":"workspace-add-on-messaging","status":"published","summary":"Resend email.opened applied to email-activity email_mock_1 · status delivered · opens 2 · "},{"receiptId":"aor_mr7x1gbb_ivieks","kind":"workspace-add-on-messaging","status":"published","summary":"Resend email.opened applied to email-activity email_mock_1 · status delivered · opens 1 · "},{"receiptId":"aor_mr7x1gah_jw3cee","kind":"workspace-add-on-messaging","status":"published","summary":"Resend email.delivered applied to email-activity email_mock_1 · status delivered · opens 0"},{"receiptId":"aor_mr7x1fq0_8t4e37","kind":"workspace-add-on-messaging","status":"published","summary":"Resend Email test email sent · HTTP 200 · 1 recipient · id email_mock_1 · node registry-wo"}]
 
-=== QA3 GREEN: 74/74 ===
+=== QA3 GREEN: 83/83 ===

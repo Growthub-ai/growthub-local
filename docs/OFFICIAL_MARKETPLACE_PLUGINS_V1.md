@@ -505,8 +505,32 @@ Validated V1 capability:
   webhook trigger's test-event pattern (Connect -> Test event -> Result with
   a Verified chip on live HTTP success), and the Body field is a Design
   (rich text) / HTML tabbed editor over one stored template.
-- Deferred (ledger): per-send outbound ledger surfaces (aggregated send
-  history view) and broadcast/audience products.
+- Email tracking loop (the SENT EMAIL is the unit of intelligence): every
+  real send lands one atomic row on the governed `email-activity` object,
+  keyed by the provider message id Resend returns from `POST /emails`.
+  Resend's REAL webhook surface updates that exact row across its lifecycle:
+  `email.sent` / `email.delivered` / `email.delivery_delayed` /
+  `email.bounced` / `email.complained` / `email.failed` / `email.opened` /
+  `email.clicked` (open/click tracking must be enabled on the sending domain
+  in Resend). There is NO reply event in Resend's surface, so the grammar
+  carries no replies column — no invented metrics. Events arrive at the
+  webhook door (`/api/workspace/add-ons/resend/events`), Svix-verified over
+  the raw bytes with `RESEND_WEBHOOK_SECRET` (runtime env only; missing
+  secret → 422 receipted, forged signature → 401 receipted, out-of-surface
+  types → honest 202 skip). Events for unknown message ids CREATE the
+  activity row from event data, so runtime-node sends close the loop through
+  the same key. Templates stay reusable blueprints: a send row carries
+  `templateId`, per-template performance is an aggregation over send rows,
+  and the blueprint only receives a `lastUsedAt` stamp.
+- Runner security invariant: capability executors (`stripe-commerce`,
+  `resend-email`) resolve their credentialed base URL from GOVERNED material
+  only (runtime env / server-written registry row) — browser-editable canvas
+  config can never redirect a bearer-carrying call. (The pre-existing
+  `api-registry-call` / `supabase-data` executors still honor
+  `nodeConfig.baseUrl` precedence; aligning them is a flagged follow-up with
+  its own migration diff, since live workflows may rely on it.)
+- Deferred (ledger): aggregated per-template/per-campaign analytics views
+  over `email-activity`, and broadcast/audience products.
 
 ## V1 Provider: Neon
 

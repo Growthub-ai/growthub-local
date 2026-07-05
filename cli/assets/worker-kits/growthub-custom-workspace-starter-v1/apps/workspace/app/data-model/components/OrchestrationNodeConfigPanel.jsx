@@ -676,6 +676,10 @@ function ResendTemplateControls({ config, disabled, patchConfig }) {
       previewTextTemplate: template.previewText || "",
       htmlTemplate: template.html,
       textTemplate: template.text,
+      // Linkage for the tracking loop: sends made from this draft carry the
+      // template id onto their email-activity rows.
+      templateRef: template.id || "",
+      templateName: template.name || "",
     });
     setMessage(`Loaded "${template.name}"`);
   }
@@ -785,6 +789,9 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected,
           html: substituteVariables(String(config.htmlTemplate || config.html || ""), inputPayload),
           text: substituteVariables(String(config.textTemplate || config.text || ""), inputPayload),
           from: substituteVariables(String(config.fromTemplate || config.from || ""), inputPayload),
+          // Template linkage for the per-send activity row (tracking loop).
+          templateId: String(config.templateRef || ""),
+          templateName: String(config.templateName || ""),
           // Receipt correlation key: workflow row + node id + draft hash —
           // the server stamps these into the send receipt so a future
           // publish contract can verify node proof against exact draft bytes.
@@ -832,6 +839,8 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected,
           RESEND_API_KEY {doorState?.envReady ? "· Configured" : doorState ? "· Missing" : "· Checking…"}
           {" — "}
           {doorState?.senderEnvRef || "RESEND_FROM_EMAIL"} {doorState?.senderReady ? "· Resolved" : "· set in runtime or From field"}
+          {" — "}
+          {doorState?.trackingEnvRef || "RESEND_WEBHOOK_SECRET"} {doorState?.trackingReady ? "· Tracking live" : "· set to track delivery/opens/clicks"}
         </code>
       </div>
       {registryConnected || doorState?.productVerified ? (

@@ -1,6 +1,6 @@
 # PR #270 Production Proof Pack — Marketplace Provider Capability Stack
 
-One continuous browser journey (74/74 checks GREEN, `qa3-run.log` is the
+One continuous browser journey (83/83 checks GREEN, `qa3-run.log` is the
 unedited run log) performed as a real user on a real boot of the exported
 `growthub-custom-workspace-starter-v1` kit, from a fully reset workspace
 (no providers connected, no products installed, no source objects, no
@@ -46,15 +46,15 @@ Visible surface: Workflow canvas → Resend Email node → Configuration/Test ta
 Live action layer: page.click / page.fill / page.keyboard.type.
 Readback layer: page.request GET/POST /api/workspace/add-ons/resend/messaging + DOM snapshots.
 Screenshots: 01, 03, 08–21.
-Result: send receipt aor_mr79lb8a_p64doy · provider message id email_mock_1 ·
-        blocked receipts aor_mr79k8nw_i5mk7s (not connected), aor_mr79ldvt_aeko0q
-        (provider failure), aor_mr79lfv9_29kq4r (missing sender).
+Result: send receipt aor_mr7x1fq0_8t4e37 · provider message id email_mock_1 ·
+        blocked receipts aor_mr7wzlny_xfg6hq (not connected), aor_mr7x1jas_m7v6sj
+        (provider failure), aor_mr7x1nyh_p8qpl4 (missing sender).
 ```
 
 - **Pre-connect blocked state** (`01`): the messaging door reports
   `providerConnected:false`, `missingEnv:["RESEND_API_KEY"]`; `send-test` is
   refused HTTP 409 and the refusal is receipted
-  (`aor_mr79k8nw_i5mk7s — "Resend Email send-test blocked: Resend account not
+  (`aor_mr7wzlny_xfg6hq — "Resend Email send-test blocked: Resend account not
   connected."`) with a repair `nextActions`.
 - **Connect + install** (`03`): credentials verified server-side against the
   provider API (`Resend Email probe /domains returned HTTP 200` stored as
@@ -67,7 +67,7 @@ Result: send receipt aor_mr79lb8a_p64doy · provider message id email_mock_1 ·
   into the active surface; free-form token insert supported.
 - **Templates** (`14`): "Save as template" posts the governed door's
   `save-template` action → sanitized server-side → upserted as a governed
-  `email-templates` row → receipt `aor_mr79l9vt_txf0gb` → immediately
+  `email-templates` row → receipt `aor_mr7x1e0o_kcuuyj` → immediately
   reloadable from the sidecar select.
 - **AI entry point**: "Draft with AI helper" deep-links
   `/data-model?helper=open&prompt=…` with a prefilled email-drafting prompt.
@@ -76,7 +76,7 @@ Result: send receipt aor_mr79lb8a_p64doy · provider message id email_mock_1 ·
   RESEND_FROM_EMAIL · Resolved`), never values.
 - **Verified send** (`16`): real POST through the governed door → provider
   `POST /emails` → HTTP 200, message id `email_mock_1`, receipt
-  `aor_mr79lb8a_p64doy`; the mock's outbox readback confirms the email
+  `aor_mr7x1fq0_8t4e37`; the mock's outbox readback confirms the email
   actually arrived at the provider side. The receipt summary carries the
   node-proof key `workflowRef · nodeId · draftHash`.
 - **Publish honesty** (`16`): chip says **"Node tested · Verified 200"** and
@@ -90,13 +90,13 @@ Result: send receipt aor_mr79lb8a_p64doy · provider message id email_mock_1 ·
   (receipted).
 - **Blocked: provider failure** (`19`): with the mock forced to return 422
   "domain is not verified", the door surfaces HTTP 502, no Verified chip is
-  minted, and the blocked outcome is receipted (`aor_mr79ldvt_aeko0q`).
+  minted, and the blocked outcome is receipted (`aor_mr7x1jas_m7v6sj`).
 - **Blocked: missing env** (`20`): with `RESEND_API_KEY` stripped from the
   runtime, `send-test` → HTTP 422 `missingEnv:["RESEND_API_KEY"]` (receipted),
   and the pane shows `RESEND_API_KEY · Missing`.
 - **Blocked: missing sender** (`21`): with `RESEND_FROM_EMAIL` stripped,
   `send-test` → HTTP 422 naming `RESEND_FROM_EMAIL`, receipt
-  `aor_mr79lfv9_29kq4r`; pane shows "set in runtime or From field".
+  `aor_mr7x1nyh_p8qpl4`; pane shows "set in runtime or From field".
 
 ## Journey 2 — Stripe Commerce Dashboard (seeded empty → resolver → widgets)
 
@@ -243,6 +243,52 @@ defects. All fixed, unit-guarded, and re-proven in the same 65/65 run:
    (`min-width: 0` + scrollable frame) — no horizontal page scroll (verified
    by scrollWidth readback).
 
+## Email tracking loop — real Resend events, per-send intelligence
+
+```text
+Using playwright-core Chromium via qa3-run.mjs.
+Backend: local export boot at 127.0.0.1:3777 (mock provider at 127.0.0.1:4970).
+Current URL: /api/workspace/add-ons/resend/events (external webhook door).
+Live action layer: Svix-signed POSTs (HMAC-SHA256 over raw bytes, real header grammar).
+Readback layer: page.request GET /api/workspace + door responses.
+Result: send email_mock_1 → activity row created (status sent, template linked,
+        blueprint lastUsedAt stamped) → signed delivered/opened×2/clicked events
+        → row reads delivered · opens 2 · clicks 1 (webhook receipt
+        aor_mr7x1gah_jw3cee) → forged signature 401 + receipted, row untouched →
+        signed contact.* event honestly skipped 202.
+```
+
+The SENT EMAIL is the unit of performance intelligence — templates carry no
+counters:
+
+- Every real send lands ONE atomic row on the governed `email-activity`
+  object, keyed by the provider message id Resend returns from
+  `POST /emails` (D12b). The row carries `templateId`/`templateName`,
+  workflow/node refs, and the full lifecycle grammar.
+- The event map is EXACTLY Resend's documented webhook surface —
+  `email.sent` / `delivered` / `delivery_delayed` / `bounced` / `complained`
+  / `failed` / `opened` / `clicked`. Resend has **no reply event**, so the
+  grammar carries no replies column: nothing invented (unit-enforced).
+- The webhook door verifies real Svix signatures (HMAC-SHA256 over the raw
+  body, `v1,<base64>` candidates, constant-time compare, 5-minute replay
+  bound) with `RESEND_WEBHOOK_SECRET` from runtime env only. Missing secret
+  → 422 receipted; forged signature → 401 receipted with rows untouched
+  (D12g/D12h); signed events outside the email surface → honest 202 skip
+  (D12i).
+- Events for unknown message ids CREATE the activity row from event data —
+  runtime-node sends close the same loop through the same key (unit-proven).
+- Templates stay blueprints: the counters were REMOVED from template rows;
+  a send stamps only `lastUsedAt` on the blueprint (D12d). Per-template
+  performance is an aggregation over send rows.
+- Terminal lifecycle honesty: bounced/complained/failed never regress to
+  delivered (unit-proven).
+- Runner security invariant (adversarial pass): the `resend-email` and
+  `stripe-commerce` executors now resolve their credentialed base URL from
+  GOVERNED material only (runtime env / server-written registry row) —
+  browser-editable canvas config can never redirect a bearer-carrying call.
+  The pre-existing `api-registry-call`/`supabase-data` precedence is flagged
+  in the docs as its own follow-up migration.
+
 ## Email product surface — 2026 pass (operator-directed, re-proven)
 
 A third operator pass raised the product bar on the email surface itself.
@@ -264,12 +310,10 @@ All shipped and browser-proven in the same 74/74 run:
    proven in D3h) across Design/HTML/Text modes.
 4. **Atomic template rows (agent-teams grammar)** (D7e): every saved template
    is an atomic governed row — slug `id`, capital-N identity, `status`,
-   `version` (increments on content edits), `createdAt`/`updatedAt` — with
-   built-in performance-tracking columns (`sends`, `delivered`, `opens`,
-   `clicks`, `replies`, `bounces`, `lastUsedAt`) initialized at honest zeros.
-   Engagement history SURVIVES content edits (unit-proven), so deliverability
-   and engagement land on the row the moment a tracking lane writes them —
-   reusability and performance tracking are structural, not bolted on.
+   `version` (increments on content edits), `createdAt`/`updatedAt`,
+   `lastUsedAt`. (A later operator pass moved performance tracking OFF the
+   blueprint and onto per-send `email-activity` rows backed by real Resend
+   webhook events — see "Email tracking loop" above.)
 
 ## Reviewer acceptance checklist mapping
 

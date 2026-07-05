@@ -27,7 +27,8 @@ import {
   findMarketplaceProviderRow,
   findRegistryRowByIntegrationId,
 } from "@/lib/workspace-add-ons";
-import { listEmailTemplates, validateEmailTemplate, withEmailTemplateUpsert } from "@/lib/workspace-email-templates";
+import { listEmailTemplates, validateEmailTemplate, withEmailTemplateUpsert, withTemplateUsageStamp } from "@/lib/workspace-email-templates";
+import { recordEmailSend } from "@/lib/workspace-email-sends";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readEnvVar } from "@/lib/server-secrets";
 import { requireWorkspaceOperator } from "@/lib/workspace-operator-auth";
@@ -149,6 +150,8 @@ async function GET(request, context) {
     // when the env ref already resolves.
     senderEnvRef: "RESEND_FROM_EMAIL",
     senderReady: Boolean(resolution.fromEnv),
+    trackingEnvRef: "RESEND_WEBHOOK_SECRET",
+    trackingReady: Boolean(envValue("RESEND_WEBHOOK_SECRET")),
     syncProof: clean(productRow?.syncProof || ""),
     syncCheckedAt: clean(productRow?.syncCheckedAt || ""),
     // Saved templates (governed rows — user content, never secrets).
@@ -314,6 +317,36 @@ async function POST(request, context) {
   }
 
   const summary = `${resolution.product.label} test email sent · HTTP ${response.status} · ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}${providerMessageId ? ` · id ${providerMessageId}` : ""}${proofKey ? ` · node ${proofKey}` : ""}`;
+
+  // The SENT EMAIL is the unit of performance intelligence: land one atomic
+  // email-activity row keyed by the provider message id. Resend webhook
+  // events (the /events door) update this exact row across its lifecycle.
+  // Template linkage travels on the row; the template blueprint only gets a
+  // lastUsedAt stamp — its "performance" is an aggregation over send rows.
+  let activityRowId = "";
+  if (providerMessageId) {
+    const templateId = clean(body.templateId);
+    let nextConfig = workspaceConfig;
+    const recorded = recordEmailSend(nextConfig, {
+      providerMessageId,
+      to: recipients,
+      from,
+      subject,
+      templateId,
+      templateName: clean(body.templateName),
+      workflowRef: clean(proofContext.workflowRef),
+      nodeId: clean(proofContext.nodeId),
+      registryId: resolution.product.integrationId,
+      nowIso: testedAt,
+    });
+    nextConfig = recorded.config;
+    activityRowId = recorded.row?.id || "";
+    if (templateId) {
+      nextConfig = withTemplateUsageStamp(nextConfig, { templateId, nowIso: testedAt }).config;
+    }
+    await writeWorkspaceConfig({ dataModel: nextConfig.dataModel });
+  }
+
   const { receipt } = await appendMessagingReceipt({
     outcomeStatus: "published",
     summary,
@@ -328,6 +361,7 @@ async function POST(request, context) {
     action,
     httpStatus: response.status,
     providerMessageId,
+    activityRowId,
     recipientCount: recipients.length,
     testedAt,
     summary,

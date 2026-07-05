@@ -518,7 +518,10 @@ async function executeStripeCommerce(workspaceConfig, nodeConfig, inputPayload, 
     };
   }
 
-  const baseUrl = String(nodeConfig?.baseUrl || registryRecord.baseUrl || "").trim()
+  // SECURITY: the bearer secret only ever travels to bases from GOVERNED
+  // material — the server-written registry row or runtime env. Canvas node
+  // config is browser-editable and must never redirect credentialed calls.
+  const baseUrl = String(registryRecord.baseUrl || "").trim()
     || String(readEnvVar("STRIPE_API_URL")?.value || "").trim()
     || "https://api.stripe.com";
   const authRef = String(nodeConfig?.authRef || registryRecord.authRef || "STRIPE").trim();
@@ -668,8 +671,10 @@ async function executeResendEmail(workspaceConfig, nodeConfig, inputPayload, tim
     };
   }
 
-  const baseUrl = String(nodeConfig?.baseUrl || "").trim()
-    || String(readEnvVar("RESEND_API_URL")?.value || "").trim()
+  // SECURITY: the bearer secret only ever travels to bases from GOVERNED
+  // material — runtime env or the server-written registry row. Canvas node
+  // config is browser-editable and must never redirect credentialed calls.
+  const baseUrl = String(readEnvVar("RESEND_API_URL")?.value || "").trim()
     || String(registryRecord.baseUrl || "").trim()
     || "https://api.resend.com";
   const url = `${baseUrl.replace(/\/+$/, "")}/emails`;

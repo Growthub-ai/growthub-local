@@ -18,10 +18,12 @@ function clean(value) {
 
 // Atomic row grammar — mirrors the CEO Agent Teams pattern: explicit `id`
 // (slug of Name), capital-N identity column, `status`, versioned content
-// fields, and built-in performance-tracking counters (sends/delivered/opens/
-// clicks/replies/bounces) so deliverability + engagement land ON the
-// governed row the moment a tracking lane starts writing them. Counters are
-// initialized honestly at 0 and never invented.
+// fields, and `lastUsedAt` reuse stamp. Performance intelligence does NOT
+// live here: templates are reusable content blueprints; every real send
+// lands its own atomic row on the `email-activity` object (see
+// workspace-email-sends.js) carrying `templateId`, so per-template
+// performance is an aggregation over real sends — never invented counters
+// on the blueprint.
 const EMAIL_TEMPLATE_COLUMNS = [
   "id",
   "Name",
@@ -31,12 +33,6 @@ const EMAIL_TEMPLATE_COLUMNS = [
   "html",
   "text",
   "version",
-  "sends",
-  "delivered",
-  "opens",
-  "clicks",
-  "replies",
-  "bounces",
   "lastUsedAt",
   "createdAt",
   "updatedAt",
@@ -94,9 +90,9 @@ function validateEmailTemplate(input = {}) {
 }
 
 /** Upsert a template row by Name (pure, atomic). Returns { config, row, created }.
- * Create: id slug + status "ready" + version 1 + zeroed performance counters.
- * Update: identity, counters, and createdAt are PRESERVED; version increments —
- * a template is a stable atomic unit whose engagement history survives edits. */
+ * Create: id slug + status "ready" + version 1.
+ * Update: identity, lastUsedAt, and createdAt are PRESERVED; version
+ * increments — a template is a stable atomic unit across content edits. */
 function withEmailTemplateUpsert(workspaceConfig, { name, subject, previewText, html, text, integrationId = "resend-email", nowIso = "" } = {}) {
   const content = {
     Name: clean(name),
@@ -112,12 +108,6 @@ function withEmailTemplateUpsert(workspaceConfig, { name, subject, previewText, 
     id: `email-template-${slugify(content.Name) || "untitled"}`,
     status: "ready",
     version: 1,
-    sends: 0,
-    delivered: 0,
-    opens: 0,
-    clicks: 0,
-    replies: 0,
-    bounces: 0,
     lastUsedAt: "",
     createdAt: clean(nowIso),
     ...content,
@@ -173,6 +163,29 @@ function listEmailTemplates(workspaceConfig) {
     .filter((row) => row.name);
 }
 
+/** Stamp lastUsedAt on a template row when a REAL send references it (pure). */
+function withTemplateUsageStamp(workspaceConfig, { templateId, nowIso = "" } = {}) {
+  const target = clean(templateId);
+  if (!target) return { config: workspaceConfig, stamped: false };
+  const dm = workspaceConfig?.dataModel && typeof workspaceConfig.dataModel === "object" ? workspaceConfig.dataModel : {};
+  const objects = Array.isArray(dm.objects) ? dm.objects : [];
+  let stamped = false;
+  const nextObjects = objects.map((object) => {
+    if (clean(object?.id) !== EMAIL_TEMPLATES_OBJECT_ID) return object;
+    const rows = Array.isArray(object.rows) ? object.rows : [];
+    return {
+      ...object,
+      rows: rows.map((row) => {
+        if (clean(row?.id) !== target) return row;
+        stamped = true;
+        return { ...row, lastUsedAt: clean(nowIso) };
+      }),
+    };
+  });
+  if (!stamped) return { config: workspaceConfig, stamped: false };
+  return { config: { ...workspaceConfig, dataModel: { ...dm, objects: nextObjects } }, stamped: true };
+}
+
 export {
   EMAIL_TEMPLATES_OBJECT_ID,
   EMAIL_TEMPLATE_COLUMNS,
@@ -181,4 +194,5 @@ export {
   listEmailTemplates,
   validateEmailTemplate,
   withEmailTemplateUpsert,
+  withTemplateUsageStamp,
 };
