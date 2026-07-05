@@ -29,7 +29,7 @@ structure with the real driver named explicitly:
   `page.keyboard` — real UI interactions, no API shortcuts for user steps.
 - **Readback layer**: `page.request` JSON readbacks against the workspace
   routes plus DOM snapshots; all captured in `readbacks.json`.
-- **Screenshots**: 26 PNGs in this directory, numbered in journey order.
+- **Screenshots**: 28 PNGs in this directory, numbered in journey order.
 
 Every `check(...)` line below cites the run log. Receipt ids are real ids
 from `workspace:agent-outcomes` on this boot.
@@ -343,6 +343,38 @@ Result: 28 governed objects merged over the blank starter · dashboards
   BOTH the ops template and GTM OS merged configs identically (it validates
   PATCH bodies, not config files) — the acceptance proof is the real boot,
   which serves all 28 objects and both dashboards (screenshot 26).
+
+## Golden path skill + tooling — discover export demo e2e
+
+```text
+Using the committed dist CLI + playwright-core Chromium.
+Commands: kit download gtm-os --yes --out <tmp>  ·  scripts/workspace-template-smoke.mjs
+Screenshots: 27 (GTM control-plane dashboard, 7 widgets), 28 (data model grid).
+Result: exporter round-trip on the GTM runtime config reproduces the exact
+        seeded-row profile with zero secret findings · template smoke GREEN
+        12/12 for gtm-os (--boot: served objects 28/28, both dashboards,
+        registry hygiene) and 8/8 for project-management (regression) ·
+        discover kit-download export boots with ZERO page errors — Builder
+        home lists both dashboards, the control plane renders 7 widgets,
+        /data-model serves every object under its real label.
+```
+
+The conversion pathway is now an OFFICIAL skill + golden path so any future
+agent repeats it safely:
+
+- `docs/WORKSPACE_TEMPLATE_GOLDEN_PATH_V1.md` — the one mechanism, the full
+  sanitation contract, registration steps, and the honesty rules (incl. the
+  validateWorkspaceConfig PATCH-gate caveat learned on this run).
+- `.claude/skills/growthub-workspace-template-export/SKILL.md` — catalog
+  skill with selfEval criteria; registered in the skills README.
+- `scripts/export-workspace-seed-template.mjs` — generic, dependency-free
+  version of the validated private-repo exporter (schemas preserved,
+  PII/run rows stripped, definition-row allowlist, authRef env names only,
+  connectionIds emptied, evidence cleared, widget caches emptied,
+  provenance stamped, hard secret/PII verification gate).
+- `scripts/workspace-template-smoke.mjs` — real e2e smoke: CLI resolution →
+  kit inspect → starter init into a temp dir → merged-config readbacks →
+  optional boot + /api/workspace served readback. GREEN exit 0 is the bar.
 
 ## Reviewer acceptance checklist mapping
 
