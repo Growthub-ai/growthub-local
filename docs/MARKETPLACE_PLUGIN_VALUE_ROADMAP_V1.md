@@ -7,6 +7,13 @@ This is a value analysis, not a commitment ledger: every candidate below must
 still enter through the playbook (Phase 0 recon → grammar-only definition →
 governed rows → icons → tests → real-browser closed-loop proof).
 
+> **Status (0.14.15):** every Tier-1 candidate below (Stripe, Resend, Neon,
+> Cloudflare R2) has since SHIPPED through the playbook on this release —
+> see [`docs/OFFICIAL_MARKETPLACE_PLUGINS_V1.md`](./OFFICIAL_MARKETPLACE_PLUGINS_V1.md)
+> for the as-built contracts (lanes, nodes, dashboard template, email
+> tracking loop). The analysis below is preserved as written; where it
+> speculated, the shipped doc wins.
+
 All grammar facts cited here were read from
 `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-add-ons.js`
 and `lib/workspace-data-model.js` at `0.14.14`. If the source has moved on,
