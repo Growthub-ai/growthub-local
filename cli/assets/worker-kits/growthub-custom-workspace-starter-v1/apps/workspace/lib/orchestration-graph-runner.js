@@ -895,4 +895,4 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   };
 }
 
-export { executeSupabaseData, runOrchestrationGraphIfPresent };
+export { executeResendEmail, executeStripeCommerce, executeSupabaseData, runOrchestrationGraphIfPresent };

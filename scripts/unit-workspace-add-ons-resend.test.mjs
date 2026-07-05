@@ -261,6 +261,9 @@ test("messaging door: one receipted send-test per call, honest gates", async () 
   assert.ok(doorSource.includes('outcomeStatus: "blocked"'), "blocked outcomes are receipted too");
   assert.ok(doorSource.includes("RESEND_FROM_EMAIL"), "sender resolves from the env ref server-side");
   assert.ok(!doorSource.includes("RESEND_API_KEY ="), "no secret value assignment in the door");
+  assert.ok(doorSource.includes("sanitizeEmailHtml"), "door strips script/handler/javascript: HTML server-side");
+  assert.ok(doorSource.includes("draftHash"), "receipt carries the workflowRef/nodeId/draftHash correlation key");
+  assert.ok(doorSource.includes("sidecar proof does not gate publish"), "receipt copy states the publish honesty boundary");
 });
 
 test("resend sidecar ships the webhook-mirror test pane + Design/HTML editor", async () => {
@@ -275,6 +278,11 @@ test("resend sidecar ships the webhook-mirror test pane + Design/HTML editor", a
   assert.ok(panelSource.includes("Verified {result?.httpStatus || config.lastTestStatus}"), "Verified chip derives from the real HTTP outcome");
   assert.ok(panelSource.includes("lastTestStatus"), "proof stamps onto the draft node config");
   assert.ok(panelSource.includes("EmailBodyEditor"), "rich email body editor present");
+  assert.ok(panelSource.includes("sanitizeEmailHtml"), "innerHTML re-render passes through the sanitizer boundary");
+  assert.ok(panelSource.includes("emailDraftHash"), "sidecar proof is keyed by draft hash");
+  assert.ok(panelSource.includes("lastTestDraftHash"), "stored Verified chip goes stale when send fields change");
+  assert.ok(panelSource.includes("Node tested"), "chip copy says node proof, not publish proof");
+  assert.ok(panelSource.includes("full draft test still gates publish"), "publish honesty stated in the pane");
   assert.ok(panelSource.includes(">Design<") && /aria-selected=\{mode === "html"\}/.test(panelSource), "Design + HTML tab options");
   assert.ok(panelSource.includes("contentEditable"), "design surface is a rich-text editor");
   assert.ok(panelSource.includes('type === "resend-email" && ('), "test tab routes to the resend pane by node type");

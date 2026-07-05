@@ -105,6 +105,20 @@ function looksLikeEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(value));
 }
 
+/**
+ * "Email HTML only, never app-executed" — strip script blocks, inline event
+ * handlers, and javascript: URLs. Mirrors the sidecar editor's sanitizer so
+ * the boundary holds even for callers that bypass the UI.
+ */
+function sanitizeEmailHtml(html) {
+  return String(html || "")
+    .replace(/<script\b[\s\S]*?(?:<\/script>|$)/gi, "")
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
+    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'>\s]*\2/gi, "$1=$2#$2");
+}
+
 async function GET(request, context) {
   const auth = requireWorkspaceOperator(request);
   if (!auth.ok) return jsonError(auth.error, auth.status);
@@ -185,9 +199,16 @@ async function POST(request, context) {
 
   const recipients = clean(body.to).split(",").map((value) => value.trim()).filter(Boolean).slice(0, MAX_RECIPIENTS);
   const subject = clean(body.subject);
-  const html = String(body.html || "").slice(0, MAX_BODY_CHARS).trim();
+  // Same "email HTML only, never app-executed" boundary the sidecar editor
+  // enforces — script blocks, inline handlers, and javascript: URLs are
+  // stripped server-side before any send or persistence-adjacent use.
+  const html = sanitizeEmailHtml(String(body.html || "").slice(0, MAX_BODY_CHARS)).trim();
   const text = String(body.text || "").slice(0, MAX_BODY_CHARS).trim();
   const from = clean(body.from) || resolution.fromEnv;
+  // Node-proof correlation key (workflow row + node id + draft hash) — the
+  // sidecar sends it so the receipt can anchor a future publish contract.
+  const context = body.context && typeof body.context === "object" && !Array.isArray(body.context) ? body.context : {};
+  const proofKey = [clean(context.workflowRef), clean(context.nodeId), clean(context.draftHash)].filter(Boolean).join(" · ");
   if (!recipients.length || recipients.some((value) => !looksLikeEmail(value)) || !subject || (!html && !text)) {
     await appendMessagingReceipt({
       outcomeStatus: "blocked",
@@ -253,12 +274,14 @@ async function POST(request, context) {
     });
   }
 
-  const summary = `${resolution.product.label} test email sent · HTTP ${response.status} · ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}${providerMessageId ? ` · id ${providerMessageId}` : ""}`;
+  const summary = `${resolution.product.label} test email sent · HTTP ${response.status} · ${recipients.length} recipient${recipients.length === 1 ? "" : "s"}${providerMessageId ? ` · id ${providerMessageId}` : ""}${proofKey ? ` · node ${proofKey}` : ""}`;
   const { receipt } = await appendMessagingReceipt({
     outcomeStatus: "published",
     summary,
     product: resolution.product,
-    nextActions: ["The resend-email node is live-proven — publish gates can trust this configuration."],
+    // Node-level proof only — the workflow publish gate remains owned by the
+    // full draft test / serverless binding proof contract.
+    nextActions: ["Node send proven live. Run the workflow's full draft test to unlock publish — sidecar proof does not gate publish."],
   });
 
   return NextResponse.json({

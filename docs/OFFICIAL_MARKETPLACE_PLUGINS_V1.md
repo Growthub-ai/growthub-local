@@ -675,6 +675,37 @@ Current rules:
 - Future add-ons should declare their lane and dispatch to a lane-specific
   governed core instead of widening QStash-specific behavior.
 
+## Node-Surface Contract (scaling to 1K+ products)
+
+First-class canvas nodes are a CURATED Tier-1 surface, not the growth path.
+The two-tier contract:
+
+- **Bespoke nodes (curated)**: `supabase-data`, `stripe-commerce`,
+  `resend-email`. Each earns a node type, config-panel pane, runner executor,
+  and test suite because its lane semantics (governed data ops, read-only
+  revenue, receipted sends) cannot be expressed as a generic API request.
+  Adding one is a deliberate product decision, never a default.
+- **Row-driven products (the long tail)**: every other installed product —
+  including all live-discovered Nango integrations — executes through the
+  EXISTING `api-registry-call` node / resolver system driven by its governed
+  row (`connectorKind`, `resolverTemplateId`, `authRef`, `executionLane`).
+  Installing 1,000 discovered products adds ZERO node types
+  (regression-tested in `scripts/unit-marketplace-capability-nodes.test.mjs`).
+
+Reserved product-definition keys for a future declarative node surface
+(`nodeSurface`, `sidecarVariant`, `testDoor`, `publishProofPolicy`,
+`runtimeAdapter`) must be introduced as declared contract keys interpreted by
+the generic surfaces — the same extension class as `probe.pathEnv` /
+`aliasEnv` — never as per-product forks.
+
+Node-level test proof (e.g. the resend-email sidecar send) is NODE proof:
+receipts carry a `workflowRef · nodeId · draftHash` correlation key, the
+sidecar chip reads "Node tested", and a stored chip goes stale the moment the
+send-shaping fields change (draft-hash match). The workflow PUBLISH gate
+remains exclusively owned by the full draft test / serverless binding proof
+contract; wiring node receipts into that gate is a deferred, explicit
+follow-up — never an implied one.
+
 ## Governance Rules
 
 Marketplace plugins must obey the workspace mutation boundary:

@@ -70,6 +70,7 @@ jobs:
           npm run test:add-ons-resend
           npm run test:add-ons-neon
           npm run test:add-ons-cloudflare
+          npm run test:capability-nodes
 
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs

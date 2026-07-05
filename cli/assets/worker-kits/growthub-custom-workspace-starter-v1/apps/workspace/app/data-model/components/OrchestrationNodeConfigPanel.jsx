@@ -142,6 +142,24 @@ function getSelectedObject(workspaceObjects, objectId) {
 }
 
 /**
+ * Security boundary for stored email HTML — the invariant is "email HTML
+ * only, never app-executed": the design surface re-renders stored markup via
+ * innerHTML, so every assignment passes through this sanitizer (script
+ * blocks, inline event handlers, and javascript: URLs are stripped). The raw
+ * template the user typed lives untouched in the HTML tab's textarea and in
+ * config.htmlTemplate; the governed messaging door applies the same strip
+ * server-side before any send.
+ */
+function sanitizeEmailHtml(html) {
+  return String(html || "")
+    .replace(/<script\b[\s\S]*?(?:<\/script>|$)/gi, "")
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
+    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'>\s]*\2/gi, "$1=$2#$2");
+}
+
+/**
  * Email body editor for the resend-email node — Design (rich text) and HTML
  * tabs over ONE stored value (config.htmlTemplate). Design edits a
  * contentEditable surface with a compact formatting toolbar; HTML edits the
@@ -155,8 +173,10 @@ function EmailBodyEditor({ value, disabled, onChange }) {
   // differs — otherwise every keystroke would reset the caret.
   useEffect(() => {
     if (mode !== "design" || !editorRef.current) return;
-    if (editorRef.current.innerHTML !== String(value || "")) {
-      editorRef.current.innerHTML = String(value || "");
+    // innerHTML re-render is the app-execution boundary — always sanitized.
+    const safe = sanitizeEmailHtml(value);
+    if (editorRef.current.innerHTML !== safe) {
+      editorRef.current.innerHTML = safe;
     }
   }, [mode, value]);
   function exec(command, argument = null) {
@@ -232,14 +252,36 @@ function EmailBodyEditor({ value, disabled, onChange }) {
   );
 }
 
+// Stable short hash of the node's send-shaping fields — the receipt key that
+// lets a future publish contract correlate a sidecar send proof to the exact
+// draft bytes it tested (workflow row + node id + this hash).
+function emailDraftHash(config) {
+  const material = JSON.stringify({
+    to: String(config?.toTemplate || config?.to || ""),
+    subject: String(config?.subjectTemplate || config?.subject || ""),
+    html: String(config?.htmlTemplate || config?.html || ""),
+    text: String(config?.textTemplate || config?.text || ""),
+    from: String(config?.fromTemplate || config?.from || ""),
+  });
+  let hash = 5381;
+  for (let i = 0; i < material.length; i += 1) {
+    hash = ((hash << 5) + hash + material.charCodeAt(i)) >>> 0; // djb2
+  }
+  return hash.toString(16);
+}
+
 /**
  * Test pane for the resend-email node — the node-sidecar mirror of the
  * webhook trigger's test-event modal: derive a JSON test event, run the REAL
  * governed send through the messaging door, and show a Verified chip only on
- * a live HTTP success. Proof is stamped onto the node config (lastTest*) so
- * the draft carries honest lineage — never optimistic text.
+ * a live HTTP success. Proof is stamped onto the node config (lastTest*) and
+ * receipted server-side keyed by workflow row + node id + draft hash.
+ *
+ * HONESTY BOUNDARY: this is NODE-LEVEL proof — the workflow publish gate is
+ * still owned by the full draft test / serverless binding proof contract.
+ * The pane says so explicitly instead of implying publish is unlocked.
  */
-function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected }) {
+function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected, nodeId = "", workflowRef = "" }) {
   const [doorState, setDoorState] = useState(null);
   const [testInput, setTestInput] = useState('{\n  "email": "customer@example.com"\n}');
   const [sendTo, setSendTo] = useState("");
@@ -276,6 +318,10 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected 
           html: substituteVariables(String(config.htmlTemplate || config.html || ""), inputPayload),
           text: substituteVariables(String(config.textTemplate || config.text || ""), inputPayload),
           from: substituteVariables(String(config.fromTemplate || config.from || ""), inputPayload),
+          // Receipt correlation key: workflow row + node id + draft hash —
+          // the server stamps these into the send receipt so a future
+          // publish contract can verify node proof against exact draft bytes.
+          context: { workflowRef, nodeId, draftHash: emailDraftHash(config) },
         }),
       });
       const body = await response.json().catch(() => ({}));
@@ -294,6 +340,8 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected 
         lastTestStatus: String(outcome.httpStatus),
         lastTestAt: outcome.testedAt,
         lastTestSummary: outcome.summary,
+        lastTestDraftHash: emailDraftHash(config),
+        lastTestReceiptId: outcome.receiptId || "",
         sampleResponse: JSON.stringify({ ok: outcome.ok, httpStatus: outcome.httpStatus, id: outcome.providerMessageId }, null, 2),
       });
     } catch (error) {
@@ -302,10 +350,14 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected 
       setSending(false);
     }
   }
-  const verified = Boolean(result?.ok) || (!result && String(config.lastTestStatus || "").startsWith("2"));
+  // Stale-proof honesty: a stored Verified chip only survives while the
+  // send-shaping fields still match the hash that earned it.
+  const storedProofFresh = String(config.lastTestStatus || "").startsWith("2")
+    && String(config.lastTestDraftHash || "") === emailDraftHash(config);
+  const verified = Boolean(result?.ok) || (!result && storedProofFresh);
   return (
     <div className="dm-orchestration-config__pane">
-      {verified ? <span className="dm-orchestration-config__badge is-connected">Verified {result?.httpStatus || config.lastTestStatus}</span> : null}
+      {verified ? <span className="dm-orchestration-config__badge is-connected">Node tested · Verified {result?.httpStatus || config.lastTestStatus}</span> : null}
       <p className="dm-orchestration-config__meta">1 · Connect</p>
       <div className="dm-orchestration-config__field">
         <span>Sending lane</span>
@@ -334,7 +386,7 @@ function ResendEmailTestPane({ config, disabled, patchConfig, registryConnected 
         {sending ? "Sending…" : "Send test email"}
       </button>
       <p className="dm-orchestration-config__hint">
-        Sends the REAL email through the governed messaging door with this node&apos;s subject and body ({"{{input.key}}"} bound from the test input). Every outcome is receipted.
+        Sends the REAL email through the governed messaging door with this node&apos;s subject and body ({"{{input.key}}"} bound from the test input). Every outcome is receipted. This proves the NODE — the workflow&apos;s full draft test still gates publish.
       </p>
       {result || config.lastTestAt ? (
         <>
@@ -1749,6 +1801,8 @@ export function OrchestrationNodeConfigPanel({
           disabled={disabled}
           patchConfig={patchConfig}
           registryConnected={registryConnected}
+          nodeId={String(node?.id || "")}
+          workflowRef={String(sandboxRow?.Name || "")}
         />
       )}
 
