@@ -4997,11 +4997,22 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     });
   }, [activeDashboardId, dashboardDraftMode]);
 
+  // Template widgets ship with `values: []`; charts only ever read
+  // `config.values`, so recompute any data-model-bound chart against the
+  // tables available right now. Honest both ways: rows already hydrated →
+  // chart lands live; nothing refreshed yet → chart stays empty.
+  const recomputeTemplateWidgets = useCallback((widgets) => (widgets || []).map((widget) => {
+    if (widget?.kind !== "chart" || !widget.config?.binding?.objectId) return widget;
+    const { config: recomputed } = recomputeChartConfig(widget.config || {}, dataModelTables);
+    return { ...widget, config: recomputed };
+  }), [dataModelTables]);
+
   const applyTemplateToCurrentTab = useCallback((templateId) => {
     if (!dashboardDraftMode) return;
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
     const clonedTab = cloneTemplateToTab(template, { tabName: template.name, idFactory: generateId });
+    clonedTab.widgets = recomputeTemplateWidgets(clonedTab.widgets);
     setConfig((prev) => {
       const prevTabs = getTabs(prev.canvas);
       const prevActiveId = getActiveTabId(prev.canvas);
@@ -5030,12 +5041,13 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     setConfigMessage(`Applied ${template.name} to current tab`);
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
-  }, [activeDashboardId, dashboardDraftMode]);
+  }, [activeDashboardId, dashboardDraftMode, recomputeTemplateWidgets]);
 
   const cloneTemplateAsDashboard = useCallback((templateId) => {
     const template = DASHBOARD_TEMPLATES.find((item) => item.id === templateId);
     if (!template) return;
     const cloned = cloneTemplateToDashboard(template, { idFactory: generateId });
+    cloned.tab.widgets = recomputeTemplateWidgets(cloned.tab.widgets);
     setConfig((prev) => {
       const synced = syncActiveDashboard(prev, activeDashboardId);
       const dashboard = {
@@ -5056,7 +5068,7 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
     setConfigMessage(`Cloned ${template.name} as dashboard`);
     setTemplateGalleryOpen(false);
     setPreviewTemplateId(null);
-  }, [activeDashboardId]);
+  }, [activeDashboardId, recomputeTemplateWidgets]);
 
   const exportConfig = useCallback(() => {
     const syncedConfig = syncActiveDashboard(config, activeDashboardId);

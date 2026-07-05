@@ -3352,8 +3352,9 @@ export default function DataModelShell() {
     const helperParam = searchParams?.get("helper");
     const threadParam = searchParams?.get("thread");
     const resolverForParam = searchParams?.get("resolverFor");
+    const promptParam = searchParams?.get("prompt");
     if (!helperParam && !threadParam && !resolverForParam) return;
-    const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}`;
+    const routeKey = `${helperParam || ""}:${threadParam || ""}:${resolverForParam || ""}:${promptParam || ""}`;
     if (routeKey === consumedHelperRouteRef.current) return;
     consumedHelperRouteRef.current = routeKey;
     if (threadParam) {
@@ -3371,12 +3372,17 @@ export default function DataModelShell() {
       return;
     } else if (helperParam === "open") {
       setHelperInitialThread(null);
+      // Generic prompt prefill (?helper=open&prompt=…) — the AI-native entry
+      // affordance every surface can deep-link (e.g. the resend-email node's
+      // "Draft with AI helper"). The prompt only prefills; the user sends it.
+      if (promptParam) setHelperInitialPrompt(String(promptParam).slice(0, 2000));
       setHelperOpen(true);
     }
     const next = new URLSearchParams(searchParams.toString());
     next.delete("helper");
     next.delete("thread");
     next.delete("resolverFor");
+    next.delete("prompt");
     const query = next.toString();
     router.replace(query ? `/data-model?${query}` : "/data-model", { scroll: false });
   }, [workspaceConfig, searchParams, router]);

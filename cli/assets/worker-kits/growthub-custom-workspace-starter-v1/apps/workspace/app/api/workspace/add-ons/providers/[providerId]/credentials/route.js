@@ -69,9 +69,17 @@ function compactAccountOptions(payload, source, fallbackEmail) {
         ? payload.accounts
         : Array.isArray(payload?.data)
           ? payload.data
-          : payload?.user && typeof payload.user === "object"
-            ? [payload.user]
-            : [];
+          // Cloudflare-class v4 envelopes wrap the listing in `result`
+          // (array of accounts, or a single token/account object).
+          : Array.isArray(payload?.result)
+            ? payload.result
+            : Array.isArray(payload?.projects)
+              ? payload.projects
+              : payload?.result && typeof payload.result === "object"
+                ? [payload.result]
+                : payload?.user && typeof payload.user === "object"
+                  ? [payload.user]
+                  : [];
   const options = rawItems
     .map((item, index) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) return null;

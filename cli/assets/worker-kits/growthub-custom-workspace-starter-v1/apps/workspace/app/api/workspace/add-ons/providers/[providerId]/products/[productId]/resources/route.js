@@ -3,6 +3,7 @@ import {
   getMarketplaceProvider,
   getMarketplaceProduct,
   providerAccountAuthMode,
+  resolveProbePaths,
   resolveProviderAccountAuth,
 } from "@/lib/workspace-add-ons";
 import { readEnvVar } from "@/lib/server-secrets";
@@ -150,9 +151,25 @@ async function GET(request, context) {
   const discoveryBaseUrl = (provider.accountProbe?.baseUrlEnv
     ? clean(readEnvVar(provider.accountProbe.baseUrlEnv, process.env)?.value || "")
     : "") || provider.baseUrl;
+  // Declared path-template contract (pathEnv): `{placeholder}` segments
+  // resolve from named env refs server-side — account-scoped listings
+  // (Cloudflare R2) fail honestly on a missing ref instead of fetching a
+  // literal `{placeholder}` URL.
+  const discoveryPaths = resolveProbePaths(
+    { paths: resourcePaths(product), pathEnv: product.resourceDiscovery?.pathEnv || product.probe?.pathEnv },
+    process.env,
+  );
+  if (!discoveryPaths.ok) {
+    return jsonError(`${provider.label} resource discovery path refs are not resolved`, 422, {
+      providerId,
+      productId,
+      missingEnv: discoveryPaths.missingEnv,
+      resources: [],
+    });
+  }
   const resources = [];
   const failures = [];
-  for (const path of resourcePaths(product)) {
+  for (const path of discoveryPaths.paths) {
     try {
       const url = safeUrl(discoveryBaseUrl, path);
       const response = await fetchWithTimeout(teamQuery ? `${url}${url.includes("?") ? "&" : "?"}${teamQuery}` : url, {

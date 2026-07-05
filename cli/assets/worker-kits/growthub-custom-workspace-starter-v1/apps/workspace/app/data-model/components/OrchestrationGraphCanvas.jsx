@@ -17,11 +17,21 @@ import {
   ZoomOut
 } from "lucide-react";
 import { orderedGraphNodes, parseOrchestrationGraph } from "@/lib/orchestration-graph";
+import { listCapabilitySurfaces } from "@/lib/workspace-add-ons";
+
+// Manifest-declared node surfaces (workspace-add-ons `surfaces.node`) —
+// labels and badge images for capability nodes derive from the ONE provider
+// definition instead of hardcoded literals here.
+const MANIFEST_NODE_SURFACES = listCapabilitySurfaces().filter((entry) => entry.surfaces?.node);
+const MANIFEST_NODE_LABELS = Object.fromEntries(
+  MANIFEST_NODE_SURFACES.map((entry) => [entry.surfaces.node.type, entry.surfaces.node.label]),
+);
 
 const NODE_TYPE_LABELS = {
   input: "Input",
   "api-registry-call": "API Registry",
   "supabase-data": "Supabase",
+  ...MANIFEST_NODE_LABELS,
   "transform-filter": "Transform",
   "normalize-output": "Transform",
   "tool-result": "Result",
@@ -38,6 +48,7 @@ const NODE_ICONS = {
   input: SlidersHorizontal,
   "api-registry-call": Globe,
   "supabase-data": Database,
+  ...Object.fromEntries(MANIFEST_NODE_SURFACES.map((entry) => [entry.surfaces.node.type, Globe])),
   "transform-filter": Filter,
   "normalize-output": Filter,
   "tool-result": Target,
@@ -49,6 +60,15 @@ const NODE_ICONS = {
   "core-action": Globe,
   "human-input": SlidersHorizontal
 };
+
+// First-party capability nodes render the product's own marketplace badge in
+// place of the generic glyph (brand logo = the node's identity on canvas) —
+// derived from the manifest, never hardcoded per provider.
+const NODE_ICON_IMAGES = Object.fromEntries(
+  MANIFEST_NODE_SURFACES
+    .filter((entry) => entry.surfaces.node.iconSrc || entry.iconSrc)
+    .map((entry) => [entry.surfaces.node.type, entry.surfaces.node.iconSrc || entry.iconSrc]),
+);
 
 const CONNECTOR_OPTIONS = [
   { id: "filter", label: "Add filter" },
@@ -79,6 +99,14 @@ function nodeSubtitle(node) {
     const target = String((operation === "rpc" ? config.rpcFunction : config.table) || "").trim();
     return target ? `${operation} · ${target}` : operation;
   }
+  if (node?.type === "stripe-commerce") {
+    const operation = String(config.operation || "list-payment-intents").trim().toLowerCase();
+    return `${operation.replace(/-/g, " ")} · read-only`;
+  }
+  if (node?.type === "resend-email") {
+    const to = String(config.toTemplate || config.to || "").trim();
+    return to ? `send · ${to}` : "send email";
+  }
   if (node?.type === "transform-filter" || node?.type === "normalize-output") {
     return "Map fields and filter rows";
   }
@@ -93,6 +121,8 @@ function hoverHint(node) {
   if (type === "input") return "Configure input";
   if (type === "api-registry-call") return "Configure API request";
   if (type === "supabase-data") return "Configure Supabase operation";
+  if (type === "stripe-commerce") return "Configure Stripe lookup";
+  if (type === "resend-email") return "Configure email send";
   if (type === "transform-filter" || type === "normalize-output") return "Map response fields";
   if (type === "tool-result") return "Result settings";
   if (type === "thinAdapter") return "Configure agent step";
@@ -249,6 +279,7 @@ export function OrchestrationGraphCanvas({
           const isSelected = activeId === id;
           const prevId = index > 0 ? String(nodes[index - 1].id || "") : "";
           const Icon = NODE_ICONS[node.type] || ArrowDownToLine;
+          const iconImage = NODE_ICON_IMAGES[node.type] || "";
           const nodeStatusChip = nodeStatuses
             ? NODE_STATUS_CHIP[String(nodeStatuses[id] || "").toLowerCase()] || null
             : null;
@@ -330,7 +361,9 @@ export function OrchestrationGraphCanvas({
                   </button>
                 )}
                 <span className="dm-orchestration-node__icon" aria-hidden="true">
-                  <Icon size={14} />
+                  {iconImage
+                    ? <img src={iconImage} alt="" width={14} height={14} style={{ borderRadius: "50%", display: "block" }} />
+                    : <Icon size={14} />}
                 </span>
                 <span className="dm-orchestration-node__type">{NODE_TYPE_LABELS[node.type] || node.type}</span>
                 <span className="dm-orchestration-node__title">{normalizedNodeType(node)}</span>

@@ -1,6 +1,6 @@
 # Workspace Templates
 
-The Workspace Builder ships with six dashboard templates. Five of them are documented here; the sixth (`Blank`) is an empty governed canvas.
+The Workspace Builder ships with seven dashboard templates. Six of them are documented here; the seventh (`Blank`) is an empty governed canvas.
 
 Every position, widget kind, and binding mode in these docs traces directly to the source-of-truth array:
 
@@ -15,11 +15,12 @@ Every position, widget kind, and binding mode in these docs traces directly to t
 | [Reporting Dashboard](./reporting-dashboard.md) | KPIs, table, and executive readout — pipeline + conversion + summary. |
 | [Creative Review](./creative-review.md) | Creative artifact embed and approval notes — preview, notes, review queue. |
 | [Agency Delivery](./agency-delivery.md) | Agency workstream, KPI, and delivery notes — delivery board, utilization, portal. |
+| Stripe Commerce | Revenue chart, balance, payments feed, customers, and products bound to governed `stripe-*` data-source objects seeded by the Stripe marketplace product — hydrated server-side through the read-only `stripe-payments` resolver. See [Official Marketplace Plugins V1 → Stripe](../OFFICIAL_MARKETPLACE_PLUGINS_V1.md#v1-provider-stripe). |
 
 ## Notes
 
 - All widget positions live on the Workspace Builder's 12×16 grid (12 columns × 16 rows).
-- V1 ships static bindings only (`manual` / `json` / `csv`). Bridge-backed bindings are tracked in [`docs/BRIDGE_BACKED_WIDGETS_V1_PLAN.md`](../BRIDGE_BACKED_WIDGETS_V1_PLAN.md).
+- Most templates ship static bindings (`manual` / `json` / `csv`). Stripe Commerce binds governed data-model objects (`sourceType: workspace-data-model`) hydrated through the server-side resolver lane. Bridge-backed bindings are tracked in [`docs/BRIDGE_BACKED_WIDGETS_V1_PLAN.md`](../BRIDGE_BACKED_WIDGETS_V1_PLAN.md).
 - Applying a template clones widget IDs fresh and writes to the active config — see [Workspace Builder Runtime V1](../WORKSPACE_BUILDER_RUNTIME_V1.md).
 
 ## Cross-links

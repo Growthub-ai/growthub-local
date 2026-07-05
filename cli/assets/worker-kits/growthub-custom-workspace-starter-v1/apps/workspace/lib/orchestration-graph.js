@@ -24,8 +24,14 @@ const KNOWN_NODE_TYPES = new Set([
   "flow-control",
   "core-action",
   "human-input",
-  "supabase-data"
+  "supabase-data",
+  "stripe-commerce",
+  "resend-email"
 ]);
+
+// Marketplace capability nodes — one executing HTTP stage class per installed
+// first-party product (same pipeline slot as api-registry-call/supabase-data).
+const CAPABILITY_NODE_TYPES = ["supabase-data", "stripe-commerce", "resend-email"];
 
 const API_REGISTRY_SETUP_FIELDS = ["integrationId", "baseUrl", "endpoint", "method", "authRef"];
 
@@ -129,7 +135,7 @@ function validateOrchestrationGraph(graph) {
       if (!swarmCheck.ok) errors.push(...swarmCheck.errors);
     } else {
       const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
-      const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call" || n?.type === "supabase-data");
+      const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call" || CAPABILITY_NODE_TYPES.includes(n?.type));
       const hasAiAgent = graph.nodes.some((n) => n?.type === "ai-agent");
       const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
       if (!hasThinAdapter && !hasApi && !hasAiAgent) errors.push("orchestrationGraph requires an executable node");
@@ -377,6 +383,22 @@ function extractInputNode(graph) {
  */
 function extractSupabaseDataNode(graph) {
   return extractNodeByType(graph, "supabase-data");
+}
+
+/**
+ * The commerce node (Stripe V1). Same single-executing-HTTP-stage rule as
+ * supabase-data; read-only against the installed stripe-payments row.
+ */
+function extractStripeCommerceNode(graph) {
+  return extractNodeByType(graph, "stripe-commerce");
+}
+
+/**
+ * The outbound messaging node (Resend V1). Same single-executing-HTTP-stage
+ * rule; sends through the installed resend-email row's env contract.
+ */
+function extractResendEmailNode(graph) {
+  return extractNodeByType(graph, "resend-email");
 }
 
 function extractTransformConfig(graph) {
@@ -925,7 +947,10 @@ export {
   addCanonicalNodeToGraph,
   buildDataSourceRowFromApiRegistry,
   findDataSourceRowsForRegistry,
+  CAPABILITY_NODE_TYPES,
   extractApiRegistryCallNode,
+  extractResendEmailNode,
+  extractStripeCommerceNode,
   extractInputNode,
   extractSupabaseDataNode,
   extractTransformConfig,

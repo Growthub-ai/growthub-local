@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { WorkspaceRail } from "../workspace-rail.jsx";
 import { findSandboxRowByWorkflowRef } from "@/lib/nav-workflows";
+import { listInstalledApiRequestVariants, listInstalledNodeSurfaces } from "@/lib/workspace-add-ons";
 import {
   addCanonicalNodeToGraph,
   buildBlankOrchestrationGraphShell,
@@ -155,7 +156,7 @@ function resolveSchedulerRegistryRows(workspaceConfig) {
 
 function resolveRegistryRefForSandbox(workspaceConfig, sandboxRow) {
   const graph = parseOrchestrationGraph(sandboxRow?.orchestrationConfig || sandboxRow?.orchestrationGraph);
-  const apiNode = graph?.nodes?.find((n) => n?.type === "api-registry-call" || n?.type === "supabase-data");
+  const apiNode = graph?.nodes?.find((n) => ["api-registry-call", "supabase-data", "stripe-commerce", "resend-email"].includes(n?.type));
   const registryId = String(
     apiNode?.config?.registryId || apiNode?.config?.integrationId || sandboxRow?.schedulerRegistryId || ""
   ).trim();
@@ -502,6 +503,17 @@ const WORKFLOW_ACTION_GROUPS = [
   },
 ];
 
+// First-party capability nodes — DERIVED from the manifest layer
+// (product `surfaces.node` declarations in workspace-add-ons.js) crossed
+// with installed + verified governed rows. Install the product in the
+// marketplace and its node appears with the product badge; no hardcoded
+// palette entries, nothing pushed back to the user.
+function installedCapabilityGroup(workspaceConfig) {
+  if (!workspaceConfig) return null;
+  const items = listInstalledNodeSurfaces(workspaceConfig);
+  return items.length ? { label: items[0].group || "Installed capabilities", items } : null;
+}
+
 function getWorkspaceObjectOptions(workspaceConfig) {
   return (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.id && object?.objectType !== "sandbox-environment" && object?.objectType !== "api-registry")
@@ -522,6 +534,21 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
     index += 1;
   }
   const isData = action.type === "data-action";
+  if (action.type === "api-registry-call" && action.registryId) {
+    // Long-tail variant: a canonical API Request node bound to the selected
+    // governed row — endpoint/method/auth all resolve from the row at run
+    // time; the node stores only the registry binding.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "API request via governed row",
+      config: {
+        registryId: String(action.registryId),
+        integrationId: String(action.registryId),
+      }
+    };
+  }
   if (action.type === "supabase-data") {
     // Subtitle stays empty so the canvas derives it from operation/table config.
     return {
@@ -536,6 +563,39 @@ function makeWorkflowNode(action, workspaceConfig, graph) {
         query: "",
         bodyTemplate: "",
         returnRepresentation: true
+      }
+    };
+  }
+  if (action.type === "stripe-commerce") {
+    // Read-only revenue lookup against the installed stripe-payments row —
+    // defaults run as-is; nothing the user must wire by hand.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "Revenue lookup",
+      config: {
+        registryId: "stripe-payments",
+        operation: "list-payment-intents",
+        queryTemplate: "limit=5"
+      }
+    };
+  }
+  if (action.type === "resend-email") {
+    // Governed outbound send through the installed resend-email row. From
+    // resolves server-side from RESEND_FROM_EMAIL — never asked of the user.
+    return {
+      id,
+      type: action.type,
+      label: action.label,
+      subtitle: "Send email",
+      config: {
+        registryId: "resend-email",
+        operation: "send",
+        toTemplate: "",
+        subjectTemplate: "",
+        htmlTemplate: "",
+        fromTemplate: ""
       }
     };
   }
@@ -602,7 +662,22 @@ function graphHasNodes(graph) {
   return Array.isArray(graph?.nodes) && graph.nodes.length > 0;
 }
 
-function WorkflowAddStepPanel({ target, onSelect }) {
+function WorkflowAddStepPanel({ target, onSelect, capabilityGroup, workspaceConfig }) {
+  const [variantQuery, setVariantQuery] = useState("");
+  // "Installed capabilities" stays clean at any plugin count: max 10 visible
+  // per page inside its own scroll area, +10 per expand click — the items
+  // themselves stay DERIVED from installed + verified governed rows in the
+  // workspace data model.
+  const [capabilityLimit, setCapabilityLimit] = useState(10);
+  const capabilityItems = Array.isArray(capabilityGroup?.items) ? capabilityGroup.items : [];
+  const visibleCapabilities = capabilityItems.slice(0, capabilityLimit);
+  const capabilityRemaining = capabilityItems.length - visibleCapabilities.length;
+  // Long-tail: every installed + verified registry row without a bespoke
+  // node becomes a canonical API Request variant — bounded list + search,
+  // deterministic at 1K+ discovered products.
+  const apiVariants = workspaceConfig
+    ? listInstalledApiRequestVariants(workspaceConfig, { query: variantQuery, limit: 8 })
+    : { total: 0, variants: [] };
   return (
     <div className="dm-workflow-add-panel">
       <div className="dm-workflow-add-panel__context">
@@ -617,7 +692,9 @@ function WorkflowAddStepPanel({ target, onSelect }) {
             const Icon = item.Icon;
             return (
               <button key={item.id} type="button" className="dm-workflow-action-option" onClick={() => onSelect(item)}>
-                <span aria-hidden="true"><Icon size={16} /></span>
+                {item.iconSrc
+                  ? <span aria-hidden="true"><img src={item.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                  : <span aria-hidden="true"><Icon size={16} /></span>}
                 <strong>{item.label}</strong>
                 {item.destructive && <small>Requires confirmation at run time</small>}
               </button>
@@ -625,6 +702,72 @@ function WorkflowAddStepPanel({ target, onSelect }) {
           })}
         </div>
       ))}
+      {capabilityItems.length > 0 && (
+        <div className="dm-workflow-action-group">
+          <span className="dm-workflow-action-group__label">{capabilityGroup.label}</span>
+          <div className="dm-workflow-capability-list">
+            {visibleCapabilities.map((item) => {
+              const Icon = item.Icon;
+              return (
+                <button key={item.id} type="button" className="dm-workflow-action-option" onClick={() => onSelect(item)}>
+                  {item.iconSrc
+                    ? <span aria-hidden="true"><img src={item.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                    : <span aria-hidden="true">{Icon ? <Icon size={16} /> : <Globe2 size={16} />}</span>}
+                  <strong>{item.label}</strong>
+                  {item.destructive && <small>Requires confirmation at run time</small>}
+                </button>
+              );
+            })}
+          </div>
+          {capabilityRemaining > 0 ? (
+            <button
+              type="button"
+              className="dm-workflow-variant-more"
+              onClick={() => setCapabilityLimit((current) => current + 10)}
+            >
+              + Show 10 more ({capabilityRemaining} remaining)
+            </button>
+          ) : null}
+          {capabilityRemaining > 0 ? (
+            <small className="dm-workflow-action-group__hint">Showing {visibleCapabilities.length} of {capabilityItems.length} installed capabilities.</small>
+          ) : null}
+        </div>
+      )}
+      {apiVariants.total > 0 && (
+        <div className="dm-workflow-action-group">
+          <span className="dm-workflow-action-group__label">Installed integrations</span>
+          {apiVariants.total > 8 || variantQuery ? (
+            <input
+              className="dm-workflow-variant-search"
+              value={variantQuery}
+              placeholder={`Search ${apiVariants.total} installed integrations`}
+              onChange={(event) => setVariantQuery(event.target.value)}
+            />
+          ) : null}
+          {apiVariants.variants.map((variant) => (
+            <button
+              key={variant.integrationId}
+              type="button"
+              className="dm-workflow-action-option"
+              onClick={() => onSelect({
+                id: `api-variant-${variant.integrationId}`,
+                type: "api-registry-call",
+                label: variant.label,
+                registryId: variant.integrationId,
+              })}
+            >
+              {variant.iconSrc
+                ? <span aria-hidden="true"><img src={variant.iconSrc} alt="" width={16} height={16} style={{ borderRadius: "50%", display: "block" }} /></span>
+                : <span aria-hidden="true"><Globe2 size={16} /></span>}
+              <strong>{variant.label}</strong>
+              <small>API request via governed row</small>
+            </button>
+          ))}
+          {apiVariants.total > apiVariants.variants.length ? (
+            <small className="dm-workflow-action-group__hint">Showing {apiVariants.variants.length} of {apiVariants.total} — refine the search.</small>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -2141,6 +2284,8 @@ export default function WorkflowSurface() {
                   <WorkflowAddStepPanel
                     target={addTarget}
                     onSelect={insertActionNode}
+                    capabilityGroup={installedCapabilityGroup(workspaceConfig)}
+                    workspaceConfig={workspaceConfig}
                   />
                 </div>
               )}

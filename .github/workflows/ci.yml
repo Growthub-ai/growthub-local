@@ -66,6 +66,12 @@ jobs:
         run: |
           npm run test:add-ons-vercel
           npm run test:add-ons-nango
+          npm run test:add-ons-stripe
+          npm run test:add-ons-resend
+          npm run test:add-ons-neon
+          npm run test:add-ons-cloudflare
+          npm run test:capability-nodes
+          npm run test:capability-surfaces
 
       - name: Validate Fork Sync Agent kernel packet
         run: node scripts/check-fork-sync.mjs

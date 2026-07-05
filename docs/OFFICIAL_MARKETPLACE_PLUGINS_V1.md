@@ -410,6 +410,216 @@ Validated V1 capability:
 
 Reference: [`NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md`](./NANGO_ADD_ON_TOPOLOGY_AND_CAPABILITIES_V1.md).
 
+## V1 Provider: Stripe
+
+Stripe is the fifth official marketplace provider and the first occupant of
+the commerce lane. It adds governed payments capability without changing any
+existing lane.
+
+Provider:
+
+- `providerId`: `stripe`
+- provider account lane: Stripe REST API bearer auth with `STRIPE_SECRET_KEY`
+  (probe `GET /v1/account`), `STRIPE_API_URL` base override for offline QA
+- alias write: `STRIPE_API_KEY` <- `STRIPE_SECRET_KEY` so the canonical
+  `readServerSecret("STRIPE")` expansion authenticates the generic HTTP lanes
+  (test-api-record, api-registry-call, constructed resolvers)
+- setup fields: secret key (`sk_...`, password), optional webhook signing
+  secret (`whsec_...`, password)
+- secret rule: identical to other official providers — `.env.local` holds
+  values, rows hold env-ref names only
+
+### Stripe Payments
+
+- `productId` / `integrationId`: `stripe-payments`
+- `authRef`: `STRIPE`
+- execution lane: `workspace-commerce` (new lane; surfaces detect by lane
+  string, never by provider id)
+- connector kind: `stripe-commerce`
+- required env: `STRIPE_SECRET_KEY`
+- optional env: `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY`,
+  `STRIPE_API_URL`
+
+Validated V1 capability:
+
+- Provider connect verifies the account server-side (`GET /v1/account`).
+- Product install re-probes and writes a governed API Registry row with
+  `syncProof`; resource discovery lists the account's products
+  (`GET /v1/products`) — selection binds the row, never writes env.
+- Installed rows execute through the existing governed API request lanes
+  (the Nango model: capability row + resolver system, no new door).
+- First-party canvas node: `stripe-commerce` — a READ-ONLY revenue lookup
+  stage (payment intents, customers, products, balance) that appears in the
+  Workflow Canvas "Installed capabilities" palette section only when the
+  product row is installed + verified. The node renders the Stripe badge,
+  refuses non-allowlisted operations structurally, and resolves
+  STRIPE_SECRET_KEY server-side only.
+- Inbound Stripe events enter through the EXISTING `inbound-webhook` lane
+  with `STRIPE_WEBHOOK_SECRET` as the declared env ref.
+- `/settings/apps` derives a Stripe payments link from the verified row.
+- Deferred (ledger): a dedicated commerce door with receipted
+  payment-object sync, Stripe-event signature verification cores, and
+  customer <-> `people` object binding.
+
+## V1 Provider: Resend
+
+Resend is the sixth official marketplace provider and the first occupant of
+the outbound messaging lane.
+
+Provider:
+
+- `providerId`: `resend`
+- provider account lane: Resend REST API bearer auth with `RESEND_API_KEY`
+  (probe `GET /domains`), `RESEND_API_URL` base override for offline QA
+- setup field: API key (`re_...`, password)
+- secret rule: identical to other official providers
+
+### Resend Email
+
+- `productId` / `integrationId`: `resend-email`
+- `authRef`: `RESEND`
+- execution lane: `workspace-messaging` (new lane)
+- connector kind: `resend-messaging`
+- required env: `RESEND_API_KEY`
+- optional env: `RESEND_FROM_EMAIL`, `RESEND_API_URL`
+
+Validated V1 capability:
+
+- Provider connect verifies the account server-side (`GET /domains`).
+- Product install re-probes and writes a governed API Registry row; resource
+  discovery lists verified sending domains — selection binds the row.
+- Installed rows execute sends through the existing governed API request
+  lanes (POST `/emails` via api-registry-call / constructed resolvers).
+- `/settings/apps` derives a Resend email link from the verified row.
+- First-party canvas node: `resend-email` — one governed send per run,
+  surfaced in the Workflow Canvas "Installed capabilities" palette section
+  only when the product row is installed + verified. The node renders the
+  Resend badge; the sender resolves server-side from RESEND_FROM_EMAIL (no
+  setup pushed to the user) and underspecified sends are refused honestly.
+- Governed messaging door
+  (`/api/workspace/add-ons/[providerId]/messaging`): GET read-only readiness
+  (env + sender resolution, names only), POST one receipted `send-test` per
+  call — the REAL provider send the node sidecar's Test tab drives, with
+  blocked prerequisites receipted honestly.
+- Rich sidecar experience: the `resend-email` node's Test tab mirrors the
+  webhook trigger's test-event pattern (Connect -> Test event -> Result with
+  a Verified chip on live HTTP success), and the Body field is a Design
+  (rich text) / HTML tabbed editor over one stored template.
+- Email tracking loop (the SENT EMAIL is the unit of intelligence): every
+  real send lands one atomic row on the governed `email-activity` object,
+  keyed by the provider message id Resend returns from `POST /emails`.
+  Resend's REAL webhook surface updates that exact row across its lifecycle:
+  `email.sent` / `email.delivered` / `email.delivery_delayed` /
+  `email.bounced` / `email.complained` / `email.failed` / `email.opened` /
+  `email.clicked` (open/click tracking must be enabled on the sending domain
+  in Resend). There is NO reply event in Resend's surface, so the grammar
+  carries no replies column — no invented metrics. Events arrive at the
+  webhook door (`/api/workspace/add-ons/resend/events`), Svix-verified over
+  the raw bytes with `RESEND_WEBHOOK_SECRET` (runtime env only; missing
+  secret → 422 receipted, forged signature → 401 receipted, out-of-surface
+  types → honest 202 skip). Events for unknown message ids CREATE the
+  activity row from event data, so runtime-node sends close the loop through
+  the same key. Templates stay reusable blueprints: a send row carries
+  `templateId`, per-template performance is an aggregation over send rows,
+  and the blueprint only receives a `lastUsedAt` stamp.
+- Runner security invariant: capability executors (`stripe-commerce`,
+  `resend-email`) resolve their credentialed base URL from GOVERNED material
+  only (runtime env / server-written registry row) — browser-editable canvas
+  config can never redirect a bearer-carrying call. (The pre-existing
+  `api-registry-call` / `supabase-data` executors still honor
+  `nodeConfig.baseUrl` precedence; aligning them is a flagged follow-up with
+  its own migration diff, since live workflows may rely on it.)
+- Deferred (ledger): aggregated per-template/per-campaign analytics views
+  over `email-activity`, and broadcast/audience products.
+
+## V1 Provider: Neon
+
+Neon is the seventh official marketplace provider and the SECOND occupant of
+the database-operations lane — the playbook's predicted "Phase 1 + icons +
+tests" data-provider ship, proving `workspace-data` is provider-generic.
+
+Provider:
+
+- `providerId`: `neon`
+- provider account lane: Neon API v2 bearer auth with `NEON_API_KEY`
+  (probe `GET /api/v2/projects`), `NEON_API_URL` base override for offline QA
+- setup field: Neon API key (password)
+- secret rule: identical to other official providers
+
+### Neon Postgres
+
+- `productId` / `integrationId`: `neon-postgres`
+- `authRef`: `NEON`
+- execution lane: `workspace-data` (same lane as Supabase Postgres)
+- connector kind: `neon-data`
+- required env: `NEON_API_KEY`
+- optional env: `NEON_PROJECT_ID`, `NEON_DATABASE_URL`, `NEON_API_URL`
+
+Validated V1 capability:
+
+- Provider connect verifies the account server-side (`GET /api/v2/projects`).
+- Resource discovery lists the account's projects (the `{ projects: [...] }`
+  envelope is a declared parser candidate) and binds the selected project id
+  into `NEON_PROJECT_ID`.
+- Product install writes a governed `workspace-data` row; the lane-derived
+  `hasWorkspaceDataCapability` and `/settings/apps` database link light up
+  next to Supabase with zero surface changes.
+- The governed data door remains honest: `connectorKind: "neon-data"` has no
+  external-table sync adapter yet and the door refuses with the existing
+  "no data adapter yet" outcome instead of faking sync.
+- Deferred (ledger): a `neon-data` executor for the data door (branch-aware
+  external table sync over Neon's SQL-over-HTTP lane) at supabase-data parity.
+
+## V1 Provider: Cloudflare
+
+Cloudflare is the eighth official marketplace provider and the SECOND
+occupant of the storage lane (R2), proving `workspace-storage` and the
+governed storage door are provider-generic.
+
+Provider:
+
+- `providerId`: `cloudflare`
+- provider account lane: Cloudflare API v4 bearer auth with
+  `CLOUDFLARE_API_TOKEN` (probe `GET /client/v4/user/tokens/verify` —
+  Cloudflare's own token-health endpoint — then `GET /client/v4/accounts`),
+  `CLOUDFLARE_API_URL` base override for offline QA
+- account scope: `CLOUDFLARE_ACCOUNT_ID` as a `teamScope` setup field (a
+  plain scope value, never a secret) — the Vercel team-id mirror
+- alias write: `CLOUDFLARE_API_KEY` <- `CLOUDFLARE_API_TOKEN` (canonical
+  `readServerSecret("CLOUDFLARE")` expansion)
+- secret rule: identical to other official providers
+
+### Cloudflare R2 (Object Storage)
+
+- `productId` / `integrationId`: `cloudflare-r2`
+- `authRef`: `CLOUDFLARE`
+- execution lane: `workspace-storage` (same lane as Supabase Storage)
+- connector kind: `cloudflare-storage`
+- required env: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- optional env: `CLOUDFLARE_API_URL`
+- probe path-template contract: `probe.pathEnv` maps `{accountId}` to
+  `CLOUDFLARE_ACCOUNT_ID`; `resolveProbePaths` substitutes the value
+  server-side and a missing ref fails honestly with the env NAME — this is a
+  declared contract key interpreted by the generic lanes (the `fallback` /
+  `aliasEnv` extension class), never a route fork
+
+Validated V1 capability:
+
+- Product install probes the real account-scoped R2 listing
+  (`GET /client/v4/accounts/{accountId}/r2/buckets`).
+- The governed storage door dispatches a `cloudflare-storage` adapter:
+  create/list/delete real R2 buckets through the v4 API, read the inventory
+  back, and merge it into the same governed buckets object grammar
+  (`<provider>-buckets` data-source object, linked-table gate, receipts).
+- Honest capability boundary: R2 buckets are private at the API level, so a
+  public-access request is refused with a `public_access_unsupported`
+  blocked receipt instead of a row that fakes public CDN state; `cdnUrl`
+  stays empty rather than synthesized.
+- `/settings/apps` derives the R2 storage link (product badge + Cloudflare
+  console deep-link) from the verified row.
+- Deferred (ledger): managed-domain/custom-domain public access as a
+  governed action, object-level inventory, and R2 usage metrics.
+
 ## User Surfaces
 
 Official marketplace plugins appear in these workspace surfaces:
@@ -425,8 +635,9 @@ Official marketplace plugins appear in these workspace surfaces:
 - Schedule Cockpit: fleet view for scheduled, ready, blocked, and drifted
   workflows
 - Settings / Apps: governed external links (GitHub repository, Vercel
-  deployment, Supabase database/storage, Nango integration) derived from
-  registry rows, deduped by provider URL, with hover popovers
+  deployment, Supabase/Neon database, Supabase/Cloudflare storage, Stripe
+  payments, Resend email, Nango integration) derived from registry rows,
+  deduped by provider URL, with hover popovers
 - Agent Outcomes: receipt ledger for every governed action
 
 ## Product Lane Dispatch
@@ -443,6 +654,9 @@ flowchart LR
   B --> E["api-request"]
   B --> J["workspace-data"]
   B --> K["workspace-storage"]
+  B --> N["workspace-commerce"]
+  B --> O["workspace-messaging"]
+  B --> P["workspace-integrations"]
   B --> F["future provider/native lane"]
 
   C --> G["scheduler cores + provider adapter"]
@@ -450,6 +664,9 @@ flowchart LR
   E --> H
   J --> L["governed data door (/data) + external-sync core"]
   K --> M["governed storage door (/storage) + buckets core"]
+  N --> Q["governed API request lanes (resolvers)"]
+  O --> Q
+  P --> Q
   F --> I["lane-specific governed core"]
 ```
 
@@ -460,15 +677,90 @@ Current rules:
 - `inbound-webhook` and `api-request` products are native workflow input
   methods. They use the inbound invocation cores and the workspace destination
   door, not QStash scheduler controls.
-- `workspace-data` products (Supabase Postgres) use the governed data door
-  (`/api/workspace/add-ons/[providerId]/data`) and the external-sync core.
-- `workspace-storage` products (Supabase Storage) use the governed storage
-  door (`/api/workspace/add-ons/[providerId]/storage`) and the buckets core,
-  gated on a connected provider + a linked `workspace-data` table.
+- `workspace-data` products (Supabase Postgres, Neon Postgres) use the
+  governed data door (`/api/workspace/add-ons/[providerId]/data`) and the
+  external-sync core; connector kinds without a door executor are refused
+  honestly ("no data adapter yet").
+- `workspace-storage` products (Supabase Storage, Cloudflare R2) use the
+  governed storage door (`/api/workspace/add-ons/[providerId]/storage`) and
+  the buckets core, gated on a connected provider + a linked governed table;
+  the door dispatches the external HTTP grammar by connector kind.
+- `workspace-commerce` (Stripe Payments), `workspace-messaging` (Resend
+  Email), and `workspace-integrations` (Nango) products execute through the
+  existing governed API request lanes — capability rows + the resolver
+  system, no per-provider doors. Stripe and Resend additionally ship
+  first-party canvas nodes (`stripe-commerce`, `resend-email`) in the
+  Workflow Canvas "Installed capabilities" section, derived from installed +
+  verified rows on the SAME single-executing-HTTP-stage grammar as
+  `supabase-data` — additive precedence, existing graphs never change
+  behavior.
 - `/schedule` remains a scheduler cockpit entry. Webhook and API Request belong
   to the workflow sidecar's input-method flow.
 - Future add-ons should declare their lane and dispatch to a lane-specific
   governed core instead of widening QStash-specific behavior.
+
+## Node-Surface Contract (scaling to 1K+ products)
+
+First-class canvas nodes are a CURATED Tier-1 surface, not the growth path.
+The two-tier contract:
+
+- **Bespoke nodes (curated)**: `supabase-data`, `stripe-commerce`,
+  `resend-email`. Each earns a node type, config-panel pane, runner executor,
+  and test suite because its lane semantics (governed data ops, read-only
+  revenue, receipted sends) cannot be expressed as a generic API request.
+  Adding one is a deliberate product decision, never a default.
+- **Row-driven products (the long tail)**: every other installed product —
+  including all live-discovered Nango integrations — executes through the
+  EXISTING `api-registry-call` node / resolver system driven by its governed
+  row (`connectorKind`, `resolverTemplateId`, `authRef`, `executionLane`).
+  Installing 1,000 discovered products adds ZERO node types
+  (regression-tested in `scripts/unit-marketplace-capability-nodes.test.mjs`).
+
+The declarative layer is the product definition's `surfaces` block —
+declared contract keys interpreted by generic code, never per-product forks:
+
+- `surfaces.node` `{ type, label, iconSrc, group }` — palette entry + canvas
+  badge derive from this (`listInstalledNodeSurfaces`,
+  `MANIFEST_NODE_SURFACES`); the executor binds in ONE registry
+  (`CAPABILITY_NODE_EXECUTORS` in the runner).
+- `surfaces.sidecarVariant` — which curated config/test pane the node uses.
+- `surfaces.testDoor` — the governed door the sidecar test drives.
+- `surfaces.publishProofPolicy` — today always `draft-test` (node receipts
+  never gate publish until the publish contract explicitly verifies them).
+- `surfaces.widgets` — no-code dashboard widget templates bound to the
+  governed row (`listInstalledWidgetSurfaces`).
+- `surfaces.sourceObjects` — data-source objects seeded on install
+  (`withDeclaredSourceObjects`), hydrated server-side through the product's
+  source resolver + the refresh-sources lane; rows start empty (honest).
+- `surfaces.dashboardTemplateId` — the native `DASHBOARD_TEMPLATES` gallery
+  entry whose widgets bind those objects.
+
+### Decision ladder — which surface a product gets
+
+1. **Generic API Registry node** (default, the 1K+ long tail): every
+   installed + verified row — including all live-discovered products —
+   surfaces as a bounded, searchable `api-registry-call` variant in the
+   Workflow Canvas ("Installed integrations",
+   `listInstalledApiRequestVariants`). Zero code.
+2. **Manifest-declared node variant**: declare `surfaces.node` when the
+   product deserves its own palette identity but the generic request
+   executor suffices.
+3. **Bespoke curated node**: only when lane semantics can't be a generic
+   request (governed data ops, receipted sends, read-only commerce) — one
+   `CAPABILITY_NODE_EXECUTORS` entry + a curated sidecar pane.
+4. **Dashboard/widget surface**: declare `surfaces.sourceObjects` +
+   `surfaces.widgets` + a `DASHBOARD_TEMPLATES` entry and ship a source
+   resolver — data hydrates server-side; widgets never call providers.
+5. **Provider-specific adapter**: last resort, only inside an existing
+   governed door (storage/messaging/data), dispatched by connectorKind.
+
+Node-level test proof (e.g. the resend-email sidecar send) is NODE proof:
+receipts carry a `workflowRef · nodeId · draftHash` correlation key, the
+sidecar chip reads "Node tested", and a stored chip goes stale the moment the
+send-shaping fields change (draft-hash match). The workflow PUBLISH gate
+remains exclusively owned by the full draft test / serverless binding proof
+contract; wiring node receipts into that gate is a deferred, explicit
+follow-up — never an implied one.
 
 ## Governance Rules
 

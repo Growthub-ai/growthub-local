@@ -2,7 +2,14 @@ import { SettingsShell } from "../settings-shell.jsx";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
-import { VERCEL_PROJECTS_OBJECT_ID, listInstalledDataProducts, listInstalledStorageProducts } from "@/lib/workspace-add-ons";
+import {
+  VERCEL_PROJECTS_OBJECT_ID,
+  getMarketplaceProduct,
+  listInstalledCommerceProducts,
+  listInstalledDataProducts,
+  listInstalledMessagingProducts,
+  listInstalledStorageProducts,
+} from "@/lib/workspace-add-ons";
 import { AppsList } from "./apps-list.jsx";
 import { CodexSitesDataModelCard } from "./codex-sites-data-model-card.jsx";
 import { SettingsAccordionGroup, SettingsAccordionSection } from "./settings-accordion-section.jsx";
@@ -200,8 +207,19 @@ function appMatchesProject(app, project, appCount) {
  * row's sync state. Rows carry env-ref names and routing metadata only —
  * never secret values — so everything here is safe to render.
  */
+/**
+ * Product-definition lookup for a governed row — icon and console deep-link
+ * derive from the ONE provider definition (getMarketplaceProduct), never from
+ * a second copy of state. Falls back to the historical per-provider paths for
+ * rows the definition no longer covers.
+ */
+function rowProductDefinition(providerId, row) {
+  return getMarketplaceProduct(providerId, String(row?.productId || row?.integrationId || "").trim());
+}
+
 function dataProductLink(row) {
   const providerId = String(row?.integrationId || "").trim().split("-")[0] || "data";
+  const product = rowProductDefinition(providerId, row);
   const projectUrl = ensureHttpsUrl(row?.baseUrl || row?.selectedResourceLabel);
   let host = "";
   try {
@@ -210,11 +228,13 @@ function dataProductLink(row) {
     host = "";
   }
   // Supabase project ref = the <ref>.supabase.co host prefix; deep-link the
-  // provider dashboard when we can, fall back to the bound project URL.
+  // provider dashboard when we can. Otherwise prefer the product's declared
+  // console (Neon rows carry the API base, not a browsable console), then
+  // fall back to the bound project URL.
   const supabaseRef = /\.supabase\.co$/i.test(host) ? host.split(".")[0] : "";
   const href = supabaseRef
     ? `https://supabase.com/dashboard/project/${supabaseRef}`
-    : projectUrl;
+    : (String(product?.consoleUrl || "").trim() || projectUrl);
   if (!href) return null;
   const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
   const synced = String(row?.syncStatus || "").trim() === "verified";
@@ -223,7 +243,7 @@ function dataProductLink(row) {
     label: synced ? `${providerLabel} database` : `${providerLabel} project`,
     detail: host || row?.Name || href,
     href,
-    iconSrc: `/integrations/${providerId}/postgrest.png`,
+    iconSrc: String(product?.iconSrc || "").trim() || `/integrations/${providerId}/postgrest.png`,
   };
 }
 
@@ -235,6 +255,7 @@ function dataProductLink(row) {
  */
 function storageProductLink(row) {
   const providerId = String(row?.integrationId || "").trim().split("-")[0] || "storage";
+  const product = rowProductDefinition(providerId, row);
   const projectUrl = ensureHttpsUrl(row?.baseUrl);
   let host = "";
   try {
@@ -245,7 +266,7 @@ function storageProductLink(row) {
   const supabaseRef = /\.supabase\.co$/i.test(host) ? host.split(".")[0] : "";
   const href = supabaseRef
     ? `https://supabase.com/dashboard/project/${supabaseRef}/storage/buckets`
-    : projectUrl;
+    : (String(product?.consoleUrl || "").trim() || projectUrl);
   if (!href) return null;
   const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
   return {
@@ -253,7 +274,46 @@ function storageProductLink(row) {
     label: `${providerLabel} storage`,
     detail: host || row?.Name || href,
     href,
-    iconSrc: `/integrations/${providerId}/postgrest.png`,
+    iconSrc: String(product?.iconSrc || "").trim() || `/integrations/${providerId}/postgrest.png`,
+  };
+}
+
+/**
+ * External commerce link for an installed + verified commerce-lane product
+ * row (executionLane === "workspace-commerce"). Same governed-row derivation
+ * as the database link; the link opens the provider's own dashboard.
+ */
+function commerceProductLink(row) {
+  const providerId = String(row?.integrationId || "").trim().split("-")[0] || "commerce";
+  const product = rowProductDefinition(providerId, row);
+  const href = String(product?.consoleUrl || "").trim() || ensureHttpsUrl(row?.baseUrl);
+  if (!href) return null;
+  const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
+  return {
+    id: `${providerId}:${row.integrationId}:${href}`,
+    label: `${providerLabel} payments`,
+    detail: row?.selectedResourceLabel || row?.Name || href,
+    href,
+    iconSrc: String(product?.iconSrc || "").trim() || `/integrations/${providerId}/provider.png`,
+  };
+}
+
+/**
+ * External messaging link for an installed + verified messaging-lane product
+ * row (executionLane === "workspace-messaging"). Same governed-row rule.
+ */
+function messagingProductLink(row) {
+  const providerId = String(row?.integrationId || "").trim().split("-")[0] || "messaging";
+  const product = rowProductDefinition(providerId, row);
+  const href = String(product?.consoleUrl || "").trim() || ensureHttpsUrl(row?.baseUrl);
+  if (!href) return null;
+  const providerLabel = providerId.charAt(0).toUpperCase() + providerId.slice(1);
+  return {
+    id: `${providerId}:${row.integrationId}:${href}`,
+    label: `${providerLabel} email`,
+    detail: row?.selectedResourceLabel || row?.Name || href,
+    href,
+    iconSrc: String(product?.iconSrc || "").trim() || `/integrations/${providerId}/provider.png`,
   };
 }
 
@@ -291,6 +351,8 @@ function attachExternalAppLinks(apps, workspaceConfig) {
   // future data provider joins with zero changes here.
   const dataProducts = listInstalledDataProducts(workspaceConfig);
   const storageProducts = listInstalledStorageProducts(workspaceConfig);
+  const commerceProducts = listInstalledCommerceProducts(workspaceConfig);
+  const messagingProducts = listInstalledMessagingProducts(workspaceConfig);
   const nangoProducts = listInstalledNangoProducts(workspaceConfig);
   return apps.map((app) => {
     const externalLinks = linkFromAppRow(app);
@@ -328,6 +390,14 @@ function attachExternalAppLinks(apps, workspaceConfig) {
       }
       for (const row of storageProducts) {
         const link = storageProductLink(row);
+        if (link) externalLinks.push(link);
+      }
+      for (const row of commerceProducts) {
+        const link = commerceProductLink(row);
+        if (link) externalLinks.push(link);
+      }
+      for (const row of messagingProducts) {
+        const link = messagingProductLink(row);
         if (link) externalLinks.push(link);
       }
       for (const row of nangoProducts) {

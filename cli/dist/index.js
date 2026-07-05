@@ -23241,6 +23241,43 @@ var PROJECT_MANAGEMENT_TEMPLATE = {
   bundleVersion: "1.0.0",
   briefType: "workspace-template"
 };
+var GTM_OS_TEMPLATE_ID = "gtm-os-workspace-template-v1";
+var GTM_OS_TEMPLATE = {
+  id: GTM_OS_TEMPLATE_ID,
+  version: "1.0.0",
+  name: "GTM OS Workspace Template",
+  description: "Email GTM operating system: verification, enrichment, sending-infrastructure, and reputation control planes over governed objects. Built from the blank workspace starter with a sanitized gtm-os seed.",
+  type: "worker",
+  family: "studio",
+  executionMode: "export",
+  activationModes: ["export"],
+  bundleId: "growthub-custom-workspace-starter-v1",
+  bundleVersion: "1.0.0",
+  briefType: "workspace-template"
+};
+var WORKSPACE_TEMPLATES = [
+  {
+    item: PROJECT_MANAGEMENT_TEMPLATE,
+    seedSlug: "project-management",
+    defaultOut: "./project-management-workspace",
+    workspaceName: "Project Management Workspace",
+    aliases: [PROJECT_MANAGEMENT_TEMPLATE_ID, "project-management", "project-management-workspace"]
+  },
+  {
+    item: GTM_OS_TEMPLATE,
+    seedSlug: "gtm-os",
+    defaultOut: "./gtm-os-workspace",
+    workspaceName: "GTM OS Workspace",
+    aliases: [GTM_OS_TEMPLATE_ID, "gtm-os", "gtm-os-workspace"]
+  }
+];
+function resolveWorkspaceTemplate(id) {
+  const normalized = String(id || "").trim().toLowerCase();
+  return WORKSPACE_TEMPLATES.find((spec) => spec.aliases.includes(normalized)) || null;
+}
+function templateCreateCommand(spec) {
+  return `growthub starter init --out ${spec.defaultOut} --seed-config ${spec.seedSlug}`;
+}
 function displayTypeForFamily(family) {
   if (family === "workflow" || family === "operator") return "specialized_agents";
   if (family === "studio" || family === "ops") return family;
@@ -23264,31 +23301,30 @@ function displayKitName(name) {
   return name.replace(/^Growthub Agent Worker Kit\s+[—-]\s+/u, "").trim();
 }
 function isWorkspaceTemplateId(id) {
-  const normalized = String(id || "").trim().toLowerCase();
-  return normalized === PROJECT_MANAGEMENT_TEMPLATE_ID || normalized === "project-management" || normalized === "project-management-workspace";
+  return Boolean(resolveWorkspaceTemplate(id));
 }
 function listKitAndWorkspaceTemplates() {
   const activeBundled = listBundledKits();
   const starter = activeBundled.find((kit) => kit.id === "growthub-custom-workspace-starter-v1");
   return [
     ...starter ? [starter] : [],
-    PROJECT_MANAGEMENT_TEMPLATE
+    ...WORKSPACE_TEMPLATES.map((spec) => spec.item)
   ];
 }
-async function createProjectManagementWorkspace(opts) {
-  const output = opts.out || (opts.yes ? "./project-management-workspace" : await p20.text({
+async function createWorkspaceFromTemplate(spec, opts) {
+  const output = opts.out || (opts.yes ? spec.defaultOut : await p20.text({
     message: "Output directory",
-    placeholder: "./project-management-workspace",
-    defaultValue: "./project-management-workspace"
+    placeholder: spec.defaultOut,
+    defaultValue: spec.defaultOut
   }));
   if (p20.isCancel(output)) {
     p20.cancel("Cancelled.");
     process.exit(0);
   }
   await runStarterInit({
-    out: String(output || "./project-management-workspace"),
-    name: "Project Management Workspace",
-    seedConfig: "project-management"
+    out: String(output || spec.defaultOut),
+    name: spec.workspaceName,
+    seedConfig: spec.seedSlug
   });
 }
 function hr2(width = 72) {
@@ -23511,10 +23547,11 @@ async function runInteractivePicker(opts) {
           return "done";
         }
         if (action === "inspect") {
-          if (isWorkspaceTemplateId(selected.id)) {
+          const templateSpec = resolveWorkspaceTemplate(selected.id);
+          if (templateSpec) {
             printKitCard(selected);
             console.log(pc31.bold("Create with:"));
-            console.log("  " + pc31.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+            console.log("  " + pc31.cyan(templateCreateCommand(templateSpec)));
             console.log("");
             p20.outro(pc31.dim("Done."));
             return "done";
@@ -23523,9 +23560,12 @@ async function runInteractivePicker(opts) {
           p20.outro(pc31.dim("Done."));
           return "done";
         }
-        if (isWorkspaceTemplateId(selected.id)) {
-          await createProjectManagementWorkspace(opts);
-          return "done";
+        {
+          const templateSpec = resolveWorkspaceTemplate(selected.id);
+          if (templateSpec) {
+            await createWorkspaceFromTemplate(templateSpec, opts);
+            return "done";
+          }
         }
         await runDownload(selected.id, opts);
         p20.outro(pc31.green("Kit exported successfully."));
@@ -23658,14 +23698,15 @@ Examples:
   $ growthub kit inspect project-management --json
 `).action((kitId, opts) => {
     const resolvedId = fuzzyResolveKitId(kitId);
-    if (!resolvedId && isWorkspaceTemplateId(kitId)) {
+    const templateSpec = resolveWorkspaceTemplate(kitId);
+    if (!resolvedId && templateSpec) {
       if (opts.json) {
-        console.log(JSON.stringify(PROJECT_MANAGEMENT_TEMPLATE, null, 2));
+        console.log(JSON.stringify(templateSpec.item, null, 2));
         return;
       }
-      printKitCard(PROJECT_MANAGEMENT_TEMPLATE);
+      printKitCard(templateSpec.item);
       console.log(pc31.bold("Create with:"));
-      console.log("  " + pc31.cyan("growthub starter init --out ./project-management-workspace --seed-config project-management"));
+      console.log("  " + pc31.cyan(templateCreateCommand(templateSpec)));
       console.log("");
       return;
     }
@@ -23692,8 +23733,9 @@ Examples:
       return;
     }
     const resolvedId = fuzzyResolveKitId(kitId);
-    if (!resolvedId && isWorkspaceTemplateId(kitId)) {
-      await createProjectManagementWorkspace(opts);
+    const templateSpec = resolveWorkspaceTemplate(kitId);
+    if (!resolvedId && templateSpec) {
+      await createWorkspaceFromTemplate(templateSpec, opts);
       return;
     }
     if (!resolvedId) {

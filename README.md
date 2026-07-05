@@ -175,6 +175,8 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 
 - [**Quickstart — Governed Workspace**](./docs/QUICKSTART_WORKSPACE.md)
 - [**Workspace New Reality Value Map V1**](./docs/WORKSPACE_NEW_REALITY_VALUE_MAP_V1.md)
+- [**AWaC Direction And Evolution V1**](./docs/AWAC_DIRECTION_AND_EVOLUTION_V1.md) — the release arc through 0.14.14 read as one trajectory: the loops that closed and the control-plane direction underway
+- [**Marketplace Plugin Value Roadmap V1**](./docs/MARKETPLACE_PLUGIN_VALUE_ROADMAP_V1.md) — the compounding loop broken down as product, and the ranked next-provider candidates mapped to lanes and governed business objects
 - [**Workspace CEO Primitive V1**](./docs/WORKSPACE_CEO_PRIMITIVE_V1.md)
 - [**Governed Agent Swarm Cockpit Value Map V1**](./docs/GOVERNED_AGENT_SWARM_COCKPIT_VALUE_MAP_V1.md)
 - [**Governed Sandbox Browser Access V1**](./docs/GOVERNED_SANDBOX_BROWSER_ACCESS_V1.md)
@@ -195,7 +197,9 @@ Use hosted authority when you need account-backed integrations, higher-trust exe
 Official workspace templates and shipped dashboard templates:
 
 - [**Project Management Workspace Template**](./docs/PROJECT_MANAGEMENT_WORKSPACE_TEMPLATE.md) — official second workspace template for API-backed project task workflows, Nango-supported provider setup, sandbox workflow orchestration, and dashboard deltas
-- [**Templates Index**](./docs/workspace-templates/README.md) — all five at a glance
+- **GTM OS Workspace Template** — official third workspace template: an email GTM operating system (verification, enrichment, sending-infrastructure, and reputation control planes over governed objects). Create with `growthub starter init --out ./gtm-os-workspace --seed-config gtm-os`, or export it from `growthub kit list / download gtm-os`
+- [**Workspace Template Golden Path V1**](./docs/WORKSPACE_TEMPLATE_GOLDEN_PATH_V1.md) — the official conversion path from any private workspace variant to a clean, non-secret seeded template on the Discover CLI pathway, with the tested exporter + smoke tooling (`scripts/export-workspace-seed-template.mjs`, `scripts/workspace-template-smoke.mjs`)
+- [**Templates Index**](./docs/workspace-templates/README.md) — the shipped dashboard templates at a glance
 - [Client Portal](./docs/workspace-templates/client-portal.md) — client status, documents, embedded portal area
 - [Content Ops](./docs/workspace-templates/content-ops.md) — editorial pipeline and review snapshot
 - [Reporting Dashboard](./docs/workspace-templates/reporting-dashboard.md) — KPIs, table, executive readout

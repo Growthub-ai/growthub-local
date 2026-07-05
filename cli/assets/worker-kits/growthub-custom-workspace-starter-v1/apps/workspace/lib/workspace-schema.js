@@ -393,6 +393,60 @@ const DASHBOARD_TEMPLATES = [
     ]
   },
   {
+    id: "stripe-commerce",
+    name: "Stripe Commerce",
+    description: "Revenue, balance, payments, customers, and products from the installed Stripe marketplace product. Every widget binds a governed data-source object hydrated server-side through the read-only stripe-payments resolver — no browser Stripe calls, no secrets, honest empty states until the first refresh.",
+    category: "reporting",
+    bestFor: ["Founders", "Revenue operators", "Commerce workspaces"],
+    tags: ["stripe", "commerce", "revenue", "payments", "marketplace"],
+    preview: {
+      layout: "commerce-grid",
+      summary: "Revenue chart, available balance, recent payments feed, customers, and products — all governed-row backed"
+    },
+    dashboard: { name: "Stripe Commerce", status: "draft" },
+    widgets: [
+      createWidget("chart", "Revenue — Payment Intents", { x: 0, y: 0, w: 8, h: 4 }, {
+        values: [],
+        chartType: "bar-vertical",
+        xAxis: { field: "created" },
+        yAxis: { field: "amount", aggregation: "sum" },
+        binding: { mode: "manual", source: "Stripe Payments", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "stripe-payments-feed", rows: [] }
+      }),
+      createWidget("view", "Available Balance", { x: 8, y: 0, w: 4, h: 4 }, {
+        source: "Stripe Balance",
+        layout: "Table",
+        columns: ["bucket", "currency", "amount"],
+        rows: [],
+        binding: { mode: "manual", source: "Stripe Balance", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "stripe-balance", rows: [] }
+      }),
+      createWidget("view", "Recent Payments", { x: 0, y: 4, w: 7, h: 5 }, {
+        source: "Stripe Payments",
+        layout: "Table",
+        columns: ["id", "amount", "currency", "status", "created"],
+        rows: [],
+        binding: { mode: "manual", source: "Stripe Payments", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "stripe-payments-feed", rows: [] }
+      }),
+      createWidget("view", "Customers", { x: 7, y: 4, w: 5, h: 5 }, {
+        source: "Stripe Customers",
+        layout: "Table",
+        columns: ["name", "email", "created"],
+        rows: [],
+        binding: { mode: "manual", source: "Stripe Customers", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "stripe-customers", rows: [] }
+      }),
+      createWidget("view", "Products", { x: 0, y: 9, w: 6, h: 4 }, {
+        source: "Stripe Products",
+        layout: "Table",
+        columns: ["name", "active", "created"],
+        rows: [],
+        binding: { mode: "manual", source: "Stripe Products", sourceType: "workspace-data-model", sourceAuthority: "workspace-config", objectId: "stripe-products", rows: [] }
+      }),
+      createWidget("rich-text", "How this dashboard stays honest", { x: 6, y: 9, w: 6, h: 4 }, {
+        text: "Widgets bind governed Stripe data-source objects (seeded when the Stripe product is installed). Data hydrates server-side through the read-only stripe-payments resolver on Refresh sources — the browser never calls Stripe and never holds a key. Empty tables mean no refresh has run yet, not fake sample data.",
+        binding: { mode: "manual", source: "Manual text", rows: [] }
+      })
+    ]
+  },
+  {
     id: "content-ops",
     name: "Content Ops",
     description: "Editorial pipeline and review snapshot",

@@ -112,6 +112,43 @@ function bucketCdnBaseUrl(baseUrl, bucketId, isPublic) {
   return `${host}/storage/v1/object/public/${clean(bucketId)}`;
 }
 
+/**
+ * Parse Cloudflare R2 bucket listings → the same normalized bucket shape the
+ * Supabase parser emits. Accepts both documented v4 envelope variants
+ * ({ result: { buckets: [...] } } and { result: [...] }) plus a bare
+ * { buckets: [...] }. R2 buckets are private by default and carry no MIME
+ * allowlist or size limit at the bucket level, so those fields stay empty —
+ * honest, not synthesized.
+ */
+function parseR2BucketInventory(payload) {
+  const list = Array.isArray(payload?.result?.buckets)
+    ? payload.result.buckets
+    : Array.isArray(payload?.result)
+      ? payload.result
+      : Array.isArray(payload?.buckets)
+        ? payload.buckets
+        : Array.isArray(payload)
+          ? payload
+          : [];
+  return list
+    .map((bucket) => {
+      if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) return null;
+      const id = clean(bucket.name || bucket.id);
+      if (!id) return null;
+      return {
+        id,
+        name: clean(bucket.name) || id,
+        public: false,
+        allowedMimeTypes: [],
+        fileSizeLimit: "",
+        createdAt: clean(bucket.creation_date || bucket.created_at),
+        updatedAt: "",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, MAX_BUCKETS);
+}
+
 /** Parse Supabase Storage GET /storage/v1/bucket → [{ id, name, public, ... }]. */
 function parseBucketInventory(payload) {
   const list = Array.isArray(payload) ? payload : [];
@@ -178,13 +215,14 @@ function buildBucketRow(bucket, { baseUrl = "", registryId = "", linkedTableObje
  * resolver-binding relation to api-registry PLUS a bucket-source relation to
  * the linked data table (the 1:1 correlation the user reasons about).
  */
-function buildBucketsObject({ providerId, integrationId, linkedTableObjectId = "", linkedTableLabel = "", label = "" }) {
+function buildBucketsObject({ providerId, integrationId, linkedTableObjectId = "", linkedTableLabel = "", label = "", providerLabel = "Supabase" }) {
   const id = bucketsObjectId(providerId);
+  const brand = clean(providerLabel) || "Supabase";
   return {
     id,
-    label: clean(label) || "Supabase Storage Buckets",
-    name: clean(label) || "Supabase Storage Buckets",
-    source: "Supabase Storage",
+    label: clean(label) || `${brand} Storage Buckets`,
+    name: clean(label) || `${brand} Storage Buckets`,
+    source: `${brand} Storage`,
     objectType: "data-source",
     icon: "Database",
     columns: BUCKET_COLUMNS.slice(),
@@ -198,9 +236,9 @@ function buildBucketsObject({ providerId, integrationId, linkedTableObjectId = "
       mode: "integration",
       lane: "data-source",
       integrationId: clean(integrationId),
-      source: "Supabase Storage",
+      source: `${brand} Storage`,
       entityType: "bucket",
-      provider: "supabase",
+      provider: slugify(providerId) || "supabase",
     },
     // Product + lane binding (mirrors externalRegistryId on the sync object).
     storageProduct: clean(integrationId),
@@ -316,18 +354,19 @@ function listLinkableTables(workspaceConfig, { excludeId = "" } = {}) {
  * Garbage-safe. `providerConnected` and `linkableCount` come from the caller
  * (add-ons state + listLinkableTables) so this stays pure.
  */
-function deriveBucketProductState(workspaceConfig, providerId, { providerConnected = false, linkableCount = 0 } = {}) {
+function deriveBucketProductState(workspaceConfig, providerId, { providerConnected = false, linkableCount = 0, providerLabel = "Supabase" } = {}) {
   const causeChain = [];
+  const brand = clean(providerLabel) || "Supabase";
   if (!providerConnected) {
-    causeChain.push("Supabase provider account is not connected/verified");
+    causeChain.push(`${brand} provider account is not connected/verified`);
     return { state: "provider-required", causeChain, bucketCount: 0, linked: false };
   }
-  causeChain.push("Supabase provider account connected + verified");
+  causeChain.push(`${brand} provider account connected + verified`);
   const object = findBucketsObject(workspaceConfig, providerId);
   const linkedTableObjectId = clean(object?.linkedTableObjectId);
   if (!linkedTableObjectId) {
     if (!linkableCount) {
-      causeChain.push("no governed data table exists to link — install the Postgres product and mirror a table first");
+      causeChain.push("no governed data table exists to link — install a data product and mirror a table first, or create the linked table from this drawer");
     } else {
       causeChain.push(`${linkableCount} governed table(s) available to link — pick one to enable bucket creation`);
     }
@@ -353,6 +392,7 @@ export {
   validateBucketRequest,
   bucketCdnBaseUrl,
   parseBucketInventory,
+  parseR2BucketInventory,
   buildBucketRow,
   buildBucketsObject,
   mergeBucketsIntoRows,

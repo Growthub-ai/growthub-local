@@ -7,6 +7,8 @@ import {
   applyFilters,
   extractApiRegistryCallNode,
   extractInputNode,
+  extractResendEmailNode,
+  extractStripeCommerceNode,
   extractSupabaseDataNode,
   extractTransformConfig,
   isAgentSwarmGraph,
@@ -467,6 +469,287 @@ async function executeSupabaseData(workspaceConfig, nodeConfig, inputPayload, ti
   }
 }
 
+// Read-only allowlist — the stripe-commerce node NEVER mutates commerce
+// state in V1. Anything outside this list is refused structurally (mirror of
+// the supabase-data filterless-mutation guard discipline).
+const STRIPE_COMMERCE_OPERATIONS = ["list-payment-intents", "list-customers", "list-products", "retrieve-balance"];
+const STRIPE_COMMERCE_PATHS = {
+  "list-payment-intents": "/v1/payment_intents",
+  "list-customers": "/v1/customers",
+  "list-products": "/v1/products",
+  "retrieve-balance": "/v1/balance",
+};
+
+/**
+ * Execute the `stripe-commerce` node — governed READ-ONLY revenue lookups
+ * against the installed stripe-payments registry row (workspace-commerce
+ * lane). Mirrors executeSupabaseData's envelope exactly so transform/result
+ * stages and receipts treat every HTTP stage identically.
+ *
+ * Secrets resolve server-side only (STRIPE_SECRET_KEY via the canonical env
+ * contract); errors pass through redactSecretsFromText; adapterMeta carries
+ * ref slugs, never values.
+ */
+async function executeStripeCommerce(workspaceConfig, nodeConfig, inputPayload, timeoutMs) {
+  const registryId = String(nodeConfig?.registryId || nodeConfig?.integrationId || "stripe-payments").trim();
+  const registryRecord = findRegistryRecord(workspaceConfig, registryId);
+  if (!registryRecord) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `no API Registry row for integrationId ${registryId} — install the Stripe product from the Add-ons Marketplace first`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "stripe-commerce", registryId }
+    };
+  }
+
+  const operation = String(nodeConfig?.operation || "list-payment-intents").trim().toLowerCase();
+  if (!STRIPE_COMMERCE_OPERATIONS.includes(operation)) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `unsupported stripe-commerce operation "${operation}" (read-only V1: ${STRIPE_COMMERCE_OPERATIONS.join("/")})`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "stripe-commerce", registryId }
+    };
+  }
+
+  // SECURITY: the bearer secret only ever travels to bases from GOVERNED
+  // material — the server-written registry row or runtime env. Canvas node
+  // config is browser-editable and must never redirect credentialed calls.
+  const baseUrl = String(registryRecord.baseUrl || "").trim()
+    || String(readEnvVar("STRIPE_API_URL")?.value || "").trim()
+    || "https://api.stripe.com";
+  const authRef = String(nodeConfig?.authRef || registryRecord.authRef || "STRIPE").trim();
+  const secret = String(
+    readEnvVar("STRIPE_SECRET_KEY")?.value
+    || readServerSecret(authRef)?.value
+    || ""
+  );
+  if (!secret) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: "Stripe runtime env is not resolved (STRIPE_SECRET_KEY missing) — verify the product in Add-ons",
+      adapterMeta: { mode: "orchestration-graph", nodeType: "stripe-commerce", registryId, operation }
+    };
+  }
+
+  const query = substituteVariables(String(nodeConfig?.queryTemplate || nodeConfig?.query || "").trim(), inputPayload).replace(/^\?+/, "");
+  const url = `${baseUrl.replace(/\/+$/, "")}${STRIPE_COMMERCE_PATHS[operation]}${query ? `?${query}` : ""}`;
+
+  const outboundTimeout = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000);
+  const startedAt = Date.now();
+  const mockResult = executeFeatureSeedMock(url, { registryId, method: "GET", startedAt });
+  if (mockResult) return mockResult;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), outboundTimeout);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${secret}` },
+      signal: controller.signal
+    });
+    const durationMs = Date.now() - startedAt;
+    const responseContentType = response.headers.get("content-type") || "";
+    const payload = responseContentType.includes("json") ? await response.json() : await response.text();
+    return {
+      ok: response.ok,
+      exitCode: response.ok ? 0 : 1,
+      durationMs,
+      stdout: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
+      stderr: "",
+      error: response.ok ? undefined : `HTTP ${response.status}`,
+      rawPayload: payload,
+      httpStatus: response.status,
+      adapterMeta: {
+        mode: "orchestration-graph",
+        nodeType: "stripe-commerce",
+        registryId,
+        operation,
+        url,
+        httpStatus: response.status,
+        method: "GET",
+        authRefSlug: authRef
+      }
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const safeError = redactSecretsFromText(
+      error.name === "AbortError" ? `request timed out after ${outboundTimeout}ms` : (error.message || "fetch failed")
+    );
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs,
+      stdout: "",
+      stderr: "",
+      error: safeError,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "stripe-commerce", registryId, operation, url, aborted: error.name === "AbortError" }
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Execute the `resend-email` node — one governed outbound email send through
+ * the installed resend-email registry row (workspace-messaging lane). Same
+ * envelope contract as every other HTTP stage.
+ *
+ * No-code discipline: `from` falls back to the RESEND_FROM_EMAIL env ref the
+ * marketplace install names, so a user never has to hand-wire sender setup
+ * into the node; missing prerequisites fail honestly by env NAME.
+ */
+async function executeResendEmail(workspaceConfig, nodeConfig, inputPayload, timeoutMs) {
+  const registryId = String(nodeConfig?.registryId || nodeConfig?.integrationId || "resend-email").trim();
+  const registryRecord = findRegistryRecord(workspaceConfig, registryId);
+  if (!registryRecord) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: `no API Registry row for integrationId ${registryId} — install the Resend product from the Add-ons Marketplace first`,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "resend-email", registryId }
+    };
+  }
+
+  const authRef = String(nodeConfig?.authRef || registryRecord.authRef || "RESEND").trim();
+  const secret = String(
+    readEnvVar("RESEND_API_KEY")?.value
+    || readServerSecret(authRef)?.value
+    || ""
+  );
+  if (!secret) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: "Resend runtime env is not resolved (RESEND_API_KEY missing) — verify the product in Add-ons",
+      adapterMeta: { mode: "orchestration-graph", nodeType: "resend-email", registryId }
+    };
+  }
+
+  const to = substituteVariables(String(nodeConfig?.toTemplate || nodeConfig?.to || "").trim(), inputPayload);
+  const subject = substituteVariables(String(nodeConfig?.subjectTemplate || nodeConfig?.subject || "").trim(), inputPayload);
+  const html = substituteVariables(String(nodeConfig?.htmlTemplate || nodeConfig?.html || ""), inputPayload).trim();
+  const text = substituteVariables(String(nodeConfig?.textTemplate || nodeConfig?.text || ""), inputPayload).trim();
+  const from = substituteVariables(String(nodeConfig?.fromTemplate || nodeConfig?.from || "").trim(), inputPayload)
+    || String(readEnvVar("RESEND_FROM_EMAIL")?.value || "").trim();
+  if (!to || !subject || (!html && !text)) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: "resend-email requires To, Subject, and an HTML or text body (bind values with {{input.key}})",
+      adapterMeta: { mode: "orchestration-graph", nodeType: "resend-email", registryId }
+    };
+  }
+  if (!from) {
+    return {
+      ok: false,
+      exitCode: 1,
+      durationMs: 0,
+      stdout: "",
+      stderr: "",
+      error: "resend-email sender is not resolved — set RESEND_FROM_EMAIL in the runtime or a From value on the node",
+      adapterMeta: { mode: "orchestration-graph", nodeType: "resend-email", registryId }
+    };
+  }
+
+  // SECURITY: the bearer secret only ever travels to bases from GOVERNED
+  // material — runtime env or the server-written registry row. Canvas node
+  // config is browser-editable and must never redirect credentialed calls.
+  const baseUrl = String(readEnvVar("RESEND_API_URL")?.value || "").trim()
+    || String(registryRecord.baseUrl || "").trim()
+    || "https://api.resend.com";
+  const url = `${baseUrl.replace(/\/+$/, "")}/emails`;
+  const recipients = to.split(",").map((value) => value.trim()).filter(Boolean);
+
+  const outboundTimeout = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 120000);
+  const startedAt = Date.now();
+  const mockResult = executeFeatureSeedMock(url, { registryId, method: "POST", startedAt });
+  if (mockResult) return mockResult;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), outboundTimeout);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { accept: "application/json", authorization: `Bearer ${secret}`, "content-type": "application/json" },
+      body: JSON.stringify({ from, to: recipients, subject, ...(html ? { html } : {}), ...(text ? { text } : {}) }),
+      signal: controller.signal
+    });
+    const durationMs = Date.now() - startedAt;
+    const responseContentType = response.headers.get("content-type") || "";
+    const payload = responseContentType.includes("json") ? await response.json() : await response.text();
+    return {
+      ok: response.ok,
+      exitCode: response.ok ? 0 : 1,
+      durationMs,
+      stdout: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
+      stderr: "",
+      error: response.ok ? undefined : `HTTP ${response.status}`,
+      rawPayload: payload,
+      httpStatus: response.status,
+      adapterMeta: {
+        mode: "orchestration-graph",
+        nodeType: "resend-email",
+        registryId,
+        operation: "send",
+        recipientCount: recipients.length,
+        url,
+        httpStatus: response.status,
+        method: "POST",
+        authRefSlug: authRef
+      }
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    const safeError = redactSecretsFromText(
+      error.name === "AbortError" ? `request timed out after ${outboundTimeout}ms` : (error.message || "fetch failed")
+    );
+    return {
+      ok: false,
+      exitCode: null,
+      durationMs,
+      stdout: "",
+      stderr: "",
+      error: safeError,
+      adapterMeta: { mode: "orchestration-graph", nodeType: "resend-email", registryId, url, aborted: error.name === "AbortError" }
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Curated capability-node executor registry — the ONLY place a bespoke node
+ * type binds to its server-side executor. Order = dispatch precedence after
+ * api-registry-call. Adding a Tier-1 node: one entry here + a manifest
+ * `surfaces.node` declaration in workspace-add-ons.js; the palette, canvas
+ * badge, and validator derive from those two places.
+ */
+const CAPABILITY_NODE_EXECUTORS = [
+  ["supabase-data", extractSupabaseDataNode, executeSupabaseData],
+  ["stripe-commerce", extractStripeCommerceNode, executeStripeCommerce],
+  ["resend-email", extractResendEmailNode, executeResendEmail],
+];
+
 /**
  * Run a growthub-native orchestration graph when present on the sandbox row.
  * Returns null when the row has no executable graph (caller falls back to adapter path).
@@ -491,12 +774,25 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     });
   }
 
-  // The single executing HTTP stage: api-registry-call (generic registry row)
-  // or supabase-data (database operations). api-registry-call keeps precedence
-  // when both exist so pre-existing graphs never change behavior.
+  // The single executing HTTP stage: api-registry-call (generic registry row
+  // — also the long-tail node-variant lane) or a curated capability node.
+  // Precedence is strictly additive — api-registry-call first, then the
+  // capability node types in their declared order — so pre-existing graphs
+  // never change behavior. Adding a bespoke node = one registry entry here
+  // + a manifest `surfaces.node` declaration; nothing else branches.
   const registryCallNode = extractApiRegistryCallNode(graph);
-  const supabaseDataNode = extractSupabaseDataNode(graph);
-  const apiNode = registryCallNode?.config ? registryCallNode : supabaseDataNode;
+  let apiNode = registryCallNode?.config ? registryCallNode : null;
+  let runHttpStage = executeApiRegistryCall;
+  if (!apiNode) {
+    for (const [, extract, executor] of CAPABILITY_NODE_EXECUTORS) {
+      const candidate = extract(graph);
+      if (candidate?.config) {
+        apiNode = candidate;
+        runHttpStage = executor;
+        break;
+      }
+    }
+  }
   if (!apiNode?.config) {
     if ((Array.isArray(graph.nodes) ? graph.nodes : []).some((node) => node?.type === "ai-agent")) {
       return null;
@@ -507,11 +803,10 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
       durationMs: 0,
       stdout: "",
       stderr: "",
-      error: "orchestrationGraph is missing an api-registry-call or supabase-data node",
+      error: `orchestrationGraph is missing an executing node (api-registry-call or one of: ${CAPABILITY_NODE_EXECUTORS.map(([type]) => type).join(", ")})`,
       adapterMeta: { mode: "orchestration-graph", provider: graph.provider }
     };
   }
-  const runHttpStage = apiNode === supabaseDataNode ? executeSupabaseData : executeApiRegistryCall;
 
   const inputNode = extractInputNode(graph);
   const baseInputPayload = parseInputPayload(inputNode);
@@ -613,4 +908,4 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   };
 }
 
-export { executeSupabaseData, runOrchestrationGraphIfPresent };
+export { executeResendEmail, executeStripeCommerce, executeSupabaseData, runOrchestrationGraphIfPresent };

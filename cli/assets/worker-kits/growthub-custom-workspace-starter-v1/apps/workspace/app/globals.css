@@ -5507,6 +5507,80 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-orchestration-config__preview { margin: 0; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 10px; overflow: auto; max-height: 160px; }
 .dm-orchestration-config__hint { margin: 0; font-size: 11px; color: #6b7280; }
 .dm-orchestration-config__error { margin: 0; font-size: 12px; color: #b91c1c; }
+
+/* Email editor V1 (resend-email node) — same grammar as the config tabs/fields:
+   light surfaces, 1px #e5e7eb/#cbd5e1 borders, #111827 ink on active. */
+.dm-email-editor__tokens,
+.dm-email-editor__toolbar { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.dm-email-editor__tokens button,
+.dm-email-editor__toolbar button { height: 26px; padding: 0 9px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fafafa; color: #4b5563; font-size: 11px; font-weight: 600; cursor: pointer; }
+.dm-email-editor__tokens button { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 500; color: #334155; }
+.dm-email-editor__tokens button:hover:not(:disabled),
+.dm-email-editor__toolbar button:hover:not(:disabled) { background: #f5f5f5; border-color: #cbd5e1; color: #111827; }
+.dm-email-editor__tokens button:disabled,
+.dm-email-editor__toolbar button:disabled { opacity: .45; cursor: not-allowed; }
+.dm-email-editor__tokens input { border: 1px solid #cbd5e1; border-radius: 5px; padding: 0 8px; height: 26px; font-size: 11px; color: #111827; background: #fff; }
+.dm-email-editor__tokens input::placeholder { color: #94a3b8; }
+.dm-email-editor__surface { min-height: 140px; border: 1px solid #cbd5e1; border-radius: 5px; padding: 10px; background: #fff; overflow-y: auto; font-size: 13px; line-height: 1.5; color: #111827; }
+.dm-email-editor__surface:focus { outline: none; border-color: #111827; }
+.dm-email-editor { min-width: 0; }
+.dm-email-editor__frame { display: flex; justify-content: center; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; padding: 12px; min-width: 0; overflow-x: auto; }
+.dm-email-editor__preview { max-width: 100%; min-height: 160px; background: #fff; border-radius: 5px; padding: 14px; overflow-y: auto; box-shadow: 0 1px 4px rgba(16, 20, 28, 0.12); }
+.dm-email-editor__surface img,
+.dm-email-editor__preview img { max-width: 100%; height: auto; border-radius: 4px; }
+.dm-email-editor__surface img { cursor: pointer; }
+.dm-email-editor__surface img[data-dm-selected] { outline: 2px solid #111827; outline-offset: 2px; }
+.dm-email-editor__toolbar button.is-active { background: #fff; border-color: #111827; color: #111827; }
+.dm-email-editor__imgbar { border-top: 1px dashed #e5e7eb; padding-top: 6px; }
+.dm-email-editor__imgbar-label { font-size: 10px; font-weight: 650; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.dm-email-editor__expand { margin-left: auto; }
+/* One Notion-style action bar: mode segments · formatting · variable ·
+   device/expand — a single compact row, groups separated by hairlines. */
+.dm-email-editor__bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fcfcfc; }
+.dm-email-editor__bar .dm-orchestration-config__tabs { gap: 2px; }
+.dm-email-editor__bar .dm-orchestration-config__tabs button { border-color: transparent; background: transparent; }
+.dm-email-editor__bar .dm-orchestration-config__tabs button:hover { background: #f0f0f0; border-color: transparent; }
+.dm-email-editor__bar .dm-orchestration-config__tabs button.is-active { background: #fff; border-color: #e0e0e0; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08); color: #111827; }
+.dm-email-editor__bar .dm-email-editor__toolbar button,
+.dm-email-editor__bar .dm-email-editor__variable > button,
+.dm-email-editor__bar .dm-email-editor__expand { border-color: transparent; background: transparent; }
+.dm-email-editor__bar .dm-email-editor__toolbar button:hover:not(:disabled),
+.dm-email-editor__bar .dm-email-editor__variable > button:hover:not(:disabled),
+.dm-email-editor__bar .dm-email-editor__expand:hover { background: #f0f0f0; border-color: transparent; color: #111827; }
+.dm-email-editor__bar .dm-email-editor__variable > button.is-active { background: #fff; border-color: #e0e0e0; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08); color: #111827; }
+.dm-email-editor__divider { width: 1px; height: 18px; background: #e5e7eb; margin: 0 2px; flex: none; }
+.dm-email-editor__variable { position: relative; }
+.dm-email-editor__variable > button { height: 26px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; color: #4b5563; font-size: 11px; font-weight: 600; cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dm-email-editor__variable .dm-email-editor__tokens { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 240px; padding: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 10px 28px rgba(16, 20, 28, 0.16); }
+.dm-email-editor__expand { height: 26px; padding: 0 9px; border: 1px solid transparent; border-radius: 5px; color: #4b5563; font-size: 11px; font-weight: 600; cursor: pointer; }
+/* Envelope: To › From › Subject › Preview as breadcrumb chips, separate from
+   the editing surface; fields open only on intentional Edit. */
+.dm-email-envelope { display: grid; gap: 6px; }
+.dm-email-envelope__bar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 5px 6px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fcfcfc; }
+.dm-email-envelope__crumb { display: inline-flex; align-items: baseline; gap: 5px; max-width: 200px; border: 0; border-radius: 5px; background: transparent; padding: 3px 6px; font-size: 11px; color: #94a3b8; cursor: pointer; }
+.dm-email-envelope__crumb:hover { background: #f0f0f0; }
+.dm-email-envelope__crumb span { font-weight: 650; text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; flex: none; }
+.dm-email-envelope__crumb strong { font-size: 11px; font-weight: 500; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dm-email-envelope__crumb strong.is-empty { color: #b6bdc9; font-weight: 400; }
+.dm-email-envelope__sep { color: #d1d5db; font-size: 11px; flex: none; }
+.dm-email-envelope__toggle { margin-left: auto; height: 24px; padding: 0 9px; border: 1px solid #e0e0e0; border-radius: 5px; background: #fff; color: #4b5563; font-size: 11px; font-weight: 600; cursor: pointer; flex: none; }
+.dm-email-envelope__toggle:hover { border-color: #bbb; color: #111827; }
+.dm-email-envelope__fields { display: grid; gap: 8px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; }
+.dm-email-editor__surface-wrap { position: relative; display: grid; }
+.dm-email-editor__surface-wrap textarea { height: 180px; resize: none; }
+.dm-email-editor__surface { overflow-y: auto; }
+.dm-email-editor__resize { position: absolute; left: 4px; bottom: 4px; width: 20px; height: 16px; display: grid; place-items: center; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; color: #94a3b8; font-size: 9px; line-height: 1; letter-spacing: 1px; cursor: ns-resize; opacity: 0; transition: opacity 0.12s; padding: 0; touch-action: none; }
+.dm-email-editor__surface-wrap:hover .dm-email-editor__resize,
+.dm-email-editor__resize:focus-visible { opacity: 1; }
+.dm-email-editor__fullnote { margin: 0; padding: 14px 12px; border: 1px dashed #cbd5e1; border-radius: 5px; background: #f9fafb; color: #64748b; font-size: 12px; }
+.dm-email-editor-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; }
+.dm-email-editor-modal__backdrop { position: absolute; inset: 0; background: rgba(15, 15, 15, 0.42); }
+.dm-email-editor-modal__panel { position: relative; width: min(1080px, 94vw); max-height: 92vh; overflow-y: auto; display: grid; gap: 8px; background: #fff; border-radius: 10px; padding: 16px 18px 18px; box-shadow: 0 18px 50px rgba(16, 20, 28, 0.28); }
+.dm-email-editor-modal__head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 4px; border-bottom: 1px solid #edf0f3; }
+.dm-email-editor-modal__head strong { font-size: 14px; color: #111827; }
+.dm-email-editor-modal__head span { font-size: 11px; color: #94a3b8; }
+.dm-email-editor-modal__panel .dm-email-editor__surface { min-height: 320px; }
+.dm-email-editor-modal__panel .dm-email-editor__surface-wrap textarea { min-height: 320px; }
 .dm-orchestration-runtime { border: 1px solid #e5e7eb; border-radius: 5px; background: #fafafa; }
 .dm-orchestration-runtime summary { cursor: pointer; padding: 8px 10px; font-size: 12px; font-weight: 650; color: #111827; }
 .dm-orchestration-runtime__fields { display: grid; gap: 8px; padding: 0 10px 10px; }
@@ -6267,6 +6341,47 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-workflow-add-panel .dm-workflow-action-group__label {
   color: #111827;
 }
+
+/* "Installed capabilities" + "Installed integrations" sections ONLY — the
+   curated groups above them keep their native list rendering. The
+   capabilities list stays clean at any plugin count: max 10 per page in its
+   own scroll area with a +10 expand; the long-tail integrations list keeps
+   its bounded search. */
+.dm-workflow-variant-search {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin-bottom: 4px;
+  font: inherit;
+  font-size: 12px;
+  color: #111827;
+  background: #fff;
+}
+.dm-workflow-variant-search::placeholder { color: #94a3b8; }
+.dm-workflow-variant-search:focus { outline: none; border-color: #111827; }
+.dm-workflow-capability-list {
+  display: grid;
+  gap: 2px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+.dm-workflow-variant-more {
+  min-height: 30px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.dm-workflow-variant-more:hover { background: #f5f5f5; border-color: #94a3b8; color: #111827; }
+.dm-workflow-action-group__hint { color: #94a3b8; font-size: 11px; }
 .dm-workflow-node-config-foot {
   display: flex;
   justify-content: flex-end;
