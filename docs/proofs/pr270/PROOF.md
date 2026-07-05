@@ -29,7 +29,7 @@ structure with the real driver named explicitly:
   `page.keyboard` — real UI interactions, no API shortcuts for user steps.
 - **Readback layer**: `page.request` JSON readbacks against the workspace
   routes plus DOM snapshots; all captured in `readbacks.json`.
-- **Screenshots**: 25 PNGs in this directory, numbered in journey order.
+- **Screenshots**: 26 PNGs in this directory, numbered in journey order.
 
 Every `check(...)` line below cites the run log. Receipt ids are real ids
 from `workspace:agent-outcomes` on this boot.
@@ -314,6 +314,35 @@ All shipped and browser-proven in the same 74/74 run:
    `lastUsedAt`. (A later operator pass moved performance tracking OFF the
    blueprint and onto per-send `email-activity` rows backed by real Resend
    webhook events — see "Email tracking loop" above.)
+
+## GTM OS workspace template — canonical seeded-config pathway proof
+
+```text
+Using the committed dist CLI (node cli/dist/index.js, v0.14.15) on a temp dir.
+Command: growthub starter init --out ./gtm-os-workspace --seed-config gtm-os
+Readback layer: merged growthub.config.json + booted export /api/workspace.
+Screenshot: 26 (booted GTM OS workspace, both dashboards live).
+Result: 28 governed objects merged over the blank starter · dashboards
+        "Reacher Enrichment Command Center" + "Email GTM Infra Control Plane"
+        served · 11 api-registry rows all env-ref authRefs, needs-connection,
+        EMPTY connectionIds · zero token-shaped strings · ops-template
+        (project-management) regression export unchanged.
+```
+
+- The GTM OS config registered through the SAME canonical pathway as the ops
+  variation: `templates/seeded-configs/gtm-os.config.json` applied by the
+  existing `applySeededConfig` merge, surfaced as a workspace template in
+  `kit list / inspect / download` (now table-driven — both templates ride one
+  registry; src and committed dist updated in the same shape).
+- Import sanitation (adversarial pass): one pre-populated `connectionIds`
+  value in the provided seed was stripped to "" (connection ids are
+  operator-owned post-OAuth per the template contract) and the
+  workspace-template provenance keys (`template`, `templateKind`) were added.
+  Entropy/token/PII grep over all 206KB: clean.
+- Validator parity honesty: the strict `validateWorkspaceConfig` gate rejects
+  BOTH the ops template and GTM OS merged configs identically (it validates
+  PATCH bodies, not config files) — the acceptance proof is the real boot,
+  which serves all 28 objects and both dashboards (screenshot 26).
 
 ## Reviewer acceptance checklist mapping
 

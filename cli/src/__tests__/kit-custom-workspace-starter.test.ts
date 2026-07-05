@@ -4108,6 +4108,43 @@ describe("workspace-activation — Customer Activation Layer V1", () => {
     }
   });
 
+  it("gtm-os seed has provenance + uses the runtime rows schema", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/gtm-os.config.json");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    expect(seed.provenance).toBeDefined();
+    expect(seed.provenance.template).toBe("gtm-os");
+    expect(seed.provenance.templateKind).toBe("workspace-template");
+    // The runtime contract uses dataModel.objects[].rows[], not .records[].
+    for (const object of seed.dataModel.objects) {
+      expect("records" in object).toBe(false);
+      expect(Array.isArray(object.rows)).toBe(true);
+    }
+  });
+
+  it("gtm-os seed ships no provider secrets or connection IDs", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/gtm-os.config.json");
+    const seedJson = fs.readFileSync(seedPath, "utf8");
+    expect(seedJson).not.toMatch(/Bearer\s+\w+/);
+    expect(seedJson).not.toMatch(/sk-ant-[A-Za-z0-9_-]+/);
+    expect(seedJson).not.toMatch(/sk_(?:live|test)_[A-Za-z0-9]+/);
+    expect(seedJson).not.toMatch(/whsec_[A-Za-z0-9+/=]{10,}/);
+    // api-registry rows declare env-ref authRefs only and ship NO
+    // connectionIds — those are operator-owned post-OAuth.
+    const seed = JSON.parse(seedJson);
+    const registries = seed.dataModel.objects.filter((o: { objectType?: string }) => o.objectType === "api-registry");
+    expect(registries.length).toBeGreaterThan(0);
+    for (const registry of registries) {
+      for (const row of registry.rows) {
+        const connectionIds = typeof row.connectionIds === "string"
+          ? row.connectionIds.trim()
+          : row.connectionIds;
+        expect(connectionIds || "").toBe("");
+      }
+    }
+  });
+
   it("activation kit assets are listed as frozen assets in kit.json", () => {
     const kitJson = JSON.parse(readText("kit.json"));
     const frozen: string[] = kitJson.frozenAssetPaths ?? [];
