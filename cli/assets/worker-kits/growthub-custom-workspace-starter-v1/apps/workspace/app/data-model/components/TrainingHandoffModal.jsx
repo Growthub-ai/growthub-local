@@ -34,7 +34,6 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Check, X, AlertTriangle } from "lucide-react";
 import {
-  deriveTrainingHandoffState,
   DEFAULT_MIN_SCORE,
   MIN_FINETUNE_TRACES,
   TRACES_OBJECT_ID,
@@ -43,6 +42,7 @@ import {
   deriveHandoffRecovery,
   deriveProgressStages,
 } from "../../../lib/training-ledger.js";
+import { isCustomModelRegistryRow } from "../../../lib/custom-models-ledger.js";
 import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows } from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
@@ -209,7 +209,7 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     workspaceUrl: workspaceUrl || "",
   });
   return [
-    "const { execFileSync } = require('node:child_process');",
+    "const { execFileSync, spawn } = require('node:child_process');",
     "const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path'); const crypto = require('node:crypto');",
     `const P = ${P};`,
     "const WS = (P.workspaceUrl || process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
@@ -267,12 +267,43 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "    const step = P.steps[i];",
     "    await stampRun({ status: 'running', progress: { stageId: step.stageId, stageRank: rankOf(step.stageId), pct: pctOf(step.stageId), detail: step.label, index: i + 1, total: N } });",
     "    console.log(`STEP ${i + 1}/${N} [${step.stageId}]: ${step.bin} ${step.args.join(' ')}`);",
-    "    try { execFileSync(step.bin, step.args, { stdio: 'inherit' }); }",
+    "    try {",
+    // Fine-tuning streams a governed progress protocol so step/loss/checkpoint
+    // are REAL governed stamps (not aspirational): the trainer emits lines
+    // `GH_PROGRESS {\"step\":n,\"total\":N,\"loss\":x,\"checkpoint\":\"path\"}`; each
+    // one advances the SAME model-training-run receipt → live step/loss and a
+    // resumable checkpoint. Other stages stay atomic execFileSync.
+    "      if (step.stageId === 'fine-tuning') {",
+    "        await new Promise((resolve, reject) => {",
+    "          const child = spawn(step.bin, step.args, { stdio: ['ignore', 'pipe', 'inherit'] });",
+    "          let buf = '';",
+    "          child.stdout.on('data', (d) => {",
+    "            buf += d.toString(); const lines = buf.split('\\n'); buf = lines.pop();",
+    "            for (const ln of lines) {",
+    "              process.stdout.write(ln + '\\n');",
+    "              const m = ln.indexOf('GH_PROGRESS ');",
+    "              if (m < 0) continue;",
+    "              try {",
+    "                const p = JSON.parse(ln.slice(m + 12));",
+    "                const st = Number(p.step) || 0, tot = Number(p.total) || 0;",
+    "                const frac = tot > 0 ? Math.min(1, st / tot) : 0;",
+    "                stampRun({ status: 'running', progress: { stageId: 'fine-tuning', stageRank: rankOf('fine-tuning'), pct: Math.round(pctOf('fine-tuning') + frac * (pctOf('converting') - pctOf('fine-tuning'))), detail: `training step ${st}/${tot}`, index: i + 1, total: N, step: st, counter: st, totalRecords: tot, loss: Number(p.loss), checkpointPath: p.checkpoint ? String(p.checkpoint) : '' } });",
+    "              } catch {}",
+    "            }",
+    "          });",
+    "          child.on('error', reject);",
+    "          child.on('close', (code) => code === 0 ? resolve() : reject(new Error('exit ' + code)));",
+    "        });",
+    "      } else { execFileSync(step.bin, step.args, { stdio: 'inherit' }); }",
+    "    }",
     "    catch (e) {",
     "      // A stage failed → stamp a GOVERNED failed receipt naming the exact",
     "      // canonical stage so the remediation deriver offers the one-click fix.",
+    "      // A fine-tune crash keeps its last checkpoint stamp, so the receipt",
+    "      // stays resumable (deriveTrainingResumeState reads progress.checkpointPath).",
     "      const reason = `Stage failed: ${step.label} — ${String((e && e.message) || e).split('\\n')[0]}`;",
-    "      await stampRun({ status: 'failed', blockedReason: reason, progress: { stageId: step.stageId, stageRank: rankOf(step.stageId), pct: pctOf(step.stageId), detail: reason, index: i + 1, total: N } });",
+    "      const prev = { stageId: step.stageId, stageRank: rankOf(step.stageId), pct: pctOf(step.stageId), detail: reason, index: i + 1, total: N };",
+    "      await stampRun({ status: 'failed', blockedReason: reason, progress: prev });",
     "      console.error(reason); process.exit(1); return;",
     "    }",
     "  }",
@@ -386,9 +417,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [tunedTag, setTunedTag] = useState("");
   const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [trainPhase, setTrainPhase] = useState("idle"); // idle|starting|running
-  // Live, REAL training progress — driven by the governed run receipt the
-  // local runner advances, polled below. Never a fabricated bar.
-  const [trainProgress, setTrainProgress] = useState({ pct: 0, stage: "" });
+  // Progress is NOT stored in component state — deriveTrainingWaitState(liveRunRow)
+  // is the single source (barPct/statusLine) over the governed receipt, updated
+  // whenever polling calls setLiveConfig. No fabricated/duplicated bar.
   // The single derived one-click remedy shown when a stage fails — nothing
   // more than one line + one button (deriveTrainingRemediation owns the logic).
   const [remedy, setRemedy] = useState(null);
@@ -399,6 +430,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
+  const [httpStatus, setHttpStatus] = useState(null); // real HTTP status from the test lane
   // Test-event mental model (mirrors the API/Webhook test-event flow): an
   // editable seeded prompt + a response inspector with Response/Trace/Details/
   // Proof tabs. State kept local; the send re-uses the governed test lane.
@@ -418,10 +450,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [recovery, setRecovery] = useState(null);
   const [resume, setResume] = useState({ datasetDownloaded: false, datasetPath: "", lines: null });
 
-  // Stop polling the run receipt when the modal unmounts.
-  useEffect(() => () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } }, []);
+  // Stop polling the run receipt when the modal unmounts OR closes — the parent
+  // toggles `open` without unmounting, so the close path must clear the timer
+  // too (otherwise it keeps hitting /api/workspace on a hidden modal).
+  useEffect(() => {
+    if (!open && pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [open]);
 
-  const handoff = deriveTrainingHandoffState({ workspaceConfig, workspaceSourceRecords, minScore });
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
   const selected = candidates.filter(({ index }) => !excluded.has(index));
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
@@ -430,10 +466,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const profile = resolveTrainingProfile(profileId);
   // Adaptive model/runtime choices derived from the workspace's OWN rows — so
   // the profile step reflects what this workspace carries, not a Gemma/Ollama
-  // default. The base falls back to the ledger row, then any workspace base.
+  // default. detectedBase is deriveLocalModelChoices' truth (no inline re-scan).
   const modelChoices = deriveLocalModelChoices({ workspaceConfig });
-  const detectedBase = String(workspaceConfig?.dataModel?.objects?.find((o) => o?.objectType === TRAINING_OBJECT_TYPE)?.rows?.[0]?.baseModel || "").trim();
-  const baseModel = String(chosenBase || detectedBase || modelChoices.detectedBase || "").trim();
+  const baseModel = String(chosenBase || modelChoices.detectedBase || "").trim();
 
   if (!open || typeof document === "undefined") return null;
 
@@ -468,25 +503,32 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // and the completion reward are derived from the live governed rows so the
   // user sees exactly what is proven and what remains (never optimistic ticks).
   const liveRunRow = liveRuntime.runState?.latest || {};
+  // Real governed run-receipt count (model-training-run rows) — the honest
+  // "run receipts available" proof, never an always-true count.
+  const runReceiptCount = (workspaceConfig?.dataModel?.objects || [])
+    .filter((o) => o?.objectType === TRAINING_RUN_OBJECT_TYPE)
+    .reduce((n, o) => n + (Array.isArray(o.rows) ? o.rows.length : 0), 0);
+  // Select the custom-model registry row through the GOVERNED trait gate the
+  // cockpit uses (kind/capabilityType), not a localhost heuristic.
   const liveRegistryRow = (workspaceConfig?.dataModel?.objects || [])
     .filter((o) => o?.objectType === "api-registry")
     .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
-    .find((r) => String(r?.integrationId || "") === `${SLUG}-model` || String(r?.baseUrl || "").includes(":11434")) || null;
+    .find((r) => isCustomModelRegistryRow(r, new Set([`${SLUG}-model`]))) || null;
   const smokeRun = liveOutputHash ? { outputHash: liveOutputHash } : null;
   const proofChecklist = deriveTrainingProofChecklist(liveRunRow, liveRegistryRow, smokeRun);
-  // Wait-state for the control plane: stage/status + elapsed shown separately;
-  // Date.now() is a client render value (re-computed on each 5s poll re-render).
+  // Wait-state for the control plane: stage/status + BAR all come from ONE
+  // deriver over the governed receipt. barPct is the single progress truth.
   const liveWaitState = deriveTrainingWaitState(liveRunRow, Date.now());
-  const completionReward = deriveTrainingCompletionReward(liveRunRow, {
-    apiRegistryRow: liveRegistryRow,
-    servedModel: (() => { try { return String(JSON.parse(liveRegistryRow?.lastResponse || "null")?.model || ""); } catch { return ""; } })(),
-    smokeRun,
-  });
   // Governed serving profile (adapter / mode / batching / speculative) + resume
-  // state — proof-bound, so the inspector + waiting UX can show the real
-  // serving capability and a one-click resume without any throughput claim.
+  // state — proof-bound; deriveServingProfile.servedModel is the parsed served
+  // tag, so the completion reward reuses it instead of re-parsing lastResponse.
   const servingProfile = deriveServingProfile(liveRegistryRow || {}, { expectedTag: artifact.modelTag || reservedTag });
   const resumeState = deriveTrainingResumeState(liveRunRow);
+  const completionReward = deriveTrainingCompletionReward(liveRunRow, {
+    apiRegistryRow: liveRegistryRow,
+    servedModel: servingProfile.servedModel,
+    smokeRun,
+  });
 
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
@@ -638,7 +680,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       return;
     }
     setTrainPhase("starting");
-    setTrainProgress({ pct: 0, stage: "Recording governed run…" });
     const startedAt = new Date().toISOString();
     try {
       const runningReceipt = buildTrainingRunReceipt({
@@ -652,7 +693,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         return next;
       });
       setTrainPhase("running");
-      setTrainProgress({ pct: 0, stage: "Waiting for runner stamp…" });
 
       // Real trigger. Don't await — training is long; the runner advances the
       // governed receipt and we poll it. If no local runner is reachable, the
@@ -727,7 +767,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         // fp16→quant size delta) → close the loop.
         if (runStage === "imported" || rt.runState?.artifact?.identified) {
           clearInterval(pollRef.current); pollRef.current = null;
-          setTrainProgress({ pct: 100, stage: delta?.detail || "Fine-tune complete — quantized model artifact is provable." });
           const reported = rt.runState?.latest?.artifact || {};
           importArtifact({
             type: reported.type || artifact.type,
@@ -740,14 +779,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           });
           return;
         }
-        // The bar advances ONLY on real receipt progress. No elapsed-time or
-        // stage-guessed fabrication — before the first runner stamp lands we
-        // hold at 0 and say so honestly.
-        if (delta && (delta.pct || delta.stageId)) {
-          setTrainProgress({ pct: Number(delta.pct) || 0, stage: delta.detail || delta.stageId || "Running…" });
-        } else {
-          setTrainProgress({ pct: 0, stage: "Waiting for the first runner stamp…" });
-        }
+        // The bar advances ONLY on real receipt progress: setLiveConfig(cfg)
+        // above re-renders, and deriveTrainingWaitState(liveRunRow).barPct is
+        // the bar. No side-channel, no fabrication — before the first stamp,
+        // barPct is 0 and the status line says so.
       } catch { /* transient — keep polling */ }
     }, 5000);
   }
@@ -796,6 +831,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     setError("");
     setVerifying(true);
     setVerifyResult(null);
+    setHttpStatus(null);
     setInspectorTab("response");
     try {
       const reg = (workspaceConfig?.dataModel?.objects || []).filter((o) => o?.objectType === "api-registry").flatMap((o) => o.rows || []).find((r) => r?.integrationId === result.integrationId);
@@ -809,6 +845,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ integrationId: result.integrationId, prompt: String(testPrompt || DEFAULT_TEST_PROMPT) }),
         });
+        setHttpStatus(res.status); // the REAL HTTP status — never a fabricated 200
         if (res.ok) {
           const data = await res.json();
           responseBody = data?.response ?? data?.lastResponse ?? responseBody;
@@ -908,15 +945,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       <span>Trace records found</span>
                       <b style={{ marginLeft: "auto", fontWeight: 600 }}>{candidates.length} records</b>
                     </li>
-                    <li className={modelChoices.configured ? "is-done" : "is-pending"}>
+                    <li className={modelChoices.configured ? "is-done" : "is-pending"} data-eligible-runtime={modelChoices.configured ? "yes" : "no"}>
                       {modelChoices.configured ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
-                      <span>Binding verified</span>
-                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{modelChoices.configured ? "Verified" : "Set a runtime"}</b>
+                      <span>Local runtime detected</span>
+                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{modelChoices.configured ? (modelChoices.runtimes[0]?.adapter || "runner ready") : "Set a runtime"}</b>
                     </li>
-                    <li className={blocked >= 0 ? "is-done" : "is-pending"}>
-                      <Check size={14} aria-hidden="true" />
+                    <li className={runReceiptCount > 0 ? "is-done" : "is-pending"} data-eligible-receipts={runReceiptCount}>
+                      {runReceiptCount > 0 ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
                       <span>Run receipts available</span>
-                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{selected.length} receipts</b>
+                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{runReceiptCount > 0 ? `${runReceiptCount} receipts` : "none yet (first run)"}</b>
                     </li>
                   </ul>
                   <p className="dm-api-action-card-eyebrow" style={{ marginTop: 12 }}>Next step</p>
@@ -1096,14 +1133,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               <section className="dm-api-action-card training-run-card" aria-label="Training run">
                 <div className="dm-api-action-card-body" style={{ width: "100%" }}>
                   <div className="training-run-top">
-                    <span className="training-run-pct" data-train-pct={trainProgress.pct} data-train-headline={liveRunRow?.progress?.stageId || ""}>
-                      {Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%
+                    <span className="training-run-pct" data-train-pct={liveWaitState.barPct} data-train-headline={liveRunRow?.progress?.stageId || ""}>
+                      {liveWaitState.barPct}%
                     </span>
                     <span className="dm-api-action-card-note" data-train-elapsed="">{trainPhase === "running" ? (liveWaitState.elapsedLine || "starting…") : "Ready to run"}</span>
                   </div>
-                  <div className={`training-progress-track${trainProgress.pct >= 100 ? " is-ready" : ""}`}
-                    role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(Number(trainProgress.pct) > 0 ? { "aria-valuenow": Number(trainProgress.pct) } : {})}>
-                    <span style={{ width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%` }} />
+                  <div className={`training-progress-track${liveWaitState.barPct >= 100 ? " is-ready" : ""}`}
+                    role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(liveWaitState.barPct > 0 ? { "aria-valuenow": liveWaitState.barPct } : {})}>
+                    <span style={{ width: `${liveWaitState.barPct}%` }} />
                   </div>
                   <div className="dm-api-action-card-note" data-train-status={trainPhase} data-train-wait-stage={liveWaitState.statusLine} style={{ marginTop: 6 }}>
                     {trainPhase === "running" ? `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"} · ${liveWaitState.statusLine}` : trainPhase === "starting" ? "Recording governed run…" : `Dataset v${result.version} (${result.records} records) ready — one click runs the fine-tune here.`}
@@ -1239,7 +1276,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   try { return String(parsed?.choices?.[0]?.message?.content || verifyResult.snippet || ""); } catch { return verifyResult.snippet || ""; }
                 })();
                 const gotResponse = Boolean(raw) || Boolean(verifyResult.servedModel) || Boolean(content);
-                const httpLine = gotResponse ? "200 OK" : "no response";
+                // Real captured HTTP status when the test lane was reached;
+                // otherwise "responded" from the stamped row (never a fake 200).
+                const httpLine = httpStatus != null ? `${httpStatus} ${httpStatus === 200 ? "OK" : ""}`.trim() : gotResponse ? "responded" : "no response";
                 return (
                   <section className="dm-api-action-card" data-verify-result={verifyResult.verified ? "verified" : (verifyResult.demotion || "unverified")} aria-label="Invocation result">
                     <div className="dm-api-action-card-body" style={{ width: "100%" }}>
