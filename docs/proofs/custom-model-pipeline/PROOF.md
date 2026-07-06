@@ -112,7 +112,7 @@ Every claim traces to a governed row or source record.
 | `states/readbacks.json` (reward live) | completion reward truth-bound | `deriveTrainingCompletionReward` over the same rows |
 | `readbacks.json` (root) | honest in-container path (no live `complete`) | narrates the deferred boundary |
 
-Pure-suite backing: `unit-training-runtime` **68/68** · `unit-custom-models-ledger`
+Pure-suite backing: `unit-training-runtime` **72/72** · `unit-custom-models-ledger`
 **14/14** · `e2e-custom-model-training-loop` **29/29** ·
 `e2e-custom-model-deployment-loop` **17/17**.
 
@@ -126,7 +126,7 @@ Pure-suite backing: `unit-training-runtime` **68/68** · `unit-custom-models-led
   at the receipt level (Section B); the live end-to-end callback rides Section C.
 - **Real-browser screenshots of the newly-wired cockpit** (Details open,
   Suggested Actions accordion, serving profile) — derivers are unit-proven
-  (14/14 + 68/68); the browser capture is the next in-container follow-up.
+  (14/14 + 72/72); the browser capture is the next in-container follow-up.
 - **Helper-setup verified-model selection** + **truthful open-artifact contract**
   — explicitly deferred (tracked on the PR).
 

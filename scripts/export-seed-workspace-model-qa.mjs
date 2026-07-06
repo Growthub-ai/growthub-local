@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { applySuperAdminModelQaEvidence } from "./lib/super-admin-model-qa-seed.mjs";
 
@@ -84,12 +84,34 @@ if (bootDev) {
   const verified = await readWorkspace(baseUrl);
   const objects = verified.workspaceConfig?.dataModel?.objects || [];
   const traces = objects.find((object) => object?.id === "training-traces");
-  const helper = objects.find((object) => object?.id === "workspace-helper-sandbox")?.rows?.[0];
   assert.equal(traces?.rows?.length, 12, "training-traces must be present after API PATCH");
-  assert.equal(helper?.adapter, "local-intelligence", "main-aligned helper seed keeps secondary Ollama adapter");
-  assert.equal(helper?.intelligenceAdapterMode, "ollama", "helper secondary adapter is Ollama");
+
+  // The workspace-helper-sandbox row is owned by runtime helper setup — the
+  // feature seed explicitly refuses to pre-seed it ("helper setup owns that
+  // row"), so a fresh model-QA boot legitimately has no helper row and we do
+  // NOT fabricate one. If a configured helper row IS present, it must still be
+  // the Ollama secondary adapter — assert that conditionally rather than
+  // demanding a state the seed architecture intentionally does not create.
+  const helper = objects.find((object) => object?.id === "workspace-helper-sandbox")?.rows?.[0];
+  if (helper) {
+    assert.equal(helper.adapter, "local-intelligence", "if a helper row exists it keeps the secondary Ollama adapter");
+    assert.equal(helper.intelligenceAdapterMode, "ollama", "helper secondary adapter is Ollama");
+  }
+
+  // Ledger-hydration parity (review blocker #2): the SAME deriver the browser
+  // modal reads must agree with the API readback on eligibility. This is the
+  // harness assertion that a fresh seeded boot hydrates the ledger correctly —
+  // API readback, deriver readiness, and (by construction) the browser count
+  // all agree, so a false "0 eligible" after restart cannot pass QA silently.
+  const { deriveDistillationPipelineState, MIN_FINETUNE_TRACES } = await import(
+    pathToFileURL(path.join(appDir, "lib/training-ledger.js")).href
+  );
+  const pipeline = deriveDistillationPipelineState({ workspaceConfig: verified.workspaceConfig });
+  assert.ok(pipeline.graded >= MIN_FINETUNE_TRACES, `deriver must see >= ${MIN_FINETUNE_TRACES} eligible traces after boot (saw ${pipeline.graded})`);
+  assert.equal(pipeline.ready, true, "deriveDistillationPipelineState must be ready:true after a fresh seeded boot");
+
   console.log("[model-qa] API PATCH OK — training-traces/model-training layered on fresh runtime");
-  console.log(`[model-qa] helper setup clean — adapter=${helper.adapter}, agentHost=${helper.agentHost || "<empty>"}, secondary=${helper.intelligenceAdapterMode}`);
+  console.log(`[model-qa] ledger hydration parity — deriver graded=${pipeline.graded}, ready=${pipeline.ready}, floor=${MIN_FINETUNE_TRACES}${helper ? `, helper=${helper.adapter}/${helper.intelligenceAdapterMode}` : ", helper=<owned by runtime setup>"}`);
   console.log(`[model-qa] App URL: ${baseUrl}`);
 } else {
   workspaceConfig = JSON.parse(fs.readFileSync(appConfigPath, "utf8"));

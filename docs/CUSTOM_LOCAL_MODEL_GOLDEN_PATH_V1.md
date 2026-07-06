@@ -107,7 +107,7 @@ GROWTHUB_KIT_EXPORTS_HOME=/tmp/ws node scripts/export-seed-workspace-model-qa.mj
 #    → App URL http://127.0.0.1:3777 (dev server stays up).
 
 # 2. Pure-deriver QA (no GPU): the whole governed brain.
-node scripts/unit-training-runtime.test.mjs        # 66/66 — stages, monotonic
+node scripts/unit-training-runtime.test.mjs        # 72/72 — stages, monotonic
                                                     #   progress, command-safety,
                                                     #   stage-issue catalog, proof
                                                     #   checklist, completion reward
@@ -126,7 +126,7 @@ BASE_URL=http://127.0.0.1:3777 PLAYWRIGHT_DIR=$PWD \
 
 ## Proven in-container vs deferred to a real machine
 
-**Proven here** (no GPU): the governed brain (all derivers, 66/66), the ladder
+**Proven here** (no GPU): the governed brain (all derivers, 72/72), the ladder
 + demotions (29/29), the chat-completion proof against a real local HTTP server
 (17/17), the real `/data-model` workspace shell + governed rows, the composed
 argv pipeline shown in the real modal, the one-click governed receipt write, and

@@ -458,6 +458,26 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [open]);
 
+  // Evidence parity: when the modal opens, hydrate eligibility from FRESH
+  // governed state rather than trusting the prop snapshot. On a manual restart
+  // the parent can hand us a pre-hydration config whose training-traces haven't
+  // landed yet — that renders a false "0 eligible" while /api/workspace already
+  // returns the real traces (the browser/API/deriver disagreement flagged in
+  // review). One no-store fetch on open makes all three agree. A fetch failure
+  // keeps providedConfig — we never blank the modal on a transient error.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const probe = await fetch("/api/workspace", { cache: "no-store" });
+        const data = await probe.json();
+        if (!cancelled && data?.workspaceConfig) setLiveConfig(data.workspaceConfig);
+      } catch { /* keep providedConfig on error — honest fallback, never a blank ledger */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
   const selected = candidates.filter(({ index }) => !excluded.has(index));
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
