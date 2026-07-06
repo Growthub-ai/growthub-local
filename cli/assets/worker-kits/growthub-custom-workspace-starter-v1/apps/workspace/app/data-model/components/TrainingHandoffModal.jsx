@@ -49,7 +49,7 @@ import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
-import { deriveTrainingRemediation } from "../../../lib/training-runtime-drivers.js";
+import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState } from "../../../lib/training-runtime-drivers.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -199,10 +199,26 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     // One governed write: read the workspace, map the model-training-run row
     // (matched by trainingRunId) with `patch`, PATCH it back. Every stage uses
     // this so progress/blocked/imported all ride the same allowlisted lane.
+    // Monotonic progress merge AT THE WRITE BOUNDARY: a stale/duplicate runner
+    // can never regress the single row's progress. Higher stageRank wins; same
+    // stage advances only on higher counter, then higher pct.
+    "  function mono(prev, next) {",
+    "    if (!next) return prev || null; if (!prev) return next;",
+    "    const pr = Number(prev.stageRank) || 0, nr = Number(next.stageRank) || 0;",
+    "    if (nr > pr) return next; if (nr < pr) return prev;",
+    "    const pc = Number(prev.counter ?? -1), nc = Number(next.counter ?? -1);",
+    "    if (nc !== pc) return nc > pc ? next : prev;",
+    "    return (Number(next.pct) || 0) >= (Number(prev.pct) || 0) ? next : prev;",
+    "  }",
     "  async function stampRun(patch) {",
     "    try {",
     "      const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' }); const data = await r.json();",
-    "      const objects = (data.workspaceConfig.dataModel.objects || []).map((o) => o.objectType === 'model-training-run' ? ({ ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, ...patch }) : row) }) : o);",
+    "      const objects = (data.workspaceConfig.dataModel.objects || []).map((o) => o.objectType === 'model-training-run' ? ({ ...o, rows: (o.rows || []).map((row) => {",
+    "        if (String(row.trainingRunId) !== P.trainingRunId) return row;",
+    "        const merged = { ...row, ...patch };",
+    "        if (patch && patch.progress) merged.progress = mono(row.progress, patch.progress);",
+    "        return merged;",
+    "      }) }) : o);",
     "      await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
     "    } catch (e) { console.error('stampRun failed', (e && e.message) || e); }",
     "  }",
@@ -355,6 +371,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // The single derived one-click remedy shown when a stage fails — nothing
   // more than one line + one button (deriveTrainingRemediation owns the logic).
   const [remedy, setRemedy] = useState(null);
+  // The specific classified stage issue on failure {stageId, issue, userMessage,
+  // evidence, nextAction} — never a generic "training failed".
+  const [stageIssue, setStageIssue] = useState(null);
   const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
@@ -396,6 +415,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const smokeProven = liveRuntime.state === "complete";
   const liveOutputHash = liveRuntime.identityChain?.modelOutputHash || "";
   const liveSandboxRunId = liveRuntime.identityChain?.sandboxRunId || "";
+  // Wire the driver intelligence into the UI: the 9-milestone proof checklist
+  // and the completion reward are derived from the live governed rows so the
+  // user sees exactly what is proven and what remains (never optimistic ticks).
+  const liveRunRow = liveRuntime.runState?.latest || {};
+  const liveRegistryRow = (workspaceConfig?.dataModel?.objects || [])
+    .filter((o) => o?.objectType === "api-registry")
+    .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+    .find((r) => String(r?.integrationId || "") === `${SLUG}-model` || String(r?.baseUrl || "").includes(":11434")) || null;
+  const smokeRun = liveOutputHash ? { outputHash: liveOutputHash } : null;
+  const proofChecklist = deriveTrainingProofChecklist(liveRunRow, liveRegistryRow, smokeRun);
+  // Wait-state for the control plane: stage/status + elapsed shown separately;
+  // Date.now() is a client render value (re-computed on each 5s poll re-render).
+  const liveWaitState = deriveTrainingWaitState(liveRunRow, Date.now());
+  const completionReward = deriveTrainingCompletionReward(liveRunRow, {
+    apiRegistryRow: liveRegistryRow,
+    servedModel: (() => { try { return String(JSON.parse(liveRegistryRow?.lastResponse || "null")?.model || ""); } catch { return ""; } })(),
+    smokeRun,
+  });
 
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
@@ -534,8 +571,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   async function startTraining() {
     setError("");
     setRemedy(null);
+    setStageIssue(null);
+    // Governed gate: never fire an unsafe/not-ready config, and the one-click
+    // runner only executes argv `steps` (legacy command profiles are
+    // import-only). Both surface the exact reason instead of a dark failure.
+    if (!runConfig.ready) {
+      setError(`Cannot start: ${(runConfig.commandSafety?.reasons || runConfig.missingRequirements || []).join("; ") || "run config not ready"}.`);
+      return;
+    }
+    if (!Array.isArray(runConfig.steps) || runConfig.steps.length === 0) {
+      setError("This profile has no governed argv steps — it is import-only. Pick the one-click pipeline profile to run locally.");
+      return;
+    }
     setTrainPhase("starting");
-    setTrainProgress({ pct: 2, stage: "Recording the governed run + runner…" });
+    setTrainProgress({ pct: 0, stage: "Recording governed run…" });
     const startedAt = new Date().toISOString();
     try {
       const runningReceipt = buildTrainingRunReceipt({
@@ -549,7 +598,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         return next;
       });
       setTrainPhase("running");
-      setTrainProgress({ pct: 4, stage: "Launching the fine-tune on this machine…" });
+      setTrainProgress({ pct: 0, stage: "Waiting for runner stamp…" });
 
       // Real trigger. Don't await — training is long; the runner advances the
       // governed receipt and we poll it. If no local runner is reachable, the
@@ -608,13 +657,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
         if (runStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
-          // Honest preflight/failure reason from the receipt (blocked = system
-          // shortfall), never a generic message that hides the cause.
-          const why = String(rt.runState?.latest?.blockedReason || rt.runState?.reason || "").trim();
-          setError(why || "The training run reported a failure — check the local runner logs, then retry.");
-          // Derive the single one-click remedy for this exact failure point.
+          // SPECIFIC failure — classify the exact stage issue (not "training
+          // failed"): {stageId, issue, userMessage, evidence, nextAction}.
+          const row = rt.runState?.latest || {};
+          const issue = deriveTrainingStageIssue(row, row.preflight || null, String(row.blockedReason || rt.runState?.reason || ""));
+          setStageIssue(issue);
+          setError(issue.userMessage);
+          // The one-click remedy for this exact failure point.
           const rem = deriveTrainingRemediation({ workspaceConfig: cfg, workspaceSourceRecords, minScore, slug: SLUG });
-          setRemedy(rem.top);
+          setRemedy(rem.top || issue.nextAction);
           setTrainPhase("idle");
           return;
         }
@@ -745,12 +796,27 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             <div><strong>{target.label}</strong><span>target</span></div>
           </div>
           {error ? <div className="dm-helper-error">{error}</div> : null}
+          {/* SPECIFIC failure card — the classified stage issue with evidence,
+              not a generic "training failed". */}
+          {stageIssue ? (
+            <div className="dm-helper-toolcall dm-swarm-card" data-train-stage-issue={stageIssue.issue} data-train-issue-stage={stageIssue.stageId}>
+              <div className="dm-helper-toolcall-title dm-swarm-card-title">{stageIssue.stageId} · {stageIssue.issue}</div>
+              <div className="dm-helper-stream dm-swarm-card-desc">{stageIssue.userMessage}</div>
+              {stageIssue.evidence && (stageIssue.evidence.step != null || stageIssue.evidence.vramFreeGB != null || stageIssue.evidence.sourceBytes != null) ? (
+                <div className="dm-run-console__hint" data-train-issue-evidence="">
+                  {stageIssue.evidence.step != null ? `step ${stageIssue.evidence.step}/${stageIssue.evidence.totalSteps ?? "?"} · ` : ""}
+                  {stageIssue.evidence.vramFreeGB != null ? `VRAM ${stageIssue.evidence.vramFreeGB}/${stageIssue.evidence.requiredGB ?? "?"} GB · ` : ""}
+                  {stageIssue.evidence.checkpointPath ? `checkpoint ${stageIssue.evidence.checkpointPath}` : ""}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {remedy ? (
-            <div className="dm-helper-toolcall dm-swarm-card" data-train-remedy={remedy.action}>
-              <div className="dm-helper-toolcall-title dm-swarm-card-title">Suggested fix</div>
-              <div className="dm-helper-stream dm-swarm-card-desc">{remedy.derivedFix}</div>
-              <button type="button" className="training-action-primary" data-train-remedy-apply={remedy.action} onClick={() => applyRemedy(remedy)}>
-                {remedy.autoFixable ? remedy.cta : "Re-run"}
+            <div className="dm-helper-toolcall dm-swarm-card" data-train-remedy={remedy.action || remedy.variant}>
+              <div className="dm-helper-toolcall-title dm-swarm-card-title">Next action</div>
+              <div className="dm-helper-stream dm-swarm-card-desc">{remedy.derivedFix || remedy.label}</div>
+              <button type="button" className="training-action-primary" data-train-remedy-apply={remedy.action || remedy.variant} onClick={() => applyRemedy(remedy)}>
+                {remedy.autoFixable ? remedy.cta : (remedy.label || "Re-run")}
               </button>
             </div>
           ) : null}
@@ -849,8 +915,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 )) : <div className="dm-run-console__hint">No command for this profile — import the served/attested artifact directly.</div>}
                 <div className="dm-run-console__hint">verification expects response model = <strong>{runConfig.verification.expectedModel}</strong></div>
                 {!runConfig.ready ? <div className="dm-run-console__hint" data-runconfig-missing="">missing: {runConfig.missingRequirements.join(", ")}</div> : null}
+                {/* Command-safety reasons are shown and BLOCK prepare — an
+                    unsafe/not-ready config can never reach the runner. */}
+                {runConfig.commandSafety && !runConfig.commandSafety.ok
+                  ? <div className="dm-run-console__hint" data-runconfig-unsafe="">unsafe: {runConfig.commandSafety.reasons.join("; ")}</div> : null}
               </div>
-              <button type="button" className="training-action-primary" data-handoff-confirm="" disabled={!floorMet} onClick={runPrepare}>
+              <button type="button" className="training-action-primary" data-handoff-confirm="" disabled={!floorMet || !runConfig.ready} onClick={runPrepare}>
                 Prepare dataset & training run
               </button>
             </div>
@@ -889,12 +959,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 {/* Bar width is EXACTLY the receipt progress pct — never a
                     fabricated idle/starting/elapsed value. Zero until the
                     runner stamps real progress. */}
-                <div style={{ borderBottom: "2px solid currentColor", width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%`, transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct} />
-                <div className="dm-run-console__hint" data-train-status={trainPhase}>{trainPhase === "running" ? (trainProgress.stage || "Run in progress — tracked live from the governed run receipt") : trainPhase === "starting" ? "Recording run…" : "Not started"}</div>
+                <div style={{ borderBottom: "2px solid currentColor", width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%`, transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct}
+                  role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(Number(trainProgress.pct) > 0 ? { "aria-valuenow": Number(trainProgress.pct) } : {})} />
+                {/* Control-plane wait state — stage + status derived from the
+                    receipt; elapsed + last-proof age shown SEPARATELY, never as
+                    progress. */}
+                <div className="dm-run-console__hint" data-train-status={trainPhase} data-train-wait-stage={liveWaitState.statusLine}>
+                  {trainPhase === "running" ? liveWaitState.statusLine : trainPhase === "starting" ? "Recording governed run…" : "Not started"}
+                </div>
+                {trainPhase === "running" && liveWaitState.elapsedLine ? (
+                  <div className="dm-run-console__hint" data-train-elapsed="">{liveWaitState.elapsedLine}</div>
+                ) : null}
                 <div className="dm-helper-stream dm-swarm-card-desc">
                   {trainPhase === "running"
-                    ? `Your ${profile.label} fine-tune is running on this machine. Growthub Local is tracking run ${result.trainingRunId} live from the real run receipt — a fine-tune can take minutes or hours; this stays accurate the whole way and completes itself when a provable artifact lands.`
+                    ? `Your ${profile.label} fine-tune is running on this machine. Tracking run ${result.trainingRunId} live from the governed receipt — the bar advances only on real stage proof.`
                     : `Dataset v${result.version} (${result.records} records) is saved as ${result.datasetPath}. One click runs the fine-tune here and tracks it to completion.`}
+                </div>
+                {/* Live proof checklist during the run — what is proven so far. */}
+                <div className="dm-run-console__hint" data-train-proof-progress={`${proofChecklist.done}/${proofChecklist.total}`}>
+                  Proof {proofChecklist.done}/{proofChecklist.total}: {proofChecklist.items.filter((i) => i.proven).map((i) => i.label).join(", ") || "none yet"}
                 </div>
               </div>
 
@@ -902,7 +985,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-helper-toolcall dm-swarm-card" data-train-command="">
                   <div className="dm-helper-toolcall-title dm-swarm-card-title">Exact command this runs on your machine</div>
                   {runConfig.commands.map((c, i) => <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>)}
-                  <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}. One click runs this for you; if no local runner is reachable you can also run it by hand.</div>
+                  <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}. These are the exact argv steps the governed runner executes. The preview above is <strong>advanced/manual</strong> — running it by hand is NOT governed or proven until you import the artifact manually.</div>
                 </div>
               ) : (
                 <div className="dm-helper-toolcall dm-swarm-card">
@@ -911,7 +994,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               )}
 
               {trainPhase !== "running" ? (
-                <button type="button" className="training-action-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting"}>
+                <button type="button" className="training-action-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !(runConfig.steps && runConfig.steps.length)}>
                   {trainPhase === "starting" ? "Starting…" : "Start fine-tuning"}
                 </button>
               ) : (
@@ -1058,6 +1141,27 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </div>
                 <div className="dm-run-console__hint">Identity chain: {SLUG}-v{result.version} → {result.exportId} → {result.trainingRunId} → {result.modelTag} → {result.integrationId}{verifyResult?.verified ? " → verified" : ""}{smokeProven ? ` → ${liveSandboxRunId} → #${liveOutputHash}` : ""}</div>
                 {!smokeProven ? <a className="dm-run-console__hint" href="/workflows" data-done-open-workflow="">Open Workflow Canvas to run the smoke →</a> : null}
+              </div>
+
+              {/* The completion reward payload — the dopamine hit, derived, shown
+                  ONLY when the whole chain holds. */}
+              <div className="dm-helper-toolcall dm-swarm-card" data-training-reward={completionReward.live ? "live" : "pending"}>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">{completionReward.headline}</div>
+                {completionReward.live ? (
+                  <div className="dm-helper-stream dm-swarm-card-desc">
+                    tuned tag <strong>{completionReward.trainedTag}</strong> · base {completionReward.baseModel} · sha {String(completionReward.artifactSha).slice(0, 12)} · quant {completionReward.quantDelta} · endpoint {completionReward.localEndpoint} · verified model {completionReward.verifiedResponseModel} · outputHash #{completionReward.outputHash}
+                  </div>
+                ) : null}
+              </div>
+
+              {/* The 9-milestone proof checklist — proven only on real evidence. */}
+              <div className="dm-helper-toolcall dm-swarm-card" data-training-proof-checklist={`${proofChecklist.done}/${proofChecklist.total}`}>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Proof checklist — {proofChecklist.done}/{proofChecklist.total}</div>
+                {proofChecklist.items.map((it) => (
+                  <div key={it.id} className="dm-run-console__hint" data-proof-item={it.id} data-proof-proven={it.proven ? "yes" : "no"}>
+                    {it.proven ? "✓" : "•"} {it.label}
+                  </div>
+                ))}
               </div>
             </div>
           )}

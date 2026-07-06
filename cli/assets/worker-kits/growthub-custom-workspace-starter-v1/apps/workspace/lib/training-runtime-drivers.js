@@ -568,6 +568,20 @@ export const TRAINING_STAGE_ISSUES = {
 };
 
 function gbSafe(b) { const n = Number(b); return Number.isFinite(n) && n > 0 ? `${(n / 1e9).toFixed(1)} GB` : "?"; }
+/**
+ * Read a run row's artifact as the GOVERNED shape: rows persist FLAT columns
+ * (artifactType/artifactModelTag/artifactPath/artifactSha256/artifactQuantization/
+ * artifactSourceBytes/artifactArtifactBytes); the nested `artifact` object is
+ * only present on sidecar receipts. Reconstruct from flat when absent so every
+ * driver reads the real row, not an assumed nested object.
+ */
+function rowArtifact(runRow) {
+  if (runRow?.artifact && typeof runRow.artifact === "object") return runRow.artifact;
+  if (runRow?.artifactType || runRow?.artifactModelTag) {
+    return { type: runRow.artifactType, modelTag: runRow.artifactModelTag, path: runRow.artifactPath, sha256: runRow.artifactSha256, quantization: runRow.artifactQuantization, sourceBytes: runRow.artifactSourceBytes, artifactBytes: runRow.artifactArtifactBytes };
+  }
+  return {};
+}
 // Local guard: artifact-state without importing (drivers already read receipts).
 function deriveArtifactStateSafe(a) { try { return { quant: { measured: Number(a?.sourceBytes) > 0 && Number(a?.artifactBytes) > 0, verified: Number(a?.artifactBytes) > 0 && Number(a?.sourceBytes) > 0 && (Number(a.artifactBytes) / Number(a.sourceBytes)) < 0.9 } }; } catch { return null; } }
 
@@ -581,7 +595,7 @@ export function deriveTrainingStageIssue(runRow = {}, systemProbe = null, logs =
   const stageId = String(progress.stageId || "").trim() || (String(runRow?.status) === "blocked" ? "preflight" : "fine-tuning");
   const log = String(logs || runRow?.blockedReason || "");
   const pf = runRow?.preflight || systemProbe || {};
-  const artifact = runRow?.artifact || {};
+  const artifact = rowArtifact(runRow);
   const evidence = {
     step: progress.counter, totalSteps: progress.totalRecords || progress.total,
     accepted: progress.counter, totalRecords: progress.totalRecords, rejected: progress.rejected,
@@ -630,7 +644,7 @@ export function deriveTrainingWaitState(runRow = {}, nowMs = 0) {
  * on the governed rows (no optimistic ticks). Pure.
  */
 export function deriveTrainingProofChecklist(runRow = {}, apiRegistryRow = null, smokeRun = null) {
-  const a = runRow?.artifact || {};
+  const a = rowArtifact(runRow);
   const pf = runRow?.preflight || {};
   const quantProven = Number(a.sourceBytes) > 0 && Number(a.artifactBytes) > 0 && (Number(a.artifactBytes) / Number(a.sourceBytes)) < 0.9;
   const served = String(apiRegistryRow?.lastResponse ? tryModel(apiRegistryRow.lastResponse) : "");
@@ -657,7 +671,7 @@ function tryModel(s) { try { const p = typeof s === "string" ? JSON.parse(s) : s
  * true` when the whole proof chain holds; otherwise names what remains. Pure.
  */
 export function deriveTrainingCompletionReward(runRow = {}, verification = null) {
-  const a = runRow?.artifact || {};
+  const a = rowArtifact(runRow);
   const checklist = deriveTrainingProofChecklist(runRow, verification?.apiRegistryRow || null, verification?.smokeRun || null);
   const live = checklist.complete;
   return {
