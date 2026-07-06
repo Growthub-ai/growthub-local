@@ -24,6 +24,18 @@ const HELPER_EXECUTION_ADAPTERS = [
   { id: "local-process", label: "Local process (default)" },
 ];
 
+const DEFAULT_LOCAL_INTELLIGENCE_ENDPOINT = "http://127.0.0.1:11434/v1";
+const HELPER_LOCAL_MODEL_CHOICES = [
+  "gemma3:4b",
+  "gemma:2b",
+  "gemma:latest",
+  "llama3.1:8b",
+  "qwen2.5:7b",
+  "mistral:7b",
+  "phi3:14b",
+];
+const HELPER_AGENT_ADAPTERS = new Set(["local-agent-host", "agent-host"]);
+
 function getHelperSandboxObject(config) {
   const objects = Array.isArray(config?.dataModel?.objects) ? config.dataModel.objects : [];
   return objects.find((o) => o?.id === HELPER_SANDBOX_OBJECT_ID && o?.objectType === "sandbox-environment") || null;
@@ -36,6 +48,9 @@ function getHelperSandboxRow(config) {
 
 function isHelperConfigured(config) {
   const row = getHelperSandboxRow(config);
+  if (String(row?.adapter || "").trim() === "local-intelligence") {
+    return Boolean(String(row?.localModel || "").trim());
+  }
   return Boolean(String(row?.adapter || "").trim() === "local-agent-host" && String(row?.agentHost || "").trim());
 }
 
@@ -83,16 +98,21 @@ function upsertHelperSandbox(config, draft) {
   const objects = Array.isArray(dataModel.objects) ? dataModel.objects : [];
   const COLUMNS = [
     "Name", "lifecycleStatus", "runLocality", "runtime", "adapter", "agentHost", "intelligenceType",
-    "workspaceRead", "proposalApply", "sandboxRun", "networkPolicy", "instructions", "timeoutMs", "status",
+    "localModel", "localEndpoint", "intelligenceAdapterMode", "workspaceRead", "proposalApply", "sandboxRun",
+    "networkPolicy", "instructions", "timeoutMs", "status",
   ];
+  const adapter = draft.adapter || "local-agent-host";
   const row = {
     Name: "workspace-helper",
     lifecycleStatus: "live",
     runLocality: draft.runLocality || "local",
     runtime: draft.runtime || "node",
-    adapter: draft.adapter || "local-agent-host",
-    agentHost: draft.agentHost,
-    intelligenceType: "agent-host",
+    adapter,
+    agentHost: HELPER_AGENT_ADAPTERS.has(adapter) ? draft.agentHost : "",
+    localModel: adapter === "local-intelligence" ? String(draft.localModel || HELPER_LOCAL_MODEL_CHOICES[0]).trim() : "",
+    localEndpoint: adapter === "local-intelligence" ? (draft.localEndpoint || DEFAULT_LOCAL_INTELLIGENCE_ENDPOINT) : "",
+    intelligenceAdapterMode: adapter === "local-intelligence" ? (draft.intelligenceAdapterMode || "ollama") : "ollama",
+    intelligenceType: adapter === "local-intelligence" ? "local-intelligence" : "agent-host",
     workspaceRead: draft.workspaceRead ? "enabled" : "disabled",
     proposalApply: draft.proposalApply ? "approval-required" : "disabled",
     sandboxRun: draft.sandboxRun ? "enabled" : "disabled",
@@ -134,6 +154,9 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState({
     agentHost: helperRow?.agentHost || "codex_local",
+    localModel: helperRow?.localModel || HELPER_LOCAL_MODEL_CHOICES[0],
+    localEndpoint: helperRow?.localEndpoint || DEFAULT_LOCAL_INTELLIGENCE_ENDPOINT,
+    intelligenceAdapterMode: helperRow?.intelligenceAdapterMode || "ollama",
     runLocality: helperRow?.runLocality || "local",
     runtime: helperRow?.runtime || "node",
     adapter: helperRow?.adapter || "local-agent-host",
@@ -151,6 +174,9 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
     setStep(1);
     setDraft({
       agentHost: helperRow?.agentHost || "codex_local",
+      localModel: helperRow?.localModel || HELPER_LOCAL_MODEL_CHOICES[0],
+      localEndpoint: helperRow?.localEndpoint || DEFAULT_LOCAL_INTELLIGENCE_ENDPOINT,
+      intelligenceAdapterMode: helperRow?.intelligenceAdapterMode || "ollama",
       runLocality: helperRow?.runLocality || "local",
       runtime: helperRow?.runtime || "node",
       adapter: helperRow?.adapter || "local-agent-host",
@@ -162,9 +188,14 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
     });
     setSaving(false);
     setError("");
-  }, [open, helperRow?.adapter, helperRow?.agentHost, helperRow?.networkPolicy, helperRow?.proposalApply, helperRow?.runLocality, helperRow?.runtime, helperRow?.sandboxRun, helperRow?.timeoutMs, helperRow?.workspaceRead]);
+  }, [open, helperRow?.adapter, helperRow?.agentHost, helperRow?.intelligenceAdapterMode, helperRow?.localEndpoint, helperRow?.localModel, helperRow?.networkPolicy, helperRow?.proposalApply, helperRow?.runLocality, helperRow?.runtime, helperRow?.sandboxRun, helperRow?.timeoutMs, helperRow?.workspaceRead]);
 
   if (!open) return null;
+
+  const localModelOptions = Array.from(new Set([
+    String(draft.localModel || "").trim(),
+    ...HELPER_LOCAL_MODEL_CHOICES,
+  ].filter(Boolean)));
 
   async function saveSetup() {
     if (saving) return;
@@ -262,24 +293,62 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
                 Execution adapter
                 <select
                   value={draft.adapter}
-                  onChange={(e) => setDraft((d) => ({ ...d, adapter: e.target.value }))}
+                  onChange={(e) => {
+                    const adapter = e.target.value;
+                    setDraft((d) => ({
+                      ...d,
+                      adapter,
+                      agentHost: HELPER_AGENT_ADAPTERS.has(adapter) ? (d.agentHost || "codex_local") : "",
+                      localModel: adapter === "local-intelligence" ? (d.localModel || HELPER_LOCAL_MODEL_CHOICES[0]) : d.localModel,
+                      localEndpoint: adapter === "local-intelligence" ? (d.localEndpoint || DEFAULT_LOCAL_INTELLIGENCE_ENDPOINT) : d.localEndpoint,
+                      intelligenceAdapterMode: adapter === "local-intelligence" ? (d.intelligenceAdapterMode || "ollama") : d.intelligenceAdapterMode,
+                    }));
+                  }}
                 >
                   {HELPER_EXECUTION_ADAPTERS.map((adapter) => (
                     <option key={adapter.id} value={adapter.id}>{adapter.label}</option>
                   ))}
                 </select>
               </label>
-              <label>
-                Agent host (Paperclip)
-                <select
-                  value={draft.agentHost}
-                  onChange={(e) => setDraft((d) => ({ ...d, agentHost: e.target.value }))}
-                >
-                  {HELPER_AGENT_CHOICES.map((choice) => (
-                    <option key={choice.id} value={choice.id}>{choice.label}</option>
-                  ))}
-                </select>
-              </label>
+              {draft.adapter === "local-intelligence" ? (
+                <>
+                  <label>
+                    Local model (Ollama)
+                    <select
+                      value={draft.localModel}
+                      onChange={(e) => setDraft((d) => ({ ...d, localModel: e.target.value }))}
+                    >
+                      {localModelOptions.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Resolver mode
+                    <select
+                      value={draft.intelligenceAdapterMode}
+                      onChange={(e) => setDraft((d) => ({ ...d, intelligenceAdapterMode: e.target.value }))}
+                    >
+                      <option value="ollama">Ollama</option>
+                      <option value="lmstudio">LM Studio</option>
+                      <option value="vllm">vLLM</option>
+                      <option value="custom-openai-compatible">Custom OpenAI-compatible</option>
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <label>
+                  Agent host (Paperclip)
+                  <select
+                    value={draft.agentHost}
+                    onChange={(e) => setDraft((d) => ({ ...d, agentHost: e.target.value }))}
+                  >
+                    {HELPER_AGENT_CHOICES.map((choice) => (
+                      <option key={choice.id} value={choice.id}>{choice.label}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="workspace-helper-setup-two-col">
                 <label>
                   Runtime
@@ -324,7 +393,11 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
               <div><dt>Helper</dt><dd>Workspace Helper widget</dd></div>
               <div><dt>Sandbox</dt><dd>workspace-helper-sandbox</dd></div>
               <div><dt>Adapter</dt><dd>{draft.adapter}</dd></div>
-              <div><dt>Agent host</dt><dd>{draft.agentHost}</dd></div>
+              {draft.adapter === "local-intelligence" ? (
+                <div><dt>Local model</dt><dd>{draft.localModel}</dd></div>
+              ) : (
+                <div><dt>Agent host</dt><dd>{draft.agentHost}</dd></div>
+              )}
               <div><dt>Access</dt><dd>{draft.workspaceRead ? "workspace context" : "no workspace context"} · {draft.proposalApply ? "approve applies" : "no applies"} · {draft.sandboxRun ? "sandbox runs" : "no runs"}</dd></div>
               <div><dt>Runtime</dt><dd>{draft.runLocality} · {draft.runtime} · {draft.networkPolicy}</dd></div>
             </dl>
@@ -338,7 +411,12 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
           {step < 3 ? (
             <button type="button" className="primary" onClick={() => setStep((s) => s + 1)}>Next</button>
           ) : (
-            <button type="button" className="primary" onClick={saveSetup} disabled={saving || !draft.agentHost}>
+            <button
+              type="button"
+              className="primary"
+              onClick={saveSetup}
+              disabled={saving || (draft.adapter === "local-intelligence" ? !draft.localModel : !draft.agentHost)}
+            >
               {saving ? "Saving..." : "Save & open helper"}
             </button>
           )}
