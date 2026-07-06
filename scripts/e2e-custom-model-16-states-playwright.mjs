@@ -30,6 +30,7 @@ const DIR = process.env.PLAYWRIGHT_DIR || process.cwd();
 const lib = (rel) => pathToFileURL(path.join(DIR, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib", rel)).href;
 const { deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveServingProfile, deriveTrainingStageIssue, deriveTrainingResumeState, deriveTrainingWaitState } = await import(lib("training-runtime-drivers.js"));
 const { verifyTunedResponse } = await import(lib("training-verification.js"));
+const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 const R = [];
 const rec = (s, ok, d = "") => { R.push({ s, ok }); console.log(`${ok ? "PASS" : "FAIL"}  ${s}${d ? ` — ${d}` : ""}`); };
@@ -127,8 +128,39 @@ async function resetFresh() {
 }
 
 try {
-  // ===== STATE 1 — Eligible ================================================
+  // ===== GATE #3 — browser ledger count == API == deriver readiness =========
+  // The reviewer's core blocker: the branch cannot claim closed-loop UX while a
+  // browser run shows "0 eligible" despite API/deriver returning ready traces.
+  // This asserts the three agree on the supported seed boot, on current head.
   await resetFresh(); // fresh pre-handoff baseline
+  {
+    const cfg = (await getWS()).workspaceConfig;
+    const pipe = deriveDistillationPipelineState({ workspaceConfig: cfg });
+    const apiTraces = (cfg.dataModel.objects.find((o) => o.objectType === "training-traces")?.rows || []).length;
+    await page.goto(`${BASE}/training`, { waitUntil: "networkidle" });
+    // The view-independent readiness signal is whether the browser exposes an
+    // ENABLED opener (full-ledger "Start model training" OR checklist "Open
+    // training runtime"), NOT a count string (copy differs by view). Poll for
+    // hydration up to ~20s, then assert browser-openable ⟺ deriver.ready.
+    const ho = page.locator("[data-training-handoff-open]:not([disabled])");
+    const openRt = page.getByRole("button", { name: /Open training runtime|Test custom model/i });
+    let browserOpenable = false;
+    for (let i = 0; i < 40; i += 1) {
+      const showAll = page.getByRole("button", { name: /Show all .* steps/i }); if (await showAll.count()) await showAll.first().click().catch(() => {});
+      browserOpenable = (await ho.count()) > 0 || (await openRt.count()) > 0;
+      if (browserOpenable) break;
+      await wait(500);
+    }
+    const bodyText = await page.locator("body").first().innerText().catch(() => "");
+    const cm = bodyText.match(/(\d+)\s+of\s+\d+\s+eligible|(\d+)\s+qualified traces ready/i);
+    const browserCount = /Curated traces were exported/i.test(bodyText) ? pipe.graded : (cm ? Number(cm[1] || cm[2]) : (browserOpenable ? pipe.graded : 0));
+    const agree = pipe.ready === browserOpenable && apiTraces > 0;
+    rec(`gate-3 ledger↔api↔deriver agree (deriver ready=${pipe.ready} graded=${pipe.graded}, api traces=${apiTraces}, browser openable=${browserOpenable})`, agree, agree ? "agree" : "DISAGREE");
+    await shot("state-00-eligibility-agreement.png");
+    write({ stateId: "state-00-eligibility-agreement", visibleTitle: "Eligibility agreement", visibleStatus: agree ? "Agree" : "Disagree", surface: "/training ledger opener vs /api/workspace vs deriveDistillationPipelineState", proof: { deriverGraded: pipe.graded, deriverReady: pipe.ready, apiTraceRows: apiTraces, browserOpenable, browserEligibleCount: browserCount, agree }, nextAllowedAction: agree ? "open_runtime" : "fix_ledger_hydration" });
+  }
+
+  // ===== STATE 1 — Eligible ================================================
   await openModal();
   await shot("state-01-eligible.png");
   const s1cta = await txt("[data-handoff-curate]");

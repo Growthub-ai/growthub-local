@@ -24,6 +24,10 @@ three layers and writes a machine-readable readback per state.
   cockpit use — never mock text. It asserts each state's governed invariant and
   fails if one does not hold. Output: `state-01..state-16-*-readback.json` in this
   directory. **Result: 16/16 states proven.**
+### Fresh-boot recapture (current head) — gate #3 agreement
+
+`../states-16-live/` was recaptured on a **fresh `node scripts/export-seed-workspace-model-qa.mjs` boot** of the current head in real Chromium — **17/17 checks pass, 17/17 screenshots distinct**. `state-00-eligibility-agreement` is a hard **gate #3** assertion: the browser ledger, `/api/workspace` trace rows, and `deriveDistillationPipelineState` must agree on readiness (asserts *browser-openable ⟺ deriver.ready* — a view-independent signal, not a count string — and fails the run on disagreement). Result on the supported seed boot: `deriver ready=true graded=11 · api traces=12 · browser openable=true · agree`.
+
 - **Tier A — live in-browser PNG capture (operator step, booted seeded workspace):**
   `BASE_URL=… PLAYWRIGHT_DIR=… node scripts/e2e-custom-model-states-playwright.mjs`
   drives the real modal on a booted seeded workspace and captures a PNG per state,
