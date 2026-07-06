@@ -49,6 +49,7 @@ import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
+import { deriveTrainingRemediation } from "../../../lib/training-runtime-drivers.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -332,6 +333,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Live, REAL training progress — driven by the governed run receipt the
   // local runner advances, polled below. Never a fabricated bar.
   const [trainProgress, setTrainProgress] = useState({ pct: 0, stage: "" });
+  // The single derived one-click remedy shown when a stage fails — nothing
+  // more than one line + one button (deriveTrainingRemediation owns the logic).
+  const [remedy, setRemedy] = useState(null);
   const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
@@ -510,6 +514,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // modal stays live off real state and closes the loop itself.
   async function startTraining() {
     setError("");
+    setRemedy(null);
     setTrainPhase("starting");
     setTrainProgress({ pct: 2, stage: "Recording the governed run + runner…" });
     const startedAt = new Date().toISOString();
@@ -542,6 +547,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
   }
 
+  // Apply the single derived remedy. Auto-fixable format cleansing runs the
+  // deterministic rule (trim + strip control chars) through the governed PATCH,
+  // then re-runs. Every other remedy re-runs the idempotent pipeline (same run
+  // id) once the user has acted on the derived fix. Nothing else spins up.
+  async function applyRemedy(r) {
+    if (!r) return;
+    setError("");
+    if (r.action === "cleanse_traces") {
+      const CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+      const clean = (v) => String(v ?? "").replace(CTRL, "").trim();
+      await patchObjects((objects) => objects.map((o) => (o?.id === "training-traces"
+        ? { ...o, rows: (o.rows || []).map((row) => ({ ...row, inputPrompt: clean(row.inputPrompt), agentOutput: clean(row.agentOutput) })) }
+        : o)));
+    }
+    setRemedy(null);
+    await startTraining();
+  }
+
   // Poll the REAL governed run receipt until the run reaches a terminal stage.
   // Drives the live bar from real state and auto-advances on a provable
   // artifact — for however long the fine-tune takes.
@@ -570,6 +593,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           // shortfall), never a generic message that hides the cause.
           const why = String(rt.runState?.latest?.blockedReason || rt.runState?.reason || "").trim();
           setError(why || "The training run reported a failure — check the local runner logs, then retry.");
+          // Derive the single one-click remedy for this exact failure point.
+          const rem = deriveTrainingRemediation({ workspaceConfig: cfg, workspaceSourceRecords, minScore, slug: SLUG });
+          setRemedy(rem.top);
           setTrainPhase("idle");
           return;
         }
@@ -700,6 +726,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             <div><strong>{target.label}</strong><span>target</span></div>
           </div>
           {error ? <div className="dm-helper-error">{error}</div> : null}
+          {remedy ? (
+            <div className="dm-helper-toolcall dm-swarm-card" data-train-remedy={remedy.action}>
+              <div className="dm-helper-toolcall-title dm-swarm-card-title">Suggested fix</div>
+              <div className="dm-helper-stream dm-swarm-card-desc">{remedy.derivedFix}</div>
+              <button type="button" className="training-action-primary" data-train-remedy-apply={remedy.action} onClick={() => applyRemedy(remedy)}>
+                {remedy.autoFixable ? remedy.cta : "Re-run"}
+              </button>
+            </div>
+          ) : null}
 
           {panel === "checklist" && (
             <div className="dm-orch-modal-list">

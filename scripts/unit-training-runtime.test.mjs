@@ -28,7 +28,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -645,4 +645,76 @@ test("redaction: a blocked trace never enters the corpus, regardless of quality 
 
 test("artifact types are the documented closed set", () => {
   assert.deepEqual(ARTIFACT_TYPES, ["adapter", "gguf", "merged-model", "ollama-model", "openai-compatible-endpoint"]);
+});
+
+// --------------------------------------------------------------------------
+// Remediation sub-registry — one-click derived solutions per failure point
+// --------------------------------------------------------------------------
+
+const SLUG_ID = "workspace-local";
+function wsWithRun(runRow, extraObjects = []) {
+  return { dataModel: { objects: [{ id: "model-training-run", objectType: "model-training-run", rows: [{ modelTrainingRowId: SLUG_ID, ...runRow }] }, ...extraObjects] } };
+}
+
+test("shard plan: deterministic, content-addressable chunks", () => {
+  const plan = deriveShardPlan({ totalRecords: 130, chunkSize: 50, datasetSha: "abc" });
+  assert.equal(plan.shardCount, 3);
+  assert.deepEqual([plan.shards[0].start, plan.shards[0].end], [0, 50]);
+  assert.deepEqual([plan.shards[2].start, plan.shards[2].end], [100, 130]);
+  assert.equal(plan.shards[2].count, 30);
+  // Same corpus sha + index ⇒ identical shard key (idempotent, re-runs reproduce).
+  assert.equal(plan.shards[1].shardKey, deriveShardPlan({ totalRecords: 130, chunkSize: 50, datasetSha: "abc" }).shards[1].shardKey);
+  assert.equal(deriveShardPlan({}).shardCount, 0, "empty corpus ⇒ zero shards, never throws");
+});
+
+test("trace format: deterministic cleanse targets, redaction never cleansable", () => {
+  const traces = { id: "training-traces", objectType: "training-traces", rows: [
+    { inputPrompt: "  untrimmed ", agentOutput: "ok", qualityScore: 80 },   // auto-cleanable
+    { inputPrompt: "clean", agentOutput: "clean", qualityScore: 90 },        // clean
+    { inputPrompt: "present", agentOutput: "present" },                       // needs grade
+    { inputPrompt: "x", agentOutput: "y", qualityScore: 99, redactionStatus: "blocked" }, // blocked
+  ] };
+  const fmt = deriveTraceFormatState({ workspaceConfig: { dataModel: { objects: [traces] } } });
+  assert.equal(fmt.autoCleanable, 1);
+  assert.equal(fmt.clean, 1);
+  assert.equal(fmt.needsGrade, 1);
+  assert.equal(fmt.blocked, 1);
+  assert.equal(fmt.needsCleanse, true);
+  assert.equal(fmt.issues.find((i) => i.fix === "grade").index, 2);
+});
+
+test("remediation: preflight-blocked → auto-fixable lower-footprint remedy, highest severity", () => {
+  const ws = wsWithRun({ trainingRunId: "r1", status: "blocked", blockedReason: "Preflight blocked — needs 40 GB free disk, 9 GB available", preflight: { ok: false } });
+  const rem = deriveTrainingRemediation({ workspaceConfig: ws, workspaceSourceRecords: {} });
+  assert.equal(rem.hasRemedies, true);
+  assert.equal(rem.top.failurePoint, "preflight");
+  assert.equal(rem.top.action, "remediate_preflight");
+  assert.equal(rem.top.autoFixable, true);
+  assert.ok(/40 GB free disk/.test(rem.top.reason));
+  assert.equal(rem.top.destination, "/training");
+});
+
+test("remediation: unproven quantization → re-quantize remedy", () => {
+  const ws = wsWithRun({ trainingRunId: "r2", status: "completed", artifactType: "gguf", artifactModelTag: "gh-v1", artifactPath: "/m.gguf", artifactSha256: "abc", artifactQuantization: "q4_k_m", artifactSourceBytes: 16e9, artifactArtifactBytes: 15.9e9 });
+  const rem = deriveTrainingRemediation({ workspaceConfig: ws, workspaceSourceRecords: {} });
+  const quant = rem.remedies.find((r) => r.failurePoint === "quantize");
+  assert.ok(quant, "quant contradiction yields a remedy");
+  assert.equal(quant.action, "requantize_artifact");
+  assert.ok(/not quantized/.test(quant.reason));
+});
+
+test("remediation: dirty reasoning traces → agentic cleanse remedy", () => {
+  const traces = { id: "training-traces", objectType: "training-traces", rows: [{ inputPrompt: " x ", agentOutput: "y", qualityScore: 80 }] };
+  const rem = deriveTrainingRemediation({ workspaceConfig: { dataModel: { objects: [traces] } }, workspaceSourceRecords: {} });
+  const fmt = rem.remedies.find((r) => r.failurePoint === "distill");
+  assert.ok(fmt, "format issue yields a cleanse remedy");
+  assert.equal(fmt.action, "cleanse_traces");
+  assert.equal(fmt.autoFixable, true);
+});
+
+test("remediation: none when nothing failed; quality floor exported", () => {
+  const rem = deriveTrainingRemediation({ workspaceConfig: { dataModel: { objects: [] } }, workspaceSourceRecords: {} });
+  assert.equal(rem.hasRemedies, false);
+  assert.equal(rem.top, null);
+  assert.equal(HIGH_QUALITY_TRACE_FLOOR, 50);
 });

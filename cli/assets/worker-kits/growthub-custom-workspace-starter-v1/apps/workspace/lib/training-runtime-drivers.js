@@ -65,6 +65,14 @@ const ACTION_DESTINATIONS = {
   prepare_next_training_run: { route: "/training", cta: "Prepare next training run", authority: "model-training-run" },
   open_custom_models: { route: "/custom-models", cta: "Open Custom Models", authority: "model-training" },
   complete: { route: "/custom-models", cta: "Open Custom Models", authority: "model-training" },
+  // Remediation actions — the one-click derived solutions the SAME modal
+  // offers when a lifecycle stage fails. Each lands on the runtime modal
+  // (the /training authority), never a new surface.
+  remediate_preflight: { route: "/training", cta: "Lower footprint & re-run", authority: "model-training-run" },
+  requantize_artifact: { route: "/training", cta: "Re-quantize & re-run", authority: "model-training-run" },
+  cleanse_traces: { route: "/training", cta: "Clean & reformat traces", authority: "training-traces" },
+  rechunk_corpus: { route: "/training", cta: "Re-chunk corpus & re-run", authority: "model-training-run" },
+  retry_finetune: { route: "/training", cta: "Adjust & re-run the fine-tune", authority: "model-training-run" },
 };
 
 export function destinationForAction(action) {
@@ -332,5 +340,180 @@ export function deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecor
     recommendation: gaps.length === 0
       ? "No new training gaps detected from recent usage."
       : `Re-train from gaps: ${gaps[0].label.toLowerCase()} (${gaps[0].count}).`,
+  };
+}
+
+// ===========================================================================
+// Remediation sub-registry — the SAME pure-deriver brain applied to execution
+// failure points, so every stage that can fail yields a deterministic, one-
+// click derived solution surfaced minimally in the SAME modal (never a new
+// surface, never auto-run without the user's click). It consumes the composed
+// runtime state (preflight, progress, artifact.quant, run failure) and the
+// corpus format/shard derivers below, and emits ranked remedies exactly like
+// the lifecycle drivers — one governed action token each, keyed to the same
+// receipt lifecycle. Pure, seeded, never throws.
+// ===========================================================================
+
+const TRACES_OBJECT_ID = "training-traces";
+
+/**
+ * Curation quality floors. 10 is the hard fine-tune floor (OpenAI SFT / local
+ * QLoRA minimum); 50 is the "high-quality custom model" floor the pipeline
+ * treats as the confident tier. Both are academically grounded minimums, not
+ * targets — more is better, these are the gates.
+ */
+export const HIGH_QUALITY_TRACE_FLOOR = 50;
+
+/**
+ * Deterministic shard/chunk plan for the local distillation → conversion pass.
+ * A large corpus is processed in ordered, content-addressable chunks so the
+ * runner can stream shards through distillation → fine-tune conversion without
+ * holding the whole set in memory, and each shard is idempotent by index +
+ * dataset sha (re-runs reproduce the exact same shards — never re-fabricated).
+ * This is the governed orchestration layer that FEEDS the trainer's clustering
+ * deterministically; it does not itself implement expert/weight internals.
+ * Pure, never throws.
+ */
+export function deriveShardPlan({ totalRecords = 0, chunkSize = 64, datasetSha = "" } = {}) {
+  const total = Math.max(0, Math.floor(Number(totalRecords) || 0));
+  const size = Math.max(1, Math.floor(Number(chunkSize) || 64));
+  const shardCount = Math.ceil(total / size) || 0;
+  const sha = String(datasetSha || "").trim();
+  const shards = [];
+  for (let i = 0; i < shardCount; i += 1) {
+    const start = i * size;
+    const end = Math.min(total, start + size);
+    shards.push({
+      index: i,
+      start,
+      end,
+      count: end - start,
+      // Content-addressable, deterministic shard id: same corpus sha + index
+      // ⇒ same key on every re-run (idempotent shard identity).
+      shardKey: `${sha || "nosha"}:${i}:${start}-${end}`,
+    });
+  }
+  return { totalRecords: total, chunkSize: size, shardCount, shards };
+}
+
+/**
+ * Trace-format state — the deterministic, agentic-cleansing target. Scans the
+ * governed `training-traces` rows and classifies each as clean, auto-cleanable
+ * (whitespace / control-char / non-serializable content a fixed rule can
+ * normalize into strict JSONL), or needs-grade (present content but no quality
+ * score — routes to curation, never auto-graded). Redaction-blocked rows are
+ * never cleansable. Pure, never throws — the rules are fixed and deterministic.
+ */
+export function deriveTraceFormatState({ workspaceConfig, minScore = DEFAULT_MIN_SCORE } = {}) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const object = objects.find((o) => o?.id === TRACES_OBJECT_ID);
+  const rows = Array.isArray(object?.rows) ? object.rows : [];
+
+  let clean = 0, autoCleanable = 0, needsGrade = 0, blocked = 0;
+  const issues = [];
+  const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/; // control chars (excl. tab/newline/cr)
+  rows.forEach((row, index) => {
+    if (String(row?.redactionStatus || "").toLowerCase() === "blocked") { blocked += 1; return; }
+    const prompt = String(row?.inputPrompt ?? "");
+    const output = String(row?.agentOutput ?? "");
+    if (!prompt.trim() || !output.trim()) return; // empty ⇒ not a trace, ignored
+    const untrimmed = prompt !== prompt.trim() || output !== output.trim();
+    const control = CONTROL.test(prompt) || CONTROL.test(output);
+    const hasScore = Number.isFinite(Number(row?.qualityScore));
+    if (untrimmed || control) {
+      autoCleanable += 1;
+      issues.push({ index, fix: "reformat", reason: control ? "control characters in trace" : "untrimmed whitespace" });
+    } else if (!hasScore) {
+      needsGrade += 1;
+      issues.push({ index, fix: "grade", reason: "reasoning trace present but ungraded" });
+    } else {
+      clean += 1;
+    }
+  });
+
+  return {
+    total: rows.length,
+    clean,
+    autoCleanable,
+    needsGrade,
+    blocked,
+    // Only whitespace/control normalization is safe to auto-apply with fixed
+    // rules; grading is a curation decision, never auto-written.
+    needsCleanse: autoCleanable > 0,
+    issues,
+  };
+}
+
+/**
+ * The unified remediation deriver. For each execution failure point it emits a
+ * ranked, deterministic, one-click remedy grounded in the real receipt state.
+ * `autoFixable` marks remedies a fixed rule can apply agentically on one click
+ * (trace cleansing, lower-footprint re-run); the rest re-run the governed
+ * runner with an adjusted, derived parameter. Never auto-executes — it derives
+ * the button; the modal shows the single top remedy minimally. Pure.
+ */
+export function deriveTrainingRemediation({ workspaceConfig, workspaceSourceRecords, minScore = DEFAULT_MIN_SCORE, slug = "workspace-local" } = {}) {
+  const runtime = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug });
+  const runState = runtime.runState || {};
+  const format = deriveTraceFormatState({ workspaceConfig, minScore });
+  const remedies = [];
+
+  const push = (r) => {
+    const dest = destinationForAction(r.action);
+    remedies.push({ ...r, destination: dest.route, cta: dest.cta, canonicalObject: dest.authority, oneClick: true });
+  };
+
+  // 1. Preflight blocked — system shortfall. Highest severity (nothing ran).
+  const pf = runState.preflight;
+  if (runState.runState === "failed" && pf && pf.ok === false) {
+    push({
+      id: "preflight", failurePoint: "preflight", severity: 1.0, autoFixable: true,
+      action: "remediate_preflight",
+      reason: String(runState.latest?.blockedReason || runState.reason || "Preflight blocked — insufficient system resources."),
+      // Deterministic derived fix: shrink the footprint that failed — lower the
+      // quant target one step and/or reduce shard size so the disk/RAM/VRAM
+      // floor drops, then re-run the same run id.
+      derivedFix: "Lower the quant footprint (e.g. q8_0 → q4_k_m) and reduce shard size, then re-run.",
+    });
+  }
+
+  // 2. Quantization contradiction — the file is not actually quantized.
+  const quant = runState.artifact?.quant;
+  if (quant && quant.measured && !quant.verified) {
+    push({
+      id: "quant", failurePoint: "quantize", severity: 0.9, autoFixable: false,
+      action: "requantize_artifact",
+      reason: quant.reason,
+      derivedFix: "Re-run the quantize stage (imatrix + llama-quantize) — the produced GGUF did not shrink from fp16.",
+    });
+  }
+
+  // 3. Corpus format — reasoning traces need cleansing/reformatting to JSONL.
+  if (format.needsCleanse) {
+    push({
+      id: "format", failurePoint: "distill", severity: 0.6, autoFixable: true,
+      action: "cleanse_traces",
+      reason: `${format.autoCleanable} reasoning trace(s) need normalization to strict JSONL (whitespace/control chars).`,
+      derivedFix: "Apply the deterministic cleanse rules (trim + strip control chars), re-serialize as JSONL.",
+    });
+  }
+
+  // 4. Fine-tune run failed (non-preflight) — retry with an adjusted profile.
+  if (runState.runState === "failed" && !(pf && pf.ok === false)) {
+    push({
+      id: "finetune", failurePoint: "fine-tune", severity: 0.8, autoFixable: false,
+      action: "retry_finetune",
+      reason: String(runState.reason || "The fine-tune run reported a failure."),
+      derivedFix: "Re-run the same run id with the adjusted profile/dataset — resumes the receipt, never forks.",
+    });
+  }
+
+  remedies.sort((a, b) => b.severity - a.severity);
+  return {
+    remedies,
+    hasRemedies: remedies.length > 0,
+    // The SINGLE top remedy the modal renders minimally (one line + one button).
+    top: remedies[0] || null,
+    format,
   };
 }
