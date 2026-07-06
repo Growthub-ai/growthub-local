@@ -1,0 +1,18 @@
+{
+  "stateId": "state-08-fine-tuning",
+  "visibleTitle": "",
+  "visibleStatus": "Running",
+  "primaryCta": "View artifacts",
+  "surface": "Training Handoff modal · train (fine-tuning)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "barPct": 48,
+    "step": 4320,
+    "totalSteps": 9000,
+    "loss": 0.8732,
+    "checkpointPath": "./artifacts/workspace-local-tuned-v1/checkpoint-4320"
+  },
+  "nextAllowedAction": "view_run"
+}

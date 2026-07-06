@@ -10200,6 +10200,26 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   transition: width 160ms ease, background 160ms ease;
 }
 .training-progress-track.is-ready span { background: #16a34a; }
+/* Custom-model training modal — reference-matched design-system pieces. */
+.training-impact { margin: 8px 0 0; padding: 0; display: grid; gap: 0; }
+.training-impact > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 0; border-top: 1px solid #edf0f3; }
+.training-impact > div:first-child { border-top: 0; }
+.training-impact dt { margin: 0; font-size: 12px; color: #6b7280; }
+.training-impact dd { margin: 0; font-size: 13px; font-weight: 600; color: #111827; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+.training-config-fields .dm-api-action-card-body { gap: 8px; }
+.training-field { display: grid; gap: 4px; margin: 0; }
+.training-field > span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; }
+.training-field select, .training-field input { height: 32px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 13px; padding: 0 9px; width: 100%; box-sizing: border-box; }
+.training-field input[aria-invalid="true"] { border-color: #dc2626; }
+.training-run-card .dm-api-action-card-body { gap: 6px; }
+.training-run-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.training-run-pct { font-size: 26px; font-weight: 700; color: #111827; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.training-run-card .training-progress-track { height: 6px; margin-top: 2px; }
+.training-run-card .training-progress-track span { background: #2563eb; }
+.training-run-card .training-progress-track.is-ready span { background: #16a34a; }
+.training-advanced { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; background: #fafafa; }
+.training-advanced > summary { font-size: 12px; color: #6b7280; cursor: pointer; list-style: revert; }
+.training-advanced-pre { margin: 8px 0 0; padding: 8px 10px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
 .training-progress-marks {
   display: flex;
   justify-content: space-between;

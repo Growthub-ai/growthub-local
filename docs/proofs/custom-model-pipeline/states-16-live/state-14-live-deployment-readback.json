@@ -1,0 +1,19 @@
+{
+  "stateId": "state-14-live-deployment",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Deployed · Healthy",
+  "primaryCta": "Copy request",
+  "surface": "/training ledger (deployed model + endpoint over the connected api-registry row)",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "modelInvocation": "model-invocation:workspace-local-model"
+  },
+  "proof": {
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "version": "workspace-local-tuned-v1",
+    "registryConnected": true,
+    "servedModel": "workspace-local-tuned-v1",
+    "servesTunedTag": true
+  },
+  "nextAllowedAction": "copy_request"
+}

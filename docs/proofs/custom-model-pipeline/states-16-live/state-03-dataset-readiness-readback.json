@@ -1,0 +1,12 @@
+{
+  "stateId": "state-03-dataset-readiness",
+  "visibleTitle": "Dataset Readiness",
+  "visibleStatus": "prepared",
+  "primaryCta": "Continue",
+  "surface": "Training Handoff modal · prepare",
+  "governedRows": {
+    "modelTrainingRun": "qa_run",
+    "trainingTraces": "training-traces"
+  },
+  "nextAllowedAction": "start_training"
+}

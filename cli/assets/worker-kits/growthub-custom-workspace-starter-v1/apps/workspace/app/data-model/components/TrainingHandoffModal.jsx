@@ -32,6 +32,7 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { Check, X, AlertTriangle } from "lucide-react";
 import {
   deriveTrainingHandoffState,
   DEFAULT_MIN_SCORE,
@@ -828,21 +829,38 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
   }
 
+  const runTag = result?.modelTag || reservedTag;
   const headTitle = ({
-    curate: "Review examples", profile: "Choose training path", prepare: "Prepare training data",
-    train: "Run training", import: "Attach model result", verify: "Test model reply",
-    bind: "Run in workflow", recover: "Recovery", done: "Completion",
-  })[panel] || "Start model training";
+    curate: "Configure Traces", profile: "Train custom model", prepare: "Dataset Readiness",
+    train: trainPhase === "running" ? `Training ${runTag}` : "Run training", import: "Attach model result",
+    verify: "First invocation test", bind: "Run in workflow", recover: "Training blocked", done: "Proof loop complete",
+  })[panel] || "Custom Model Training";
+  // Status pill per panel — the reference's Ready to train / Running / Success /
+  // Needs attention / Verified pill, using the app's own dm-status-chip tones.
+  const pill = (() => {
+    if (panel === "recover") return { label: "Needs attention", cls: "is-bad" };
+    if (panel === "verify") return verifyResult?.verified ? { label: "Success", cls: "is-ok" } : verifyResult ? { label: "Not verified", cls: "is-bad" } : { label: "Ready to test", cls: "" };
+    if (panel === "train") return stageIssue ? { label: "Needs attention", cls: "is-bad" } : trainPhase === "running" ? { label: "Running", cls: "is-running" } : { label: "Ready to run", cls: "" };
+    if (panel === "prepare") return { label: "Preparing", cls: "is-running" };
+    if (panel === "done") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Proof pending", cls: "is-warn" };
+    if (panel === "bind") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Bind", cls: "" };
+    if (panel === "profile") return (floorMet && runConfig.ready) ? { label: "Ready to train", cls: "is-ok" } : { label: "Needs setup", cls: "is-warn" };
+    if (panel === "curate") return { label: "Configuration", cls: "" };
+    return floorMet ? { label: "Ready to train", cls: "is-ok" } : { label: "Collect traces", cls: "is-warn" };
+  })();
 
   return createPortal((
     <div className="dm-orch-modal-backdrop" role="presentation" onClick={onClose}>
       <div className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Training runtime" data-training-handoff="" data-training-panel={panel} onClick={(e) => e.stopPropagation()}>
         <div className="dm-orch-modal-head training-handoff-head">
           <div>
-            <p>Custom model training</p>
+            <p className="dm-api-action-card-eyebrow">Custom model training</p>
             <h2>{headTitle}</h2>
           </div>
-          <button type="button" className="dm-btn-ghost" style={{ marginLeft: "auto" }} onClick={onClose} aria-label="Close">Close</button>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+            <span className={`dm-status-chip ${pill.cls}`} data-training-status={pill.label}><span className="dm-status-dot" aria-hidden="true" />{pill.label}</span>
+            <button type="button" className="dm-btn-ghost" onClick={onClose} aria-label="Close">Close</button>
+          </div>
         </div>
 
         <div className="dm-orch-modal-body">
@@ -879,38 +897,37 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "checklist" && (
             <div className="dm-orch-modal-list">
-              {/* The high-impact mental model: turn real work traces into a
-                  local model, prove it is NOT the base model, then use it. */}
-              <div className="training-handoff-process" data-handoff-journey="">
-                <div>
-                  <strong>1. Choose examples</strong>
-                  <span>{candidates.length} real workspace trace{candidates.length === 1 ? "" : "s"} ready · {blocked} redaction blocked</span>
+              {/* Reference "Eligible" card: eyebrow + title (in the head) + a
+                  green-check Proof summary + Next step + Configure traces CTA. */}
+              <section className="dm-api-action-card dm-api-action-card-muted" data-handoff-journey="" aria-label="Eligibility proof summary">
+                <div className="dm-api-action-card-body">
+                  <p className="dm-api-action-card-eyebrow">Proof summary</p>
+                  <ul className="dm-api-action-checklist">
+                    <li className={candidates.length > 0 ? "is-done" : "is-pending"}>
+                      {candidates.length > 0 ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+                      <span>Trace records found</span>
+                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{candidates.length} records</b>
+                    </li>
+                    <li className={modelChoices.configured ? "is-done" : "is-pending"}>
+                      {modelChoices.configured ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+                      <span>Binding verified</span>
+                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{modelChoices.configured ? "Verified" : "Set a runtime"}</b>
+                    </li>
+                    <li className={blocked >= 0 ? "is-done" : "is-pending"}>
+                      <Check size={14} aria-hidden="true" />
+                      <span>Run receipts available</span>
+                      <b style={{ marginLeft: "auto", fontWeight: 600 }}>{selected.length} receipts</b>
+                    </li>
+                  </ul>
+                  <p className="dm-api-action-card-eyebrow" style={{ marginTop: 12 }}>Next step</p>
+                  <p>Configure your distillation traces and start training your first custom model from verified traces.</p>
                 </div>
-                <div>
-                  <strong>2. Train local model</strong>
-                  <span>Base: {baseModel || "detected from your workspace"} · Output: {reservedTag}</span>
-                </div>
-                <div>
-                  <strong>3. Prove it replies</strong>
-                  <span>Must return the tuned tag, not the base model</span>
-                </div>
-                <div>
-                  <strong>4. Use it in a workflow</strong>
-                  <span>Writes an outputHash proof back to your workspace</span>
-                </div>
-              </div>
+              </section>
               <div className="training-handoff-action-row">
-                {/* Dynamic, rewarding CTA — never a generic "next". */}
-                <button type="button" className="training-action-primary" data-handoff-curate="" data-handoff-cta={candidates.length === 0 ? "collect" : floorMet ? "review-eligible" : "review-more"} disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
-                  {candidates.length === 0
-                    ? "Collect more traces"
-                    : floorMet
-                      ? `Review ${candidates.length} example${candidates.length === 1 ? "" : "s"}`
-                      : `Review examples — ${MIN_FINETUNE_TRACES - selected.length} more to reach the floor`}
+                <span className="training-handoff-eligibility" data-handoff-eligibility="">{selected.length} eligible · {MIN_FINETUNE_TRACES} required</span>
+                <button type="button" className="dm-btn-primary" data-handoff-curate="" data-handoff-cta={candidates.length === 0 ? "collect" : floorMet ? "review-eligible" : "review-more"} disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
+                  {candidates.length === 0 ? "Collect more traces" : "Configure traces"}
                 </button>
-                <span className="training-handoff-eligibility" data-handoff-eligibility="">
-                  {selected.length} eligible · {MIN_FINETUNE_TRACES} required
-                </span>
               </div>
             </div>
           )}
@@ -971,93 +988,87 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "profile" && (
             <div className="dm-orch-modal-list">
-              <div className="dm-helper-toolcall dm-swarm-card">
-                <label className="dm-run-console__hint">training profile{" "}
-                  <select value={profileId} onChange={(e) => setProfileId(e.target.value)} data-handoff-profile="">
-                    {TRAINING_RUNTIME_PROFILES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
-                </label>
-                <div className="dm-helper-stream dm-swarm-card-desc">{profile.description}</div>
-                {/* Adaptive base model — the choices come from the workspace's
-                    own model rows, not a hardcoded Gemma default. If a base is
-                    already set in the ledger it is pre-selected. */}
-                <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>base model{" "}
-                  {modelChoices.baseModels.filter(Boolean).length ? (
-                    <select value={baseModel} onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="">
-                      {[...new Set([baseModel, ...modelChoices.baseModels].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}
+              {/* Reference "One-Click Train": an Impact summary the user reads
+                  before pressing start — key/value rows, no raw commands. */}
+              <section className="dm-api-action-card dm-api-action-card-muted" data-handoff-runsummary="" aria-label="Impact summary">
+                <div className="dm-api-action-card-body">
+                  <p className="dm-api-action-card-eyebrow">Impact summary</p>
+                  <dl className="training-impact">
+                    <div><dt>Source</dt><dd>{selected.length} distillation traces</dd></div>
+                    <div><dt>Model name</dt><dd>{reservedTag}</dd></div>
+                    <div><dt>Base model</dt><dd>{baseModel || "—"}</dd></div>
+                    <div><dt>Compute</dt><dd>{profile.runnerMode === "local-command" ? "Local · " + (modelChoices.runtimes[0]?.adapter || "ollama") : profile.runnerMode}</dd></div>
+                    <div><dt>Est. time</dt><dd>~{Math.max(5, Math.round(selected.length * 3.5))} minutes</dd></div>
+                    <div><dt>Est. cost</dt><dd>$0.00 (local)</dd></div>
+                  </dl>
+                  <p className="dm-api-action-card-note" data-handoff-resource-floor={`${floor.ramGB}/${floor.diskGB}/${floor.vramGB}`}>
+                    One click runs training, quantization, and local serving. Needs ~{floor.ramGB} GB RAM · {floor.diskGB} GB disk{floor.vramGB ? ` · ${floor.vramGB} GB VRAM` : ""} — checked before anything runs. It must reply as <strong>{runConfig.verification.expectedModel}</strong> to verify.
+                  </p>
+                </div>
+              </section>
+
+              {/* Compact governed config — profile, adaptive base model, tuned
+                  tag. Not raw prose; labelled fields. */}
+              <section className="dm-api-action-card dm-api-action-card-muted training-config-fields" aria-label="Training configuration">
+                <div className="dm-api-action-card-body">
+                  <p className="dm-api-action-card-eyebrow">Configuration</p>
+                  <label className="training-field"><span>Training profile</span>
+                    <select value={profileId} onChange={(e) => setProfileId(e.target.value)} data-handoff-profile="">
+                      {TRAINING_RUNTIME_PROFILES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                     </select>
-                  ) : (
-                    <input type="text" value={baseModel} placeholder="e.g. qwen2.5-coder:7b — set in the ledger" onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="" />
-                  )}
-                </label>
-                <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>tuned model tag{" "}
-                  <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" aria-invalid={tagUnsafe ? "true" : undefined} aria-describedby={tagUnsafe ? "handoff-tag-error" : undefined} />
-                </label>
-                {tagUnsafe ? (
-                  <div className="dm-helper-error" id="handoff-tag-error" data-handoff-tag-error="">
-                    Use letters, numbers, dash, underscore, dot, slash, or colon only — no spaces or shell characters.
+                  </label>
+                  <label className="training-field"><span>Base model</span>
+                    {modelChoices.baseModels.filter(Boolean).length ? (
+                      <select value={baseModel} onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="">
+                        {[...new Set([baseModel, ...modelChoices.baseModels].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    ) : (
+                      <input type="text" value={baseModel} placeholder="e.g. qwen2.5-coder:7b" onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="" />
+                    )}
+                  </label>
+                  <label className="training-field"><span>Tuned model tag</span>
+                    <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" aria-invalid={tagUnsafe ? "true" : undefined} aria-describedby={tagUnsafe ? "handoff-tag-error" : undefined} />
+                  </label>
+                  {tagUnsafe ? (
+                    <div className="dm-field-error" id="handoff-tag-error" data-handoff-tag-error="">Use letters, numbers, dash, underscore, dot, slash, or colon only — no spaces or shell characters.</div>
+                  ) : null}
+                  <div className="dm-cockpit-fields" data-handoff-runtime={modelChoices.configured ? "configured" : "setup-needed"} style={{ marginTop: 8 }}>
+                    {modelChoices.configured
+                      ? modelChoices.runtimes.map((rt, i) => (
+                          <span key={i} className="dm-status-chip is-ok" data-handoff-runtime-row={rt.adapter} data-handoff-runtime-reachable={rt.reachable ? "yes" : "no"}><span className="dm-status-dot" aria-hidden="true" />{rt.adapter}{rt.baseUrl ? ` · ${rt.baseUrl.replace(/^https?:\/\//, "")}` : ""}</span>
+                        ))
+                      : <span className="dm-status-chip is-warn" data-handoff-runtime-setup=""><span className="dm-status-dot" aria-hidden="true" />No local runtime configured</span>}
+                    {modelChoices.hasLocalRunner ? <span className="dm-status-chip is-ok" data-handoff-runner-ready=""><span className="dm-status-dot" aria-hidden="true" />Local runner ready</span> : null}
                   </div>
-                ) : null}
-                <div className="dm-run-console__hint">runner: {profile.runnerMode} · outputs: {profile.outputs.join(", ")}</div>
-              </div>
-              {/* Local runtime — derived from the workspace's real registry
-                  rows / runner, never a Gemma/Ollama-only assumption. When
-                  nothing is configured the user gets an honest setup state. */}
-              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-runtime={modelChoices.configured ? "configured" : "setup-needed"}>
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Local runtime</div>
-                {modelChoices.configured ? (
-                  <>
-                    <div className="dm-helper-stream dm-swarm-card-desc">{modelChoices.guidance}</div>
-                    {modelChoices.runtimes.map((rt, i) => (
-                      <div key={i} className="dm-run-console__hint" data-handoff-runtime-row={rt.adapter} data-handoff-runtime-reachable={rt.reachable ? "yes" : "no"}>
-                        {rt.reachable ? "✓" : "•"} {rt.adapter}{rt.baseUrl ? ` · ${rt.baseUrl}` : ""} · {rt.status}
-                      </div>
-                    ))}
-                    {modelChoices.hasLocalRunner ? <div className="dm-run-console__hint" data-handoff-runner-ready="">✓ Local training runner ready</div> : null}
-                    {modelChoices.localModels.length ? <div className="dm-run-console__hint">already tuned in this workspace: {modelChoices.localModels.join(", ")}</div> : null}
-                  </>
-                ) : (
-                  <div className="dm-helper-stream dm-swarm-card-desc" data-handoff-runtime-setup="">
-                    {modelChoices.guidance} You can still prepare the dataset — the run stays gated until a runtime is reachable.
-                  </div>
-                )}
-              </div>
-              {/* Primary content: a plain-language summary of what will happen +
-                  the machine it needs. The exact argv lives in Advanced below. */}
-              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-runsummary="">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">What this will do</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">
-                  Fine-tune <strong>{baseModel || "your base model"}</strong> on <strong>{selected.length}</strong> curated example{selected.length === 1 ? "" : "s"}, then quantize and serve it locally as <strong>{reservedTag}</strong>.
                 </div>
-                <div className="dm-run-console__hint" data-handoff-resource-floor={`${floor.ramGB}/${floor.diskGB}/${floor.vramGB}`}>
-                  {runConfig.stageIds && runConfig.stageIds.length ? `${runConfig.stageIds.length} governed stages · ` : ""}
-                  needs about {floor.ramGB} GB RAM · {floor.diskGB} GB free disk{floor.vramGB ? ` · ${floor.vramGB} GB GPU VRAM` : ""} — checked before anything runs.
-                </div>
-                <div className="dm-run-console__hint">When it finishes it must reply as <strong>{runConfig.verification.expectedModel}</strong> to verify.</div>
-              </div>
-              {/* Clean blocked state — a customer-readable reason, never a raw
-                  command. The exact argv is still available in Advanced. */}
+              </section>
+
               {blockReason ? (
-                <div className="dm-helper-toolcall dm-swarm-card" data-handoff-blocked={blockReason.code}>
-                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Can't start yet</div>
-                  <div className="dm-helper-stream dm-swarm-card-desc">{blockReason.message}</div>
-                </div>
+                <section className="dm-api-action-card dm-api-action-card-muted" data-handoff-blocked={blockReason.code} aria-label="Cannot start">
+                  <div className="dm-api-action-card-icon" aria-hidden="true"><AlertTriangle size={18} /></div>
+                  <div className="dm-api-action-card-body">
+                    <p className="dm-api-action-card-eyebrow">Cannot start yet</p>
+                    <p>{blockReason.message}</p>
+                  </div>
+                </section>
               ) : null}
-              {/* Advanced — the exact argv the governed runner executes, collapsed
-                  by default so it never dominates the no-code experience. */}
-              <details className="dm-helper-toolcall dm-swarm-card" data-handoff-runconfig="">
-                <summary className="dm-run-console__hint">Advanced · exact command preview</summary>
+
+              <details className="training-advanced" data-handoff-runconfig="">
+                <summary>Advanced · exact command preview</summary>
                 {runConfig.commands.length ? runConfig.commands.map((c, i) => (
-                  <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>
-                )) : <div className="dm-run-console__hint">No command for this profile — import the served/attested artifact directly.</div>}
-                <div className="dm-run-console__hint">verification expects response model = <strong>{runConfig.verification.expectedModel}</strong></div>
-                {!runConfig.ready ? <div className="dm-run-console__hint" data-runconfig-missing="">missing: {runConfig.missingRequirements.join(", ")}</div> : null}
+                  <pre key={i} className="training-advanced-pre">{c}</pre>
+                )) : <p className="dm-api-action-card-note">No command for this profile — import the served/attested artifact directly.</p>}
+                {!runConfig.ready ? <p className="dm-api-action-card-note" data-runconfig-missing="">missing: {runConfig.missingRequirements.join(", ")}</p> : null}
                 {runConfig.commandSafety && !runConfig.commandSafety.ok
-                  ? <div className="dm-run-console__hint" data-runconfig-unsafe="">unsafe: {runConfig.commandSafety.reasons.join("; ")}</div> : null}
+                  ? <p className="dm-api-action-card-note" data-runconfig-unsafe="">unsafe: {runConfig.commandSafety.reasons.join("; ")}</p> : null}
               </details>
-              <button type="button" className="training-action-primary" data-handoff-confirm="" disabled={!floorMet || !runConfig.ready} onClick={runPrepare}>
-                Prepare dataset & training run
-              </button>
+
+              <div className="training-handoff-action-row">
+                <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")}>Back</button>
+                <button type="button" className="dm-btn-primary" data-handoff-confirm="" disabled={!floorMet || !runConfig.ready} onClick={runPrepare}>
+                  Start training
+                </button>
+              </div>
             </div>
           )}
 
@@ -1079,80 +1090,89 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "train" && result && (
             <div className="dm-orch-modal-list" data-handoff-train={trainPhase}>
-              {/* Exactly what the governed prepare wrote — no hidden scaffold. */}
-              <div className="dm-helper-toolcall dm-swarm-card" data-prepare-scaffold="">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Created in this workspace</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">Model record · Training run record · Connection record · Training data export</div>
-                {/* Proof details — IDs are visible but secondary. */}
-                <div className="dm-run-console__hint">Proof details — model row: {SLUG}-v{result.version} · run: {result.trainingRunId} · export: {result.exportId} · connection: {result.integrationId} · expected reply: {result.modelTag}</div>
-                <div className="dm-run-console__hint">Endpoint: {target.baseUrl}{target.endpoint} · auth: {target.authRef ? `authRef ${target.authRef}` : "none (Ollama local)"}</div>
-              </div>
-              <div className="dm-helper-toolcall dm-swarm-card">
-                {/* Headline = plain-language name of the CURRENT stage (comment
-                    §5), keyed on the real receipt stageId; the thin status line
-                    below stays the real stamp. Never a bare stage token. */}
-                <div className="dm-helper-toolcall-title" data-train-headline={liveRunRow?.progress?.stageId || ""}>
-                  {trainPhase === "running"
-                    ? `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"}${trainProgress.pct ? ` · ${trainProgress.pct}%` : ""}`
-                    : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
-                </div>
-                {/* Bar width is EXACTLY the receipt progress pct — never a
-                    fabricated idle/starting/elapsed value. Zero until the
-                    runner stamps real progress. */}
-                <div style={{ borderBottom: "2px solid currentColor", width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%`, transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct}
-                  role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(Number(trainProgress.pct) > 0 ? { "aria-valuenow": Number(trainProgress.pct) } : {})} />
-                {/* Control-plane wait state — stage + status derived from the
-                    receipt; elapsed + last-proof age shown SEPARATELY, never as
-                    progress. */}
-                <div className="dm-run-console__hint" data-train-status={trainPhase} data-train-wait-stage={liveWaitState.statusLine}>
-                  {trainPhase === "running" ? liveWaitState.statusLine : trainPhase === "starting" ? "Recording governed run…" : "Not started"}
-                </div>
-                {trainPhase === "running" && liveWaitState.elapsedLine ? (
-                  <div className="dm-run-console__hint" data-train-elapsed="">{liveWaitState.elapsedLine}</div>
-                ) : null}
-                <div className="dm-helper-stream dm-swarm-card-desc">
-                  {trainPhase === "running"
-                    ? `Your ${profile.label} fine-tune is running on this machine. Tracking run ${result.trainingRunId} live from the governed receipt — the bar advances only on real stage proof.`
-                    : `Dataset v${result.version} (${result.records} records) is saved as ${result.datasetPath}. One click runs the fine-tune here and tracks it to completion.`}
-                </div>
-                {/* Live proof checklist during the run — what is proven so far. */}
-                <div className="dm-run-console__hint" data-train-proof-progress={`${proofChecklist.done}/${proofChecklist.total}`}>
-                  Proof {proofChecklist.done}/{proofChecklist.total}: {proofChecklist.items.filter((i) => i.proven).map((i) => i.label).join(", ") || "none yet"}
-                </div>
-                {/* Resumable fine-tune — a crash with a real checkpoint offers
-                    one-click resume (smaller batch on OOM); no fake mid-file
-                    recovery when there is no checkpoint. */}
-                {resumeState.resumable ? (
-                  <div className="dm-helper-toolcall-row" data-train-resume={resumeState.resumeAction?.variant} style={{ marginTop: 8 }}>
-                    <span className="dm-run-console__hint">{resumeState.reason}{resumeState.loss != null ? ` · loss ${resumeState.loss}` : ""}</span>
-                    <button type="button" className="training-action-primary" data-train-resume-apply="" onClick={() => applyRemedy(resumeState.resumeAction)}>
-                      {resumeState.resumeAction.label}
-                    </button>
+              {/* Reference "Training …" running panel: big % + real progress bar
+                  (width = receipt pct only), then Events/Logs/Artifacts tabs, a
+                  live event-delta list, and run stats. */}
+              <section className="dm-api-action-card training-run-card" aria-label="Training run">
+                <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+                  <div className="training-run-top">
+                    <span className="training-run-pct" data-train-pct={trainProgress.pct} data-train-headline={liveRunRow?.progress?.stageId || ""}>
+                      {Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%
+                    </span>
+                    <span className="dm-api-action-card-note" data-train-elapsed="">{trainPhase === "running" ? (liveWaitState.elapsedLine || "starting…") : "Ready to run"}</span>
                   </div>
-                ) : null}
+                  <div className={`training-progress-track${trainProgress.pct >= 100 ? " is-ready" : ""}`}
+                    role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(Number(trainProgress.pct) > 0 ? { "aria-valuenow": Number(trainProgress.pct) } : {})}>
+                    <span style={{ width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%` }} />
+                  </div>
+                  <div className="dm-api-action-card-note" data-train-status={trainPhase} data-train-wait-stage={liveWaitState.statusLine} style={{ marginTop: 6 }}>
+                    {trainPhase === "running" ? `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"} · ${liveWaitState.statusLine}` : trainPhase === "starting" ? "Recording governed run…" : `Dataset v${result.version} (${result.records} records) ready — one click runs the fine-tune here.`}
+                  </div>
+
+                  <div className="dm-tabs" role="tablist" style={{ marginTop: 12 }}>
+                    <button type="button" role="tab" aria-selected="true" className="dm-tab-v2 active" data-train-tab="events">Events</button>
+                    <a role="tab" className="dm-tab-v2" href="/data-model?object=model-training-run" data-train-tab="logs">Logs</a>
+                    <a role="tab" className="dm-tab-v2" href="/data-model?object=model-training-run" data-train-tab="artifacts">Artifacts</a>
+                  </div>
+
+                  {/* Run stats — real receipt fields (step / loss / workers). */}
+                  <div className="dm-cockpit-fields" style={{ marginTop: 10 }}>
+                    {liveRunRow?.progress?.step != null ? <span className="dm-cockpit-field"><b>Step</b>{liveRunRow.progress.step}/{liveRunRow.progress.totalRecords || "?"}</span> : null}
+                    {liveRunRow?.progress?.loss != null ? <span className="dm-cockpit-field"><b>Loss</b>{liveRunRow.progress.loss}</span> : null}
+                    {liveRunRow?.progress?.counter != null && liveRunRow?.progress?.totalRecords != null ? <span className="dm-cockpit-field"><b>Accepted</b>{liveRunRow.progress.counter}/{liveRunRow.progress.totalRecords}</span> : null}
+                    <span className="dm-cockpit-field"><b>Run</b>{result.trainingRunId.slice(0, 22)}</span>
+                  </div>
+
+                  {/* Live event deltas — each proven proof-checklist item is a
+                      real governed event, most-recent first. */}
+                  <div className="dm-cockpit-receipts" data-train-proof-progress={`${proofChecklist.done}/${proofChecklist.total}`}>
+                    <p className="dm-api-action-card-eyebrow">Live event deltas</p>
+                    <ul>
+                      {proofChecklist.items.filter((i) => i.proven).slice(0, 6).map((i) => (
+                        <li key={i.id} className="dm-cockpit-receipt">
+                          <span className="dm-cockpit-receipt-chip dm-status-chip is-ok"><span className="dm-status-dot" aria-hidden="true" />{i.id.split("-")[0]}</span>
+                          <span className="dm-cockpit-receipt-text">{i.label}</span>
+                        </li>
+                      ))}
+                      {proofChecklist.done === 0 ? <li className="dm-cockpit-receipt"><span className="dm-cockpit-receipt-text">Waiting for the first runner stamp…</span></li> : null}
+                    </ul>
+                  </div>
+
+                  {/* Resumable fine-tune — one-click resume on OOM. */}
+                  {resumeState.resumable ? (
+                    <div className="training-handoff-action-row" data-train-resume={resumeState.resumeAction?.variant} style={{ marginTop: 10 }}>
+                      <span className="dm-api-action-card-note">{resumeState.reason}{resumeState.loss != null ? ` · loss ${resumeState.loss}` : ""}</span>
+                      <button type="button" className="dm-btn-primary-sm" data-train-resume-apply="" onClick={() => applyRemedy(resumeState.resumeAction)}>{resumeState.resumeAction.label}</button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+
+              {/* Governed scaffold proof — secondary. */}
+              <div className="dm-cockpit-fields" data-prepare-scaffold="">
+                <span className="dm-cockpit-field"><b>model</b>{SLUG}-v{result.version}</span>
+                <span className="dm-cockpit-field"><b>export</b>{result.exportId.slice(0, 18)}</span>
+                <span className="dm-cockpit-field"><b>connection</b>{result.integrationId}</span>
+                <span className="dm-cockpit-field"><b>expects</b>{result.modelTag}</span>
               </div>
 
               {runConfig.commands.length ? (
-                <details className="dm-helper-toolcall dm-swarm-card" data-train-command="">
-                  <summary className="dm-run-console__hint">Advanced · exact command this runs on your machine</summary>
-                  {runConfig.commands.map((c, i) => <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>)}
-                  <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}. These are the exact argv steps the governed runner executes. The preview above is <strong>advanced/manual</strong> — running it by hand is NOT governed or proven until you import the artifact manually.</div>
+                <details className="training-advanced" data-train-command="">
+                  <summary>Advanced · exact command this runs on your machine</summary>
+                  {runConfig.commands.map((c, i) => <pre key={i} className="training-advanced-pre">{c}</pre>)}
                 </details>
-              ) : (
-                <div className="dm-helper-toolcall dm-swarm-card">
-                  <div className="dm-run-console__hint">This profile imports an already-served model — no local command. Start, then import the served tag.</div>
-                </div>
-              )}
+              ) : null}
 
-              {trainPhase !== "running" ? (
-                <button type="button" className="training-action-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !(runConfig.steps && runConfig.steps.length)}>
-                  {trainPhase === "starting" ? "Starting…" : "Start fine-tuning"}
-                </button>
-              ) : (
-                <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>
-                  Attach the result manually instead
-                </button>
-              )}
+              <div className="training-handoff-action-row">
+                <a className="dm-btn-outline" href="/data-model?object=model-training-run" data-train-open-runs="">Open in Runs</a>
+                {trainPhase !== "running" ? (
+                  <button type="button" className="dm-btn-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !(runConfig.steps && runConfig.steps.length)}>
+                    {trainPhase === "starting" ? "Starting…" : "Start training"}
+                  </button>
+                ) : (
+                  <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach the result manually</button>
+                )}
+              </div>
             </div>
           )}
 
@@ -1197,27 +1217,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               {/* Test-event editor — the SAME mental model as the API/Webhook
                   test event: edit the prompt, send it through the governed test
                   lane, inspect the response. */}
-              <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Send a test prompt</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">
-                  This calls your local model and only verifies if the reply comes back as <strong>{artifact.modelTag || reservedTag}</strong> — not the base model.
+              <section className="dm-api-action-card dm-api-action-card-muted" aria-label="Send a test prompt">
+                <div className="dm-api-action-card-body">
+                  <p className="dm-api-action-card-eyebrow">Test event</p>
+                  <p>Send a real prompt to your local model. It only verifies if the reply comes back as <strong>{artifact.modelTag || reservedTag}</strong> — not the base model.</p>
+                  <textarea className="dm-helper-composer-textarea" data-verify-prompt="" rows={3} value={testPrompt} onChange={(e) => setTestPrompt(e.target.value)} style={{ width: "100%", marginTop: 8 }} aria-label="Test prompt" />
+                  <div className="training-handoff-action-row" style={{ marginTop: 8 }}>
+                    <button type="button" className="dm-btn-primary" data-verify-run="" onClick={runVerify} disabled={verifying || !String(testPrompt || "").trim()}>
+                      {verifying ? "Sending test…" : verifyResult ? "Send test again" : "Send test event"}
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  className="dm-helper-composer-textarea"
-                  data-verify-prompt=""
-                  rows={3}
-                  value={testPrompt}
-                  onChange={(e) => setTestPrompt(e.target.value)}
-                  style={{ width: "100%", marginTop: 8 }}
-                  aria-label="Test prompt"
-                />
-                <button type="button" className="training-action-primary" data-verify-run="" onClick={runVerify} disabled={verifying || !String(testPrompt || "").trim()} style={{ marginTop: 8 }}>
-                  {verifying ? "Sending test…" : verifyResult ? "Send test again" : "Send test"}
-                </button>
-                {verifying ? (
-                  <div style={{ borderBottom: "2px solid currentColor", width: "70%", transition: "width 160ms linear", marginTop: 8 }} aria-hidden="true" />
-                ) : null}
-              </div>
+              </section>
 
               {/* Verified status — same status language as "Verified 200", tuned
                   to model proof. Honest: verified ONLY when served == tuned tag. */}
@@ -1230,28 +1241,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 const gotResponse = Boolean(raw) || Boolean(verifyResult.servedModel) || Boolean(content);
                 const httpLine = gotResponse ? "200 OK" : "no response";
                 return (
-                  <div className="dm-helper-toolcall dm-swarm-card" data-verify-result={verifyResult.verified ? "verified" : (verifyResult.demotion || "unverified")}>
-                    <div className="dm-helper-toolcall-title dm-swarm-card-title" data-verify-status={verifyResult.verified ? "verified" : "demoted"}>
-                      {verifyResult.verified
-                        ? "✓ Verified tuned tag"
-                        : verifyResult.demotion === "base-model"
-                          ? "Not your model — base model replied"
-                          : verifyResult.demotion === "mismatch"
-                            ? "Not your model — a different model replied"
-                            : "Not verified yet"}
-                    </div>
-                    <div className="dm-run-console__hint" data-verify-badges="">
-                      {verifyResult.verified ? "Not base model · " : ""}Response {httpLine} · served {verifyResult.servedModel || "—"}
-                    </div>
-                    {/* Response inspector — Response / Trace / Details / Proof,
-                        mirroring the inbound response inspector. */}
-                    <div className="dm-tabs" role="tablist" data-verify-inspector="" style={{ marginTop: 10 }}>
-                      {["response", "trace", "details", "proof"].map((t) => (
-                        <button key={t} type="button" role="tab" aria-selected={inspectorTab === t} className={`dm-tab${inspectorTab === t ? " dm-tab-v" : ""}`} data-verify-tab={t} onClick={() => setInspectorTab(t)}>
-                          {t[0].toUpperCase() + t.slice(1)}
-                        </button>
-                      ))}
-                    </div>
+                  <section className="dm-api-action-card" data-verify-result={verifyResult.verified ? "verified" : (verifyResult.demotion || "unverified")} aria-label="Invocation result">
+                    <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+                      <p className="dm-api-action-card-eyebrow">Test status</p>
+                      <ul className="dm-api-action-checklist" data-verify-status={verifyResult.verified ? "verified" : "demoted"}>
+                        <li className={gotResponse ? "is-done" : "is-pending"}>{gotResponse ? <Check size={14} /> : <X size={14} />}<span>Completed</span><b style={{ marginLeft: "auto", fontWeight: 600 }}>{httpLine}</b></li>
+                        <li className={verifyResult.verified ? "is-done" : "is-pending"}>{verifyResult.verified ? <Check size={14} /> : <X size={14} />}<span>Model</span><b style={{ marginLeft: "auto", fontWeight: 600 }}>{verifyResult.servedModel || "—"}</b></li>
+                        <li className={verifyResult.verified ? "is-done" : "is-pending"}>{verifyResult.verified ? <Check size={14} /> : <X size={14} />}<span>Proof</span><b style={{ marginLeft: "auto", fontWeight: 600 }} data-verify-badges="">{verifyResult.verified ? "Not base model" : (verifyResult.demotion === "base-model" ? "Base model replied" : "Not verified")}</b></li>
+                      </ul>
+                      {/* Response inspector — Response / Trace / Details / Proof. */}
+                      <div className="dm-tabs" role="tablist" data-verify-inspector="" style={{ marginTop: 10 }}>
+                        {["response", "trace", "details", "proof"].map((t) => (
+                          <button key={t} type="button" role="tab" aria-selected={inspectorTab === t} className={`dm-tab-v2${inspectorTab === t ? " active" : ""}`} data-verify-tab={t} onClick={() => setInspectorTab(t)}>
+                            {t[0].toUpperCase() + t.slice(1)}
+                          </button>
+                        ))}
+                      </div>
                     <div className="dm-tab-content" data-verify-tab-content={inspectorTab} style={{ marginTop: 8 }}>
                       {inspectorTab === "response" ? (
                         <pre className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }} data-verify-response="">
@@ -1281,14 +1286,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                         </div>
                       )}
                     </div>
-                  </div>
+                    </div>
+                  </section>
                 );
               })() : null}
 
               {verifyResult?.verified ? (
-                <button type="button" className="training-action-primary" data-verify-continue="" onClick={() => setPanel("bind")}>
-                  Use it in a workflow →
-                </button>
+                <div className="training-handoff-action-row">
+                  <button type="button" className="dm-btn-primary" data-verify-continue="" onClick={() => setPanel("bind")}>Continue to deploy</button>
+                </div>
               ) : null}
             </div>
           )}

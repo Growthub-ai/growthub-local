@@ -1,0 +1,29 @@
+{
+  "stateId": "state-16-model-cockpit",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Live",
+  "primaryCta": "Run again",
+  "surface": "/data-model · model-training (the operated model row; cockpit is the /custom-models sidecar view over it)",
+  "governedRows": {
+    "modelTraining": "workspace-local",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "operatedModelTag": "workspace-local-tuned-v1",
+    "quant": "q4_k_m",
+    "tabs": [
+      "Overview",
+      "Health",
+      "Usage",
+      "Versions",
+      "Settings"
+    ],
+    "actions": [
+      "Rollback",
+      "Run new evaluation",
+      "Adjust rollout"
+    ]
+  },
+  "nextAllowedAction": "operate_model"
+}
