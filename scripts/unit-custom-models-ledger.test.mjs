@@ -20,7 +20,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const { HELPER_COMMANDS, deriveVisibleHelperCommands, parseSlashInput, isGovernedHelperCommand } = await import(
   pathToFileURL(path.join(kitApp, "app/data-model/components/helper-commands.js")).href
 );
-const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode } = await import(
+const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, buildSyntheticTraceProvenance } = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
 const { buildSuperAdminModelQaSeed } = await import(
@@ -231,4 +231,36 @@ test("original feature seed stays pristine — no model/training contamination",
   buildSuperAdminModelQaSeed({});
   const again = buildFeatureWorkspaceSeed({});
   assert.equal(again.workspaceConfig.dataModel.objects.length, base.workspaceConfig.dataModel.objects.length, "composing the QA seed leaves the original builder unchanged");
+});
+
+// --------------------------------------------------------------------------
+// Post-training utilization — node template + suggested actions (3rd pass)
+// --------------------------------------------------------------------------
+
+test("node template: unverified model cannot be inserted; verified yields a clean api-registry node", () => {
+  const unverified = deriveCustomModelNodeTemplate({ apiRegistryId: "gh-model", verificationStatus: "unverified", localModel: "gh-v1" }, { workspaceConfig: { dataModel: { objects: [] } } });
+  assert.equal(unverified.ready, false);
+  assert.match(unverified.blockedReason, /not verified/);
+  const ws = { dataModel: { objects: [{ objectType: "api-registry", rows: [{ integrationId: "gh-model", baseUrl: "http://127.0.0.1:11434/v1", authRef: "" }] }] } };
+  const verified = deriveCustomModelNodeTemplate({ apiRegistryId: "gh-model", verificationStatus: "verified", localModel: "gh-v1", name: "workspace-local", lastResponseModel: "gh-v1", modelOutputHash: "oh_1" }, { workspaceConfig: ws });
+  assert.equal(verified.ready, true);
+  assert.equal(verified.node.type, "api-registry-chat-completion");
+  assert.equal(verified.node.runLocality, "local");
+  assert.equal(verified.node.provenance.servedTag, "gh-v1");
+  assert.ok(!JSON.stringify(verified.node).includes("secret"), "node carries authRef NAME only, no secret value");
+});
+
+test("suggested actions: gated by evidence; synthetic data is provenance-safe + review-gated", () => {
+  const ws = { dataModel: { objects: [{ objectType: "api-registry", rows: [{ integrationId: "gh-model", baseUrl: "http://127.0.0.1:11434/v1" }] }] } };
+  const s = deriveCustomModelSuggestedActions({ apiRegistryId: "gh-model", verificationStatus: "verified", evidenceState: "verified", name: "workspace-local", localModel: "gh-v1" }, { workspaceConfig: ws });
+  const byId = Object.fromEntries(s.actions.map((a) => [a.id, a]));
+  assert.equal(byId["use-as-workflow-node"].enabled, true, "verified → workflow node enabled");
+  assert.equal(byId["generate-synthetic-training-data"].enabled, false, "not complete → generate-data blocked");
+  assert.match(byId["generate-synthetic-training-data"].blockedReason, /complete/);
+  // Every action carries the checklist grammar.
+  for (const a of s.actions) for (const k of ["title", "whyNow", "requiredEvidence", "targetSurface", "proposalPayload", "proofProduced"]) assert.ok(k in a, `${a.id} has ${k}`);
+  // Synthetic provenance never blurs real vs generated.
+  const prov = buildSyntheticTraceProvenance({ apiRegistryId: "gh-model", name: "workspace-local" }).provenance;
+  assert.equal(prov.synthetic, true); assert.equal(prov.generated, true);
+  assert.equal(prov.accepted, false); assert.equal(prov.qualityStatus, "ungraded"); assert.equal(prov.redactionStatus, "pending");
 });

@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { deriveCustomModelsState, buildCapabilityManifest } from "../../../lib/custom-models-ledger.js";
+import { deriveCustomModelsState, buildCapabilityManifest, deriveCustomModelSuggestedActions } from "../../../lib/custom-models-ledger.js";
 import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
 
 function exportManifest(model, workspaceConfig) {
@@ -166,6 +166,33 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
             {model.modelOutputHash ? ` · output #${model.modelOutputHash}` : model.snippetHash ? ` · snippet #${model.snippetHash}` : ""}
           </div>
           <div className="dm-helper-stream dm-swarm-card-desc">Next: {model.nextAction}</div>
+          {/* Full operational metadata — every derived field, absence shown
+              honestly. Closed by default (native details). */}
+          <details data-model-details="">
+            <summary className="dm-run-console__hint">Details</summary>
+            <div className="dm-run-console__hint">
+              served tag: {model.lastResponseModel || "—"} · verification: {model.verificationStatus} · registry: {model.apiRegistryId || "—"} · endpoint mode: {model.endpointMode} · base: {model.baseModel || "—"} · version: {model.modelVersion || "—"}
+            </div>
+            <div className="dm-run-console__hint">
+              verified at: {model.lastVerifiedAt || "—"} · run: {model.lastSandboxRunId || "—"} · outputHash: {model.modelOutputHash || "—"} · response hash: {model.lastResponseHash || "—"} · last invocation: {model.lastInvocationSourceId || "—"}
+            </div>
+          </details>
+          {/* Suggested actions — pure causation deriver, closed by default;
+              each action seeds a reviewable proposal / routes to a governed
+              surface (never mutates directly). */}
+          {(() => {
+            const suggested = deriveCustomModelSuggestedActions(model, { workspaceConfig });
+            return (
+              <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
+                <summary className="dm-run-console__hint">Suggested actions ({suggested.ready}/{suggested.actions.length})</summary>
+                {suggested.actions.map((a) => (
+                  <div key={a.id} className="dm-run-console__hint" data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"}>
+                    {a.enabled ? "→" : "·"} <strong>{a.title}</strong> — {a.enabled ? a.whyNow : `blocked: ${a.blockedReason}`} · <a className="dm-btn-ghost" href={a.targetSurface}>{a.targetSurface}</a>
+                  </div>
+                ))}
+              </details>
+            );
+          })()}
         </div>
       ))}
     </div>

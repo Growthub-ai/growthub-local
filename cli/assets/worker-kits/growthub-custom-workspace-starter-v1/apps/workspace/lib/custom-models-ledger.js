@@ -230,4 +230,120 @@ export function buildCapabilityManifest(model, { workspaceConfig } = {}) {
   };
 }
 
+/**
+ * Derive the serializable workflow/sandbox NODE template for a verified custom
+ * model — a clean API-Registry chat-completions node the existing sandbox/
+ * workflow surfaces accept. No new runtime/schema; refs by NAME only (never a
+ * secret value). Pure. `ready` is false (with a reason) until the endpoint is
+ * verified so an unverified/base-model node can never be inserted.
+ */
+export function deriveCustomModelNodeTemplate(model, { workspaceConfig } = {}) {
+  const registryRow = registryRowsOf(workspaceConfig).find((r) => String(r.integrationId || "") === String(model?.apiRegistryId || "")) || {};
+  const verified = model?.verificationStatus === "verified";
+  const local = String(registryRow.baseUrl || "").includes(":11434");
+  const ready = verified && Boolean(model?.apiRegistryId);
+  return {
+    ready,
+    blockedReason: !model?.apiRegistryId ? "no API Registry row bound"
+      : !verified ? "endpoint not verified — served tag must equal the tuned tag before insertion"
+        : "",
+    node: {
+      type: "api-registry-chat-completion",
+      label: `Custom model — ${model?.localModel || model?.name || ""}`,
+      apiRegistryId: model?.apiRegistryId || "",
+      runLocality: local ? "local" : "serverless",
+      networkPolicy: local ? "loopback-only" : "allow",
+      authRef: String(registryRow.authRef || ""), // ref NAME only, never a value
+      permissions: { browserUse: false, depth: 1 },
+      boundary: { local, serverless: !local },
+      provenance: {
+        modelTrainingId: model?.name || "",
+        servedTag: model?.lastResponseModel || model?.localModel || "",
+        verificationStatus: model?.verificationStatus || "",
+        outputHash: model?.modelOutputHash || "",
+      },
+    },
+  };
+}
+
+/**
+ * Provenance-safe synthetic training-trace proposal template. Generated traces
+ * are ALWAYS marked synthetic and start rejected/ungraded — never blurred with
+ * real user/workflow traces. Pure shape factory (the actual rows are produced
+ * through the governed helper-proposal path, per row with its own promptHash).
+ */
+export function buildSyntheticTraceProvenance(model, { seed = "" } = {}) {
+  return {
+    objectType: "training-traces",
+    provenance: {
+      generated: true,
+      synthetic: true,
+      modelId: model?.apiRegistryId || "",
+      sourceModelTrainingId: model?.name || "",
+      seed: String(seed || ""),
+      promptHash: "", // stamped per generated row
+      accepted: false,
+      qualityStatus: "ungraded",
+      redactionStatus: "pending",
+      reason: "synthetic generation from a verified custom model — review before accepting into the corpus",
+    },
+  };
+}
+
+/**
+ * Suggested Actions for a custom model — a pure causation deriver (same
+ * checklist grammar as the starter checklist). Each action carries: title,
+ * whyNow, requiredEvidence, targetSurface, proposalPayload, blockedReason,
+ * proofProduced, enabled. Actions NEVER mutate — they seed reviewable helper
+ * proposals or route to an existing governed surface. Closed-by-default in UI.
+ */
+export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {}) {
+  const verified = model?.verificationStatus === "verified";
+  const complete = model?.evidenceState === "complete";
+  const template = deriveCustomModelNodeTemplate(model, { workspaceConfig });
+  const actions = [
+    {
+      id: "use-as-workflow-node", title: "Use as a workflow node",
+      whyNow: "A verified custom model can back any governed workflow step.",
+      requiredEvidence: "verified endpoint (served tag == tuned tag)",
+      targetSurface: "/workflows", proposalPayload: template.node,
+      blockedReason: template.ready ? "" : template.blockedReason,
+      proofProduced: "a workflow graph referencing the api-registry chat-completions node",
+    },
+    {
+      id: "run-chat-smoke", title: "Run a chat-completions smoke",
+      whyNow: "Confirm the local endpoint still serves the tuned tag, not the base model.",
+      requiredEvidence: "registered API Registry row",
+      targetSurface: "/data-model", proposalPayload: { integrationId: model?.apiRegistryId, expectModel: model?.localModel },
+      blockedReason: model?.apiRegistryId ? "" : "no API Registry row bound",
+      proofProduced: "api-registry lastResponse with served model == tuned tag",
+    },
+    {
+      id: "create-local-sandbox-agent", title: "Create a local/browser-use sandbox agent",
+      whyNow: "Turn the model into a governed local agent (browser-use optional).",
+      requiredEvidence: "verified endpoint",
+      targetSurface: "/workflows", proposalPayload: { ...template.node, permissions: { browserUse: true, depth: 2 } },
+      blockedReason: verified ? "" : "endpoint not verified",
+      proofProduced: "a sandbox-environment row bound to the custom model",
+    },
+    {
+      id: "generate-synthetic-training-data", title: "Generate synthetic training data",
+      whyNow: "Grow the next-cycle corpus from the model — provenance-safe, review-gated.",
+      requiredEvidence: "complete (verified + smoke outputHash)",
+      targetSurface: "/data-model", proposalPayload: buildSyntheticTraceProvenance(model),
+      blockedReason: complete ? "" : "model must be complete (verified + workflow outputHash) before generating data",
+      proofProduced: "training-traces rows marked synthetic/ungraded/unaccepted with provenance",
+    },
+    {
+      id: "create-dashboard-widget", title: "Create a dashboard widget generator",
+      whyNow: "Expose the model's outputs as a governed dashboard widget.",
+      requiredEvidence: "verified endpoint",
+      targetSurface: "/data-model", proposalPayload: { integrationId: model?.apiRegistryId, widget: "custom-model-output" },
+      blockedReason: verified ? "" : "endpoint not verified",
+      proofProduced: "an app-surface widget bound to the model capability",
+    },
+  ].map((a) => ({ ...a, enabled: !a.blockedReason }));
+  return { actions, hasActions: actions.length > 0, ready: actions.filter((a) => a.enabled).length };
+}
+
 export { TRAINING_OBJECT_TYPE };
