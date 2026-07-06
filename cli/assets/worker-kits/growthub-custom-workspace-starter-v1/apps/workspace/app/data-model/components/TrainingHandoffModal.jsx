@@ -44,7 +44,7 @@ import {
 } from "../../../lib/training-ledger.js";
 import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows } from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
-import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE } from "../../../lib/training-run-receipts.js";
+import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
@@ -148,6 +148,9 @@ function upsertRunRow(objects, runRow) {
  *  training command the local runner executes. One object, one row per run. */
 const TRAINING_RUNNER_SANDBOX_ID = "model-training-runner";
 const RUNNER_COLUMNS = ["Name", "runtime", "command", "timeoutMs", "networkPolicy", "runLocality", "status"];
+// Canonical stage → rank map embedded into the runner so its progress stamps
+// carry {stageId, stageRank} the deriver + modal reason about (0-7 vocabulary).
+const STAGE_RANK_BY_ID = TRAINING_PROGRESS_STAGES.reduce((acc, s) => { acc[s.id] = s.rank; return acc; }, {});
 
 /**
  * The real training runner, emitted as a self-contained Node program. Run on
@@ -174,18 +177,21 @@ const RUNNER_COLUMNS = ["Name", "runtime", "command", "timeoutMs", "networkPolic
  * allowlist) onto the existing model-training-run + api-registry rows — the
  * causation spine, unchanged.
  */
-function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor }) {
+function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor }) {
   const P = JSON.stringify({
-    commands: commands || [], stageLabels: stageLabels || [], artifactPath: artifactPath || "",
+    steps: steps || [], stageRankById: stageRankById || {}, artifactPath: artifactPath || "",
     modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m",
     integrationId: integrationId || "", floor: floor || { ramGB: 0, diskGB: 0, vramGB: 0 },
   });
   return [
-    "const { execSync } = require('node:child_process');",
+    "const { execFileSync } = require('node:child_process');",
     "const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path'); const crypto = require('node:crypto');",
     `const P = ${P};`,
     "const WS = (process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
     "const matchReg = (row) => String(row.expectedModelTag || '') === P.modelTag || (P.integrationId && String(row.integrationId || '') === P.integrationId);",
+    "const rankOf = (id) => Number(P.stageRankById[id]) || 0;",
+    "const pctOf = (id) => Math.min(95, Math.round((rankOf(id) / 7) * 95));",
+    "const N = P.steps.length;",
     // One governed write: read the workspace, map the model-training-run row
     // (matched by trainingRunId) with `patch`, PATCH it back. Every stage uses
     // this so progress/blocked/imported all ride the same allowlisted lane.
@@ -200,9 +206,9 @@ function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trai
     "(async () => {",
     // ---- stage 0: preflight — deep system requirements check. -------------
     "  const ramGB = gb(os.totalmem());",
-    "  let diskFreeGB = 0; try { const s = fs.statfsSync(path.resolve(P.artifactPath.split('/')[1] ? '.' : '.')); diskFreeGB = gb(s.bavail * s.bsize); } catch { try { const s = fs.statfsSync('.'); diskFreeGB = gb(s.bavail * s.bsize); } catch {} }",
+    "  let diskFreeGB = 0; try { const s = fs.statfsSync('.'); diskFreeGB = gb(s.bavail * s.bsize); } catch {}",
     "  let gpu = { present: false, name: '', vramFreeGB: 0 };",
-    "  try { const out = execSync('nvidia-smi --query-gpu=name,memory.free --format=csv,noheader,nounits', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); if (out) { const [name, freeMiB] = out.split('\\n')[0].split(',').map((s) => s.trim()); gpu = { present: true, name, vramFreeGB: Math.floor(Number(freeMiB) / 1024) }; } } catch {}",
+    "  try { const out = execFileSync('nvidia-smi', ['--query-gpu=name,memory.free', '--format=csv,noheader,nounits'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); if (out) { const [name, freeMiB] = out.split('\\n')[0].split(',').map((s) => s.trim()); gpu = { present: true, name, vramFreeGB: Math.floor(Number(freeMiB) / 1024) }; } } catch {}",
     "  const preflight = { ramGB, diskFreeGB, gpu, floor: P.floor, cpuOnly: !gpu.present };",
     "  const shortfalls = [];",
     "  if (ramGB < P.floor.ramGB) shortfalls.push(`needs ${P.floor.ramGB} GB RAM, ${ramGB} GB present`);",
@@ -211,22 +217,21 @@ function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trai
     "  preflight.ok = shortfalls.length === 0;",
     "  if (!preflight.ok) {",
     "    const reason = 'Preflight blocked — ' + shortfalls.join('; ');",
-    "    await stampRun({ status: 'blocked', blockedReason: reason, preflight, progress: { stage: 'preflight', pct: 0, detail: reason, index: 0, total: P.commands.length } });",
+    "    await stampRun({ status: 'blocked', blockedReason: reason, preflight, progress: { stageId: 'preflight', stageRank: 0, pct: 0, detail: reason, index: 0, total: N } });",
     "    console.error(reason); process.exit(1); return;",
     "  }",
-    "  await stampRun({ preflight, progress: { stage: 'preflight', pct: 2, detail: `System OK — RAM ${ramGB} GB, disk ${diskFreeGB} GB, ${gpu.present ? ('GPU ' + gpu.name) : 'CPU-only'}`, index: 0, total: P.commands.length } });",
-    // ---- stages 1..n: execute each command, stamping a thin delta first. ---
-    "  for (let i = 0; i < P.commands.length; i += 1) {",
-    "    const label = P.stageLabels[i] || P.commands[i];",
-    "    const pct = Math.min(95, 4 + Math.round(((i + 1) / (P.commands.length + 1)) * 90));",
-    "    await stampRun({ status: 'running', progress: { stage: label, pct, detail: label, index: i + 1, total: P.commands.length } });",
-    "    console.log(`STEP ${i + 1}/${P.commands.length}: ${P.commands[i]}`);",
-    "    try { execSync(P.commands[i], { stdio: 'inherit' }); }",
+    "  await stampRun({ preflight, progress: { stageId: 'preflight', stageRank: 0, pct: 2, detail: `System OK — RAM ${ramGB} GB, disk ${diskFreeGB} GB, ${gpu.present ? ('GPU ' + gpu.name) : 'CPU-only'}`, index: 0, total: N } });",
+    // ---- stages 1..n: execFile each ARGV step (no shell), stamp canonical id.
+    "  for (let i = 0; i < N; i += 1) {",
+    "    const step = P.steps[i];",
+    "    await stampRun({ status: 'running', progress: { stageId: step.stageId, stageRank: rankOf(step.stageId), pct: pctOf(step.stageId), detail: step.label, index: i + 1, total: N } });",
+    "    console.log(`STEP ${i + 1}/${N} [${step.stageId}]: ${step.bin} ${step.args.join(' ')}`);",
+    "    try { execFileSync(step.bin, step.args, { stdio: 'inherit' }); }",
     "    catch (e) {",
-    "      // A stage command failed → stamp a GOVERNED failed receipt naming the",
-    "      // exact stage so the remediation deriver can offer the one-click fix.",
-    "      const reason = `Stage failed: ${label} — ${String((e && e.message) || e).split('\\n')[0]}`;",
-    "      await stampRun({ status: 'failed', blockedReason: reason, progress: { stage: label, pct, detail: reason, index: i + 1, total: P.commands.length } });",
+    "      // A stage failed → stamp a GOVERNED failed receipt naming the exact",
+    "      // canonical stage so the remediation deriver offers the one-click fix.",
+    "      const reason = `Stage failed: ${step.label} — ${String((e && e.message) || e).split('\\n')[0]}`;",
+    "      await stampRun({ status: 'failed', blockedReason: reason, progress: { stageId: step.stageId, stageRank: rankOf(step.stageId), pct: pctOf(step.stageId), detail: reason, index: i + 1, total: N } });",
     "      console.error(reason); process.exit(1); return;",
     "    }",
     "  }",
@@ -248,7 +253,7 @@ function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trai
     "    if (file) { try { quantBytes = fs.statSync(file).size; } catch {} }",
     "  } catch {}",
     "  const sha = file ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : '';",
-    "  await stampRun({ progress: { stage: 'Confirming tuned reply', pct: 97, detail: 'Calling the local model to prove it is the tuned model', index: P.commands.length, total: P.commands.length } });",
+    "  await stampRun({ progress: { stageId: 'verifying', stageRank: 6, pct: 97, detail: 'Calling the local model to prove it is the tuned model', index: N, total: N } });",
     "  const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' });",
     "  const data = await r.json();",
     "  const objs = data.workspaceConfig.dataModel.objects || [];",
@@ -267,8 +272,10 @@ function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trai
     "  const now = new Date().toISOString();",
     "  const donePct = 100;",
     "  const objects = objs.map((o) => {",
-    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization, artifactSourceBytes: sourceBytes, artifactArtifactBytes: quantBytes, progress: { stage: 'complete', pct: donePct, detail: `Tuned model ${P.modelTag} built (${gb(quantBytes)} GB ${P.quantization}) and serving`, index: P.commands.length, total: P.commands.length } }) : row) };",
-    "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: served ? 'connected' : (row.status || 'registered') }) : row) };",
+    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization, artifactSourceBytes: sourceBytes, artifactArtifactBytes: quantBytes, progress: { stageId: 'complete', stageRank: 7, pct: donePct, detail: `Tuned model ${P.modelTag} built (${gb(quantBytes)} GB ${P.quantization}) and serving`, index: N, total: N } }) : row) };",
+    // Registry row reads 'connected' ONLY when the served model equals the
+    // expected tuned tag — a base/other model served never counts as connected.
+    "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: (served && served === P.modelTag) ? 'connected' : (row.status || 'registered') }) : row) };",
     "    return o;",
     "  });",
     "  await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
@@ -298,7 +305,7 @@ function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
     Name: trainingRunId,
     runtime: "node",
     command: buildRunnerScript({
-      commands: runConfig?.commands, stageLabels: runConfig?.stageLabels, artifactPath: runConfig?.artifactPath,
+      steps: runConfig?.steps, stageRankById: STAGE_RANK_BY_ID, artifactPath: runConfig?.artifactPath,
       modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
       floor: resourceFloorFor(runConfig?.baseModel),
     }),
@@ -623,13 +630,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           });
           return;
         }
-        // Prefer the runner's real thin-delta; fall back to elapsed-time only
-        // before the first stamp lands.
-        if (delta && delta.pct) {
-          setTrainProgress({ pct: delta.pct, stage: delta.detail || delta.stage || `Fine-tuning · ${mins} min elapsed` });
+        // The bar advances ONLY on real receipt progress. No elapsed-time or
+        // stage-guessed fabrication — before the first runner stamp lands we
+        // hold at 0 and say so honestly.
+        if (delta && (delta.pct || delta.stageId)) {
+          setTrainProgress({ pct: Number(delta.pct) || 0, stage: delta.detail || delta.stageId || "Running…" });
         } else {
-          const pct = runStage === "trained" ? 92 : Math.min(85, 6 + mins);
-          setTrainProgress({ pct, stage: runStage === "trained" ? "Training finished — importing the artifact…" : `Fine-tuning in progress · ${mins} min elapsed` });
+          setTrainProgress({ pct: 0, stage: "Waiting for the first runner stamp…" });
         }
       } catch { /* transient — keep polling */ }
     }, 5000);
@@ -874,7 +881,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-helper-toolcall-title">
                   {trainPhase === "running" ? `Fine-tuning in progress${trainProgress.pct ? ` · ${trainProgress.pct}%` : ""}` : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
                 </div>
-                <div style={{ borderBottom: "2px solid currentColor", width: trainPhase === "running" ? `${Math.max(4, trainProgress.pct)}%` : trainPhase === "starting" ? "40%" : "15%", transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct} />
+                {/* Bar width is EXACTLY the receipt progress pct — never a
+                    fabricated idle/starting/elapsed value. Zero until the
+                    runner stamps real progress. */}
+                <div style={{ borderBottom: "2px solid currentColor", width: `${Math.max(0, Math.min(100, Number(trainProgress.pct) || 0))}%`, transition: "width 160ms linear" }} aria-hidden="true" data-train-pct={trainProgress.pct} />
                 <div className="dm-run-console__hint" data-train-status={trainPhase}>{trainPhase === "running" ? (trainProgress.stage || "Run in progress — tracked live from the governed run receipt") : trainPhase === "starting" ? "Recording run…" : "Not started"}</div>
                 <div className="dm-helper-stream dm-swarm-card-desc">
                   {trainPhase === "running"

