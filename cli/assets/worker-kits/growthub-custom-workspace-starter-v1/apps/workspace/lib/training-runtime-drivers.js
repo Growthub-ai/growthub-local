@@ -683,3 +683,74 @@ export function deriveTrainingCompletionReward(runRow = {}, verification = null)
     checklist,
   };
 }
+
+// ===========================================================================
+// Long-running pipeline safety — resume state + serving profile capability.
+// Governed, resumable, failure-aware; pure + testable. Proof-bound: serving
+// optimizations are recorded from the registry row and never claimed without
+// a served-tag readback proving the tuned MAIN model is still the authority.
+// ===========================================================================
+
+/**
+ * Resume state for an interrupted fine-tune: reads the last checkpoint the run
+ * stamped and returns the one-click resume action (smaller batch on OOM). A
+ * failure with no checkpoint honestly reports a full re-run, never a fake
+ * mid-file recovery. Pure.
+ */
+export function deriveTrainingResumeState(runRow = {}) {
+  const p = runRow?.progress && typeof runRow.progress === "object" ? runRow.progress : {};
+  const failed = String(runRow?.status) === "failed";
+  const atFineTune = String(p.stageId) === "fine-tuning";
+  const checkpointPath = p.checkpointPath ? String(p.checkpointPath) : "";
+  const step = Number(p.step) || 0;
+  const oom = /out of memory|oom/i.test(String(runRow?.blockedReason || ""));
+  const resumable = failed && atFineTune && Boolean(checkpointPath);
+  return {
+    resumable,
+    checkpointPath,
+    step,
+    loss: Number.isFinite(Number(p.loss)) ? Number(p.loss) : null,
+    resumeAction: resumable
+      ? { label: oom ? "Resume from checkpoint with a smaller batch" : "Resume from checkpoint", action: "retry_finetune", variant: oom ? "retry_finetune_smaller_batch" : "retry_finetune", oneClick: true, args: { resumeFrom: checkpointPath, fromStep: step, smallerBatch: oom } }
+      : null,
+    reason: resumable
+      ? `Resumable from ${checkpointPath} (step ${step})`
+      : failed ? "Failed with no checkpoint — quantization/other stages restart from the last completed prior artifact, not mid-file." : "",
+  };
+}
+
+/** Serving adapters the workspace records as governed capabilities. */
+export const SERVING_ADAPTERS = ["ollama", "llama.cpp-server", "vllm", "openai-compatible"];
+
+/**
+ * Governed serving profile from an API Registry row — the ACTUAL serving
+ * adapter/mode/flags + optional continuous-batching and speculative-decoding,
+ * proof-bound to a served-tag readback. `servesTunedTag` is the authority
+ * proof: the served MAIN model must equal the tuned tag (a speculative draft
+ * model never routes the user back to the base). Pure, no throughput claims.
+ */
+export function deriveServingProfile(registryRow = {}, { expectedTag = "" } = {}) {
+  const local = String(registryRow?.baseUrl || "").includes(":11434");
+  const declared = String(registryRow?.servingAdapter || (local ? "ollama" : "openai-compatible"));
+  const adapter = SERVING_ADAPTERS.includes(declared) ? declared : "openai-compatible";
+  const served = tryModel(registryRow?.lastResponse);
+  const expected = String(expectedTag || registryRow?.expectedModelTag || "");
+  const servesTuned = Boolean(served) && served === expected;
+  return {
+    adapter,
+    mode: String(registryRow?.servingMode || "single"),
+    continuousBatching: registryRow?.continuousBatching === true,
+    speculative: registryRow?.speculativeDraftModel
+      ? { draftModel: String(registryRow.speculativeDraftModel), mainModel: expected }
+      : null,
+    flags: registryRow?.servingFlags && typeof registryRow.servingFlags === "object" ? registryRow.servingFlags : {},
+    endpoint: `${String(registryRow?.baseUrl || "")}${String(registryRow?.endpoint || "")}`,
+    servedModel: served,
+    // Proof: the tuned MAIN model is the authority — never a throughput claim.
+    servesTunedTag: servesTuned,
+    verified: servesTuned,
+    reason: servesTuned
+      ? `Serving ${served} via ${adapter}${registryRow?.continuousBatching ? " (continuous batching)" : ""}${registryRow?.speculativeDraftModel ? " (speculative)" : ""}`
+      : served ? `Endpoint served ${served}, not the tuned tag ${expected || "(none)"}` : "no served-model proof yet",
+  };
+}

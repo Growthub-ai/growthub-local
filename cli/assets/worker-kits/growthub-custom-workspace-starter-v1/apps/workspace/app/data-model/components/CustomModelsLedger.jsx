@@ -176,6 +176,16 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
             <div className="dm-run-console__hint">
               verified at: {model.lastVerifiedAt || "—"} · run: {model.lastSandboxRunId || "—"} · outputHash: {model.modelOutputHash || "—"} · response hash: {model.lastResponseHash || "—"} · last invocation: {model.lastInvocationSourceId || "—"}
             </div>
+            {/* Serving profile — the ACTUAL adapter/mode + optional batching /
+                speculative, proof-bound to the served tuned tag. */}
+            {model.servingProfile ? (
+              <div className="dm-run-console__hint" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
+                serving: {model.servingProfile.adapter} · mode {model.servingProfile.mode}
+                {model.servingProfile.continuousBatching ? " · continuous batching" : ""}
+                {model.servingProfile.speculative ? ` · speculative (draft ${model.servingProfile.speculative.draftModel})` : ""}
+                {" · "}{model.servingProfile.servesTunedTag ? "serves tuned tag ✓" : model.servingProfile.reason}
+              </div>
+            ) : null}
           </details>
           {/* Suggested actions — pure causation deriver, closed by default;
               each action seeds a reviewable proposal / routes to a governed

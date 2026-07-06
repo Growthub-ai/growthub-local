@@ -112,6 +112,11 @@ export function normalizeProgress(p) {
     totalRecords: Number.isFinite(Number(p.totalRecords)) ? Number(p.totalRecords) : undefined,
     artifactBytes: Number.isFinite(Number(p.artifactBytes)) ? Number(p.artifactBytes) : undefined,
     sourceBytes: Number.isFinite(Number(p.sourceBytes)) ? Number(p.sourceBytes) : undefined,
+    // Long-running fine-tune resume evidence (HF Trainer callback-shaped): the
+    // last checkpoint the run can resume from, its step, and the training loss.
+    step: Number.isFinite(Number(p.step)) ? Number(p.step) : undefined,
+    loss: Number.isFinite(Number(p.loss)) ? Number(p.loss) : undefined,
+    checkpointPath: p.checkpointPath ? String(p.checkpointPath) : undefined,
   };
 }
 

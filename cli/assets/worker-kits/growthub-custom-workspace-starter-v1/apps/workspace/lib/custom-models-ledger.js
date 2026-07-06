@@ -21,6 +21,7 @@
  */
 
 import { deriveTrainingLedgerState, TRAINING_OBJECT_TYPE } from "./training-ledger.js";
+import { deriveServingProfile } from "./training-runtime-drivers.js";
 
 export const CUSTOM_MODEL_CAPABILITY_SCHEMA = "growthub-custom-model-capability-v1";
 
@@ -155,6 +156,9 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
       lastResponseModel: m.bondedRegistry?.validated?.model || "",
       lastResponseHash: m.bondedRegistry?.validated?.snippet ? djb2(m.bondedRegistry.validated.snippet) : "",
       verificationStatus: m.bondedRegistry?.validated ? "verified" : (registryRow ? "unverified" : "unregistered"),
+      // Governed serving profile — actual adapter/mode/batching/speculative,
+      // proof-bound to the served tuned tag (never a throughput claim).
+      servingProfile: deriveServingProfile(registryRow || {}, { expectedTag: m.localModel }),
       links: {
         workflow: sandbox ? `/workflows?object=${encodeURIComponent(sandbox.objectId)}&row=${encodeURIComponent(sandbox.rowName)}${sandbox.runId ? `&run=${encodeURIComponent(sandbox.runId)}` : ""}` : "",
         dataModel: "/data-model",

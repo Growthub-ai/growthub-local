@@ -29,7 +29,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -851,4 +851,36 @@ test("deriveTrainingCompletionReward: live only when the whole chain holds", () 
   assert.equal(done.headline, "Your custom model is live locally.");
   assert.match(done.quantDelta, /16\.0 GB → 4\.4 GB \(q4_k_m\)/);
   assert.equal(done.outputHash, "oh_1");
+});
+
+// --------------------------------------------------------------------------
+// Long-running safety — resume state + serving profile (clarification pass)
+// --------------------------------------------------------------------------
+
+test("resume state: interrupted fine-tune with checkpoint is resumable (smaller batch on OOM)", () => {
+  const oom = deriveTrainingResumeState({ status: "failed", blockedReason: "CUDA out of memory", progress: { stageId: "fine-tuning", step: 220, checkpointPath: "./artifacts/x/checkpoint-220", loss: 1.82 } });
+  assert.equal(oom.resumable, true);
+  assert.equal(oom.checkpointPath, "./artifacts/x/checkpoint-220");
+  assert.equal(oom.resumeAction.oneClick, true);
+  assert.equal(oom.resumeAction.args.smallerBatch, true);
+  assert.equal(oom.resumeAction.args.fromStep, 220);
+  // No checkpoint → honest full re-run, never fake mid-file recovery.
+  const noCkpt = deriveTrainingResumeState({ status: "failed", progress: { stageId: "quantizing" } });
+  assert.equal(noCkpt.resumable, false);
+  assert.match(noCkpt.reason, /restart from the last completed prior artifact/);
+});
+
+test("serving profile: records adapter/batching/speculative, proof-bound to tuned tag", () => {
+  const reg = { baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", servingAdapter: "ollama", servingMode: "continuous-batching", continuousBatching: true, speculativeDraftModel: "qwen2.5-coder:0.5b", lastResponse: JSON.stringify({ model: "workspace-local-tuned-v1" }) };
+  const sp = deriveServingProfile(reg, { expectedTag: "workspace-local-tuned-v1" });
+  assert.equal(sp.adapter, "ollama");
+  assert.equal(sp.continuousBatching, true);
+  assert.equal(sp.speculative.draftModel, "qwen2.5-coder:0.5b");
+  assert.equal(sp.speculative.mainModel, "workspace-local-tuned-v1");
+  assert.equal(sp.servesTunedTag, true, "tuned MAIN model is the authority");
+  assert.ok(SERVING_ADAPTERS.includes(sp.adapter));
+  // A base-model response is NOT verified even with batching/speculative on.
+  const base = deriveServingProfile({ ...reg, lastResponse: JSON.stringify({ model: "gemma3" }) }, { expectedTag: "workspace-local-tuned-v1" });
+  assert.equal(base.servesTunedTag, false);
+  assert.match(base.reason, /not the tuned tag/);
 });
