@@ -9950,105 +9950,6 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   justify-content: center;
 }
 .dm-workflow-schedule-actions {
-/* Training sidecar — Distillation Stats. Minimal, model-first, no code blocks. */
-.training-stats-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 14px 16px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #111827;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-.training-stats-head,
-.training-model-row,
-.training-progress-meta,
-.training-action-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.training-stats-title {
-  font-size: 18px;
-  line-height: 1.15;
-  font-weight: 650;
-  color: #111827;
-  letter-spacing: 0;
-}
-.training-stats-subtitle {
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.35;
-  color: #6b7280;
-}
-.training-model-select {
-  width: 100%;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 28px 0 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #111827;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.training-model-select:disabled {
-  color: #9ca3af;
-  background: #f9fafb;
-}
-.training-path-row,
-.training-path-pill {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #6b7280;
-  font-size: 11.5px;
-}
-.training-progress-block {
-  display: grid;
-  gap: 7px;
-}
-.training-progress-meta {
-  font-size: 12px;
-  color: #4b5563;
-}
-.training-progress-meta strong {
-  color: #111827;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.training-progress-track {
-  height: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #e5e7eb;
-}
-.training-progress-track span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #8b8f96;
-  transition: width 160ms ease, background 160ms ease;
-}
-.training-progress-track.is-ready span { background: #16a34a; }
-.training-progress-marks {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: #6b7280;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.training-readiness-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -10209,6 +10110,109 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   box-sizing: border-box;
 }
 .dm-inbound-test-modal .dm-inbound-example .dm-json-tree { max-height: 180px; overflow-y: auto; scrollbar-gutter: stable; }
+/* Training sidecar — Distillation Stats. Minimal, model-first, no code blocks. */
+.training-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.training-stats-head,
+.training-model-row,
+.training-progress-meta,
+.training-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.training-stats-title {
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 650;
+  color: #111827;
+  letter-spacing: 0;
+}
+.training-stats-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #6b7280;
+}
+.training-model-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-model-select:disabled {
+  color: #9ca3af;
+  background: #f9fafb;
+}
+.training-path-row,
+.training-path-pill {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6b7280;
+  font-size: 11.5px;
+}
+.training-progress-block {
+  display: grid;
+  gap: 7px;
+}
+.training-progress-meta {
+  font-size: 12px;
+  color: #4b5563;
+}
+.training-progress-meta strong {
+  color: #111827;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.training-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+.training-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8b8f96;
+  transition: width 160ms ease, background 160ms ease;
+}
+.training-progress-track.is-ready span { background: #16a34a; }
+.training-progress-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.training-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
 .training-readiness-grid span {
   display: grid;
   gap: 2px;

@@ -73,6 +73,11 @@ const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
 const SANDBOX_MAX_TIMEOUT_MS = 600000;
+// Local-machine runs (runLocality: "local") are not bound by the serverless
+// 10-minute ceiling — a real on-machine job like a QLoRA fine-tune + GGUF
+// quantize legitimately runs for hours. Serverless/remote lanes keep the
+// tighter cap; only the user's own machine may hold a long-lived run.
+const SANDBOX_MAX_TIMEOUT_MS_LOCAL = 6 * 60 * 60 * 1000;
 /**
  * Canonical Paperclip local agent-host slugs — mirrors the upstream
  * `AGENT_ADAPTER_TYPES` enum in `packages/shared/src/constants.ts`. The
@@ -1257,8 +1262,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
   if (row.timeoutMs !== undefined && row.timeoutMs !== "") {
     const ms = Number(row.timeoutMs);
-    if (!Number.isFinite(ms) || ms < 0 || ms > SANDBOX_MAX_TIMEOUT_MS) {
-      errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
+    // Local-machine runs may hold a long-lived job (e.g. a fine-tune); every
+    // other locality keeps the serverless 10-minute ceiling.
+    const cap = String(row.runLocality || "") === "local" ? SANDBOX_MAX_TIMEOUT_MS_LOCAL : SANDBOX_MAX_TIMEOUT_MS;
+    if (!Number.isFinite(ms) || ms < 0 || ms > cap) {
+      errors.push(`${path}.timeoutMs must be a finite number between 0 and ${cap}`);
     }
   }
   for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
