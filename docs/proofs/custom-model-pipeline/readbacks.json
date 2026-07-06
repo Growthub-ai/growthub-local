@@ -1,0 +1,21 @@
+{
+  "afterStart": {
+    "trainingRunId": "trainrun_2026-07-06T15-41-52-420Z",
+    "modelTrainingRowId": "workspace-local",
+    "datasetExportId": "ft_1_2026-07-06T15-41-52-420Z",
+    "baseModel": "gemma3",
+    "trainingProfile": "unsloth-distill-quantize-pipeline",
+    "runnerMode": "local-command",
+    "status": "running",
+    "startedAt": "2026-07-06T15:41:53.176Z",
+    "completedAt": "",
+    "artifactType": "",
+    "artifactModelTag": "",
+    "artifactPath": "",
+    "artifactSha256": "",
+    "artifactQuantization": "",
+    "artifactSourceBytes": 0,
+    "artifactArtifactBytes": 0,
+    "schema": "growthub-local-model-training-run-v1"
+  }
+}

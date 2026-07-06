@@ -1,0 +1,15 @@
+PASS  training ledger renders and the fine-tune step is READY (gate met) — bootstrap: Train & import — ready
+  shot: 01-training-ledger-gate.png
+  shot: 02-handoff-modal-open.png
+  shot: 03-pipeline-commands.png
+PASS  modal shows the composed pipeline (quantize + ollama create in the command chain) — quantize=true serve=true
+  shot: 03b-train-panel-commands.png
+PASS  one click records a governed model-training-run receipt — status=running progress.stage=-
+  shot: 04-one-click-started.png
+PASS  runner sandbox object stood up (atomic run, no parallel runtime) — rows=1
+  shot: 05-thin-delta-progress.png
+FAIL  runner reached a GOVERNED terminal receipt (no fake pass) — status=undefined reason=
+FAIL  derived one-click remediation surfaces in the same modal on failure — remedyCards=0
+  shot: 06-derived-remediation.png
+
+4/6 journey checks passed; screenshots in /tmp/claude-0/-home-user-growthub-local/9d0394e1-c224-59f5-a229-8421eb263d0e/scratchpad/proof-shots
