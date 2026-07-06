@@ -1,0 +1,31 @@
+{
+  "stateId": "state-11-fix-applied",
+  "visibleTitle": "Training custom-model-v1",
+  "visibleStatus": "Resumed",
+  "primaryCta": "Resume training",
+  "modalHook": "[data-train-resume]",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1"
+  },
+  "proof": {
+    "resumesSameRunId": "run_2026-07-06_v1",
+    "resumeFrom": "./artifacts/custom-model-v1/checkpoint-3800",
+    "fromStep": 3800,
+    "smallerBatch": true,
+    "recentEvents": [
+      "retry_started",
+      "binding_verified",
+      "resume_training"
+    ],
+    "duplicateRun": false
+  },
+  "nluExamples": [
+    "Resume from where it stopped.",
+    "Was the fix applied?",
+    "Continue training."
+  ],
+  "derivedFrom": [
+    "deriveTrainingResumeState"
+  ],
+  "nextAllowedAction": "resume_training"
+}

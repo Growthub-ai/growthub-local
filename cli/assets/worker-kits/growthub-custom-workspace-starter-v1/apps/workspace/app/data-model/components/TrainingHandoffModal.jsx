@@ -49,7 +49,7 @@ import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
-import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState } from "../../../lib/training-runtime-drivers.js";
+import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState, deriveServingProfile, deriveTrainingResumeState, deriveLocalModelChoices } from "../../../lib/training-runtime-drivers.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -69,6 +69,26 @@ const ARTIFACT_TYPE_LABELS = {
   "ollama-model": "An Ollama model name",
   "openai-compatible-endpoint": "A running compatible endpoint",
 };
+
+/**
+ * Customer-readable headline per canonical stage id — the top line of the
+ * waiting UX (comment §5). The thin status line under it stays the real
+ * receipt stamp (deriveTrainingWaitState); this only names what is happening
+ * in plain language so the user is never staring at a bare stage token.
+ */
+const STAGE_HEADLINES = {
+  preflight: "Checking your machine",
+  distilling: "Building training data",
+  "fine-tuning": "Fine-tuning locally",
+  converting: "Converting the model",
+  quantizing: "Quantizing the model",
+  serving: "Registering the local model",
+  verifying: "Testing the reply",
+  complete: "Custom model live",
+};
+/** The seeded test prompt the response inspector opens with — editable, the
+ *  same mental model as the API/Webhook test-event editor. */
+const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
 
 function eligibleTraceRows(workspaceConfig, minScore) {
   const objects = workspaceConfig?.dataModel?.objects || [];
@@ -378,6 +398,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
+  // Test-event mental model (mirrors the API/Webhook test-event flow): an
+  // editable seeded prompt + a response inspector with Response/Trace/Details/
+  // Proof tabs. State kept local; the send re-uses the governed test lane.
+  const [testPrompt, setTestPrompt] = useState(DEFAULT_TEST_PROMPT);
+  const [inspectorTab, setInspectorTab] = useState("response");
+  // Adaptive base-model choice — defaults to the workspace-detected base, but
+  // the user can pick any base their workspace actually carries (no hardcoded
+  // Gemma/Ollama assumption).
+  const [chosenBase, setChosenBase] = useState("");
   // Behind-the-scenes setup feedback — the user is never left in the dark
   // while the API Registry row + Data Model model record are written.
   const [busy, setBusy] = useState(false);
@@ -398,7 +427,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const blocked = blockedTraceCount(workspaceConfig);
   const target = resolveFineTuneTarget(targetId);
   const profile = resolveTrainingProfile(profileId);
-  const baseModel = String(workspaceConfig?.dataModel?.objects?.find((o) => o?.objectType === TRAINING_OBJECT_TYPE)?.rows?.[0]?.baseModel || "").trim();
+  // Adaptive model/runtime choices derived from the workspace's OWN rows — so
+  // the profile step reflects what this workspace carries, not a Gemma/Ollama
+  // default. The base falls back to the ledger row, then any workspace base.
+  const modelChoices = deriveLocalModelChoices({ workspaceConfig });
+  const detectedBase = String(workspaceConfig?.dataModel?.objects?.find((o) => o?.objectType === TRAINING_OBJECT_TYPE)?.rows?.[0]?.baseModel || "").trim();
+  const baseModel = String(chosenBase || detectedBase || modelChoices.detectedBase || "").trim();
 
   if (!open || typeof document === "undefined") return null;
 
@@ -447,6 +481,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     servedModel: (() => { try { return String(JSON.parse(liveRegistryRow?.lastResponse || "null")?.model || ""); } catch { return ""; } })(),
     smokeRun,
   });
+  // Governed serving profile (adapter / mode / batching / speculative) + resume
+  // state — proof-bound, so the inspector + waiting UX can show the real
+  // serving capability and a one-click resume without any throughput claim.
+  const servingProfile = deriveServingProfile(liveRegistryRow || {}, { expectedTag: artifact.modelTag || reservedTag });
+  const resumeState = deriveTrainingResumeState(liveRunRow);
 
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
@@ -756,16 +795,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     setError("");
     setVerifying(true);
     setVerifyResult(null);
+    setInspectorTab("response");
     try {
       const reg = (workspaceConfig?.dataModel?.objects || []).filter((o) => o?.objectType === "api-registry").flatMap((o) => o.rows || []).find((r) => r?.integrationId === result.integrationId);
       // Use the existing governed API Registry test lane if present; otherwise
       // read the row's last stamped response. Either way verification is the
-      // pure tuned-tag gate — never a fake pass.
+      // pure tuned-tag gate — never a fake pass. The edited test prompt rides
+      // the same governed lane (same shape as the API/Webhook test event).
       let responseBody = reg?.lastResponse ?? null;
       try {
         const res = await fetch("/api/workspace/test-source", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ integrationId: result.integrationId }),
+          body: JSON.stringify({ integrationId: result.integrationId, prompt: String(testPrompt || DEFAULT_TEST_PROMPT) }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -778,7 +819,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       } catch { /* fall back to stamped response */ }
       const v = verifyTunedResponse({ expectedTag: artifact.modelTag || reservedTag, baseModel, responseBody });
       setVerifyResult(v);
-      if (v.verified) setPanel("bind");
+      // Stay on the inspector so the user can read Response/Trace/Details/Proof
+      // before advancing — an explicit "use it in a workflow" CTA moves on.
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -837,15 +879,34 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "checklist" && (
             <div className="dm-orch-modal-list">
-              <div className="training-handoff-process">
-                <div><strong>1. Review examples</strong><span>Pick the best examples from your real workspace activity.</span></div>
-                <div><strong>2. Train</strong><span>Choose how the model trains; Growthub Local prepares and tracks the run.</span></div>
-                <div><strong>3. Attach result</strong><span>Attach your trained model — it becomes real and provable.</span></div>
-                <div><strong>4. Test & run</strong><span>Confirm your model replies, then run it once in a workflow.</span></div>
+              {/* The high-impact mental model: turn real work traces into a
+                  local model, prove it is NOT the base model, then use it. */}
+              <div className="training-handoff-process" data-handoff-journey="">
+                <div>
+                  <strong>1. Choose examples</strong>
+                  <span>{candidates.length} real workspace trace{candidates.length === 1 ? "" : "s"} ready · {blocked} redaction blocked</span>
+                </div>
+                <div>
+                  <strong>2. Train local model</strong>
+                  <span>Base: {baseModel || "detected from your workspace"} · Output: {reservedTag}</span>
+                </div>
+                <div>
+                  <strong>3. Prove it replies</strong>
+                  <span>Must return the tuned tag, not the base model</span>
+                </div>
+                <div>
+                  <strong>4. Use it in a workflow</strong>
+                  <span>Writes an outputHash proof back to your workspace</span>
+                </div>
               </div>
               <div className="training-handoff-action-row">
-                <button type="button" className="training-action-primary" data-handoff-curate="" disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
-                  {candidates.length > 0 ? `Review ${candidates.length} examples` : "No qualified examples yet"}
+                {/* Dynamic, rewarding CTA — never a generic "next". */}
+                <button type="button" className="training-action-primary" data-handoff-curate="" data-handoff-cta={candidates.length === 0 ? "collect" : floorMet ? "review-eligible" : "review-more"} disabled={candidates.length === 0} onClick={() => setPanel("curate")}>
+                  {candidates.length === 0
+                    ? "Collect more traces"
+                    : floorMet
+                      ? `Review ${candidates.length} example${candidates.length === 1 ? "" : "s"}`
+                      : `Review examples — ${MIN_FINETUNE_TRACES - selected.length} more to reach the floor`}
                 </button>
                 <span className="training-handoff-eligibility" data-handoff-eligibility="">
                   {selected.length} eligible · {MIN_FINETUNE_TRACES} required
@@ -917,6 +978,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   </select>
                 </label>
                 <div className="dm-helper-stream dm-swarm-card-desc">{profile.description}</div>
+                {/* Adaptive base model — the choices come from the workspace's
+                    own model rows, not a hardcoded Gemma default. If a base is
+                    already set in the ledger it is pre-selected. */}
+                <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>base model{" "}
+                  {modelChoices.baseModels.filter(Boolean).length ? (
+                    <select value={baseModel} onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="">
+                      {[...new Set([baseModel, ...modelChoices.baseModels].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" value={baseModel} placeholder="e.g. qwen2.5-coder:7b — set in the ledger" onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="" />
+                  )}
+                </label>
                 <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>tuned model tag{" "}
                   <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" aria-invalid={tagUnsafe ? "true" : undefined} aria-describedby={tagUnsafe ? "handoff-tag-error" : undefined} />
                 </label>
@@ -925,7 +998,29 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     Use letters, numbers, dash, underscore, dot, slash, or colon only — no spaces or shell characters.
                   </div>
                 ) : null}
-                <div className="dm-run-console__hint">base model: {baseModel || "(select in the ledger first)"} · runner: {profile.runnerMode} · outputs: {profile.outputs.join(", ")}</div>
+                <div className="dm-run-console__hint">runner: {profile.runnerMode} · outputs: {profile.outputs.join(", ")}</div>
+              </div>
+              {/* Local runtime — derived from the workspace's real registry
+                  rows / runner, never a Gemma/Ollama-only assumption. When
+                  nothing is configured the user gets an honest setup state. */}
+              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-runtime={modelChoices.configured ? "configured" : "setup-needed"}>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Local runtime</div>
+                {modelChoices.configured ? (
+                  <>
+                    <div className="dm-helper-stream dm-swarm-card-desc">{modelChoices.guidance}</div>
+                    {modelChoices.runtimes.map((rt, i) => (
+                      <div key={i} className="dm-run-console__hint" data-handoff-runtime-row={rt.adapter} data-handoff-runtime-reachable={rt.reachable ? "yes" : "no"}>
+                        {rt.reachable ? "✓" : "•"} {rt.adapter}{rt.baseUrl ? ` · ${rt.baseUrl}` : ""} · {rt.status}
+                      </div>
+                    ))}
+                    {modelChoices.hasLocalRunner ? <div className="dm-run-console__hint" data-handoff-runner-ready="">✓ Local training runner ready</div> : null}
+                    {modelChoices.localModels.length ? <div className="dm-run-console__hint">already tuned in this workspace: {modelChoices.localModels.join(", ")}</div> : null}
+                  </>
+                ) : (
+                  <div className="dm-helper-stream dm-swarm-card-desc" data-handoff-runtime-setup="">
+                    {modelChoices.guidance} You can still prepare the dataset — the run stays gated until a runtime is reachable.
+                  </div>
+                )}
               </div>
               {/* Primary content: a plain-language summary of what will happen +
                   the machine it needs. The exact argv lives in Advanced below. */}
@@ -993,8 +1088,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-run-console__hint">Endpoint: {target.baseUrl}{target.endpoint} · auth: {target.authRef ? `authRef ${target.authRef}` : "none (Ollama local)"}</div>
               </div>
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title">
-                  {trainPhase === "running" ? `Fine-tuning in progress${trainProgress.pct ? ` · ${trainProgress.pct}%` : ""}` : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
+                {/* Headline = plain-language name of the CURRENT stage (comment
+                    §5), keyed on the real receipt stageId; the thin status line
+                    below stays the real stamp. Never a bare stage token. */}
+                <div className="dm-helper-toolcall-title" data-train-headline={liveRunRow?.progress?.stageId || ""}>
+                  {trainPhase === "running"
+                    ? `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"}${trainProgress.pct ? ` · ${trainProgress.pct}%` : ""}`
+                    : trainPhase === "starting" ? "Starting run…" : "Ready to fine-tune"}
                 </div>
                 {/* Bar width is EXACTLY the receipt progress pct — never a
                     fabricated idle/starting/elapsed value. Zero until the
@@ -1019,6 +1119,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-run-console__hint" data-train-proof-progress={`${proofChecklist.done}/${proofChecklist.total}`}>
                   Proof {proofChecklist.done}/{proofChecklist.total}: {proofChecklist.items.filter((i) => i.proven).map((i) => i.label).join(", ") || "none yet"}
                 </div>
+                {/* Resumable fine-tune — a crash with a real checkpoint offers
+                    one-click resume (smaller batch on OOM); no fake mid-file
+                    recovery when there is no checkpoint. */}
+                {resumeState.resumable ? (
+                  <div className="dm-helper-toolcall-row" data-train-resume={resumeState.resumeAction?.variant} style={{ marginTop: 8 }}>
+                    <span className="dm-run-console__hint">{resumeState.reason}{resumeState.loss != null ? ` · loss ${resumeState.loss}` : ""}</span>
+                    <button type="button" className="training-action-primary" data-train-resume-apply="" onClick={() => applyRemedy(resumeState.resumeAction)}>
+                      {resumeState.resumeAction.label}
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               {runConfig.commands.length ? (
@@ -1082,36 +1193,103 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           )}
 
           {panel === "verify" && result && (
-            <div className="dm-orch-modal-list">
+            <div className="dm-orch-modal-list" data-verify-panel="">
+              {/* Test-event editor — the SAME mental model as the API/Webhook
+                  test event: edit the prompt, send it through the governed test
+                  lane, inspect the response. */}
               <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Test your custom model</div>
-                <div className="dm-helper-stream dm-swarm-card-desc">Send a real prompt to your model. It only verifies if the reply comes back as <strong>{artifact.modelTag || reservedTag}</strong> — not the base model.</div>
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">Send a test prompt</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">
+                  This calls your local model and only verifies if the reply comes back as <strong>{artifact.modelTag || reservedTag}</strong> — not the base model.
+                </div>
+                <textarea
+                  className="dm-helper-composer-textarea"
+                  data-verify-prompt=""
+                  rows={3}
+                  value={testPrompt}
+                  onChange={(e) => setTestPrompt(e.target.value)}
+                  style={{ width: "100%", marginTop: 8 }}
+                  aria-label="Test prompt"
+                />
+                <button type="button" className="training-action-primary" data-verify-run="" onClick={runVerify} disabled={verifying || !String(testPrompt || "").trim()} style={{ marginTop: 8 }}>
+                  {verifying ? "Sending test…" : verifyResult ? "Send test again" : "Send test"}
+                </button>
                 {verifying ? (
-                  <>
-                    <div style={{ borderBottom: "2px solid currentColor", width: "70%", transition: "width 160ms linear" }} aria-hidden="true" />
-                    <div className="dm-run-console__hint">Sending a prompt and checking who replied…</div>
-                  </>
-                ) : null}
-                {verifyResult && !verifying ? (
-                  <div data-verify-result={verifyResult.verified ? "verified" : verifyResult.demotion}>
-                    <div className="dm-helper-stream dm-swarm-card-desc">
-                      {verifyResult.verified
-                        ? `✓ Your custom model answered as ${verifyResult.servedModel}.`
-                        : verifyResult.demotion === "base-model"
-                          ? `The connection answered, but it was not your custom model — it returned the base model.`
-                          : verifyResult.demotion === "mismatch"
-                            ? `The connection answered, but it was not your custom model.`
-                            : `Not your custom model yet — ${verifyResult.reason}`}
-                    </div>
-                    {/* Proof details — secondary. */}
-                    <div className="dm-run-console__hint">Proof details — expected: {artifact.modelTag || reservedTag} · actual: {verifyResult.servedModel || "—"} · run: {result.trainingRunId} · model row: {SLUG}-v{result.version} · registry: {result.integrationId}</div>
-                    {verifyResult.snippet ? <div className="dm-run-console__hint">reply excerpt: {verifyResult.snippet}</div> : null}
-                  </div>
+                  <div style={{ borderBottom: "2px solid currentColor", width: "70%", transition: "width 160ms linear", marginTop: 8 }} aria-hidden="true" />
                 ) : null}
               </div>
-              <button type="button" className="training-action-primary" data-verify-run="" onClick={runVerify} disabled={verifying}>
-                {verifying ? "Testing your model…" : verifyResult && !verifyResult.verified ? "Test again" : "Test my model"}
-              </button>
+
+              {/* Verified status — same status language as "Verified 200", tuned
+                  to model proof. Honest: verified ONLY when served == tuned tag. */}
+              {verifyResult && !verifying ? (() => {
+                const raw = liveRegistryRow?.lastResponse ?? "";
+                let parsed = null; try { parsed = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : null; } catch { parsed = null; }
+                const content = (() => {
+                  try { return String(parsed?.choices?.[0]?.message?.content || verifyResult.snippet || ""); } catch { return verifyResult.snippet || ""; }
+                })();
+                const gotResponse = Boolean(raw) || Boolean(verifyResult.servedModel) || Boolean(content);
+                const httpLine = gotResponse ? "200 OK" : "no response";
+                return (
+                  <div className="dm-helper-toolcall dm-swarm-card" data-verify-result={verifyResult.verified ? "verified" : (verifyResult.demotion || "unverified")}>
+                    <div className="dm-helper-toolcall-title dm-swarm-card-title" data-verify-status={verifyResult.verified ? "verified" : "demoted"}>
+                      {verifyResult.verified
+                        ? "✓ Verified tuned tag"
+                        : verifyResult.demotion === "base-model"
+                          ? "Not your model — base model replied"
+                          : verifyResult.demotion === "mismatch"
+                            ? "Not your model — a different model replied"
+                            : "Not verified yet"}
+                    </div>
+                    <div className="dm-run-console__hint" data-verify-badges="">
+                      {verifyResult.verified ? "Not base model · " : ""}Response {httpLine} · served {verifyResult.servedModel || "—"}
+                    </div>
+                    {/* Response inspector — Response / Trace / Details / Proof,
+                        mirroring the inbound response inspector. */}
+                    <div className="dm-tabs" role="tablist" data-verify-inspector="" style={{ marginTop: 10 }}>
+                      {["response", "trace", "details", "proof"].map((t) => (
+                        <button key={t} type="button" role="tab" aria-selected={inspectorTab === t} className={`dm-tab${inspectorTab === t ? " dm-tab-v" : ""}`} data-verify-tab={t} onClick={() => setInspectorTab(t)}>
+                          {t[0].toUpperCase() + t.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="dm-tab-content" data-verify-tab-content={inspectorTab} style={{ marginTop: 8 }}>
+                      {inspectorTab === "response" ? (
+                        <pre className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }} data-verify-response="">
+                          {content || (raw ? (typeof raw === "string" ? raw : JSON.stringify(raw, null, 2)) : "No response body stamped yet — send a test.")}
+                        </pre>
+                      ) : inspectorTab === "trace" ? (
+                        <div data-verify-trace="">
+                          <div className="dm-run-console__hint">request: {testPrompt.slice(0, 80)}{testPrompt.length > 80 ? "…" : ""}</div>
+                          <div className="dm-run-console__hint">trainingRunId: {result.trainingRunId}</div>
+                          <div className="dm-run-console__hint">apiRegistryId: {result.integrationId}</div>
+                          <div className="dm-run-console__hint">modelTrainingRowId: {SLUG}-v{result.version}</div>
+                        </div>
+                      ) : inspectorTab === "details" ? (
+                        <div data-verify-details="">
+                          <div className="dm-run-console__hint">expected tuned tag: {artifact.modelTag || reservedTag}</div>
+                          <div className="dm-run-console__hint">actual served model: {verifyResult.servedModel || "—"}</div>
+                          <div className="dm-run-console__hint">base model: {baseModel || "—"}</div>
+                          <div className="dm-run-console__hint">endpoint: {servingProfile.endpoint || "—"}</div>
+                          <div className="dm-run-console__hint">serving adapter: {servingProfile.adapter}{servingProfile.continuousBatching ? " · continuous batching" : ""}{servingProfile.speculative ? " · speculative" : ""}</div>
+                        </div>
+                      ) : (
+                        <div data-verify-proof="">
+                          <div className="dm-run-console__hint">why proven: the served response model must equal the tuned tag; a base-model or mismatched reply demotes it.</div>
+                          <div className="dm-run-console__hint">row stamped: api-registry ({result.integrationId}) lastResponse + status {servingProfile.servesTunedTag ? "connected" : "registered"}</div>
+                          <div className="dm-run-console__hint">would demote: reply model = base model, malformed body, or endpoint error.</div>
+                          <div className="dm-run-console__hint" data-verify-proof-serving="">{servingProfile.reason}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })() : null}
+
+              {verifyResult?.verified ? (
+                <button type="button" className="training-action-primary" data-verify-continue="" onClick={() => setPanel("bind")}>
+                  Use it in a workflow →
+                </button>
+              ) : null}
             </div>
           )}
 
@@ -1197,8 +1375,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     (never mutates from here), same grammar as the ledger. */}
                 {completionReward.live ? (
                   <div className="dm-helper-toolcall-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }} data-training-reward-actions="">
-                    <a className="training-action-primary" href="/workflows" data-reward-action="use-in-workflow">Use it in a workflow</a>
-                    <a className="dm-btn-ghost" href="/data-model" data-reward-action="view-in-ledger">See it in your workspace</a>
+                    <a className="training-action-primary" href="/workflows" data-reward-action="use-in-workflow">Use as workflow node</a>
+                    <a className="dm-btn-ghost" href="/custom-models" data-reward-action="open-custom-models">Open Custom Models</a>
+                    <a className="dm-btn-ghost" href="/training" data-reward-action="generate-training-data">Generate more training data</a>
+                    <a className="dm-btn-ghost" href={`/data-model?object=${encodeURIComponent(result.integrationId)}`} data-reward-action="export-model-proof">Export model proof</a>
                   </div>
                 ) : null}
               </div>

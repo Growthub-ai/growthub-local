@@ -1,0 +1,31 @@
+{
+  "stateId": "state-08-fine-tuning",
+  "visibleTitle": "Training custom-model-v1",
+  "visibleStatus": "Running",
+  "primaryCta": "View artifacts",
+  "modalHook": "[data-train-headline=fine-tuning] · Events/Logs/Artifacts",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1"
+  },
+  "proof": {
+    "barPct": 48,
+    "step": 4320,
+    "totalSteps": 9000,
+    "loss": 0.8732,
+    "checkpointPath": "./artifacts/custom-model-v1/checkpoint-4320",
+    "workers": 2,
+    "resumeBoundary": "Resumable from ./artifacts/custom-model-v1/checkpoint-4320 (step 4320)",
+    "resumeAction": "Resume from checkpoint with a smaller batch"
+  },
+  "nluExamples": [
+    "How is fine-tuning going?",
+    "Show loss.",
+    "Was a checkpoint saved?",
+    "Can it resume?"
+  ],
+  "derivedFrom": [
+    "deriveTrainingWaitState",
+    "deriveTrainingResumeState"
+  ],
+  "nextAllowedAction": "view_run"
+}

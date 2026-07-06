@@ -1,0 +1,44 @@
+{
+  "stateId": "state-10-troubleshoot",
+  "visibleTitle": "Training blocked",
+  "visibleStatus": "Needs attention",
+  "primaryCta": "Retry check",
+  "secondaryCta": "Open logs",
+  "modalHook": "[data-train-stage-issue]",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1"
+  },
+  "proof": {
+    "stageId": "fine-tuning",
+    "issue": "fine_tune_oom",
+    "userMessage": "Fine-tuning stopped at step 3800/9000: GPU memory ran out.",
+    "evidence": {
+      "step": 3800,
+      "totalSteps": 9000,
+      "accepted": 3800,
+      "totalRecords": 9000,
+      "checkpointPath": "./artifacts/custom-model-v1/checkpoint-3800",
+      "shortfall": "CUDA out of memory during backward pass"
+    },
+    "nextAction": {
+      "label": "Resume with a smaller batch",
+      "action": "retry_finetune",
+      "variant": "retry_finetune_smaller_batch",
+      "oneClick": true,
+      "stageId": "fine-tuning",
+      "issue": "fine_tune_oom",
+      "destination": "/custom-models",
+      "cta": "Open Custom Models"
+    },
+    "genericFailure": false
+  },
+  "nluExamples": [
+    "Why is training blocked?",
+    "Fix the error.",
+    "What should I do next?"
+  ],
+  "derivedFrom": [
+    "deriveTrainingStageIssue"
+  ],
+  "nextAllowedAction": "retry_finetune"
+}

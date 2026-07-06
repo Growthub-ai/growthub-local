@@ -1,0 +1,26 @@
+{
+  "stateId": "state-13-deploy",
+  "visibleTitle": "Deploy custom model",
+  "visibleStatus": "Configuring",
+  "primaryCta": "Deploy custom model",
+  "modalHook": "[data-deploy-fields]",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model"
+  },
+  "proof": {
+    "environment": "Production",
+    "endpointPath": "/v1/models/custom-model-v1",
+    "authTokenRef": "GROWTHUB_API_INVOKE_TOKEN",
+    "canaryRollout": "10% traffic",
+    "secretsExposed": false
+  },
+  "nluExamples": [
+    "Deploy it.",
+    "Use staging.",
+    "Roll out to 10% traffic."
+  ],
+  "derivedFrom": [
+    "api-registry row (authRef env ref only)"
+  ],
+  "nextAllowedAction": "deploy"
+}

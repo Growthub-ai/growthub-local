@@ -1,0 +1,38 @@
+{
+  "stateId": "state-02-configure-traces",
+  "visibleTitle": "Configure Traces",
+  "visibleStatus": "Configuration",
+  "primaryCta": "Save configuration",
+  "modalHook": "[data-handoff-trace-mapping] (Configuration | Advanced tabs)",
+  "governedRows": {
+    "trainingTraces": "training-traces",
+    "columns": [
+      "sessionDate",
+      "inputPrompt",
+      "agentOutput",
+      "qualityScore",
+      "reason",
+      "redactionStatus",
+      "exported"
+    ]
+  },
+  "proof": {
+    "fieldMapping": {
+      "input": "inputPrompt",
+      "output": "agentOutput",
+      "reward": "qualityScore",
+      "toolCalls": null
+    },
+    "hardcodedAssumptions": false,
+    "advancedExposesRawSchema": true
+  },
+  "nluExamples": [
+    "Use these traces for training.",
+    "Map input/output fields.",
+    "Which fields will train the model?"
+  ],
+  "derivedFrom": [
+    "training-traces object columns"
+  ],
+  "nextAllowedAction": "confirm_dataset_readiness"
+}

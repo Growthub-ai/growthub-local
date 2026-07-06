@@ -29,7 +29,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS, deriveLocalModelChoices } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -883,4 +883,54 @@ test("serving profile: records adapter/batching/speculative, proof-bound to tune
   const base = deriveServingProfile({ ...reg, lastResponse: JSON.stringify({ model: "gemma3" }) }, { expectedTag: "workspace-local-tuned-v1" });
   assert.equal(base.servesTunedTag, false);
   assert.match(base.reason, /not the tuned tag/);
+});
+
+// --------------------------------------------------------------------------
+// Adaptive local-model & runtime choices — no hardcoded Gemma/Ollama-only path
+// --------------------------------------------------------------------------
+
+test("local-model choices: derives base/local models + runtimes from the workspace's own rows", () => {
+  const workspaceConfig = { dataModel: { objects: [
+    { objectType: "model-training", rows: [
+      { Name: "workspace-local-v1", baseModel: "qwen2.5-coder:7b", localModel: "workspace-local-tuned-v1" },
+      { Name: "workspace-local-v2", baseModel: "qwen2.5-coder:7b", localModel: "" },
+    ] },
+    { objectType: "api-registry", rows: [
+      { integrationId: "workspace-local-model", baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", kind: "custom-model", status: "connected", expectedModelTag: "workspace-local-tuned-v1" },
+      { integrationId: "some-crm", baseUrl: "https://api.crm.example", endpoint: "/contacts", capabilities: "records" },
+    ] },
+  ] } };
+  const c = deriveLocalModelChoices({ workspaceConfig });
+  assert.equal(c.configured, true);
+  assert.deepEqual(c.baseModels, ["qwen2.5-coder:7b"], "distinct base models, not a Gemma default");
+  assert.deepEqual(c.localModels, ["workspace-local-tuned-v1"]);
+  assert.equal(c.detectedBase, "qwen2.5-coder:7b");
+  assert.equal(c.runtimes.length, 1, "the CRM data row is not a model runtime");
+  assert.equal(c.runtimes[0].adapter, "ollama");
+  assert.equal(c.runtimes[0].reachable, true);
+});
+
+test("local-model choices: empty workspace → honest setup-needed, uses fallbacks only for base list", () => {
+  const c = deriveLocalModelChoices({ workspaceConfig: { dataModel: { objects: [] } }, fallbackBaseModels: ["gemma3"] });
+  assert.equal(c.configured, false, "no runtime rows and no live runner → not configured");
+  assert.equal(c.runtimes.length, 0);
+  assert.deepEqual(c.baseModels, ["gemma3"], "fallback used only when the workspace has no base model rows");
+  assert.match(c.guidance, /No local model runtime configured/);
+});
+
+test("local-model choices: a live model-training-runner alone counts as configured", () => {
+  const workspaceConfig = { dataModel: { objects: [
+    { id: "model-training-runner", objectType: "sandbox-environment", rows: [{ Name: "run-1", status: "live" }] },
+  ] } };
+  const c = deriveLocalModelChoices({ workspaceConfig });
+  assert.equal(c.hasLocalRunner, true);
+  assert.equal(c.configured, true);
+});
+
+test("local-model choices: never throws on garbage input", () => {
+  for (const bad of [undefined, null, {}, { dataModel: null }, { dataModel: { objects: "nope" } }]) {
+    const c = deriveLocalModelChoices({ workspaceConfig: bad });
+    assert.equal(c.configured, false);
+    assert.ok(Array.isArray(c.runtimes));
+  }
 });

@@ -754,3 +754,73 @@ export function deriveServingProfile(registryRow = {}, { expectedTag = "" } = {}
       : served ? `Endpoint served ${served}, not the tuned tag ${expected || "(none)"}` : "no served-model proof yet",
   };
 }
+
+/**
+ * Adaptive local-model & runtime choices — derived from the workspace's OWN
+ * rows so the profile step never hardcodes a "Gemma / Ollama is the only path"
+ * assumption. The customer sees the base models and runtimes THEIR workspace
+ * actually carries; if none are configured they get an honest setup-needed
+ * state instead of a fake default. Pure, no-I/O, never-throws.
+ *
+ * Sources of truth, in priority order:
+ *   - base models   → distinct `baseModel` on model-training rows (the model
+ *                     the user already picked), else the seeded fallbacks.
+ *   - local models  → distinct `localModel` on model-training rows (already
+ *                     tuned tags — reusable as a resume/rebase base).
+ *   - runtimes      → the ACTUAL serving adapter of every api-registry row
+ *                     that looks like a model endpoint (ollama :11434 →
+ *                     "ollama", other chat endpoints → "openai-compatible"),
+ *                     plus a live `model-training-runner` sandbox row implying
+ *                     a local runner is present. `configured` is true only when
+ *                     at least one real runtime row was found.
+ */
+export function deriveLocalModelChoices({ workspaceConfig, fallbackBaseModels = [] } = {}) {
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const rowsOf = (pred) => objects.filter(pred).flatMap((o) => (Array.isArray(o.rows) ? o.rows : []));
+  const trainingRows = rowsOf((o) => o?.objectType === "model-training");
+  const registryRows = rowsOf((o) => o?.objectType === "api-registry");
+
+  const distinct = (values) => [...new Set(values.map((v) => String(v || "").trim()).filter(Boolean))];
+  const baseModels = distinct(trainingRows.map((r) => r.baseModel));
+  const localModels = distinct(trainingRows.map((r) => r.localModel));
+
+  // A registry row is a model runtime when it advertises chat-completions /
+  // custom-model kind or points at a chat endpoint — never a generic data row.
+  const isModelRow = (r) =>
+    String(r?.kind || "") === "custom-model"
+    || /chat-completions|inference/i.test(String(r?.capabilities || r?.capabilityType || r?.entityTypes || ""))
+    || /\/chat\/completions/i.test(String(r?.endpoint || ""));
+  const runtimes = [];
+  const seenAdapters = new Set();
+  for (const r of registryRows.filter(isModelRow)) {
+    const adapter = String(r?.baseUrl || "").includes(":11434") ? "ollama" : String(r?.servingAdapter || "openai-compatible");
+    const key = `${adapter}::${String(r?.baseUrl || "")}`;
+    if (seenAdapters.has(key)) continue;
+    seenAdapters.add(key);
+    runtimes.push({
+      adapter: SERVING_ADAPTERS.includes(adapter) ? adapter : "openai-compatible",
+      baseUrl: String(r?.baseUrl || ""),
+      integrationId: String(r?.integrationId || ""),
+      status: String(r?.status || "registered"),
+      reachable: String(r?.status || "") === "connected",
+      expectedModelTag: String(r?.expectedModelTag || r?.localModel || ""),
+    });
+  }
+  const hasRunner = objects.some((o) => o?.id === "model-training-runner" && (o.rows || []).some((r) => String(r?.status || "") === "live"));
+
+  const configured = runtimes.length > 0 || hasRunner;
+  const detectedBase = baseModels[0] || "";
+  return {
+    baseModels: baseModels.length ? baseModels : distinct(fallbackBaseModels),
+    localModels,
+    runtimes,
+    hasLocalRunner: hasRunner,
+    configured,
+    detectedBase,
+    guidance: configured
+      ? (detectedBase
+        ? `Training ${detectedBase}${runtimes.length ? ` · ${runtimes.length} runtime${runtimes.length === 1 ? "" : "s"} detected` : " · local runner ready"}`
+        : `${runtimes.length} runtime${runtimes.length === 1 ? "" : "s"} detected — pick a base model to train`)
+      : "No local model runtime configured yet — set a base model in the ledger and a local runner (Ollama / llama.cpp server / vLLM / any OpenAI-compatible endpoint).",
+  };
+}

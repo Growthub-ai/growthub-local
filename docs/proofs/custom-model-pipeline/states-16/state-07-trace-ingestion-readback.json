@@ -1,0 +1,29 @@
+{
+  "stateId": "state-07-trace-ingestion",
+  "visibleTitle": "Training custom-model-v1",
+  "visibleStatus": "Running",
+  "primaryCta": "View logs",
+  "secondaryCta": "Open in Runs",
+  "modalHook": "[data-train-headline=distilling]",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1"
+  },
+  "proof": {
+    "barPct": 22,
+    "accepted": 2184,
+    "skipped": 164,
+    "errors": 12,
+    "total": 3248,
+    "datasetSha": "sha256:abc123def456",
+    "rejectionReasonsAvailable": true
+  },
+  "nluExamples": [
+    "How many traces were accepted?",
+    "Why were some skipped?",
+    "Show ingestion errors."
+  ],
+  "derivedFrom": [
+    "deriveTrainingWaitState"
+  ],
+  "nextAllowedAction": "view_run"
+}
