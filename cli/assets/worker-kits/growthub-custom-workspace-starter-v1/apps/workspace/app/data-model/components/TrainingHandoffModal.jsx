@@ -409,6 +409,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const reservedTag = (tunedTag || `${SLUG}-tuned-v${version}`).trim();
   const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
   const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `./artifacts/${reservedTag}` });
+  // Plain-language run framing for the no-code profile step — the primary UX is
+  // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
+  const floor = resourceFloorFor(baseModel);
+  // A tag-specific safety failure drives a field-level error on the tag input,
+  // not a scary command dump. Any other safety/missing reason is a clean block.
+  const tagUnsafe = Boolean(runConfig.commandSafety && !runConfig.commandSafety.ok
+    && (runConfig.commandSafety.reasons || []).some((r) => /model tag/i.test(String(r))));
+  const blockReason = (() => {
+    if (runConfig.ready) return null;
+    if (tagUnsafe) return { code: "unsafe-tag", message: "The tuned model name isn't allowed. Fix the highlighted field above, then try again." };
+    if (runConfig.commandSafety && !runConfig.commandSafety.ok) return { code: "unsafe-config", message: "This run can't be started safely with the current settings. Pick the one-click pipeline profile, or fix the highlighted field above." };
+    if (runConfig.missingRequirements && runConfig.missingRequirements.length) return { code: "missing", message: `Almost there — first set: ${runConfig.missingRequirements.join(", ")}. The base model comes from the model row in the ledger.` };
+    return { code: "not-ready", message: "This run configuration isn't ready yet." };
+  })();
   // Live proof state — the SAME derivation /training and /custom-models use, so
   // the modal can never claim "complete" before the smoke run wrote outputHash.
   const liveRuntime = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug: SLUG });
@@ -904,22 +918,48 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </label>
                 <div className="dm-helper-stream dm-swarm-card-desc">{profile.description}</div>
                 <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>tuned model tag{" "}
-                  <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" />
+                  <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" aria-invalid={tagUnsafe ? "true" : undefined} aria-describedby={tagUnsafe ? "handoff-tag-error" : undefined} />
                 </label>
+                {tagUnsafe ? (
+                  <div className="dm-helper-error" id="handoff-tag-error" data-handoff-tag-error="">
+                    Use letters, numbers, dash, underscore, dot, slash, or colon only — no spaces or shell characters.
+                  </div>
+                ) : null}
                 <div className="dm-run-console__hint">base model: {baseModel || "(select in the ledger first)"} · runner: {profile.runnerMode} · outputs: {profile.outputs.join(", ")}</div>
               </div>
-              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-runconfig="">
-                <div className="dm-helper-toolcall-title dm-swarm-card-title">Generated run config</div>
+              {/* Primary content: a plain-language summary of what will happen +
+                  the machine it needs. The exact argv lives in Advanced below. */}
+              <div className="dm-helper-toolcall dm-swarm-card" data-handoff-runsummary="">
+                <div className="dm-helper-toolcall-title dm-swarm-card-title">What this will do</div>
+                <div className="dm-helper-stream dm-swarm-card-desc">
+                  Fine-tune <strong>{baseModel || "your base model"}</strong> on <strong>{selected.length}</strong> curated example{selected.length === 1 ? "" : "s"}, then quantize and serve it locally as <strong>{reservedTag}</strong>.
+                </div>
+                <div className="dm-run-console__hint" data-handoff-resource-floor={`${floor.ramGB}/${floor.diskGB}/${floor.vramGB}`}>
+                  {runConfig.stageIds && runConfig.stageIds.length ? `${runConfig.stageIds.length} governed stages · ` : ""}
+                  needs about {floor.ramGB} GB RAM · {floor.diskGB} GB free disk{floor.vramGB ? ` · ${floor.vramGB} GB GPU VRAM` : ""} — checked before anything runs.
+                </div>
+                <div className="dm-run-console__hint">When it finishes it must reply as <strong>{runConfig.verification.expectedModel}</strong> to verify.</div>
+              </div>
+              {/* Clean blocked state — a customer-readable reason, never a raw
+                  command. The exact argv is still available in Advanced. */}
+              {blockReason ? (
+                <div className="dm-helper-toolcall dm-swarm-card" data-handoff-blocked={blockReason.code}>
+                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Can't start yet</div>
+                  <div className="dm-helper-stream dm-swarm-card-desc">{blockReason.message}</div>
+                </div>
+              ) : null}
+              {/* Advanced — the exact argv the governed runner executes, collapsed
+                  by default so it never dominates the no-code experience. */}
+              <details className="dm-helper-toolcall dm-swarm-card" data-handoff-runconfig="">
+                <summary className="dm-run-console__hint">Advanced · exact command preview</summary>
                 {runConfig.commands.length ? runConfig.commands.map((c, i) => (
                   <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>
                 )) : <div className="dm-run-console__hint">No command for this profile — import the served/attested artifact directly.</div>}
                 <div className="dm-run-console__hint">verification expects response model = <strong>{runConfig.verification.expectedModel}</strong></div>
                 {!runConfig.ready ? <div className="dm-run-console__hint" data-runconfig-missing="">missing: {runConfig.missingRequirements.join(", ")}</div> : null}
-                {/* Command-safety reasons are shown and BLOCK prepare — an
-                    unsafe/not-ready config can never reach the runner. */}
                 {runConfig.commandSafety && !runConfig.commandSafety.ok
                   ? <div className="dm-run-console__hint" data-runconfig-unsafe="">unsafe: {runConfig.commandSafety.reasons.join("; ")}</div> : null}
-              </div>
+              </details>
               <button type="button" className="training-action-primary" data-handoff-confirm="" disabled={!floorMet || !runConfig.ready} onClick={runPrepare}>
                 Prepare dataset & training run
               </button>
@@ -982,11 +1022,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               </div>
 
               {runConfig.commands.length ? (
-                <div className="dm-helper-toolcall dm-swarm-card" data-train-command="">
-                  <div className="dm-helper-toolcall-title dm-swarm-card-title">Exact command this runs on your machine</div>
+                <details className="dm-helper-toolcall dm-swarm-card" data-train-command="">
+                  <summary className="dm-run-console__hint">Advanced · exact command this runs on your machine</summary>
                   {runConfig.commands.map((c, i) => <pre key={i} className="dm-helper-stream dm-swarm-card-desc" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{c}</pre>)}
                   <div className="dm-run-console__hint">Dataset already on disk: {result.datasetPath}. The run targets tuned tag {result.modelTag}. These are the exact argv steps the governed runner executes. The preview above is <strong>advanced/manual</strong> — running it by hand is NOT governed or proven until you import the artifact manually.</div>
-                </div>
+                </details>
               ) : (
                 <div className="dm-helper-toolcall dm-swarm-card">
                   <div className="dm-run-console__hint">This profile imports an already-served model — no local command. Start, then import the served tag.</div>
@@ -1150,6 +1190,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 {completionReward.live ? (
                   <div className="dm-helper-stream dm-swarm-card-desc">
                     tuned tag <strong>{completionReward.trainedTag}</strong> · base {completionReward.baseModel} · sha {String(completionReward.artifactSha).slice(0, 12)} · quant {completionReward.quantDelta} · endpoint {completionReward.localEndpoint} · verified model {completionReward.verifiedResponseModel} · outputHash #{completionReward.outputHash}
+                  </div>
+                ) : null}
+                {/* Immediate next actions — the dopamine loop closes into doing
+                    something with the model. Each NAVIGATES to a governed surface
+                    (never mutates from here), same grammar as the ledger. */}
+                {completionReward.live ? (
+                  <div className="dm-helper-toolcall-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 8 }} data-training-reward-actions="">
+                    <a className="training-action-primary" href="/workflows" data-reward-action="use-in-workflow">Use it in a workflow</a>
+                    <a className="dm-btn-ghost" href="/data-model" data-reward-action="view-in-ledger">See it in your workspace</a>
                   </div>
                 ) : null}
               </div>
