@@ -69,7 +69,13 @@ try {
 
   // 2 — open the handoff modal via the real user control, then walk the
   //     governed wizard: checklist → curate → profile → prepare → train.
-  await page.getByRole("button", { name: /Open training runtime/i }).first().click();
+  //     The visible entry differs by ledger state, so expand the full ledger
+  //     and use the canonical handoff-open control (fall back to bootstrap).
+  const showAll = page.getByRole("button", { name: /Show all .* steps/i });
+  if (await showAll.count()) { await showAll.first().click(); await page.waitForTimeout(400); }
+  const handoffOpen = page.locator("[data-training-handoff-open]");
+  if (await handoffOpen.count()) await handoffOpen.first().click();
+  else await page.getByRole("button", { name: /Open training runtime|Test custom model/i }).first().click();
   await page.waitForSelector("[data-handoff-curate]", { timeout: 15000 });
   await shot(page, "02-handoff-modal-open.png");
   await page.locator("[data-handoff-curate]").first().click();               // → curate

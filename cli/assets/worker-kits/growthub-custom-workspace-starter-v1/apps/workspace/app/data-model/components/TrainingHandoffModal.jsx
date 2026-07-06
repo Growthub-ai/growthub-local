@@ -177,17 +177,21 @@ const STAGE_RANK_BY_ID = TRAINING_PROGRESS_STAGES.reduce((acc, s) => { acc[s.id]
  * allowlist) onto the existing model-training-run + api-registry rows — the
  * causation spine, unchanged.
  */
-function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor }) {
+function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor, workspaceUrl }) {
   const P = JSON.stringify({
     steps: steps || [], stageRankById: stageRankById || {}, artifactPath: artifactPath || "",
     modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m",
     integrationId: integrationId || "", floor: floor || { ramGB: 0, diskGB: 0, vramGB: 0 },
+    // Origin of the workspace that launched this run, baked in so the runner's
+    // governed callback PATCHes reach the exact server (the sandbox spawns the
+    // runner with a restricted env, so it cannot rely on GROWTHUB_WORKSPACE_URL).
+    workspaceUrl: workspaceUrl || "",
   });
   return [
     "const { execFileSync } = require('node:child_process');",
     "const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path'); const crypto = require('node:crypto');",
     `const P = ${P};`,
-    "const WS = (process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
+    "const WS = (P.workspaceUrl || process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
     "const matchReg = (row) => String(row.expectedModelTag || '') === P.modelTag || (P.integrationId && String(row.integrationId || '') === P.integrationId);",
     "const rankOf = (id) => Number(P.stageRankById[id]) || 0;",
     "const pctOf = (id) => Math.min(95, Math.round((rankOf(id) / 7) * 95));",
@@ -301,13 +305,14 @@ function resourceFloorFor(baseModel) {
 /** Upsert the runner sandbox object + its per-run row. Same fold-or-create
  *  discipline as upsertRunRow — append to the existing object, else create it. */
 function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
+  const workspaceUrl = typeof window !== "undefined" && window.location ? window.location.origin : "";
   const row = {
     Name: trainingRunId,
     runtime: "node",
     command: buildRunnerScript({
       steps: runConfig?.steps, stageRankById: STAGE_RANK_BY_ID, artifactPath: runConfig?.artifactPath,
       modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
-      floor: resourceFloorFor(runConfig?.baseModel),
+      floor: resourceFloorFor(runConfig?.baseModel), workspaceUrl,
     }),
     timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
     networkPolicy: "allow",

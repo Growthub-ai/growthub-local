@@ -1,0 +1,32 @@
+[
+  {
+    "id": "api-registry-probe",
+    "objectType": "api-registry",
+    "rows": 3
+  },
+  {
+    "id": "probe-scheduler-source",
+    "objectType": "data-source",
+    "rows": 1
+  },
+  {
+    "id": "sandbox-probe",
+    "objectType": "sandbox-environment",
+    "rows": 2
+  },
+  {
+    "id": "model-training",
+    "objectType": "model-training",
+    "rows": 2
+  },
+  {
+    "id": "training-traces",
+    "objectType": "training-traces",
+    "rows": 12
+  },
+  {
+    "id": "model-training-run",
+    "objectType": "model-training-run",
+    "rows": 0
+  }
+]

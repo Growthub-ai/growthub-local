@@ -29,7 +29,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -778,4 +778,77 @@ test("command safety: pipeline resolves to argv steps; injection makes it not-re
   assert.equal(evil.ready, false, "unsafe run config cannot fire");
   assert.ok(evil.commandSafety.reasons.some((r) => /model tag/.test(r)));
   assert.ok(evil.commandSafety.reasons.some((r) => /artifactPath/.test(r)));
+});
+
+// --------------------------------------------------------------------------
+// Stage-event failure catalog + causation-driver functions (2026 QA spec)
+// --------------------------------------------------------------------------
+
+test("stage catalog: every canonical stage has known-failure entries", () => {
+  for (const s of ["preflight", "distilling", "fine-tuning", "converting", "quantizing", "serving", "verifying", "complete"]) {
+    assert.ok(Array.isArray(TRAINING_STAGE_ISSUES[s]) && TRAINING_STAGE_ISSUES[s].length > 0, `${s} has catalog entries`);
+  }
+});
+
+test("deriveTrainingStageIssue: classifies OOM at fine-tuning with evidence + one-click resume", () => {
+  const issue = deriveTrainingStageIssue(
+    { status: "failed", progress: { stageId: "fine-tuning", counter: 220, totalRecords: 500 }, blockedReason: "CUDA out of memory" },
+    { gpu: { vramFreeGB: 3 }, floor: { vramGB: 8 } },
+    "RuntimeError: CUDA out of memory. Tried to allocate…",
+  );
+  assert.equal(issue.stageId, "fine-tuning");
+  assert.equal(issue.issue, "fine_tune_oom");
+  assert.equal(issue.severity, "blocked");
+  assert.match(issue.userMessage, /step 220\/500/);
+  assert.equal(issue.nextAction.oneClick, true);
+  assert.equal(issue.nextAction.variant, "retry_finetune_smaller_batch");
+});
+
+test("deriveTrainingStageIssue: preflight block + quant contradiction classify distinctly", () => {
+  const pf = deriveTrainingStageIssue({ status: "blocked", preflight: { ok: false }, blockedReason: "needs 24 GB free disk; 9 GB found" });
+  assert.equal(pf.issue, "preflight_blocked");
+  assert.match(pf.userMessage, /24 GB/);
+  const q = deriveTrainingStageIssue({ status: "failed", progress: { stageId: "quantizing" }, artifact: { quantization: "q4_k_m", sourceBytes: 16e9, artifactBytes: 15.9e9 } }, null, "");
+  assert.equal(q.issue, "quant_size_contradiction");
+  assert.equal(q.nextAction.variant, "requantize_artifact");
+});
+
+test("deriveTrainingWaitState: no fabricated progress; elapsed reported separately", () => {
+  const waiting = deriveTrainingWaitState({ startedAt: "2026-07-06T00:00:00Z" }, Date.parse("2026-07-06T00:18:00Z"));
+  assert.equal(waiting.waiting, true);
+  assert.equal(waiting.barPct, 0, "no receipt progress ⇒ bar is zero, never fabricated");
+  assert.equal(waiting.statusLine, "Waiting for runner stamp…");
+  assert.match(waiting.elapsedLine, /Running for 18m/);
+  const live = deriveTrainingWaitState({ startedAt: "2026-07-06T00:00:00Z", progress: { stageId: "fine-tuning", pct: 55, counter: 220, totalRecords: 500, detail: "loss 1.82" } }, Date.parse("2026-07-06T00:05:00Z"));
+  assert.equal(live.barPct, 55, "bar pct comes only from the receipt");
+  assert.match(live.statusLine, /fine-tuning · step 220\/500 · loss 1\.82/);
+});
+
+test("deriveTrainingProofChecklist: 9 milestones, proven only on real evidence", () => {
+  const empty = deriveTrainingProofChecklist({}, null, null);
+  assert.equal(empty.total, 9);
+  assert.equal(empty.complete, false);
+  const full = deriveTrainingProofChecklist(
+    { status: "imported", preflight: { ok: true, ramGB: 32, diskFreeGB: 200 }, progress: { totalRecords: 12 }, artifact: { type: "gguf", path: "/m.q4_k_m.gguf", sha256: "abc", modelTag: "gh-tuned-v1", quantization: "q4_k_m", sourceBytes: 16e9, artifactBytes: 4.4e9 }, outputHash: "oh_1" },
+    { integrationId: "gh-model", status: "connected", lastResponse: JSON.stringify({ model: "gh-tuned-v1" }), expectedModelTag: "gh-tuned-v1" },
+    { outputHash: "oh_1" },
+  );
+  assert.equal(full.done, 9);
+  assert.equal(full.complete, true, "all 9 proven ⇒ complete");
+  assert.ok(full.items.find((i) => i.id === "quant-size-proof").proven);
+  assert.ok(full.items.find((i) => i.id === "chat-verify-tuned").proven);
+});
+
+test("deriveTrainingCompletionReward: live only when the whole chain holds", () => {
+  const notYet = deriveTrainingCompletionReward({ status: "imported", artifact: { modelTag: "gh-v1", sha256: "abc" } }, null);
+  assert.equal(notYet.live, false);
+  assert.match(notYet.headline, /proof step/);
+  const done = deriveTrainingCompletionReward(
+    { status: "imported", baseModel: "gemma3", preflight: { ok: true, ramGB: 32, diskFreeGB: 200 }, progress: { totalRecords: 12 }, artifact: { type: "gguf", path: "/m.q4_k_m.gguf", sha256: "deadbeef", modelTag: "gh-tuned-v1", quantization: "q4_k_m", sourceBytes: 16e9, artifactBytes: 4.4e9 } },
+    { apiRegistryRow: { integrationId: "gh-model", status: "connected", baseUrl: "http://127.0.0.1:11434/v1", lastResponse: JSON.stringify({ model: "gh-tuned-v1" }), expectedModelTag: "gh-tuned-v1" }, servedModel: "gh-tuned-v1", smokeRun: { outputHash: "oh_1" } },
+  );
+  assert.equal(done.live, true);
+  assert.equal(done.headline, "Your custom model is live locally.");
+  assert.match(done.quantDelta, /16\.0 GB → 4\.4 GB \(q4_k_m\)/);
+  assert.equal(done.outputHash, "oh_1");
 });

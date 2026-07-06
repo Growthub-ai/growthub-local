@@ -517,3 +517,155 @@ export function deriveTrainingRemediation({ workspaceConfig, workspaceSourceReco
     format,
   };
 }
+
+// ===========================================================================
+// Stage-event failure catalog + explicit causation-driver functions.
+// The driver layer never says just "training failed": it classifies the exact
+// stage issue, carries the evidence, and returns the ONE-CLICK next action.
+// Pure, deterministic, never throws — GPU-free and fully unit-testable. Every
+// entry is grounded in a real failure mode (HF Trainer callbacks/checkpoints,
+// torch CUDA OOM, nvidia-smi readings, ollama create/chat, argv execution).
+// ===========================================================================
+
+/** Per-stage known-failure catalog → issue code, severity, message, action. */
+export const TRAINING_STAGE_ISSUES = {
+  preflight: [
+    { issue: "preflight_blocked", match: (r) => String(r?.status) === "blocked" || r?.preflight?.ok === false, severity: "blocked", action: "remediate_preflight",
+      message: (e) => e.shortfall || "Your machine does not meet the resource floor. Nothing started yet." },
+  ],
+  distilling: [
+    { issue: "distill_floor_unmet", match: (_, __, l) => /floor|too few|min.*trace/i.test(l), severity: "blocked", action: "cleanse_traces", message: (e) => `${e.accepted || 0}/${e.totalRecords || 0} examples distilled — below the floor.` },
+    { issue: "distill_format_failed", match: (_, __, l) => /jsonl|schema|empty prompt|invalid row/i.test(l), severity: "blocked", action: "cleanse_traces", message: (e) => `${e.rejected || 0} traces failed format — cleanse and retry the failed range.` },
+    { issue: "distill_teacher_failed", match: (_, __, l) => /teacher|rate.?limit|api error|timeout/i.test(l), severity: "blocked", action: "retry_finetune", message: () => "The teacher endpoint was unavailable — retry the failed range only." },
+  ],
+  "fine-tuning": [
+    { issue: "fine_tune_oom", match: (_, __, l) => /outofmemory|cuda out of memory|oom/i.test(l), severity: "blocked", action: "retry_finetune_smaller_batch", message: (e) => `Fine-tuning stopped at step ${e.step ?? "?"}/${e.totalSteps ?? "?"}: GPU memory ran out.` },
+    { issue: "fine_tune_dependency_failed", match: (_, __, l) => /modulenotfound|importerror|no module named/i.test(l), severity: "blocked", action: "retry_finetune", message: () => "A required package is missing on the runner." },
+    { issue: "fine_tune_unstable_loss", match: (_, __, l) => /nan loss|loss.*nan|diverg/i.test(l), severity: "blocked", action: "retry_finetune", message: () => "Loss went NaN — lower the learning rate and re-run." },
+    { issue: "fine_tune_interrupted", match: (_, __, l) => /killed|sigkill|interrupted|checkpoint.*fail/i.test(l), severity: "blocked", action: "retry_finetune", message: (e) => `Run interrupted at step ${e.step ?? "?"} — resume from checkpoint.` },
+  ],
+  converting: [
+    { issue: "convert_failed", match: () => true, severity: "blocked", action: "retry_finetune", message: () => "Training finished, but GGUF conversion failed — validate merged model + tokenizer, re-run conversion." },
+  ],
+  quantizing: [
+    { issue: "quant_size_contradiction", match: (r) => { const q = r?.artifact ? deriveArtifactStateSafe(r.artifact) : null; return q && q.quant && q.quant.measured && !q.quant.verified; }, severity: "blocked", action: "requantize_artifact",
+      message: (e) => `Quantization did not prove ${e.quant || "the level"}: ${gbSafe(e.sourceBytes)} → ${gbSafe(e.artifactBytes)}.` },
+    { issue: "quant_failed", match: (_, __, l) => /imatrix|llama-quantize|corrupt|f16.*missing/i.test(l), severity: "blocked", action: "requantize_artifact", message: () => "Quantization failed — retry, choose a supported level, or free disk." },
+  ],
+  serving: [
+    { issue: "serve_registration_failed", match: () => true, severity: "blocked", action: "retry_finetune", message: () => "Model built, but local serving is not registered yet — start Ollama, retry create with a unique tag." },
+  ],
+  verifying: [
+    { issue: "verify_base_model", match: (r, __, l) => /served the base|base.?model/i.test(l) || r?.__verify === "base", severity: "blocked", action: "verify_tuned_model", message: (e) => `Endpoint answered, but it served ${e.servedModel || "the base model"}, not your tuned model.` },
+    { issue: "verify_mismatch", match: (r) => r?.__verify === "mismatch", severity: "blocked", action: "verify_tuned_model", message: (e) => `Endpoint served ${e.servedModel || "a different tag"} — refresh the registry row and retry.` },
+    { issue: "verify_no_output_hash", match: (r) => r?.__verify === "no-output-hash", severity: "warn", action: "run_smoke_test", message: () => "Verified the tag, but no workflow outputHash yet — run it once to complete." },
+  ],
+  complete: [
+    { issue: "registry_unbound", match: (r) => r?.__complete === "registry-unbound", severity: "warn", action: "register_endpoint", message: () => "Artifact exists but no API Registry row is bound." },
+    { issue: "completion_unproven", match: (r) => r?.__complete === "unproven", severity: "warn", action: "run_smoke_test", message: () => "Trained and served — one proof step remains: run it once." },
+    { issue: "duplicate_run", match: (r) => r?.__complete === "duplicate", severity: "warn", action: "prepare_next_training_run", message: () => "A duplicate run row was detected — dedupe by trainingRunId." },
+  ],
+};
+
+function gbSafe(b) { const n = Number(b); return Number.isFinite(n) && n > 0 ? `${(n / 1e9).toFixed(1)} GB` : "?"; }
+// Local guard: artifact-state without importing (drivers already read receipts).
+function deriveArtifactStateSafe(a) { try { return { quant: { measured: Number(a?.sourceBytes) > 0 && Number(a?.artifactBytes) > 0, verified: Number(a?.artifactBytes) > 0 && Number(a?.sourceBytes) > 0 && (Number(a.artifactBytes) / Number(a.sourceBytes)) < 0.9 } }; } catch { return null; } }
+
+/**
+ * Classify the exact stage issue for a failed/blocked run. Returns the rich
+ * driver object { stageId, issue, severity, userMessage, evidence, nextAction }
+ * (the user-spec shape) — not a generic "failed". Pure.
+ */
+export function deriveTrainingStageIssue(runRow = {}, systemProbe = null, logs = "") {
+  const progress = runRow?.progress && typeof runRow.progress === "object" ? runRow.progress : {};
+  const stageId = String(progress.stageId || "").trim() || (String(runRow?.status) === "blocked" ? "preflight" : "fine-tuning");
+  const log = String(logs || runRow?.blockedReason || "");
+  const pf = runRow?.preflight || systemProbe || {};
+  const artifact = runRow?.artifact || {};
+  const evidence = {
+    step: progress.counter, totalSteps: progress.totalRecords || progress.total,
+    accepted: progress.counter, totalRecords: progress.totalRecords, rejected: progress.rejected,
+    quant: artifact.quantization, sourceBytes: artifact.sourceBytes, artifactBytes: artifact.artifactBytes,
+    vramFreeGB: pf?.gpu?.vramFreeGB, requiredGB: pf?.floor?.vramGB, ramGB: pf?.ramGB, diskFreeGB: pf?.diskFreeGB,
+    checkpointPath: progress.checkpointPath, servedModel: runRow?.__servedModel, shortfall: runRow?.blockedReason,
+  };
+  const candidates = TRAINING_STAGE_ISSUES[stageId] || [];
+  const hit = candidates.find((c) => { try { return c.match(runRow, systemProbe, log); } catch { return false; } });
+  if (!hit) return { stageId, issue: `${stageId}_failed`, severity: "blocked", userMessage: log || `The ${stageId} stage failed.`, evidence, nextAction: deriveTrainingNextAction({ action: "retry_finetune", stageId }) };
+  return { stageId, issue: hit.issue, severity: hit.severity, userMessage: hit.message(evidence), evidence, nextAction: deriveTrainingNextAction({ action: hit.action, stageId, issue: hit.issue }) };
+}
+
+/** The one-click next action for an issue (routes through the sanctioned modal). */
+export function deriveTrainingNextAction({ action, stageId, issue } = {}) {
+  const dest = destinationForAction(action);
+  const labels = {
+    remediate_preflight: "Lower footprint & re-run", requantize_artifact: "Re-quantize & re-run",
+    cleanse_traces: "Clean & reformat traces", retry_finetune: "Adjust & re-run the fine-tune",
+    retry_finetune_smaller_batch: "Resume with a smaller batch", verify_tuned_model: "Re-test the endpoint",
+    run_smoke_test: "Run it once in a workflow", register_endpoint: "Bind the API Registry row",
+    prepare_next_training_run: "Prepare a fresh run",
+  };
+  return { label: labels[action] || "Re-run", action: action === "retry_finetune_smaller_batch" ? "retry_finetune" : action, variant: action, oneClick: true, stageId: stageId || "", issue: issue || "", destination: dest.route, cta: dest.cta };
+}
+
+/**
+ * Waiting-UX state (never fabricated progress). Bar pct comes ONLY from the
+ * receipt; elapsed + last-proof age are reported SEPARATELY as text.
+ */
+export function deriveTrainingWaitState(runRow = {}, nowMs = 0) {
+  const p = runRow?.progress && typeof runRow.progress === "object" ? runRow.progress : null;
+  const hasProgress = Boolean(p && (Number(p.pct) > 0 || p.stageId));
+  const startMs = Date.parse(runRow?.startedAt || "") || 0;
+  const proofMs = Date.parse(runRow?.lastProofAt || runRow?.completedAt || runRow?.startedAt || "") || 0;
+  const mins = startMs && nowMs ? Math.max(0, Math.round((nowMs - startMs) / 60000)) : null;
+  const proofAgoS = proofMs && nowMs ? Math.max(0, Math.round((nowMs - proofMs) / 1000)) : null;
+  const statusLine = hasProgress
+    ? [p.stageId && `${p.stageId}`, (p.counter != null && p.totalRecords != null) ? `step ${p.counter}/${p.totalRecords}` : null, p.detail].filter(Boolean).join(" · ")
+    : "Waiting for runner stamp…";
+  return { waiting: !hasProgress, barPct: hasProgress ? Math.max(0, Math.min(100, Number(p.pct) || 0)) : 0, statusLine, elapsedLine: mins != null ? `Running for ${mins}m${proofAgoS != null ? ` · last proof ${proofAgoS}s ago` : ""}` : "" };
+}
+
+/**
+ * The 9-milestone proof checklist — each item is proven ONLY by real evidence
+ * on the governed rows (no optimistic ticks). Pure.
+ */
+export function deriveTrainingProofChecklist(runRow = {}, apiRegistryRow = null, smokeRun = null) {
+  const a = runRow?.artifact || {};
+  const pf = runRow?.preflight || {};
+  const quantProven = Number(a.sourceBytes) > 0 && Number(a.artifactBytes) > 0 && (Number(a.artifactBytes) / Number(a.sourceBytes)) < 0.9;
+  const served = String(apiRegistryRow?.lastResponse ? tryModel(apiRegistryRow.lastResponse) : "");
+  const outputHash = String(smokeRun?.outputHash || runRow?.outputHash || "").trim();
+  const items = [
+    { id: "preflight-pass", label: "Preflight passed", proven: pf?.ok === true, evidence: { ramGB: pf.ramGB, diskFreeGB: pf.diskFreeGB, gpu: pf.gpu } },
+    { id: "distilling-counter", label: "Corpus distilled", proven: Number(runRow?.progress?.totalRecords) > 0 || Number(runRow?.datasetRecords) > 0, evidence: { totalRecords: runRow?.progress?.totalRecords } },
+    { id: "finetune-step", label: "Fine-tune ran", proven: ["trained", "imported"].includes(String(runRow?.status)) || Boolean(a.type), evidence: { status: runRow?.status } },
+    { id: "convert-gguf", label: "GGUF produced", proven: /gguf/i.test(String(a.type)) && Boolean(a.path), evidence: { path: a.path } },
+    { id: "quant-size-proof", label: "Quantization proven by size delta", proven: quantProven, evidence: { sourceBytes: a.sourceBytes, artifactBytes: a.artifactBytes, quant: a.quantization } },
+    { id: "ollama-create", label: "Served on Ollama", proven: String(apiRegistryRow?.status) === "connected", evidence: { status: apiRegistryRow?.status } },
+    { id: "chat-verify-tuned", label: "Endpoint serves the tuned tag (not base)", proven: Boolean(served) && served === String(a.modelTag || apiRegistryRow?.expectedModelTag || ""), evidence: { servedModel: served, expected: a.modelTag } },
+    { id: "registry-live", label: "API Registry row bound", proven: Boolean(apiRegistryRow), evidence: { integrationId: apiRegistryRow?.integrationId } },
+    { id: "workflow-smoke-outputhash", label: "Workflow smoke wrote outputHash", proven: Boolean(outputHash), evidence: { outputHash } },
+  ];
+  const done = items.filter((i) => i.proven).length;
+  return { items, done, total: items.length, complete: done === items.length };
+}
+
+function tryModel(s) { try { const p = typeof s === "string" ? JSON.parse(s) : s; return String(p?.model || "").trim(); } catch { return ""; } }
+
+/**
+ * The concrete completion reward — the dopamine payload. Only returns `live:
+ * true` when the whole proof chain holds; otherwise names what remains. Pure.
+ */
+export function deriveTrainingCompletionReward(runRow = {}, verification = null) {
+  const a = runRow?.artifact || {};
+  const checklist = deriveTrainingProofChecklist(runRow, verification?.apiRegistryRow || null, verification?.smokeRun || null);
+  const live = checklist.complete;
+  return {
+    live,
+    headline: live ? "Your custom model is live locally." : `Almost — ${checklist.total - checklist.done} proof step(s) remain.`,
+    trainedTag: String(a.modelTag || ""), baseModel: String(runRow?.baseModel || ""), artifactSha: String(a.sha256 || ""),
+    quantDelta: (Number(a.sourceBytes) > 0 && Number(a.artifactBytes) > 0) ? `${gbSafe(a.sourceBytes)} → ${gbSafe(a.artifactBytes)} (${a.quantization || ""})` : "",
+    localEndpoint: String(verification?.apiRegistryRow?.baseUrl || ""), verifiedResponseModel: String(verification?.servedModel || ""), outputHash: String(verification?.smokeRun?.outputHash || runRow?.outputHash || ""),
+    checklist,
+  };
+}

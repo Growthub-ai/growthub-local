@@ -80,6 +80,26 @@ governed state, `deriveTrainingRemediation` returns the one-click remedy:
 
 ---
 
+## Real workspace shell (not the bare route)
+
+`00-real-data-model-shell.png` — the actual `/data-model` workspace shell on the
+booted seeded export: rail (Builder / Workspace Lens / Management / Settings) and
+the **API Registry showing the governed `workspace-local-model` row →
+`http://127.0.0.1:11434/v1/chat/completions`** alongside the seeded
+`model-training` (base `gemma3`) + 12 `training-traces`. `shell-objects.json` is
+the governed-object readback. This is the real no-code experience, driven by
+`scripts/e2e-custom-model-shell-playwright.mjs` (3/3 governed checks).
+
+`readbacks.json` is consistent with the screenshots: it records the real
+`/data-model` shell, the one-click governed `model-training-run` receipt
+(`status: running`) + atomic runner sandbox, and the governed `failed` receipt →
+`deriveTrainingStageIssue`/remediation derivation. It does **not** claim a
+terminal `complete` readback that this environment cannot produce.
+
+See [`CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1`](../../CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1.md)
+for the canonical stage vocabulary, the stage-event failure catalog, the
+waiting-UX rules, and the 9-milestone proof contract.
+
 ## What is proven vs deferred
 
 | Stage | Proof |
