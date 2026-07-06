@@ -74,11 +74,22 @@ const txt = async (sel) => { try { const l = page.locator(sel).first(); return (
 const write = (o) => { fs.writeFileSync(path.join(shotDir, `${o.stateId}-readback.json`), `${JSON.stringify(o, null, 2)}\n`); console.log(`  readback: ${o.stateId}`); };
 
 async function openModal() {
-  await page.goto(`${BASE}/training`, { waitUntil: "networkidle" }); await wait(900);
-  const showAll = page.getByRole("button", { name: /Show all .* steps/i }); if (await showAll.count()) { await showAll.first().click(); await wait(300); }
-  const ho = page.locator("[data-training-handoff-open]"); if (await ho.count()) await ho.first().click();
-  else { const b = page.getByRole("button", { name: /Open training runtime|Test custom model|Train/i }); if (await b.count()) await b.first().click(); }
-  await wait(800);
+  await page.goto(`${BASE}/training`, { waitUntil: "networkidle" });
+  // Wait for the ledger to hydrate from /api/workspace and expose the opener —
+  // NOT a fixed sleep (the pre-hydration render shows "0 of 10 eligible" and no
+  // opener; clicking then no-ops). Poll up to ~20s, expanding steps as needed.
+  const ho = page.locator("[data-training-handoff-open]");
+  const testBtn = () => page.getByRole("button", { name: /Open training runtime|Test custom model/i });
+  for (let i = 0; i < 40; i += 1) {
+    const showAll = page.getByRole("button", { name: /Show all .* steps/i }); if (await showAll.count()) await showAll.first().click().catch(() => {});
+    if (await ho.count() || await testBtn().count()) break;
+    await wait(500);
+  }
+  if (await ho.count()) await ho.first().click();
+  else if (await testBtn().count()) await testBtn().first().click();
+  // Wait for the modal dialog itself to mount before returning.
+  await page.locator("[data-training-handoff]").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  await wait(500);
 }
 
 // Drive a FRESH modal all the way to the train panel (result set): reset →
