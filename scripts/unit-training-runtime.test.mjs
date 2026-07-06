@@ -24,7 +24,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
 const { TRAINING_RUNTIME_PROFILES, defaultTrainingProfile, resolveTrainingProfile, buildTrainingRunConfig } = await import(lib("training-runtime-profiles.js"));
-const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES } = await import(lib("training-artifacts.js"));
+const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuantState, SUPPORTED_QUANTIZATIONS } = await import(lib("training-artifacts.js"));
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
@@ -35,8 +35,14 @@ const { deriveDistillationPipelineState } = await import(lib("training-ledger.js
 // Profiles
 // --------------------------------------------------------------------------
 
-test("profiles: default is unsloth-qlora-local and every profile has an import + verification floor", () => {
-  assert.equal(defaultTrainingProfile().id, "unsloth-qlora-local");
+test("profiles: default is the one-click full pipeline and every profile has an import + verification floor", () => {
+  // One click must produce a served, quantized model, so the default is the
+  // full fine-tune → quantize → serve pipeline (not the bare adapter profile).
+  assert.equal(defaultTrainingProfile().id, "unsloth-distill-quantize-pipeline");
+  const pipeline = defaultTrainingProfile();
+  assert.ok(pipeline.commands.some((c) => c.includes("llama-quantize")), "pipeline chains a real quantize step");
+  assert.ok(pipeline.commands.some((c) => c.startsWith("ollama create")), "pipeline chains the ollama create serve step");
+  assert.equal(pipeline.importProof.quantProofRequired, true, "pipeline requires quant proof");
   for (const p of TRAINING_RUNTIME_PROFILES) {
     assert.ok(p.id && p.label && p.runnerMode, `${p.id} has identity`);
     assert.ok(p.importProof && typeof p.importProof.modelTagRequired === "boolean", `${p.id} declares import proof`);
@@ -76,6 +82,36 @@ test("artifacts: tag-only endpoint artifacts prove by model tag alone", () => {
   assert.equal(ep.identified, true);
   assert.equal(ep.tagOnly, true);
   assert.equal(deriveArtifactState({ type: "ollama-model" }).identified, false, "ollama-model still needs a tag");
+});
+
+test("artifacts: quantization is PROVEN by the fp16→quant size delta, not trusted", () => {
+  const base = { type: "gguf", modelTag: "gh-v1", path: "/m.gguf", sha256: "abc", quantization: "q4_k_m" };
+  // No size evidence → neutral: declared-but-unverified, still importable (back-compat).
+  const neutral = deriveArtifactState(base);
+  assert.equal(neutral.identified, true);
+  assert.equal(neutral.quant.measured, false);
+  assert.equal(neutral.quant.verified, false);
+  // Real quant: 16 GB fp16 → 4.4 GB q4_k_m → verified + importable.
+  const proven = deriveArtifactState({ ...base, sourceBytes: 16e9, artifactBytes: 4.4e9 });
+  assert.equal(proven.quant.verified, true);
+  assert.equal(proven.identified, true);
+  // Contradiction: file is NOT smaller than fp16 → quantize did not run → DEMOTE.
+  const fake = deriveArtifactState({ ...base, sourceBytes: 16e9, artifactBytes: 15.9e9 });
+  assert.equal(fake.quant.verified, false);
+  assert.equal(fake.identified, false, "an un-quantized file must not import as a quantized artifact");
+  assert.ok(/not quantized/.test(fake.reason));
+  // Unsupported level is never verified.
+  assert.equal(deriveQuantState({ quantization: "q3_wild", sourceBytes: 16e9, artifactBytes: 4e9 }).verified, false);
+  assert.ok(SUPPORTED_QUANTIZATIONS.includes("q4_k_m"));
+});
+
+test("run receipts: preflight-blocked run stops honestly with its reason", () => {
+  const blocked = classifyRunStatus({ status: "blocked", blockedReason: "Preflight blocked — needs 40 GB free disk, 9 GB available" });
+  assert.equal(blocked.stage, "failed");
+  assert.ok(/40 GB free disk/.test(blocked.reason), "surfaces the honest system shortfall");
+  // A completed run whose GGUF is not actually quantized demotes to trained.
+  const notQuant = classifyRunStatus({ status: "completed", artifact: { type: "gguf", modelTag: "gh-v1", path: "/m.gguf", sha256: "abc", quantization: "q4_k_m", sourceBytes: 16e9, artifactBytes: 15.9e9 } });
+  assert.equal(notQuant.stage, "trained", "unproven quant cannot read as imported");
 });
 
 // --------------------------------------------------------------------------

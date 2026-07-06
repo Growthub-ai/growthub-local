@@ -54,7 +54,10 @@ const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invar
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
 const RUN_COLUMNS = [
   "trainingRunId", "modelTrainingRowId", "datasetExportId", "baseModel", "trainingProfile", "runnerMode",
-  "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization", "schema",
+  "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization",
+  // Quant proof (fp16 → quantized bytes) + live thin-delta progress / preflight
+  // the local runner stamps each stage boundary.
+  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "schema",
 ];
 const SLUG = "workspace-local";
 /** Human labels for raw artifact types — the customer never sees bare "gguf". */
@@ -106,6 +109,10 @@ function runReceiptToRow(receipt) {
     artifactPath: receipt.artifact?.path || "",
     artifactSha256: receipt.artifact?.sha256 || "",
     artifactQuantization: receipt.artifact?.quantization || "",
+    // Quant proof (fp16 → quantized bytes) so deriveArtifactState can verify
+    // the declared level survived a manual/import path too, not just the runner.
+    artifactSourceBytes: receipt.artifact?.sourceBytes || 0,
+    artifactArtifactBytes: receipt.artifact?.artifactBytes || 0,
     schema: receipt.schema,
   };
 }
@@ -143,36 +150,97 @@ const RUNNER_COLUMNS = ["Name", "runtime", "command", "timeoutMs", "networkPolic
 
 /**
  * The real training runner, emitted as a self-contained Node program. Run on
- * the user's machine it: (1) executes the profile's real fine-tune commands
- * (Unsloth QLoRA → GGUF quantize → ollama create — the model is now built and
- * serving locally), (2) hashes the produced GGUF for a real artifact identity,
- * (3) makes a REAL chat-completions call to the API Registry row's endpoint to
- * prove the tuned model answers, and (4) reports — in one governed PATCH — the
- * `imported` run receipt AND the API Registry row's captured `lastResponse`, so
- * the loop closes itself with real deployment proof and no manual step.
+ * the user's machine it drives the WHOLE governed pipeline as one atomic
+ * sandbox run — never a parallel runtime:
+ *
+ *   stage 0  PREFLIGHT  — probe RAM / GPU (nvidia-smi) / free disk (statfs)
+ *                         against the resource floor; if short, stamp the run
+ *                         `blocked` with an honest reason and STOP (no fake
+ *                         pass, no compute).
+ *   stage 1..n          — execute each ordered command (QLoRA fine-tune →
+ *                         merge → GGUF convert → imatrix → quantize → ollama
+ *                         create). Each boundary stamps a thin-delta progress
+ *                         receipt the modal renders live.
+ *   finalize            — pick the QUANTIZED gguf (not the fp16 source),
+ *                         hash it, capture fp16→quantized bytes as quant proof,
+ *                         make a REAL chat-completions call to the API Registry
+ *                         row, and report — in one governed PATCH — the
+ *                         `imported` receipt (with size proof) AND the row's
+ *                         captured `lastResponse`. The loop closes itself with
+ *                         a served, quantized, provably-tuned model.
+ *
+ * Everything it writes flows through the existing governed PATCH (dataModel
+ * allowlist) onto the existing model-training-run + api-registry rows — the
+ * causation spine, unchanged.
  */
-function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, quantization, integrationId }) {
-  const P = JSON.stringify({ commands: commands || [], artifactPath: artifactPath || "", modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m", integrationId: integrationId || "" });
+function buildRunnerScript({ commands, stageLabels, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor }) {
+  const P = JSON.stringify({
+    commands: commands || [], stageLabels: stageLabels || [], artifactPath: artifactPath || "",
+    modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m",
+    integrationId: integrationId || "", floor: floor || { ramGB: 0, diskGB: 0, vramGB: 0 },
+  });
   return [
     "const { execSync } = require('node:child_process');",
-    "const fs = require('node:fs'); const path = require('node:path'); const crypto = require('node:crypto');",
+    "const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path'); const crypto = require('node:crypto');",
     `const P = ${P};`,
     "const WS = (process.env.GROWTHUB_WORKSPACE_URL || 'http://127.0.0.1:3000').replace(/\\/+$/, '');",
     "const matchReg = (row) => String(row.expectedModelTag || '') === P.modelTag || (P.integrationId && String(row.integrationId || '') === P.integrationId);",
+    // One governed write: read the workspace, map the model-training-run row
+    // (matched by trainingRunId) with `patch`, PATCH it back. Every stage uses
+    // this so progress/blocked/imported all ride the same allowlisted lane.
+    "  async function stampRun(patch) {",
+    "    try {",
+    "      const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' }); const data = await r.json();",
+    "      const objects = (data.workspaceConfig.dataModel.objects || []).map((o) => o.objectType === 'model-training-run' ? ({ ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, ...patch }) : row) }) : o);",
+    "      await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
+    "    } catch (e) { console.error('stampRun failed', (e && e.message) || e); }",
+    "  }",
+    "  const gb = (bytes) => Math.floor(Number(bytes || 0) / 1e9);",
     "(async () => {",
+    // ---- stage 0: preflight — deep system requirements check. -------------
+    "  const ramGB = gb(os.totalmem());",
+    "  let diskFreeGB = 0; try { const s = fs.statfsSync(path.resolve(P.artifactPath.split('/')[1] ? '.' : '.')); diskFreeGB = gb(s.bavail * s.bsize); } catch { try { const s = fs.statfsSync('.'); diskFreeGB = gb(s.bavail * s.bsize); } catch {} }",
+    "  let gpu = { present: false, name: '', vramFreeGB: 0 };",
+    "  try { const out = execSync('nvidia-smi --query-gpu=name,memory.free --format=csv,noheader,nounits', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); if (out) { const [name, freeMiB] = out.split('\\n')[0].split(',').map((s) => s.trim()); gpu = { present: true, name, vramFreeGB: Math.floor(Number(freeMiB) / 1024) }; } } catch {}",
+    "  const preflight = { ramGB, diskFreeGB, gpu, floor: P.floor, cpuOnly: !gpu.present };",
+    "  const shortfalls = [];",
+    "  if (ramGB < P.floor.ramGB) shortfalls.push(`needs ${P.floor.ramGB} GB RAM, ${ramGB} GB present`);",
+    "  if (diskFreeGB < P.floor.diskGB) shortfalls.push(`needs ${P.floor.diskGB} GB free disk, ${diskFreeGB} GB available`);",
+    "  if (gpu.present && gpu.vramFreeGB < P.floor.vramGB) shortfalls.push(`needs ${P.floor.vramGB} GB VRAM, ${gpu.vramFreeGB} GB free`);",
+    "  preflight.ok = shortfalls.length === 0;",
+    "  if (!preflight.ok) {",
+    "    const reason = 'Preflight blocked — ' + shortfalls.join('; ');",
+    "    await stampRun({ status: 'blocked', blockedReason: reason, preflight, progress: { stage: 'preflight', pct: 0, detail: reason, index: 0, total: P.commands.length } });",
+    "    console.error(reason); process.exit(1); return;",
+    "  }",
+    "  await stampRun({ preflight, progress: { stage: 'preflight', pct: 2, detail: `System OK — RAM ${ramGB} GB, disk ${diskFreeGB} GB, ${gpu.present ? ('GPU ' + gpu.name) : 'CPU-only'}`, index: 0, total: P.commands.length } });",
+    // ---- stages 1..n: execute each command, stamping a thin delta first. ---
     "  for (let i = 0; i < P.commands.length; i += 1) {",
+    "    const label = P.stageLabels[i] || P.commands[i];",
+    "    const pct = Math.min(95, 4 + Math.round(((i + 1) / (P.commands.length + 1)) * 90));",
+    "    await stampRun({ status: 'running', progress: { stage: label, pct, detail: label, index: i + 1, total: P.commands.length } });",
     "    console.log(`STEP ${i + 1}/${P.commands.length}: ${P.commands[i]}`);",
     "    execSync(P.commands[i], { stdio: 'inherit' });",
     "  }",
-    "  let file = '';",
+    // ---- finalize: pick the QUANTIZED gguf, capture fp16→quant proof. ------
+    "  let file = '', quantBytes = 0, sourceBytes = 0;",
     "  try {",
     "    const dir = path.resolve(P.artifactPath);",
     "    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {",
     "      const ggufs = fs.readdirSync(dir).filter((f) => f.endsWith('.gguf')).map((f) => path.join(dir, f));",
-    "      file = ggufs[0] || '';",
+    "      // Prefer the quantized artifact (model.<quant>.gguf); the fp16 source",
+    "      // (model.f16.gguf / *.f16.*) is the size baseline, never the artifact.",
+    "      const isSource = (f) => /f16|fp16/i.test(path.basename(f));",
+    "      const quant = ggufs.filter((f) => new RegExp(P.quantization, 'i').test(path.basename(f)));",
+    "      const nonSource = ggufs.filter((f) => !isSource(f));",
+    "      file = quant[0] || nonSource[0] || ggufs[0] || '';",
+    "      const src = ggufs.find(isSource);",
+    "      if (src) { try { sourceBytes = fs.statSync(src).size; } catch {} }",
     "    } else if (fs.existsSync(dir)) { file = dir; }",
+    "    if (file) { try { quantBytes = fs.statSync(file).size; } catch {} }",
     "  } catch {}",
     "  const sha = file ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : '';",
+    "  await stampRun({ progress: { stage: 'Confirming tuned reply', pct: 97, detail: 'Calling the local model to prove it is the tuned model', index: P.commands.length, total: P.commands.length } });",
     "  const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' });",
     "  const data = await r.json();",
     "  const objs = data.workspaceConfig.dataModel.objects || [];",
@@ -189,15 +257,30 @@ function buildRunnerScript({ commands, artifactPath, modelTag, trainingRunId, qu
     "    } catch (e) { chat = { error: { message: String((e && e.message) || e) } }; }",
     "  }",
     "  const now = new Date().toISOString();",
+    "  const donePct = 100;",
     "  const objects = objs.map((o) => {",
-    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization }) : row) };",
+    "    if (o.objectType === 'model-training-run') return { ...o, rows: (o.rows || []).map((row) => String(row.trainingRunId) === P.trainingRunId ? ({ ...row, status: 'imported', completedAt: now, artifactType: 'gguf', artifactModelTag: P.modelTag, artifactPath: file, artifactSha256: sha, artifactQuantization: P.quantization, artifactSourceBytes: sourceBytes, artifactArtifactBytes: quantBytes, progress: { stage: 'complete', pct: donePct, detail: `Tuned model ${P.modelTag} built (${gb(quantBytes)} GB ${P.quantization}) and serving`, index: P.commands.length, total: P.commands.length } }) : row) };",
     "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: served ? 'connected' : (row.status || 'registered') }) : row) };",
     "    return o;",
     "  });",
     "  await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
-    "  console.log('TRAINING_COMPLETE', sha, 'SERVED', served);",
+    "  console.log('TRAINING_COMPLETE', sha, 'SERVED', served, 'BYTES', sourceBytes, '->', quantBytes);",
     "})().catch((e) => { console.error(e); process.exit(1); });",
   ].join("\n");
+}
+
+/**
+ * Deterministic system-resource floor for the local pipeline, parsed from the
+ * base model tag (…7b, …4b, …13b → param billions; default 7). The runner
+ * must hold merged fp16 + f16 GGUF + quantized copy at once, so disk ≈ 2× fp16
+ * + quant; QLoRA loads the base in 4-bit → VRAM ≈ 0.75 GB/B, RAM ≈ 3 GB/B.
+ * Conservative floors, not exact — the preflight compares against these.
+ */
+function resourceFloorFor(baseModel) {
+  const m = /(\d+(?:\.\d+)?)\s*b\b/i.exec(String(baseModel || ""));
+  const b = m ? Number(m[1]) : 7;
+  const quantPerB = 0.65; // ~q4_k_m
+  return { baseParamsB: b, diskGB: Math.ceil(b * 2 * 2 + b * quantPerB), ramGB: Math.ceil(b * 3), vramGB: Math.ceil(b * 0.75) };
 }
 
 /** Upsert the runner sandbox object + its per-run row. Same fold-or-create
@@ -207,8 +290,9 @@ function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
     Name: trainingRunId,
     runtime: "node",
     command: buildRunnerScript({
-      commands: runConfig?.commands, artifactPath: runConfig?.artifactPath,
+      commands: runConfig?.commands, stageLabels: runConfig?.stageLabels, artifactPath: runConfig?.artifactPath,
       modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
+      floor: resourceFloorFor(runConfig?.baseModel),
     }),
     timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
     networkPolicy: "allow",
@@ -476,17 +560,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         const rt = deriveTrainingRuntimeState({ workspaceConfig: cfg, workspaceSourceRecords, slug: SLUG });
         const runStage = rt.runState?.runState || "running";
         const mins = Math.max(0, Math.round((Date.now() - startMs) / 60000));
+        // Thin-delta progress the runner stamped each stage boundary (preflight
+        // → fine-tune → quantize → serve). This IS the live bar — real state.
+        const delta = rt.runState?.progress || null;
 
         if (runStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
-          setError("The training run reported a failure — check the local runner logs, then retry.");
+          // Honest preflight/failure reason from the receipt (blocked = system
+          // shortfall), never a generic message that hides the cause.
+          const why = String(rt.runState?.latest?.blockedReason || rt.runState?.reason || "").trim();
+          setError(why || "The training run reported a failure — check the local runner logs, then retry.");
           setTrainPhase("idle");
           return;
         }
-        // Provable artifact (runner hashed a real GGUF) → close the loop.
+        // Provable artifact (runner hashed a real QUANTIZED GGUF with a proven
+        // fp16→quant size delta) → close the loop.
         if (runStage === "imported" || rt.runState?.artifact?.identified) {
           clearInterval(pollRef.current); pollRef.current = null;
-          setTrainProgress({ pct: 100, stage: "Fine-tune complete — model artifact is provable." });
+          setTrainProgress({ pct: 100, stage: delta?.detail || "Fine-tune complete — quantized model artifact is provable." });
           const reported = rt.runState?.latest?.artifact || {};
           importArtifact({
             type: reported.type || artifact.type,
@@ -494,11 +585,19 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             path: reported.path || "",
             sha256: reported.sha256 || "",
             quantization: reported.quantization || artifact.quantization,
+            sourceBytes: reported.sourceBytes || 0,
+            artifactBytes: reported.artifactBytes || 0,
           });
           return;
         }
-        const pct = runStage === "trained" ? 92 : Math.min(85, 6 + mins);
-        setTrainProgress({ pct, stage: runStage === "trained" ? "Training finished — importing the artifact…" : `Fine-tuning in progress · ${mins} min elapsed` });
+        // Prefer the runner's real thin-delta; fall back to elapsed-time only
+        // before the first stamp lands.
+        if (delta && delta.pct) {
+          setTrainProgress({ pct: delta.pct, stage: delta.detail || delta.stage || `Fine-tuning · ${mins} min elapsed` });
+        } else {
+          const pct = runStage === "trained" ? 92 : Math.min(85, 6 + mins);
+          setTrainProgress({ pct, stage: runStage === "trained" ? "Training finished — importing the artifact…" : `Fine-tuning in progress · ${mins} min elapsed` });
+        }
       } catch { /* transient — keep polling */ }
     }, 5000);
   }

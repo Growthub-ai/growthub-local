@@ -25,6 +25,35 @@ export const TRAINING_RUN_PROFILE_SCHEMA = "growthub-local-training-profile-v1";
 
 export const TRAINING_RUNTIME_PROFILES = [
   {
+    // The one-click default: the WHOLE local pipeline in one ordered command
+    // chain the runner executes as a single atomic sandbox run — QLoRA
+    // fine-tune → merge → GGUF convert → imatrix → quantize → ollama create.
+    // No single earlier profile chained these, so "one click" never actually
+    // produced a served, quantized model. This does. Each command is a
+    // synchronized stage boundary the runner stamps as progress.
+    id: "unsloth-distill-quantize-pipeline",
+    label: "Local pipeline — QLoRA → quantize → serve (one click)",
+    description:
+      "The full no-code pipeline on the local runner: QLoRA fine-tune over the distilled corpus, merge, convert to GGUF, build an importance matrix, quantize to the chosen level, and register the served Ollama model. Emits a quantized, callable local model.",
+    input: "growthub-local-intelligence-trace-v1.jsonl",
+    outputs: ["ollama-model"],
+    requires: ["baseModel", "datasetPath", "outputModelTag"],
+    runnerMode: "local-command",
+    commands: [
+      "python train.py --dataset {{datasetPath}} --base {{baseModel}} --out {{artifactPath}}/adapter",
+      "python merge_and_export.py --base {{baseModel}} --adapter {{artifactPath}}/adapter --out {{artifactPath}}/merged",
+      "python convert_hf_to_gguf.py {{artifactPath}}/merged --outfile {{artifactPath}}/model.f16.gguf",
+      "./llama-imatrix -m {{artifactPath}}/model.f16.gguf -f {{datasetPath}} -o {{artifactPath}}/imatrix.dat",
+      "./llama-quantize --imatrix {{artifactPath}}/imatrix.dat {{artifactPath}}/model.f16.gguf {{artifactPath}}/model.{{quantization}}.gguf {{quantization}}",
+      "ollama create {{outputModelTag}} -f {{artifactPath}}/Modelfile",
+    ],
+    // Stage labels align 1:1 with the commands above — the runner emits these
+    // as thin-delta progress so the modal bar tracks real execution.
+    stageLabels: ["Fine-tuning (QLoRA)", "Merging adapter", "Converting to GGUF", "Building importance matrix", "Quantizing {{quantization}}", "Registering local model"],
+    importProof: { artifactPathRequired: true, sha256Required: true, modelTagRequired: true, quantProofRequired: true },
+    verification: { type: "api-registry-chat-completion", expectedModel: "{{outputModelTag}}" },
+  },
+  {
     id: "unsloth-qlora-local",
     label: "Unsloth QLoRA (local)",
     description:
@@ -97,7 +126,9 @@ export const TRAINING_RUNTIME_PROFILES = [
 ];
 
 export function defaultTrainingProfile() {
-  return TRAINING_RUNTIME_PROFILES.find((p) => p.id === "unsloth-qlora-local") || TRAINING_RUNTIME_PROFILES[0];
+  // The one-click default is the full pipeline (fine-tune → quantize → serve),
+  // so a single click produces a served, quantized model — not a bare adapter.
+  return TRAINING_RUNTIME_PROFILES.find((p) => p.id === "unsloth-distill-quantize-pipeline") || TRAINING_RUNTIME_PROFILES[0];
 }
 
 export function resolveTrainingProfile(id) {
@@ -136,8 +167,13 @@ export function buildTrainingRunConfig({
     baseModel,
     datasetPath,
     outputModelTag,
+    artifactPath,
     quantization,
     commands: profile.commands.map((c) => fillTemplate(c, vars)),
+    // Per-command stage labels the runner emits as thin-delta progress so the
+    // modal bar tracks real execution boundaries (falls back to the raw
+    // command when a profile declares no labels).
+    stageLabels: (Array.isArray(profile.stageLabels) ? profile.stageLabels : profile.commands).map((s) => fillTemplate(s, vars)),
     importProof: profile.importProof,
     verification: {
       type: profile.verification.type,

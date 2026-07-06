@@ -56,7 +56,13 @@ function normalizeRunRow(row) {
   let artifact = row?.artifact;
   if (typeof artifact === "string") { try { artifact = JSON.parse(artifact); } catch { artifact = null; } }
   if (!artifact && (row?.artifactType || row?.artifactModelTag)) {
-    artifact = { type: row.artifactType, modelTag: row.artifactModelTag, path: row.artifactPath, sha256: row.artifactSha256, quantization: row.artifactQuantization };
+    artifact = {
+      type: row.artifactType, modelTag: row.artifactModelTag, path: row.artifactPath,
+      sha256: row.artifactSha256, quantization: row.artifactQuantization,
+      // Quant proof evidence: fp16 source vs quantized output bytes the runner
+      // stamped (deriveQuantState demotes when the delta refutes the level).
+      sourceBytes: row.artifactSourceBytes, artifactBytes: row.artifactArtifactBytes,
+    };
   }
   return { ...row, artifact };
 }
@@ -77,6 +83,9 @@ export function classifyRunStatus(receipt) {
   const artifact = deriveArtifactState(receipt?.artifact);
 
   if (status === "failed") return { stage: "failed", reason: "training run failed", artifact };
+  // Preflight block: the runner's stage-0 system check (RAM / GPU / disk) did
+  // not pass, so no compute ran. Honest hard stop — never a fake pass.
+  if (status === "blocked") return { stage: "failed", reason: String(receipt?.blockedReason || "").trim() || "preflight blocked — insufficient system resources", artifact };
   if (status === "prepared" || status === "") return { stage: "prepared", reason: "run prepared — config recorded, not yet executed", artifact };
   if (status === "running") return { stage: "running", reason: "run executing", artifact };
 
@@ -134,10 +143,18 @@ export function deriveTrainingRunState({ workspaceConfig, workspaceSourceRecords
   const latest = classified[classified.length - 1];
   const anyFailed = classified.some((c) => c.stage === "failed");
 
+  // Thin-delta progress + preflight surface from the LATEST receipt — the
+  // runner stamps these each stage boundary; the modal renders them live.
+  const latestRow = latest.receipt || {};
+  const progress = latestRow.progress && typeof latestRow.progress === "object" ? latestRow.progress : null;
+  const preflight = latestRow.preflight && typeof latestRow.preflight === "object" ? latestRow.preflight : null;
+
   const stage = best.stage === "failed" ? "prepared" : best.stage;
   return {
     present: true,
     runState: best.stage,
+    progress,
+    preflight,
     runs: classified.map((c) => ({ trainingRunId: String(c.receipt?.trainingRunId || ""), profile: String(c.receipt?.trainingProfile || ""), runnerMode: String(c.receipt?.runnerMode || ""), stage: c.stage, reason: c.reason, datasetExportLinked: c.datasetExportLinked, artifact: c.artifact, startedAt: String(c.receipt?.startedAt || ""), completedAt: String(c.receipt?.completedAt || "") })),
     latest: latest.receipt,
     stage,
@@ -168,6 +185,9 @@ export function buildTrainingRunReceipt({
   artifact = null,
   metrics = null,
   receipts = [],
+  progress = null,
+  preflight = null,
+  blockedReason = "",
   now = "",
 } = {}) {
   const at = startedAt || now || new Date().toISOString();
@@ -189,6 +209,9 @@ export function buildTrainingRunReceipt({
       modelTag: String(artifact.modelTag || ""),
       sha256: String(artifact.sha256 || ""),
       quantization: String(artifact.quantization || "none"),
+      // fp16 source vs quantized output bytes — the quant proof evidence.
+      sourceBytes: Number(artifact.sourceBytes) || 0,
+      artifactBytes: Number(artifact.artifactBytes) || 0,
     } : null,
     metrics: metrics && typeof metrics === "object" ? {
       trainExamples: Number(metrics.trainExamples) || 0,
@@ -196,6 +219,17 @@ export function buildTrainingRunReceipt({
       loss: metrics.loss == null ? null : Number(metrics.loss),
       evalPassRate: metrics.evalPassRate == null ? null : Number(metrics.evalPassRate),
     } : { trainExamples: 0, evalExamples: 0, loss: null, evalPassRate: null },
+    // Thin-delta progress ({ stage, pct, detail, index, total }) and the
+    // stage-0 preflight probe ({ ok, ram, disk, gpu }) the runner stamps.
+    progress: progress && typeof progress === "object" ? {
+      stage: String(progress.stage || ""),
+      pct: Number(progress.pct) || 0,
+      detail: String(progress.detail || ""),
+      index: Number(progress.index) || 0,
+      total: Number(progress.total) || 0,
+    } : null,
+    preflight: preflight && typeof preflight === "object" ? preflight : null,
+    blockedReason: String(blockedReason || "").trim(),
     receipts: Array.isArray(receipts) ? receipts.map(String) : [],
   };
 }
