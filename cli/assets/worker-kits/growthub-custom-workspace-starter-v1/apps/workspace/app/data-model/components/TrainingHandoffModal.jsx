@@ -558,7 +558,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Wire the driver intelligence into the UI: the 9-milestone proof checklist
   // and the completion reward are derived from the live governed rows so the
   // user sees exactly what is proven and what remains (never optimistic ticks).
-  const liveRunRow = liveRuntime.runState?.latest || {};
+  // The live bar/proof/reward must reflect the CURRENTLY active run (the id the
+  // click minted), not the monotonic "best/latest across runs" — otherwise a
+  // prior run's stage would drive this run's percentage. Fall back to latest for
+  // the pre-run panels where no run is active yet.
+  const activeRunId = String(result?.trainingRunId || "");
+  const liveRunRow = (activeRunId
+    ? (workspaceConfig?.dataModel?.objects || [])
+        .filter((o) => o?.objectType === TRAINING_RUN_OBJECT_TYPE)
+        .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+        .find((r) => String(r?.trainingRunId || "") === activeRunId)
+    : null) || liveRuntime.runState?.latest || {};
   // Real governed run-receipt count (model-training-run rows) — the honest
   // "run receipts available" proof, never an always-true count.
   const runReceiptCount = (workspaceConfig?.dataModel?.objects || [])
@@ -787,7 +797,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       const started = await triggerTrainingRunner(trainingRunId);
       if (!started) { setTrainPhase("idle"); return; }
 
-      startRunPolling(startedAt);
+      startRunPolling(startedAt, trainingRunId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTrainPhase("idle");
@@ -881,9 +891,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Poll the REAL governed run receipt until the run reaches a terminal stage.
   // Drives the live bar from real state and auto-advances on a provable
   // artifact — for however long the fine-tune takes.
-  function startRunPolling(startedAt) {
+  function startRunPolling(startedAt, runIdOverride) {
     if (pollRef.current) clearInterval(pollRef.current);
     const startMs = Date.parse(startedAt) || Date.now();
+    // The id to track. startTraining mints a new run id and calls setResult,
+    // but this closure captured the pre-click `result` — so the caller passes
+    // the id explicitly. The retry path (post-render) can fall back to state.
+    const activeId = String(runIdOverride || result?.trainingRunId || "");
     // Liveness latch: flips true the instant ANY real receipt evidence lands.
     // Until then the handshake deadline governs; after, the run is genuinely
     // executing and polls for as long as the fine-tune needs.
@@ -898,21 +912,27 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         setLiveConfig(cfg);
         if (typeof onApplied === "function") onApplied(cfg);
         const rt = deriveTrainingRuntimeState({ workspaceConfig: cfg, workspaceSourceRecords, slug: SLUG });
-        const runStage = rt.runState?.runState || "running";
-        const mins = Math.max(0, Math.round((Date.now() - startMs) / 60000));
-        // Thin-delta progress the runner stamped each stage boundary (preflight
-        // → fine-tune → quantize → serve). This IS the live bar — real state.
-        const delta = rt.runState?.progress || null;
-        // The runner has handshaked once it stamps preflight/progress OR reaches
-        // any terminal stage — from here the loop never times out on a slow run.
-        if (delta?.stageId || rt.runState?.preflight || ["trained", "imported", "failed"].includes(runStage)) sawStamp = true;
+        // Track THIS run specifically, keyed by the id minted at click. The
+        // composed runState merges progress/stage/artifact MONOTONICALLY across
+        // every run for the slug, so a prior run would otherwise defeat the
+        // handshake deadline (stale stageId) or falsely close this one on the
+        // first tick (a prior `imported` artifact). Read the raw row for this id
+        // (`activeId` is resolved once at the top of startRunPolling).
+        const rawRow = (cfg?.dataModel?.objects || [])
+          .filter((o) => o?.objectType === TRAINING_RUN_OBJECT_TYPE)
+          .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+          .find((r) => String(r?.trainingRunId || "") === activeId) || {};
+        const mine = (rt.runState?.runs || []).find((r) => String(r.trainingRunId) === activeId) || null;
+        const myStage = mine?.stage || (String(rawRow.status || "").toLowerCase() === "running" ? "running" : "prepared");
+        // Handshaked once THIS run stamps preflight/progress or reaches a
+        // terminal stage — never inferred from another run's evidence.
+        if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
 
-        if (runStage === "failed") {
+        if (myStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
           // SPECIFIC failure — classify the exact stage issue (not "training
           // failed"): {stageId, issue, userMessage, evidence, nextAction}.
-          const row = rt.runState?.latest || {};
-          const issue = deriveTrainingStageIssue(row, row.preflight || null, String(row.blockedReason || rt.runState?.reason || ""));
+          const issue = deriveTrainingStageIssue(rawRow, rawRow.preflight || null, String(rawRow.blockedReason || mine?.reason || ""));
           setStageIssue(issue);
           setError(issue.userMessage);
           // The one-click remedy for this exact failure point.
@@ -921,19 +941,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           setTrainPhase("idle");
           return;
         }
-        // Provable artifact (runner hashed a real QUANTIZED GGUF with a proven
-        // fp16→quant size delta) → close the loop.
-        if (runStage === "imported" || rt.runState?.artifact?.identified) {
+        // Provable artifact for THIS run (runner hashed a real QUANTIZED GGUF
+        // with a proven fp16→quant size delta) → close the loop.
+        if (myStage === "imported" || mine?.artifact?.identified) {
           clearInterval(pollRef.current); pollRef.current = null;
-          const reported = rt.runState?.latest?.artifact || {};
           importArtifact({
-            type: reported.type || artifact.type,
-            modelTag: reported.modelTag || reservedTag,
-            path: reported.path || "",
-            sha256: reported.sha256 || "",
-            quantization: reported.quantization || artifact.quantization,
-            sourceBytes: reported.sourceBytes || 0,
-            artifactBytes: reported.artifactBytes || 0,
+            type: rawRow.artifactType || artifact.type,
+            modelTag: rawRow.artifactModelTag || reservedTag,
+            path: rawRow.artifactPath || "",
+            sha256: rawRow.artifactSha256 || "",
+            quantization: rawRow.artifactQuantization || artifact.quantization,
+            sourceBytes: rawRow.artifactSourceBytes || 0,
+            artifactBytes: rawRow.artifactArtifactBytes || 0,
           });
           return;
         }
@@ -945,7 +964,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         if (!sawStamp && (Date.now() - startMs) > RUNNER_HANDSHAKE_DEADLINE_MS) {
           clearInterval(pollRef.current); pollRef.current = null;
           const reason = `Local runner did not report within ${Math.round(RUNNER_HANDSHAKE_DEADLINE_MS / 1000)}s — it may not have started or cannot reach this workspace at ${runnerEndpoint}. Start the local runner for ${result.modelTag} and retry, or attach an existing result.`;
-          const fresh = await reconcileRunnerResult(result.trainingRunId, null, reason);
+          const fresh = await reconcileRunnerResult(activeId, null, reason);
           if (fresh) { setLiveConfig(fresh); if (typeof onApplied === "function") onApplied(fresh); }
           const row = (fresh ? deriveTrainingRuntimeState({ workspaceConfig: fresh, workspaceSourceRecords, slug: SLUG }).runState?.latest : rt.runState?.latest) || {};
           setStageIssue(deriveTrainingStageIssue(row, row.preflight || null, reason));

@@ -848,18 +848,16 @@ export function deriveLocalModelChoices({ workspaceConfig, fallbackBaseModels = 
 //      this tag, the draft must be strictly NEWER than that live surface, so a
 //      stale draft can never silently overwrite a model already in use. A valid
 //      check is required — an unparseable draft date fails closed.
-//   4. quant-first-chunk      — the declared quantization is a supported level
-//      AND the FIRST shard of the deterministic chunk plan is valid (non-empty
-//      shard 0), so quantization is proven runnable on its first chunk before
-//      any compute is invoked.
+//   4. quant-producible       — the declared quantization is a supported level
+//      AND the resolved pipeline actually contains a quantize stage that emits
+//      it, so "quantized" is a promise the invocation can keep. (The produced-
+//      byte proof cannot exist before a model is built, so it is NOT asserted
+//      here — that would be fabrication.)
 //   5. runner-idle            — no training run for this model is already live,
 //      so a click can never fan out a second concurrent live invocation.
 //
 // Pure, seeded, never throws: same governed evidence in ⇒ same readiness out.
 // ===========================================================================
-
-/** Deterministic chunk size for the first-chunk quantization validation. */
-export const START_READINESS_CHUNK_SIZE = 64;
 
 /** Parse the approved draft's timestamp. Prefer an explicit ISO `draftAt`;
  *  fall back to reconstructing it from the `ft_<v>_<iso-with-dashes>` export id
@@ -970,17 +968,21 @@ export function deriveStartTrainingReadiness({ runConfig, result, workspaceConfi
   }
   add("draft-blast-radius", "Draft date checked against blast radius", blastOk, blastDetail);
 
-  // 4. First quantization chunk validated.
+  // 4. Quantization is really producible. The declared level must be supported
+  // AND the resolved pipeline must actually contain a `quantizing` stage that
+  // emits it — otherwise "quantized" is a promise the invocation could never
+  // keep. This is the strongest quant guarantee provable BEFORE any compute;
+  // the produced-byte proof (fp16 → quant delta) cannot exist until a model is
+  // built, so claiming to validate quantized bytes here would be fabrication.
   const quant = String(cfg.quantization || "").trim();
   const quantKnown = SUPPORTED_QUANTIZATIONS.includes(quant);
-  const plan = deriveShardPlan({ totalRecords: records, chunkSize: START_READINESS_CHUNK_SIZE, datasetSha: String(draft.exportId || "") });
-  const firstShard = plan.shards[0] || null;
-  const quantOk = quantKnown && Boolean(firstShard) && firstShard.count > 0;
-  add("quant-first-chunk", "First quantization chunk validated",
+  const quantStage = (Array.isArray(cfg.steps) ? cfg.steps : []).find((s) => String(s?.stageId || "") === "quantizing");
+  const quantOk = quantKnown && Boolean(quantStage);
+  add("quant-producible", "Quantization step validated",
     quantOk,
-    quantOk ? `${quant} · chunk 0 of ${plan.shardCount} (${firstShard.count} records) validated`
+    quantOk ? `${quant} supported · quantize stage present ("${String(quantStage.label || "quantizing")}")`
       : !quantKnown ? `Unsupported quantization "${quant || "(none)"}" (expected ${SUPPORTED_QUANTIZATIONS.join(" / ")}).`
-        : "No records to quantize — the first chunk is empty.");
+        : `No quantize stage in this profile — it cannot produce a ${quant || "quantized"} artifact.`);
 
   // 5. Runner idle — no concurrent live run. Only a run that is running AND
   // actually REPORTING progress (a real stamped stage) counts as live: a

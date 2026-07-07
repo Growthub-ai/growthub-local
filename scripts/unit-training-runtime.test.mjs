@@ -29,7 +29,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS, deriveLocalModelChoices, deriveStartTrainingReadiness, deriveTagBlastRadius, parseDraftDate, START_READINESS_CHUNK_SIZE } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS, deriveLocalModelChoices, deriveStartTrainingReadiness, deriveTagBlastRadius, parseDraftDate } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -1048,17 +1048,23 @@ test("start-gate: an undateable draft fails the blast-radius check closed", () =
   assert.match(c.detail, /no valid date/i);
 });
 
-test("start-gate: the first quantization chunk must validate before invocation", () => {
+test("start-gate: quantization must be a supported level AND have a real quantize stage", () => {
   const bad = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma-2b", datasetPath: "d.jsonl", outputModelTag: TAG, artifactPath: `./artifacts/${TAG}`, quantization: "q3_bogus" });
   const g = deriveStartTrainingReadiness({ runConfig: bad, result: approvedDraft(), workspaceConfig: emptyWs() });
-  const c = g.checks.find((x) => x.id === "quant-first-chunk");
+  const c = g.checks.find((x) => x.id === "quant-producible");
   assert.equal(c.ok, false);
   assert.match(c.detail, /Unsupported quantization/i);
-  // The happy path names the validated first chunk and shard count.
-  const ok = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ records: 130 }), workspaceConfig: emptyWs() });
-  const okc = ok.checks.find((x) => x.id === "quant-first-chunk");
+  // Happy path names the supported level AND the present quantize stage.
+  const ok = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  const okc = ok.checks.find((x) => x.id === "quant-producible");
   assert.equal(okc.ok, true);
-  assert.match(okc.detail, /chunk 0 of 3/, `130 records / ${START_READINESS_CHUNK_SIZE} = 3 shards`);
+  assert.match(okc.detail, /q4_k_m supported/);
+  assert.match(okc.detail, /quantize stage present/);
+  // An import-only profile has NO quantize stage → it cannot claim to quantize,
+  // so this gate must fail closed rather than rubber-stamp a supported level.
+  const importOnly = buildTrainingRunConfig({ profileId: "ollama-modelfile-import", outputModelTag: TAG, quantization: "q4_k_m" });
+  const io = deriveStartTrainingReadiness({ runConfig: importOnly, result: approvedDraft(), workspaceConfig: emptyWs() });
+  assert.equal(io.checks.find((x) => x.id === "quant-producible").ok, false);
 });
 
 test("start-gate: a REPORTING live run blocks a second concurrent invocation", () => {
