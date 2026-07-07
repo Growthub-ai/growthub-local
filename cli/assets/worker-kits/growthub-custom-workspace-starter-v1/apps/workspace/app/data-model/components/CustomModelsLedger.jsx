@@ -28,9 +28,7 @@ import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "health", label: "Health" },
   { id: "usage", label: "Usage" },
-  { id: "versions", label: "Versions" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -121,72 +119,40 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           ))}
         </div>
 
-        {/* OVERVIEW — tiles + Actions + one neutral recommended card. */}
+        {/* OVERVIEW — one compact trust line, the recommended next move, and
+            styled primary actions. No redundant metric tiles. */}
         {tab === "overview" ? (
           <div data-cockpit-panel="overview">
-            <div className="dm-cockpit-metrics">
-              {cockpit.tiles.map((tile) => (
-                <span key={tile.key} data-tile={tile.key} data-tile-tone={tile.tone || "neutral"}>
-                  <small>{tile.label}</small>
-                  <strong className={tile.tone === "ok" ? "is-ok" : ""}>{tile.value}</strong>
-                  <span className="dm-cockpit-tile-sub">{tile.sub}</span>
-                </span>
-              ))}
+            <p className="dm-cockpit-meta-line" data-model-meta="">
+              {model.endpointMode}
+              {" · served "}<strong>{cockpit.served || "—"}</strong>
+              {" · "}{model.lastVerifiedAt ? `verified ${model.lastVerifiedAt.slice(0, 10)}` : "not verified yet"}
+              {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
+            </p>
+
+            <div className="dm-cockpit-rec" data-model-recommended={rec ? rec.variant : "none"}>
+              <p className="dm-cockpit-col-title">Next recommended action</p>
+              {rec ? (
+                <>
+                  <p className="dm-cockpit-rec-title">{rec.title}</p>
+                  <p className="dm-cockpit-subtle">{rec.enabled ? rec.whyNow : `Needs: ${rec.blockedReason}`}</p>
+                  {rec.enabled
+                    ? <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
+                    : <a className="dm-btn-outline dm-cockpit-rec-cta" href={model.links.training}>Resolve in Training</a>}
+                </>
+              ) : (
+                <p className="dm-cockpit-subtle">No reuse actions available yet.</p>
+              )}
             </div>
 
-            <div className="dm-cockpit-overview-cols">
-              <div className="dm-cockpit-col">
-                <p className="dm-cockpit-col-title">Actions</p>
-                {model.canTest
-                  ? <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.registry} data-model-test="">Use model</a>
-                  : <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.training} data-model-test="">Open Training</a>}
-                {model.links.workflow
-                  ? <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.workflow} data-model-workflow="">Open workflow</a>
-                  : <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.training}>Improve from gaps</a>}
-                <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.registry} data-model-proof="">View proof</a>
-              </div>
-
-              <div className="dm-cockpit-col dm-cockpit-rec" data-model-recommended={rec ? rec.variant : "none"}>
-                <p className="dm-cockpit-col-title">Next recommended action</p>
-                {rec ? (
-                  <>
-                    <p className="dm-cockpit-rec-title">{rec.title}</p>
-                    <p className="dm-cockpit-subtle">{rec.enabled ? rec.whyNow : `Needs: ${rec.blockedReason}`}</p>
-                    {rec.enabled
-                      ? <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
-                      : <a className="dm-btn-outline dm-cockpit-rec-cta" href={model.links.training}>Resolve in Training</a>}
-                  </>
-                ) : (
-                  <p className="dm-cockpit-subtle">No reuse actions available yet.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {/* HEALTH — evidence ladder + verification proof (real, demotion-safe). */}
-        {tab === "health" ? (
-          <div data-cockpit-panel="health">
-            <ol className="dm-cockpit-ladder">
-              {cockpit.ladder.map((rung) => (
-                <li key={rung.key} data-rung={rung.key} data-done={rung.done ? "yes" : "no"}>
-                  <span className="dm-cockpit-ladder-dot" aria-hidden="true" />
-                  <span className="dm-cockpit-ladder-label">{rung.label}</span>
-                </li>
-              ))}
-            </ol>
-            <div className="dm-cockpit-facts">
-              <div><span>Verification</span><strong>{model.verificationStatus}</strong></div>
-              <div><span>Served tag</span><strong>{cockpit.served || "—"}</strong></div>
-              <div><span>Output hash</span><strong>{cockpit.outputHash ? `#${cockpit.outputHash}` : "—"}</strong></div>
-              <div data-model-serving={model.servingProfile ? model.servingProfile.adapter : "—"}>
-                <span>Serving</span>
-                <strong>
-                  {model.servingProfile
-                    ? `${model.servingProfile.adapter} · ${cockpit.servesTunedTag ? "serves tuned tag" : cockpit.servingReason || "unverified"}`
-                    : "—"}
-                </strong>
-              </div>
+            <div className="dm-cockpit-btn-row">
+              {model.canTest
+                ? <a className="dm-btn-outline dm-cockpit-btn" href={model.links.registry} data-model-test="">Use model</a>
+                : <a className="dm-btn-outline dm-cockpit-btn" href={model.links.training} data-model-test="">Open Training</a>}
+              {model.links.workflow
+                ? <a className="dm-btn-outline dm-cockpit-btn" href={model.links.workflow} data-model-workflow="">Open workflow</a>
+                : <a className="dm-btn-outline dm-cockpit-btn" href={model.links.training} data-model-improve="">Improve from gaps</a>}
+              <a className="dm-btn-outline dm-cockpit-btn" href={model.links.registry} data-model-proof="">View proof</a>
             </div>
           </div>
         ) : null}
@@ -216,22 +182,6 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
               <div><span>Invocation receipts</span><strong>{cockpit.invocations.length || "—"}</strong></div>
               <div><span>Last sandbox run</span><strong>{model.lastSandboxRunId || "—"}</strong></div>
             </div>
-          </div>
-        ) : null}
-
-        {/* VERSIONS — the tuned tag, base lineage, and verification timestamp. */}
-        {tab === "versions" ? (
-          <div data-cockpit-panel="versions">
-            <div className="dm-cockpit-facts">
-              <div><span>Tuned tag</span><strong>{model.modelVersion || model.localModel || "—"}</strong></div>
-              <div><span>Base model</span><strong>{model.baseModel || "—"}</strong></div>
-              <div><span>Verified</span><strong>{model.lastVerifiedAt ? model.lastVerifiedAt.slice(0, 10) : "—"}</strong></div>
-              <div><span>Registry</span><strong>{model.apiRegistryId || "—"}</strong></div>
-            </div>
-            <p className="dm-cockpit-subtle" style={{ marginTop: 8 }}>
-              Version lineage is governed in the Data Model. Retraining from gaps creates the next version — it never demotes this one.
-            </p>
-            <a className="dm-btn-ghost dm-cockpit-stacked-btn" href={model.links.dataModel} data-model-datamodel="">Open model row</a>
           </div>
         ) : null}
 

@@ -341,7 +341,7 @@ test("suggested actions: each carries a real config + canvas deep-link + sandbox
   assert.equal(unverified.find((a) => a.id === "use-in-workflow").enabled, false);
 });
 
-test("cockpit view-model: tiles, evidence ladder, and governed config are real and demotion-safe", () => {
+test("cockpit view-model: status + governed config are real and demotion-safe", () => {
   const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const model = state.models.find((m) => m.id === "workspace-local");
@@ -351,16 +351,10 @@ test("cockpit view-model: tiles, evidence ladder, and governed config are real a
   assert.equal(cockpit.health.label, "Healthy");
   assert.equal(cockpit.health.tone, "ok");
 
-  // Four real tiles off the model data table (health/version/endpoint/verified).
-  assert.equal(cockpit.tiles.length, 4);
-  const byKey = Object.fromEntries(cockpit.tiles.map((t) => [t.key, t]));
-  assert.equal(byKey.version.value, "workspace-local-tuned-v1");
-  assert.equal(byKey.endpoint.value, "local");
-
-  // Evidence ladder is the same rungs the ledger climbs; a complete model has
-  // every rung reached.
-  assert.equal(cockpit.ladder.length, 5);
-  assert.ok(cockpit.ladder.every((r) => r.done), "complete model fills the whole ladder");
+  // No fabricated telemetry tiles — eval%/latency/uptime are not governed, so
+  // they are not surfaced.
+  assert.equal(cockpit.tiles, undefined);
+  assert.equal(cockpit.ladder, undefined);
 
   // Governed config surfaced as canvas-style fields, reflecting the registry row.
   const cfg = Object.fromEntries(cockpit.settingsFields.map((f) => [f.key, f]));
@@ -378,15 +372,12 @@ test("cockpit view-model: tiles, evidence ladder, and governed config are real a
   assert.ok(cockpit.invocations.length >= 1, "invocation receipts counted from governed source records");
 });
 
-test("cockpit view-model: an unverified/recorded model shows an honest partial ladder and '—' telemetry", () => {
+test("cockpit view-model: an unverified/recorded model is honest — muted status, no registry binding, no served tag", () => {
   const model = modelFixture({ verificationStatus: "unverified", evidenceState: "recorded", apiRegistryId: "", lastVerifiedAt: "", lastResponseModel: "" });
   const cockpit = deriveCustomModelCockpit(model, { workspaceConfig: { dataModel: { objects: [] } }, workspaceSourceRecords: {} });
   assert.equal(cockpit.health.label, "Recorded");
   assert.notEqual(cockpit.health.tone, "ok");
-  assert.equal(cockpit.ladder[0].done, true, "recorded rung reached");
-  assert.equal(cockpit.ladder[cockpit.ladder.length - 1].done, false, "proof rung not reached");
   assert.equal(cockpit.registryBound, false);
-  assert.equal(cockpit.served, "");
-  const verifiedTile = cockpit.tiles.find((t) => t.key === "verified");
-  assert.equal(verifiedTile.value, "—", "no fabricated verification date");
+  assert.equal(cockpit.served, "", "no fabricated served tag");
+  assert.equal(cockpit.outputHash, "", "no fabricated proof hash");
 });

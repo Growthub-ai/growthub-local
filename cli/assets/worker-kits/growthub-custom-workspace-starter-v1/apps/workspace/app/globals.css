@@ -10244,43 +10244,47 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-cockpit-tabs button:hover { border-color: #cbd5e1; color: #111827; }
 .dm-cockpit-tabs button.is-active { background: #111827; border-color: #111827; color: #fff; }
 
-.dm-cockpit-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.dm-cockpit-metrics > span { display: grid; gap: 3px; min-width: 0; padding: 9px 11px; border: 1px solid #edf0f3; border-radius: 8px; background: #fafafa; }
-.dm-cockpit-metrics strong { font-size: 14px; font-weight: 650; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-cockpit-metrics strong.is-ok { color: #15803d; }
-.dm-cockpit-metrics small { font-size: 10.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: #9ca3af; }
-.dm-cockpit-tile-sub { font-size: 11px; color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Overview lower row — Actions column + neutral recommended card, side by side
-   where the sidecar is wide, stacked when narrow. */
-.dm-cockpit-overview-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 12px; }
-.dm-cockpit-col { display: flex; flex-direction: column; gap: 6px; padding: 11px 12px; border: 1px solid #edf0f3; border-radius: 8px; background: #fff; min-width: 0; }
+/* Overview — one compact trust line (no metric-tile bloat). */
+.dm-cockpit-meta-line { margin: 12px 0 0; font-size: 12px; color: #6b7280; line-height: 1.5; word-break: break-word; }
+.dm-cockpit-meta-line strong { color: #111827; font-weight: 650; }
 .dm-cockpit-col-title { margin: 0 0 2px; font-size: 11px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; color: #6b7280; }
-.dm-cockpit-stacked-btn { display: block; text-align: center; }
+
 /* Recommended card — NEUTRAL by design (no accent color); the black primary
    button carries the emphasis, matching the reference cockpit. */
-.dm-cockpit-rec { background: #fafafa; }
+.dm-cockpit-rec { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 11px 12px; border: 1px solid #edf0f3; border-radius: 8px; background: #fafafa; }
 .dm-cockpit-rec-title { margin: 0; font-size: 13px; font-weight: 650; color: #111827; }
-.dm-cockpit-rec-cta { align-self: flex-start; margin-top: 2px; }
+.dm-cockpit-rec-cta { align-self: flex-start; margin-top: 2px; text-decoration: none; }
 
-/* Evidence ladder — the same rungs the ledger climbs; done rungs are filled. */
-.dm-cockpit-ladder { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
-.dm-cockpit-ladder li { display: flex; align-items: center; gap: 9px; }
-.dm-cockpit-ladder-dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #cbd5e1; background: #fff; flex-shrink: 0; }
-.dm-cockpit-ladder li[data-done="yes"] .dm-cockpit-ladder-dot { border-color: #15803d; background: #15803d; }
-.dm-cockpit-ladder-label { font-size: 12.5px; color: #6b7280; }
-.dm-cockpit-ladder li[data-done="yes"] .dm-cockpit-ladder-label { color: #111827; font-weight: 600; }
+/* Overview primary actions — real styled buttons (never underlined links). */
+.dm-cockpit-btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dm-cockpit-btn { flex: 1 1 auto; min-width: 120px; height: 32px; text-decoration: none; }
 
-/* Fact rows — label + value, used by Health / Usage / Versions tabs. */
+/* Fact rows — label + value, used by the Usage tab receipts. */
 .dm-cockpit-facts { display: grid; gap: 1px; margin-top: 12px; }
 .dm-cockpit-facts > div { display: grid; grid-template-columns: minmax(120px, .5fr) minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #f1f3f5; }
 .dm-cockpit-facts > div:first-child { border-top: 0; }
 .dm-cockpit-facts span { font-size: 12px; color: #6b7280; font-weight: 600; }
 .dm-cockpit-facts strong { font-size: 12.5px; color: #111827; font-weight: 600; word-break: break-word; }
 
-/* Settings — canvas-mirrored config fields + management routes. */
+/* Settings — canvas-mirrored config fields, rendered clean in the sidecar
+   (the canvas's disabled-field polish is scoped to .dm-workflow-orchestration,
+   so mirror it here for the read-only governed values). */
 .dm-cockpit-config-grid { display: grid; gap: 10px; margin-top: 12px; }
+.dm-cockpit-config-grid .dm-orchestration-config__field { gap: 5px; }
+.dm-cockpit-config-grid .dm-orchestration-config__field span { font-size: 11px; font-weight: 650; color: #475569; }
+.dm-cockpit-config-grid .dm-orchestration-config__field input,
+.dm-cockpit-config-grid .dm-orchestration-config__field select {
+  width: 100%; min-height: 34px; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 7px 9px; font-size: 12px; background: #fff; color: #111827;
+  -webkit-text-fill-color: #111827; opacity: 1; cursor: default;
+}
+.dm-cockpit-config-grid .dm-orchestration-config__field select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
 .dm-cockpit-settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dm-cockpit-settings-actions .dm-btn-ghost { text-decoration: none; }
 
 .dm-cockpit-actions-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 2px; }
 .dm-cockpit-actions-list li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 10px; padding: 8px 0; border-top: 1px solid #f1f3f5; }
