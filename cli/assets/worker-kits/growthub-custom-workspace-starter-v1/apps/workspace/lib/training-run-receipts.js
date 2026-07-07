@@ -48,6 +48,10 @@ function runRowsFromConfig(workspaceConfig, slug) {
   return (Array.isArray(object.rows) ? object.rows : [])
     .filter((r) => r && typeof r === "object")
     .filter((r) => !slug || String(r?.modelTrainingRowId || "") === slug)
+    // A pre-init probe receipt proves readiness to invoke — it is NOT a
+    // training run, so it never enters the run lifecycle (a blocked probe
+    // must not read as a failed training run on /training or /custom-models).
+    .filter((r) => String(r?.runKind || "") !== "preinit-probe")
     .map(normalizeRunRow);
 }
 

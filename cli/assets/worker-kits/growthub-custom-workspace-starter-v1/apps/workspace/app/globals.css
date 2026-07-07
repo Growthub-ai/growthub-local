@@ -10207,10 +10207,26 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .training-impact dt { margin: 0; font-size: 12px; color: #6b7280; }
 .training-impact dd { margin: 0; font-size: 13px; font-weight: 600; color: #111827; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
 .training-config-fields .dm-api-action-card-body { gap: 8px; }
+/* Inside the training modal every card shares ONE full width — the page-level
+   .dm-api-action-card margin would inset cards against .training-advanced /
+   .training-config-modal (the configuration-step width drift). */
+.dm-orch-modal[data-training-handoff] .dm-api-action-card { margin: 0; }
 .training-field { display: grid; gap: 4px; margin: 0; }
 .training-field > span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; }
 .training-field select, .training-field input { height: 32px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 13px; padding: 0 9px; width: 100%; box-sizing: border-box; }
 .training-field input[aria-invalid="true"] { border-color: #dc2626; }
+.training-field em { font-size: 11px; color: #6b7280; font-style: normal; }
+/* Probe placeholder while the local substrate check answers (or the friendly
+   empty state) — input-shaped, never a selectable fake value. */
+.training-probe-note { min-height: 32px; display: flex; align-items: center; gap: 8px; border: 1px dashed #d1d5db; border-radius: 6px; background: #fff; color: #6b7280; font-size: 12px; padding: 4px 9px; }
+/* Configuration-step readiness rows: pass/fail/pending in plain language. */
+.training-readiness-rows li b { margin-left: auto; font-weight: 600; text-align: right; word-break: break-word; max-width: 60%; }
+.training-readiness-rows li.is-fail { color: #991b1b; }
+.training-readiness-rows li.is-warn { color: #92400e; }
+.training-readiness-pending { width: 13px; height: 13px; border-radius: 50%; border: 2px dotted #9ca3af; flex: 0 0 auto; }
+/* Finalize-in-flight spinner (button-embedded, beside the label). */
+.training-finalize-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; display: inline-block; margin-right: 7px; vertical-align: -1px; animation: training-finalize-spin 0.7s linear infinite; }
+@keyframes training-finalize-spin { to { transform: rotate(360deg); } }
 .training-run-card .dm-api-action-card-body { gap: 6px; }
 .training-run-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .training-run-pct { font-size: 26px; font-weight: 700; color: #111827; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -10487,7 +10503,9 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   gap: 8px;
 }
 .training-handoff-summary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Fits however many fact cells render (target cell removed — the deploy
+     target is chosen in the configuration dropdown, never pre-announced). */
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
 }
 .training-handoff-summary div,
 .training-handoff-process div {
@@ -10586,7 +10604,9 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   font-weight: 650;
 }
 .training-config-field-wide {
-  max-width: 360px;
+  /* Trace source spans the full card width — matches every other field. */
+  max-width: none;
+  width: 100%;
 }
 .training-config-field select,
 .training-map-row select,

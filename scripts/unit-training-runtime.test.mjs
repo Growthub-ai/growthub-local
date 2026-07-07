@@ -978,32 +978,67 @@ const readyCfg = () => buildTrainingRunConfig({
   datasetPath: "unsloth-dataset-v1.jsonl", outputModelTag: TAG,
   artifactPath: `./artifacts/${TAG}`, quantization: "q4_k_m",
 });
+const PREINIT_ID = "preinit_2026-07-07T12-00-00-000Z";
 const approvedDraft = (over = {}) => ({
   exportId: "ft_1_2026-07-07T12-00-00-000Z", records: 40, modelTag: TAG,
-  draftAt: "2026-07-07T12:00:00.000Z", trainingRunId: "trainrun_2026-07-07T12-00-00-000Z", ...over,
+  draftAt: "2026-07-07T12:00:00.000Z", trainingRunId: "trainrun_2026-07-07T12-00-00-000Z",
+  preInitRunId: PREINIT_ID, ...over,
 });
 const emptyWs = () => ({ dataModel: { objects: [] } });
+/** A workspace carrying a PASSED pre-init probe receipt for the draft —
+ *  the Finalize proof the start gate now requires. */
+const passedPreInitRow = () => ({
+  trainingRunId: PREINIT_ID, modelTrainingRowId: "workspace-local", status: "prepared", runKind: "preinit-probe",
+  preinit: { schema: "growthub-preinit-probe-v1", ok: true, endpointStatus: 200, completedAt: "2026-07-07T12:01:00.000Z", checks: [
+    { id: "eligible-traces", label: "Eligible training examples", ok: true, detail: "12 ready · 10 needed" },
+    { id: "base-model", label: "Base model available", ok: true, detail: "gemma-2b" },
+    { id: "training-folder", label: "Training folder writable", ok: true, detail: "/Volumes/X/artifacts" },
+    { id: "machine-check", label: "Machine check", ok: true, detail: "Memory 64 GB" },
+    { id: "training-tools", label: "Training tools", ok: true, detail: "all found" },
+    { id: "model-server", label: "Local model server", ok: true, detail: "http://127.0.0.1:11434" },
+    { id: "endpoint-200", label: "Endpoint answered 200", ok: true, detail: "HTTP 200" },
+  ] },
+});
+const wsWithPreInit = (extraObjects = []) => ({ dataModel: { objects: [
+  { objectType: "model-training-run", rows: [passedPreInitRow()] },
+  ...extraObjects,
+] } });
 
-test("start-gate: fully-approved safe draft over a clean workspace reaches 100% and unlocks", () => {
-  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+test("start-gate: fully-approved safe draft WITH a passed pre-init probe reaches 100% and unlocks", () => {
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: wsWithPreInit() });
   assert.equal(g.readyPct, 100, "all blocking gates green → 100%");
   assert.equal(g.canStart, true);
   assert.equal(g.blockingReason, "");
-  assert.equal(g.checks.length, 5);
+  assert.equal(g.checks.length, 6);
   assert.ok(g.checks.every((c) => c.ok && c.blocking));
   assert.equal(g.preInit.complete, true);
 });
 
+test("start-gate: WITHOUT a pre-init probe receipt the gate stays locked (Finalize required)", () => {
+  // Same fully-approved draft over a clean workspace — no probe receipt exists.
+  const noProbe = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  assert.equal(noProbe.canStart, false);
+  const check = noProbe.checks.find((c) => c.id === "preinit-probe-passed");
+  assert.equal(check.ok, false);
+  assert.match(check.detail, /Finalize the configuration/i);
+  // A probe receipt that FAILED keeps the gate locked with its real reason.
+  const failedRow = { ...passedPreInitRow(), status: "blocked", blockedReason: "Selected folder is not writable" };
+  failedRow.preinit = { ...failedRow.preinit, ok: false, checks: failedRow.preinit.checks.map((c) => (c.id === "training-folder" ? { ...c, ok: false, detail: "Selected folder is not writable" } : c)) };
+  const failed = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: { dataModel: { objects: [{ objectType: "model-training-run", rows: [failedRow] }] } } });
+  assert.equal(failed.canStart, false);
+  assert.match(failed.checks.find((c) => c.id === "preinit-probe-passed").detail, /not writable/i);
+});
+
 test("start-gate: readiness percentage is deterministic and evidence-derived (never a stuck 0%)", () => {
-  const a = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
-  const b = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  const a = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: wsWithPreInit() });
+  const b = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: wsWithPreInit() });
   assert.deepEqual(a.checks.map((c) => [c.id, c.ok]), b.checks.map((c) => [c.id, c.ok]), "same input ⇒ same gates");
   assert.equal(a.readyPct, b.readyPct);
-  // With a draft prepared, at least the config/quant gates are already proven —
+  // With a draft prepared + probe passed, everything but runner-idle is proven —
   // the bar reflects real state, it is never pinned at 0.
-  const partial = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ modelTag: TAG }), workspaceConfig: { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_x", status: "running", progress: { stageId: "fine-tuning" } }] }] } } });
+  const partial = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ modelTag: TAG }), workspaceConfig: wsWithPreInit([{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_x", status: "running", progress: { stageId: "fine-tuning" } }] }]) });
   assert.ok(partial.readyPct > 0 && partial.readyPct < 100, "one failing gate → strictly between 0 and 100");
-  assert.equal(partial.readyPct, 80, "4 of 5 gates green");
+  assert.equal(partial.readyPct, 83, "5 of 6 gates green");
 });
 
 test("start-gate: an unprepared/unapproved config cannot start", () => {
@@ -1023,9 +1058,8 @@ test("start-gate: an unsafe / import-only run config blocks the button", () => {
 });
 
 test("start-gate: draft date is checked against the tuned tag's blast radius", () => {
-  const liveEndpoint = { dataModel: { objects: [
-    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", expectedModelTag: TAG, status: "connected", lastTested: "2026-07-08T00:00:00.000Z" }] },
-  ] } };
+  const liveEndpointRow = { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", expectedModelTag: TAG, status: "connected", lastTested: "2026-07-08T00:00:00.000Z" }] };
+  const liveEndpoint = wsWithPreInit([liveEndpointRow]);
   // Stale draft (older than the live model) must NOT silently overwrite it.
   const stale = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ draftAt: "2026-07-07T12:00:00.000Z" }), workspaceConfig: liveEndpoint });
   const staleCheck = stale.checks.find((c) => c.id === "draft-blast-radius");
@@ -1037,7 +1071,7 @@ test("start-gate: draft date is checked against the tuned tag's blast radius", (
   assert.equal(fresh.checks.find((c) => c.id === "draft-blast-radius").ok, true);
   assert.equal(fresh.canStart, true);
   // No live surface for the tag → blast radius 0, passes.
-  const clean = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  const clean = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: wsWithPreInit() });
   assert.equal(clean.checks.find((c) => c.id === "draft-blast-radius").ok, true);
 });
 
@@ -1078,7 +1112,7 @@ test("start-gate: a zombie `running` row that never handshaked does NOT wedge a 
   // The exact stuck-in-a-loop trap: a run marked running whose runner never
   // reported. It must be reclaimable — runner-idle stays green so the user can
   // start again instead of being locked out forever.
-  const zombie = { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_zombie", status: "running" }] }] } };
+  const zombie = wsWithPreInit([{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_zombie", status: "running" }] }]);
   const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: zombie });
   assert.equal(g.checks.find((c) => c.id === "runner-idle").ok, true, "no progress stamp ⇒ reclaimable, not blocking");
   assert.equal(g.canStart, true);

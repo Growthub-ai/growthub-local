@@ -20,6 +20,7 @@
 import { deriveDistillationPipelineState, DEFAULT_MIN_SCORE, MIN_FINETUNE_TRACES } from "./training-ledger.js";
 import { deriveTrainingRuntimeState } from "./training-runtime.js";
 import { SUPPORTED_QUANTIZATIONS } from "./training-artifacts.js";
+import { derivePreInitState, PREINIT_RUN_KIND } from "./training-preinit-probe.js";
 
 /**
  * Lifecycle driver definitions in dependency order. Action tokens are the
@@ -936,6 +937,26 @@ export function deriveStartTrainingReadiness({ runConfig, result, workspaceConfi
     approved,
     approved ? `Approved draft ${String(draft.exportId).slice(0, 22)} · ${records} curated records`
       : `Prepare and approve the configuration first (${records}/${floor} curated records).`);
+
+  // 2. Pre-init probe passed — Finalize ran the REAL sandbox probe on the
+  // machine that will train (traces · base model installed · folder writable ·
+  // machine floor · tooling · live endpoint 200) and its governed receipt
+  // reads ok. Without a passed probe receipt, Start Training stays impossible:
+  // readiness to invoke must be proven on the same lane training uses.
+  const preInitRunId = String(draft.preInitRunId || "").trim();
+  const preInitRow = preInitRunId
+    ? (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+      .filter((o) => o?.objectType === "model-training-run")
+      .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+      .find((r) => String(r?.trainingRunId || "") === preInitRunId && String(r?.runKind || "") === PREINIT_RUN_KIND)
+    : null;
+  const preInit = derivePreInitState(preInitRow || {});
+  add("preinit-probe-passed", "Pre-init check passed on this machine",
+    preInit.present && preInit.ok,
+    preInit.present && preInit.ok
+      ? `${preInit.checks.filter((c) => c.ok).length}/${preInit.checks.length} checks green${preInit.endpointStatus === 200 ? " · endpoint answered 200" : ""}`
+      : preInit.present ? (preInit.blockedReason || "The pre-init check did not pass — fix the failed item and retry finalize.")
+        : "Finalize the configuration to run the pre-init check on this machine.");
 
   // 2. Command safety — argv-safe, ready, has executable steps.
   const safeReasons = (cfg.commandSafety && cfg.commandSafety.ok === false) ? (cfg.commandSafety.reasons || []) : [];

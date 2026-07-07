@@ -51,6 +51,9 @@ import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
 import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState, deriveServingProfile, deriveTrainingResumeState, deriveLocalModelChoices, deriveStartTrainingReadiness } from "../../../lib/training-runtime-drivers.js";
+import { deriveConfigureReadiness, labelStorageLocation } from "../../../lib/training-local-readiness.js";
+import { buildPreInitProbeScript, derivePreInitState, PREINIT_RUN_KIND, PREINIT_INTENT, OLLAMA_BIN_CANDIDATES } from "../../../lib/training-preinit-probe.js";
+import { PIPELINE_SCRIPTS } from "../../../lib/training-pipeline-scripts.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -58,8 +61,9 @@ const RUN_COLUMNS = [
   "trainingRunId", "modelTrainingRowId", "datasetExportId", "baseModel", "trainingProfile", "runnerMode",
   "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization",
   // Quant proof (fp16 → quantized bytes) + live thin-delta progress / preflight
-  // the local runner stamps each stage boundary.
-  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "schema",
+  // the local runner stamps each stage boundary. runKind/preinit distinguish
+  // Finalize's pre-init probe receipts from real training runs.
+  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "schema",
 ];
 const SLUG = "workspace-local";
 /** Human labels for raw artifact types — the customer never sees bare "gguf". */
@@ -90,6 +94,8 @@ const STAGE_HEADLINES = {
 /** The seeded test prompt the response inspector opens with — editable, the
  *  same mental model as the API/Webhook test-event editor. */
 const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
+/** Sentinel value for the "Choose a specific folder…" storage option. */
+const CUSTOM_FOLDER = "__custom__";
 
 /**
  * Runner handshake deadline. A real local runner stamps its stage-0 preflight
@@ -210,7 +216,7 @@ const STAGE_RANK_BY_ID = TRAINING_PROGRESS_STAGES.reduce((acc, s) => { acc[s.id]
  * allowlist) onto the existing model-training-run + api-registry rows — the
  * causation spine, unchanged.
  */
-function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor, workspaceUrl }) {
+function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor, workspaceUrl, datasetPath, minScore, ollamaBin, modelsDir, toolSearchDirs }) {
   const P = JSON.stringify({
     steps: steps || [], stageRankById: stageRankById || {}, artifactPath: artifactPath || "",
     modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m",
@@ -219,6 +225,22 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     // governed callback PATCHes reach the exact server (the sandbox spawns the
     // runner with a restricted env, so it cannot rely on GROWTHUB_WORKSPACE_URL).
     workspaceUrl: workspaceUrl || "",
+    // Distillation inputs — the runner exports the curated traces to the REAL
+    // JSONL the fine-tune consumes (a genuine stage with a genuine stamp).
+    datasetPath: datasetPath || "unsloth-dataset.jsonl",
+    minScore: Number(minScore) || DEFAULT_MIN_SCORE,
+    instruction: PHASE3_INSTRUCTION,
+    // Model-server ensure for the serving/verify stages.
+    ollamaBin: ollamaBin || "",
+    modelsDir: modelsDir || "",
+    binCandidates: OLLAMA_BIN_CANDIDATES,
+    // Workdir self-provisioning: the sandbox lane runs every command in a
+    // FRESH throwaway workdir, so the runner must furnish its own cwd — the
+    // workspace's pipeline scripts, plus links to the discovered llama.cpp
+    // binaries — before any argv step resolves "./llama-quantize" or
+    // "train.py" relative to it.
+    pipelineScripts: PIPELINE_SCRIPTS,
+    toolSearchDirs: Array.isArray(toolSearchDirs) ? toolSearchDirs : [],
   });
   return [
     "const { execFileSync, spawn } = require('node:child_process');",
@@ -257,6 +279,23 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "  }",
     "  const gb = (bytes) => Math.floor(Number(bytes || 0) / 1e9);",
     "(async () => {",
+    // ---- workdir self-provisioning: the sandbox cwd is a fresh throwaway
+    // dir — write the workspace's own pipeline scripts and link the REAL
+    // discovered llama.cpp binaries into it so every argv step resolves.
+    "  for (const [name, content] of Object.entries(P.pipelineScripts || {})) {",
+    "    try { const p = path.join(process.cwd(), name); if (!fs.existsSync(p)) fs.writeFileSync(p, content); } catch (e) { console.error('provision failed ' + name, (e && e.message) || e); }",
+    "  }",
+    "  const which = (b) => { try { return execFileSync('which', [b], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 4000 }).toString().trim(); } catch { return ''; } };",
+    "  const binSearchDirs = [...P.toolSearchDirs.flatMap((d) => [d, path.join(d, 'build/bin')]), '/opt/homebrew/bin', '/usr/local/bin'];",
+    "  for (const tool of ['llama-quantize', 'llama-imatrix']) {",
+    "    const dest = path.join(process.cwd(), tool);",
+    "    if (fs.existsSync(dest)) continue;",
+    "    const found = binSearchDirs.map((d) => path.join(d, tool)).find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || which(tool);",
+    "    if (found) { try { fs.symlinkSync(found, dest); console.log('LINKED ' + tool + ' -> ' + found); } catch { try { fs.copyFileSync(found, dest); fs.chmodSync(dest, 0o755); } catch {} } }",
+    "  }",
+    // macOS ships python3, not python — resolve the interpreter honestly
+    // (both are allowlisted bins; nothing outside the allowlist ever runs).
+    "  const resolveBin = (b) => (b === 'python' && !which('python') && which('python3')) ? 'python3' : b;",
     // ---- stage 0: preflight — deep system requirements check. -------------
     "  const ramGB = gb(os.totalmem());",
     "  let diskFreeGB = 0;",
@@ -277,6 +316,29 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "    console.error(reason); process.exit(1); return;",
     "  }",
     "  await stampRun({ preflight, progress: { stageId: 'preflight', stageRank: 0, pct: 2, detail: `System OK — RAM ${ramGB} GB, disk ${diskFreeGB} GB, ${gpu.present ? ('GPU ' + gpu.name) : 'CPU-only'}`, index: 0, total: N } });",
+    // ---- ensure the model server — the serving + verify stages need it; an
+    // installed-but-stopped server is started automatically (never homework).
+    "  const findBin = () => { if (P.ollamaBin && fs.existsSync(P.ollamaBin)) return P.ollamaBin; try { const p = execFileSync('which', ['ollama'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 4000 }).toString().trim(); if (p) return p; } catch {} for (const c of P.binCandidates) { try { if (fs.existsSync(c)) return c; } catch {} } return ''; };",
+    "  const serverUp = async () => { try { const r = await fetch('http://127.0.0.1:11434/api/tags', { signal: AbortSignal.timeout(2000) }); return r.ok; } catch { return false; } };",
+    "  if (!(await serverUp())) { const bin = findBin(); if (bin) { const env2 = { ...process.env }; if (P.modelsDir) env2.OLLAMA_MODELS = P.modelsDir; try { const ch = spawn(bin, ['serve'], { detached: true, stdio: 'ignore', env: env2 }); ch.unref(); } catch {} for (let i = 0; i < 20 && !(await serverUp()); i += 1) await new Promise((r) => setTimeout(r, 1000)); } }",
+    // ---- stage 1: DISTILL — export the curated governed traces to the REAL
+    // JSONL the fine-tune consumes, on this machine (a genuine stage with a
+    // genuine receipt stamp; the browser download is only the user's copy).
+    "  await stampRun({ status: 'running', progress: { stageId: 'distilling', stageRank: rankOf('distilling'), pct: pctOf('distilling'), detail: 'Exporting curated traces to JSONL', index: 0, total: N } });",
+    "  try {",
+    "    const r0 = await fetch(`${WS}/api/workspace`, { cache: 'no-store' }); const d0 = await r0.json();",
+    "    const tObj = (d0.workspaceConfig.dataModel.objects || []).find((o) => o.id === 'training-traces');",
+    "    const tRows = (tObj && Array.isArray(tObj.rows) ? tObj.rows : []).filter((row) => String(row.redactionStatus || '').toLowerCase() !== 'blocked' && Number(row.qualityScore) >= P.minScore && String(row.inputPrompt || '').trim() && String(row.agentOutput || '').trim());",
+    "    if (tRows.length < 10) throw new Error(`only ${tRows.length} eligible traces (need 10+)`);",
+    "    const dsPath = path.resolve(P.datasetPath);",
+    "    try { fs.mkdirSync(path.dirname(dsPath), { recursive: true }); } catch {}",
+    "    fs.writeFileSync(dsPath, tRows.map((row) => JSON.stringify({ instruction: P.instruction, input: String(row.inputPrompt), output: String(row.agentOutput) })).join('\\n') + '\\n');",
+    "    await stampRun({ progress: { stageId: 'distilling', stageRank: rankOf('distilling'), pct: pctOf('distilling'), detail: `Dataset ready — ${tRows.length} traces → ${dsPath}`, index: 0, total: N, counter: tRows.length, totalRecords: tRows.length } });",
+    "  } catch (e) {",
+    "    const reason = 'Distillation failed: ' + String((e && e.message) || e).split('\\n')[0];",
+    "    await stampRun({ status: 'failed', blockedReason: reason, progress: { stageId: 'distilling', stageRank: rankOf('distilling'), pct: pctOf('distilling'), detail: reason, index: 0, total: N } });",
+    "    console.error(reason); process.exit(1); return;",
+    "  }",
     // ---- stages 1..n: execFile each ARGV step (no shell), stamp canonical id.
     "  for (let i = 0; i < N; i += 1) {",
     "    const step = P.steps[i];",
@@ -290,7 +352,7 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     // resumable checkpoint. Other stages stay atomic execFileSync.
     "      if (step.stageId === 'fine-tuning') {",
     "        await new Promise((resolve, reject) => {",
-    "          const child = spawn(step.bin, step.args, { stdio: ['ignore', 'pipe', 'inherit'] });",
+    "          const child = spawn(resolveBin(step.bin), step.args, { stdio: ['ignore', 'pipe', 'inherit'] });",
     "          let buf = '';",
     "          child.stdout.on('data', (d) => {",
     "            buf += d.toString(); const lines = buf.split('\\n'); buf = lines.pop();",
@@ -309,7 +371,7 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "          child.on('error', reject);",
     "          child.on('close', (code) => code === 0 ? resolve() : reject(new Error('exit ' + code)));",
     "        });",
-    "      } else { execFileSync(step.bin, step.args, { stdio: 'inherit' }); }",
+    "      } else { execFileSync(resolveBin(step.bin), step.args, { stdio: 'inherit' }); }",
     "    }",
     "    catch (e) {",
     "      // A stage failed → stamp a GOVERNED failed receipt naming the exact",
@@ -387,7 +449,7 @@ function resourceFloorFor(baseModel) {
 
 /** Upsert the runner sandbox object + its per-run row. Same fold-or-create
  *  discipline as upsertRunRow — append to the existing object, else create it. */
-function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
+function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId, runtimeHints = {}) {
   const workspaceUrl = typeof window !== "undefined" && window.location ? window.location.origin : "";
   const row = {
     Name: trainingRunId,
@@ -396,6 +458,9 @@ function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId) {
       steps: runConfig?.steps, stageRankById: STAGE_RANK_BY_ID, artifactPath: runConfig?.artifactPath,
       modelTag: runConfig?.outputModelTag, trainingRunId, quantization: runConfig?.quantization, integrationId,
       floor: resourceFloorFor(runConfig?.baseModel), workspaceUrl,
+      datasetPath: runConfig?.datasetPath, minScore: runtimeHints.minScore,
+      ollamaBin: runtimeHints.ollamaBin, modelsDir: runtimeHints.modelsDir,
+      toolSearchDirs: runtimeHints.toolSearchDirs,
     }),
     timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
     networkPolicy: "allow",
@@ -451,7 +516,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Proof tabs. State kept local; the send re-uses the governed test lane.
   const [testPrompt, setTestPrompt] = useState(DEFAULT_TEST_PROMPT);
   const [inspectorTab, setInspectorTab] = useState("response");
-  const [curateTab, setCurateTab] = useState("configuration");
   const [traceFieldMap, setTraceFieldMap] = useState({
     input: "inputPrompt",
     output: "agentOutput",
@@ -462,6 +526,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // the user can pick any base their workspace actually carries (no hardcoded
   // Gemma/Ollama assumption).
   const [chosenBase, setChosenBase] = useState("");
+  // Local substrate probe (real Ollama model tags · storage folders · tooling ·
+  // machine preflight) from /api/workspace/training-readiness. null = not
+  // answered yet — readiness rows render "pending", never an optimistic tick,
+  // and the dropdowns only ever offer what the probe actually found.
+  const [readinessProbe, setReadinessProbe] = useState(null);
+  const [probeError, setProbeError] = useState("");
+  // Artifact/training folder selection: a probed location path, or
+  // CUSTOM_FOLDER with the typed path verified through the same endpoint.
+  const [artifactFolder, setArtifactFolder] = useState("");
+  const [customFolder, setCustomFolder] = useState("");
+  const [customFolderCheck, setCustomFolderCheck] = useState(null);
+  // Finalize lifecycle: idle → preparing (governed prepare) → probing (the
+  // REAL pre-init sandbox run) → passed | failed. UI state is receipt-driven:
+  // preInitReceipt is derivePreInitState() over the governed probe row.
+  const [finalizePhase, setFinalizePhase] = useState("idle");
+  const [preInitReceipt, setPreInitReceipt] = useState(null);
   // Behind-the-scenes setup feedback — the user is never left in the dark
   // while the API Registry row + Data Model model record are written.
   const [busy, setBusy] = useState(false);
@@ -500,6 +580,57 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     return () => { cancelled = true; };
   }, [open]);
 
+  // Probe the local substrate when the configuration step opens — one bounded
+  // read-only GET; a failure surfaces as an honest "couldn't check" row (the
+  // user gets a Check-again action), never a fake pass or a silent fallback.
+  useEffect(() => {
+    if (!open || panel !== "profile") return;
+    if (!readinessProbe) refreshReadiness();
+    // Keep discovering automatically until models appear — the user is never
+    // told to go check anything; the substrate probe (which also auto-starts
+    // an installed-but-stopped model server) simply keeps looking.
+    if (readinessProbe && (readinessProbe.baseModels || []).length > 0) return;
+    const timer = setInterval(refreshReadiness, 6000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, panel, readinessProbe]);
+
+  // Verify a hand-typed folder through the same endpoint (debounced) — the
+  // folder readiness row stays "pending" until the server has really checked
+  // containment + writability, so Finalize can only unlock on proven evidence.
+  useEffect(() => {
+    if (artifactFolder !== CUSTOM_FOLDER) return;
+    const typed = customFolder.trim();
+    setCustomFolderCheck(null);
+    if (!typed) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/workspace/training-readiness?folder=${encodeURIComponent(typed)}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled) setCustomFolderCheck(data?.folderCheck || { path: typed, writable: false, detail: "Couldn't check this folder — try again." });
+      } catch {
+        if (!cancelled) setCustomFolderCheck({ path: typed, writable: false, detail: "Couldn't check this folder — try again." });
+      }
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [artifactFolder, customFolder]);
+
+  async function refreshReadiness() {
+    setProbeError("");
+    try {
+      const res = await fetch("/api/workspace/training-readiness", { cache: "no-store" });
+      if (!res.ok) throw new Error(`readiness check failed (${res.status})`);
+      const data = await res.json();
+      setReadinessProbe(data);
+      // Default the folder to the first writable discovered location once —
+      // a real option only; the user can change it or type a specific path.
+      setArtifactFolder((current) => current || (data?.storageLocations || []).find((l) => l.writable)?.path || "");
+    } catch (e) {
+      setProbeError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
   const selected = candidates.filter(({ index }) => !excluded.has(index));
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
@@ -524,7 +655,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // the profile step reflects what this workspace carries, not a Gemma/Ollama
   // default. detectedBase is deriveLocalModelChoices' truth (no inline re-scan).
   const modelChoices = deriveLocalModelChoices({ workspaceConfig });
-  const baseModel = String(chosenBase || modelChoices.detectedBase || "").trim();
+  // Base model truth ladder: once the local probe has answered, ONLY a really
+  // installed model is selectable (ledger hints count only when still
+  // installed); before the probe answers, keep the ledger-detected value so a
+  // reopened modal is never blanked by a probe still in flight.
+  const availableBases = readinessProbe ? (readinessProbe.baseModels || []).map((m) => String(m?.tag || "")).filter(Boolean) : null;
+  const baseModel = (availableBases
+    ? (chosenBase && availableBases.includes(chosenBase) ? chosenBase
+      : availableBases.includes(modelChoices.detectedBase) ? modelChoices.detectedBase
+        : availableBases[0] || "")
+    : String(chosenBase || modelChoices.detectedBase || "")).trim();
+  // Selected artifact/training folder — a probed location, or the typed path
+  // with its server verification verdict (writable: null = still checking).
+  const storageLocations = readinessProbe?.storageLocations || [];
+  const chosenFolder = artifactFolder === CUSTOM_FOLDER
+    ? (customFolder.trim()
+      ? { path: customFolder.trim(), kind: "custom", writable: customFolderCheck ? Boolean(customFolderCheck.writable) : null, freeGB: customFolderCheck?.freeGB || 0 }
+      : null)
+    : (storageLocations.find((l) => l.path === artifactFolder) || null);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -534,7 +682,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     .filter((r) => /^.+-v\d+$/.test(String(r?.Name || ""))).length;
   const reservedTag = (tunedTag || `${SLUG}-tuned-v${version}`).trim();
   const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `./artifacts/${reservedTag}` });
+  // Artifact root = the user's chosen training folder (workspace fallback when
+  // none picked yet) + the tuned tag — the runner mkdir -p's it on preflight.
+  const artifactRootPath = chosenFolder?.path ? String(chosenFolder.path).replace(/\/+$/, "") : "./artifacts";
+  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -542,13 +693,19 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // not a scary command dump. Any other safety/missing reason is a clean block.
   const tagUnsafe = Boolean(runConfig.commandSafety && !runConfig.commandSafety.ok
     && (runConfig.commandSafety.reasons || []).some((r) => /model tag/i.test(String(r))));
-  const blockReason = (() => {
-    if (runConfig.ready) return null;
-    if (tagUnsafe) return { code: "unsafe-tag", message: "The tuned model name isn't allowed. Fix the highlighted field above, then try again." };
-    if (runConfig.commandSafety && !runConfig.commandSafety.ok) return { code: "unsafe-config", message: "This run can't be started safely with the current settings. Pick the one-click pipeline profile, or fix the highlighted field above." };
-    if (runConfig.missingRequirements && runConfig.missingRequirements.length) return { code: "missing", message: `Almost there — first set: ${runConfig.missingRequirements.join(", ")}. The base model comes from the model row in the ledger.` };
-    return { code: "not-ready", message: "This run configuration isn't ready yet." };
-  })();
+  // Deterministic configuration-step readiness — the plain-language pass/fail/
+  // pending rows behind the Finalize button (deriveConfigureReadiness owns the
+  // logic; every pass is probed evidence, never an optimistic tick). Finalize
+  // additionally requires the resolved run config itself to be argv-safe.
+  const configureReadiness = deriveConfigureReadiness({
+    eligibleTraces: selected.length,
+    floor: MIN_FINETUNE_TRACES,
+    baseModel,
+    folder: chosenFolder,
+    probe: readinessProbe,
+    probeError,
+  });
+  const canFinalize = configureReadiness.canFinalize && runConfig.ready;
   // Live proof state — the SAME derivation /training and /custom-models use, so
   // the modal can never claim "complete" before the smoke run wrote outputHash.
   const liveRuntime = deriveTrainingRuntimeState({ workspaceConfig, workspaceSourceRecords, slug: SLUG });
@@ -610,13 +767,37 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // fraction of proven gates — never a fabricated 0% or an indeterminate spin.
   const startReadiness = deriveStartTrainingReadiness({ runConfig, result, workspaceConfig });
 
+  // Close is gated while real work is in flight — abandoning mid-finalize or
+  // mid-training loses progress, so it takes TWO explicit confirmations.
+  function guardedClose() {
+    const busyNow = finalizePhase === "preparing" || finalizePhase === "probing"
+      || trainPhase === "starting" || trainPhase === "running";
+    if (busyNow) {
+      const what = trainPhase === "running" || trainPhase === "starting" ? "Training" : "Finalizing";
+      if (!window.confirm(`${what} is still in progress. Abandoning this will lose progress. Close anyway?`)) return;
+      if (!window.confirm("Are you sure? The in-progress work will be abandoned.")) return;
+    }
+    onClose();
+  }
+
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
     setTimeout(resolve, 0);
   });
 
   async function patchObjects(transform) {
-    const objects = transform(workspaceConfig?.dataModel?.objects || []);
+    // Read-latest-then-patch — the SAME discipline the runner script uses.
+    // A governed write must never transform a stale render-closure snapshot:
+    // sequential patches inside one click handler (running receipt → runner
+    // row → reconcile) would otherwise overwrite each other's rows and the
+    // runner's own live stamps, pinning the bar at 0%.
+    let basis = workspaceConfig;
+    try {
+      const probe = await fetch("/api/workspace", { cache: "no-store" });
+      const data = await probe.json();
+      if (data?.workspaceConfig) basis = data.workspaceConfig;
+    } catch { /* offline blip — fall back to the render snapshot */ }
+    const objects = transform(basis?.dataModel?.objects || []);
     const res = await fetch("/api/workspace", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -631,9 +812,32 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     return applied?.workspaceConfig || workspaceConfig;
   }
 
+  // ---- finalize: ONE user action, two governed halves on the SAME lanes
+  // training uses. (1) prepare — dataset + scaffold rows + PREPARED run
+  // receipt (unchanged); (2) the pre-init probe — a REAL sandbox run
+  // (intent: custom-model-preinit-probe) on the machine that will train,
+  // whose governed receipt is the only thing that can unlock Start Training.
+  // Finalize proves readiness to invoke — it never starts training and never
+  // claims a trained/deployed/verified model.
+  async function runFinalize() {
+    if (finalizePhase === "preparing" || finalizePhase === "probing") return;
+    setError("");
+    setPreInitReceipt(null);
+    setFinalizePhase("preparing");
+    const prepared = await doPrepare();
+    if (!prepared) { setFinalizePhase("idle"); return; }
+    setFinalizePhase("probing");
+    const outcome = await runPreInitProbe(prepared);
+    if (outcome?.ok) {
+      setFinalizePhase("passed");
+      setPanel("train");
+    } else {
+      setFinalizePhase("failed");
+    }
+  }
+
   // ---- prepare: build the dataset + apply scaffold rows + PREPARED run receipt
-  async function runPrepare() {
-    setPanel("prepare");
+  async function doPrepare() {
     setError("");
     setRecovery(null);
     let stage = "validate";
@@ -724,9 +928,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // Stamp the approved-configuration timestamp (the "draft date") so the
       // Start-training readiness gate can check it against the tuned tag's blast
       // radius — a stale draft can never silently overwrite a live model.
-      setResult({ datasetPath, records: selected.length, integrationId, modelTag: reservedTag, version, exportId, trainingRunId: preparedReceipt.trainingRunId, draftAt: new Date().toISOString() });
+      const prepared = { datasetPath, records: selected.length, integrationId, modelTag: reservedTag, version, exportId, trainingRunId: preparedReceipt.trainingRunId, draftAt: new Date().toISOString() };
+      setResult(prepared);
       setArtifact((a) => ({ ...a, modelTag: reservedTag, type: profile.outputs.includes("gguf") ? "gguf" : profile.outputs[0] }));
-      setPanel("train");
+      // The probe needs the registered endpoint identity — carry the real
+      // read-back row values, never a guess.
+      return { ...prepared, registryBaseUrl: String(reg.baseUrl || ""), registryEndpoint: String(reg.endpoint || "/chat/completions") };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -739,6 +946,138 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       } catch { readbackOk = false; }
       setRecovery(deriveHandoffRecovery({ stage, message, online: typeof navigator === "undefined" ? true : navigator.onLine, readbackOk, registryPresent, datasetDownloaded: resume.datasetDownloaded }));
       setPanel("recover");
+      return null;
+    }
+  }
+
+  /** Upsert the pre-init probe runner row — same fold-or-create discipline and
+   *  the SAME `model-training-runner` sandbox object the training runner uses
+   *  (one execution lane, two intents), just a short probe timeout. */
+  function upsertPreInitRunnerRow(objects, preInitRunId, script) {
+    const row = {
+      Name: preInitRunId, runtime: "node", command: script,
+      // Long enough for the mandatory dependency ensure (automatic server
+      // install/start + python training packages + quantize tools) on a
+      // machine that has never trained before — torch alone is gigabytes.
+      timeoutMs: 60 * 60 * 1000, networkPolicy: "allow", runLocality: "local", status: "live",
+    };
+    let found = false;
+    const next = (objects || []).map((o) => {
+      if (o?.id !== TRAINING_RUNNER_SANDBOX_ID) return o;
+      found = true;
+      const rows = Array.isArray(o.rows) ? o.rows : [];
+      const idx = rows.findIndex((r) => String(r?.Name || "") === preInitRunId);
+      return { ...o, rows: idx >= 0 ? rows.map((r, i) => (i === idx ? { ...r, ...row } : r)) : [...rows, row] };
+    });
+    if (!found) {
+      next.push({
+        id: TRAINING_RUNNER_SANDBOX_ID, label: "Model Training Runner", source: "Model Training Runner",
+        objectType: "sandbox-environment", icon: "Cpu", columns: RUNNER_COLUMNS, rows: [row],
+        binding: { mode: "manual", source: "Model Training Runner" },
+        relations: [], fieldSettings: { hidden: ["command"], order: RUNNER_COLUMNS },
+      });
+    }
+    return next;
+  }
+
+  // ---- pre-init probe: create the governed probe receipt + runner row, fire
+  // the SAME sandbox-run lane training uses, then read the outcome back from
+  // the governed receipt (never from component guesses).
+  async function runPreInitProbe(prepared) {
+    const startedAt = new Date().toISOString();
+    const preInitRunId = `preinit_${startedAt.replace(/[:.]/g, "-")}`;
+    try {
+      const probeReceipt = buildTrainingRunReceipt({
+        trainingRunId: preInitRunId, modelTrainingRowId: SLUG, datasetExportId: prepared.exportId,
+        baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared", startedAt,
+      });
+      const baseUrl = String(prepared.registryBaseUrl || "").replace(/\/+$/, "");
+      const ep = String(prepared.registryEndpoint || "/chat/completions");
+      const chatUrl = baseUrl ? `${baseUrl}${ep.startsWith("/") ? ep : `/${ep}`}` : "";
+      const script = buildPreInitProbeScript({
+        preInitRunId,
+        baseModel,
+        artifactPath: runConfig.artifactPath,
+        modelTag: prepared.modelTag,
+        floor: resourceFloorFor(baseModel),
+        minScore,
+        requiredTraces: MIN_FINETUNE_TRACES,
+        ollamaUrl: baseUrl ? baseUrl.replace(/\/v1$/, "") : undefined,
+        chatUrl,
+        integrationId: prepared.integrationId,
+        toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((p) => /\/llama\.cpp$/.test(p)),
+        workspaceUrl: typeof window !== "undefined" && window.location ? window.location.origin : "",
+        // Mandatory ensure: the probe starts (and if truly absent, adds) the
+        // model server itself, pointed at the user's real model store, and
+        // provisions the workspace's own pipeline scripts.
+        ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "",
+        modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "",
+        pipelineScripts: PIPELINE_SCRIPTS,
+      });
+      // One governed PATCH: the pre-init receipt row + the probe runner row.
+      await patchObjects((objects) => {
+        let next = upsertRunRow(objects, { ...runReceiptToRow(probeReceipt), runKind: PREINIT_RUN_KIND });
+        next = upsertPreInitRunnerRow(next, preInitRunId, script);
+        return next;
+      });
+      // Link the probe to the approved draft — the Start-training gate reads it.
+      setResult({ ...prepared, preInitRunId });
+
+      const res = await fetch("/api/workspace/sandbox-run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: preInitRunId, intent: PREINIT_INTENT, actor: "training-runtime-modal" }),
+      });
+      const data = await res.json().catch(() => null);
+      if (data?.workspaceConfig) {
+        setLiveConfig(data.workspaceConfig);
+        if (typeof onApplied === "function") onApplied(data.workspaceConfig);
+      }
+
+      // Authoritative outcome = the governed receipt the probe stamped.
+      let freshCfg = data?.workspaceConfig || null;
+      if (!freshCfg) {
+        try { const probe = await fetch("/api/workspace", { cache: "no-store" }); freshCfg = (await probe.json())?.workspaceConfig || null; } catch { freshCfg = null; }
+        if (freshCfg) { setLiveConfig(freshCfg); if (typeof onApplied === "function") onApplied(freshCfg); }
+      }
+      const probeRow = (freshCfg?.dataModel?.objects || [])
+        .filter((o) => o?.objectType === TRAINING_RUN_OBJECT_TYPE)
+        .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+        .find((r) => String(r?.trainingRunId || "") === preInitRunId) || null;
+      let state = derivePreInitState(probeRow || {});
+
+      if (!state.present) {
+        // The probe never stamped — reconcile the zombie row to a governed,
+        // honest failure (same discipline as the training handshake deadline).
+        const reason = String(data?.response?.stderr || data?.response?.error || data?.response?.stdout || "The pre-init check could not run on this machine.").trim().slice(0, 300);
+        await patchObjects((objects) => objects.map((o) => (o?.objectType !== TRAINING_RUN_OBJECT_TYPE ? o : {
+          ...o,
+          rows: (Array.isArray(o.rows) ? o.rows : []).map((row) => (String(row?.trainingRunId || "") === preInitRunId
+            ? { ...row, status: "blocked", blockedReason: reason, preinit: { schema: "growthub-preinit-probe-v1", ok: false, checks: [{ id: "probe-run", label: "Pre-init check ran", ok: false, detail: reason }], endpointStatus: null, completedAt: new Date().toISOString() } }
+            : row)),
+        })));
+        state = { present: true, ok: false, checks: [{ id: "probe-run", label: "Pre-init check ran", ok: false, detail: reason }], blockedReason: reason, endpointStatus: null, completedAt: "" };
+      }
+
+      // Stamp the model-training version row with the chosen folder + the
+      // proven readiness state — allowed claims only ("ready-to-train" /
+      // "blocked"), never trained/deployed/verified.
+      await patchObjects((objects) => objects.map((o) => (o?.objectType !== TRAINING_OBJECT_TYPE ? o : {
+        ...o,
+        rows: (Array.isArray(o.rows) ? o.rows : []).map((r) => (String(r?.Name || "") === `${SLUG}-v${prepared.version}`
+          ? { ...r, trainingFolder: artifactRootPath, readinessState: state.ok ? "ready-to-train" : "blocked" }
+          : r)),
+      })));
+
+      setPreInitReceipt(state);
+      if (!state.ok) setError(state.blockedReason || "The pre-init check did not pass.");
+      return state;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      const failed = { present: false, ok: false, checks: [], blockedReason: message, endpointStatus: null, completedAt: "" };
+      setPreInitReceipt(failed);
+      return failed;
     }
   }
 
@@ -786,18 +1125,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // One governed PATCH: running receipt + the runner sandbox row.
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(runningReceipt));
-        next = upsertRunnerSandbox(next, trainingRunId, runConfig, result.integrationId);
+        next = upsertRunnerSandbox(next, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)) });
         return next;
       });
       setTrainPhase("running");
 
-      // Only begin the live poll loop if the runner was actually accepted — a
-      // hard start failure drops back to idle (the run row is left for the gate
-      // to reclaim) instead of spinning the loop at 0%.
-      const started = await triggerTrainingRunner(trainingRunId);
-      if (!started) { setTrainPhase("idle"); return; }
-
+      // Begin the live receipt poll BEFORE firing the invocation: the
+      // sandbox-run POST is synchronous and holds until the pipeline ends
+      // (hours for a real fine-tune), while the runner stamps preflight →
+      // distilling → training progress through governed PATCHes within
+      // seconds. Awaiting the POST first would freeze the bar at 0% for the
+      // whole run. A hard start failure reconciles through the runner path /
+      // handshake deadline — the loop never spins at 0% forever.
       startRunPolling(startedAt, trainingRunId);
+      triggerTrainingRunner(trainingRunId).then((started) => {
+        if (!started) setTrainPhase("idle");
+      }).catch((e) => {
+        setError(e instanceof Error ? e.message : String(e));
+        setTrainPhase("idle");
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTrainPhase("idle");
@@ -811,7 +1157,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     const trainingRunId = typeof trainingRunIdOverride === "string" ? trainingRunIdOverride : result?.trainingRunId;
     if (!trainingRunId) return false;
     setError("");
-    await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId));
+    await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)) }));
     const res = await fetch("/api/workspace/sandbox-run", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1070,17 +1416,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const pill = (() => {
     if (panel === "recover") return { label: "Needs attention", cls: "is-bad" };
     if (panel === "verify") return verifyResult?.verified ? { label: "Success", cls: "is-ok" } : verifyResult ? { label: "Not verified", cls: "is-bad" } : { label: "Ready to test", cls: "" };
-    if (panel === "train") return stageIssue ? { label: "Needs attention", cls: "is-bad" } : trainPhase === "running" ? { label: "Running", cls: "is-running" } : startReadiness.canStart ? { label: "Ready to run", cls: "" } : { label: `Pre-init ${startReadiness.readyPct}%`, cls: "is-warn" };
+    if (panel === "train") return stageIssue ? { label: "Needs attention", cls: "is-bad" } : trainPhase === "running" ? { label: "Running", cls: "is-running" } : startReadiness.canStart ? { label: "Ready to train", cls: "is-ok" } : { label: `Pre-init ${startReadiness.readyPct}%`, cls: "is-warn" };
     if (panel === "prepare") return { label: "Preparing", cls: "is-running" };
     if (panel === "done") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Proof pending", cls: "is-warn" };
     if (panel === "bind") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Bind", cls: "" };
-    if (panel === "profile") return (floorMet && runConfig.ready) ? { label: "Ready to train", cls: "is-ok" } : { label: "Needs setup", cls: "is-warn" };
-    if (panel === "curate") return { label: "Configuration", cls: "" };
+    if (panel === "profile") {
+      // No pill while finalizing — the button itself carries that state.
+      if (finalizePhase === "preparing" || finalizePhase === "probing") return null;
+      if (finalizePhase === "failed") return { label: "Needs attention", cls: "is-bad" };
+      return canFinalize ? { label: "Ready to finalize", cls: "is-ok" } : readinessProbe ? { label: "Needs setup", cls: "is-warn" } : { label: "Checking readiness", cls: "" };
+    }
+    if (panel === "curate") return null; // the step title says it — no redundant pill
     return floorMet ? { label: "Ready to train", cls: "is-ok" } : { label: "Collect traces", cls: "is-warn" };
   })();
 
   return createPortal((
-    <div className="dm-orch-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="dm-orch-modal-backdrop" role="presentation" onClick={guardedClose}>
       <div className="dm-orch-modal" role="dialog" aria-modal="true" aria-label="Training runtime" data-training-handoff="" data-training-panel={panel} onClick={(e) => e.stopPropagation()}>
         <div className="dm-orch-modal-head training-handoff-head">
           <div>
@@ -1088,16 +1439,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             <h2>{headTitle}</h2>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-            <span className={`dm-status-chip ${pill.cls}`} data-training-status={pill.label}><span className="dm-status-dot" aria-hidden="true" />{pill.label}</span>
-            <button type="button" className="dm-btn-ghost" onClick={onClose} aria-label="Close">Close</button>
+            {pill ? <span className={`dm-status-chip ${pill.cls}`} data-training-status={pill.label}><span className="dm-status-dot" aria-hidden="true" />{pill.label}</span> : null}
+            <button type="button" className="dm-btn-ghost" onClick={guardedClose} aria-label="Close">Close</button>
           </div>
         </div>
 
         <div className="dm-orch-modal-body">
+          {/* Two facts only — the deploy target is chosen in the configuration
+              dropdown below; pre-announcing one here would be a false claim. */}
           <div className="training-handoff-summary">
             <div><strong>{selected.length}</strong><span>qualified traces</span></div>
             <div><strong>{MIN_FINETUNE_TRACES}</strong><span>minimum</span></div>
-            <div><strong>{target.label}</strong><span>target</span></div>
           </div>
           {error ? <div className="dm-helper-error">{error}</div> : null}
           {/* SPECIFIC failure card — the classified stage issue with evidence,
@@ -1165,12 +1517,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           {panel === "curate" && (
             <div className="dm-orch-modal-list">
               <section className="training-config-modal" data-handoff-configure-traces="">
-                <div className="training-config-tabs" role="tablist" aria-label="Trace configuration tabs">
-                  <button type="button" role="tab" aria-selected={curateTab === "configuration"} className={curateTab === "configuration" ? "is-active" : ""} onClick={() => setCurateTab("configuration")}>Configuration</button>
-                  <button type="button" role="tab" aria-selected={curateTab === "advanced"} className={curateTab === "advanced" ? "is-active" : ""} onClick={() => setCurateTab("advanced")}>Advanced</button>
-                </div>
-
-                {curateTab === "configuration" ? (
                   <div className="training-config-panel">
                     <label className="training-config-field training-config-field-wide">
                       <span>Trace source</span>
@@ -1216,42 +1562,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       ))}
                     </div>
 
-                    <div className="dm-run-console__hint" data-handoff-floor={floorMet ? "met" : "unmet"}>
-                      {selected.length} of {candidates.length} selected · floor {MIN_FINETUNE_TRACES}
-                      {floorMet ? " met" : ` — ${MIN_FINETUNE_TRACES - selected.length} more required`}
-                      {target.requiredEnv.length ? ` · target env: ${target.requiredEnv.join(", ")}` : ""}
-                    </div>
+                    {/* Counts live in the modal-top summary strip — repeating
+                        them here was noise. The machine-readable floor state
+                        stays as a data attribute for the e2e readbacks. */}
+                    <div data-handoff-floor={floorMet ? "met" : "unmet"} style={{ display: "none" }} aria-hidden="true">{floorMet ? "met" : "unmet"}</div>
+                    {!floorMet ? (
+                      <div className="dm-run-console__hint">{MIN_FINETUNE_TRACES - selected.length} more curated traces required before training.</div>
+                    ) : null}
                     {blocked > 0 ? (
                       <div className="dm-run-console__hint" data-handoff-redaction-blocked={blocked}>
                         {blocked} trace{blocked === 1 ? " is" : "s are"} blocked by redaction policy and cannot enter the training corpus.
                       </div>
                     ) : null}
                   </div>
-                ) : (
-                  <div className="training-handoff-trace-list">
-                  {candidates.map(({ row, index }) => (
-                    <div key={index} className="dm-helper-toolcall dm-swarm-card" data-handoff-trace={index}>
-                      <div className="training-handoff-trace-row">
-                        <label className="training-handoff-trace-title">
-                          <input type="checkbox" checked={!excluded.has(index)} onChange={() => { const next = new Set(excluded); if (next.has(index)) next.delete(index); else next.add(index); setExcluded(next); }} />
-                          <span>{String(row.inputPrompt).slice(0, 90)}</span>
-                        </label>
-                        <span className="dm-run-console__hint">score {row.qualityScore}</span>
-                      </div>
-                      <div className="dm-helper-stream dm-swarm-card-desc">{String(row.agentOutput).slice(0, 140)}</div>
-                      {row.reason ? <div className="dm-run-console__hint">{row.reason}</div> : null}
-                    </div>
-                  ))}
-                  </div>
-                )}
               </section>
               <div className="training-handoff-action-row">
                 <button type="button" className="training-action-primary" data-handoff-to-profile="" disabled={!floorMet} onClick={() => setPanel("profile")}>
                   {floorMet ? "Save configuration" : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
                 </button>
-                <span className="training-handoff-eligibility" data-handoff-eligibility="">
-                  {selected.length} selected · floor {MIN_FINETUNE_TRACES}
-                </span>
               </div>
             </div>
           )}
@@ -1267,6 +1595,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     <div><dt>Source</dt><dd>{selected.length} distillation traces</dd></div>
                     <div><dt>Model name</dt><dd>{reservedTag}</dd></div>
                     <div><dt>Base model</dt><dd>{baseModel || "—"}</dd></div>
+                    <div><dt>Artifact location</dt><dd data-handoff-artifact-location="">{chosenFolder?.path || "—"}</dd></div>
                     <div><dt>Compute</dt><dd>{profile.runnerMode === "local-command" ? "Local · " + (modelChoices.runtimes[0]?.adapter || "ollama") : profile.runnerMode}</dd></div>
                     <div><dt>Est. time</dt><dd>~{Math.max(5, Math.round(selected.length * 3.5))} minutes</dd></div>
                     <div><dt>Est. cost</dt><dd>$0.00 (local)</dd></div>
@@ -1287,41 +1616,121 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       {TRAINING_RUNTIME_PROFILES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                     </select>
                   </label>
-                  <label className="training-field"><span>Base model</span>
-                    {modelChoices.baseModels.filter(Boolean).length ? (
-                      <select value={baseModel} onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="">
-                        {[...new Set([baseModel, ...modelChoices.baseModels].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}
+                  <div className="training-field" data-handoff-base-model-field=""><span>Base model</span>
+                    {availableBases === null ? (
+                      <div className="training-probe-note" data-handoff-base-model-loading="">
+                        {probeError ? "Couldn't check your local models." : "Checking your local models…"}
+                      </div>
+                    ) : availableBases.length ? (
+                      <select value={baseModel} onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="" aria-label="Base model">
+                        {(readinessProbe?.baseModels || []).map((m) => (
+                          <option key={m.tag} value={m.tag}>{m.tag}{Number(m.sizeBytes) > 0 ? ` · ${(Number(m.sizeBytes) / 1e9).toFixed(1)} GB` : ""}</option>
+                        ))}
                       </select>
                     ) : (
-                      <input type="text" value={baseModel} placeholder="e.g. qwen2.5-coder:7b" onChange={(e) => setChosenBase(e.target.value)} data-handoff-base-model="" />
+                      <div className="training-probe-note" data-handoff-base-model-empty="">
+                        Looking for your models — the drives and model store are re-checked automatically.
+                      </div>
                     )}
+                  </div>
+                  <label className="training-field"><span>Training folder</span>
+                    {readinessProbe === null ? (
+                      <div className="training-probe-note" data-handoff-artifact-folder-loading="">
+                        {probeError ? "Couldn't check your drives." : "Checking your drives…"}
+                      </div>
+                    ) : (
+                      <select value={artifactFolder} onChange={(e) => setArtifactFolder(e.target.value)} data-handoff-artifact-folder="" aria-label="Training folder">
+                        {!artifactFolder ? <option value="">Choose a folder…</option> : null}
+                        {storageLocations.map((l) => (
+                          <option key={l.path} value={l.path} disabled={!l.writable}>{labelStorageLocation(l)}</option>
+                        ))}
+                        <option value={CUSTOM_FOLDER}>Choose a specific folder…</option>
+                      </select>
+                    )}
+                    <em>Artifact location — where the trained model files are written.</em>
                   </label>
+                  {artifactFolder === CUSTOM_FOLDER ? (
+                    <label className="training-field"><span>Folder path</span>
+                      <input type="text" value={customFolder} placeholder="/Volumes/YourDrive/models" onChange={(e) => setCustomFolder(e.target.value)} data-handoff-artifact-folder-custom="" />
+                      {customFolder.trim() ? (
+                        <em data-handoff-folder-check={customFolderCheck ? (customFolderCheck.writable ? "writable" : "blocked") : "checking"}>
+                          {customFolderCheck
+                            ? (customFolderCheck.writable
+                              ? `Folder is writable${Number(customFolderCheck.freeGB) > 0 ? ` · ${customFolderCheck.freeGB} GB free` : ""}`
+                              : (customFolderCheck.detail || "That folder can't be written to — pick another."))
+                            : "Checking the folder…"}
+                        </em>
+                      ) : null}
+                    </label>
+                  ) : null}
                   <label className="training-field"><span>Tuned model tag</span>
                     <input type="text" value={tunedTag} placeholder={`${SLUG}-tuned-v${version}`} onChange={(e) => setTunedTag(e.target.value)} data-handoff-tuned-tag="" aria-invalid={tagUnsafe ? "true" : undefined} aria-describedby={tagUnsafe ? "handoff-tag-error" : undefined} />
                   </label>
                   {tagUnsafe ? (
                     <div className="dm-field-error" id="handoff-tag-error" data-handoff-tag-error="">Use letters, numbers, dash, underscore, dot, slash, or colon only — no spaces or shell characters.</div>
                   ) : null}
-                  <div className="dm-cockpit-fields" data-handoff-runtime={modelChoices.configured ? "configured" : "setup-needed"} style={{ marginTop: 8 }}>
-                    {modelChoices.configured
-                      ? modelChoices.runtimes.map((rt, i) => (
-                          <span key={i} className="dm-status-chip is-ok" data-handoff-runtime-row={rt.adapter} data-handoff-runtime-reachable={rt.reachable ? "yes" : "no"}><span className="dm-status-dot" aria-hidden="true" />{rt.adapter}{rt.baseUrl ? ` · ${rt.baseUrl.replace(/^https?:\/\//, "")}` : ""}</span>
-                        ))
-                      : <span className="dm-status-chip is-warn" data-handoff-runtime-setup=""><span className="dm-status-dot" aria-hidden="true" />No local runtime configured</span>}
-                    {modelChoices.hasLocalRunner ? <span className="dm-status-chip is-ok" data-handoff-runner-ready=""><span className="dm-status-dot" aria-hidden="true" />Local runner ready</span> : null}
-                  </div>
+                  {/* Runtime chip driven by the PROBE'S truth — running now, or
+                      started automatically at finalize. Never a "configure it
+                      yourself" warning. */}
+                  {readinessProbe ? (
+                    <div className="dm-cockpit-fields" data-handoff-runtime={readinessProbe.runtime?.ollama?.reachable ? "running" : "auto-start"} style={{ marginTop: 8 }}>
+                      {readinessProbe.runtime?.ollama?.reachable
+                        ? <span className="dm-status-chip is-ok" data-handoff-runtime-row="ollama" data-handoff-runtime-reachable="yes"><span className="dm-status-dot" aria-hidden="true" />Local runtime running · {String(readinessProbe.runtime.ollama.baseUrl || "").replace(/^https?:\/\//, "")}</span>
+                        : <span className="dm-status-chip" data-handoff-runtime-autostart=""><span className="dm-status-dot" aria-hidden="true" />Runtime starts automatically at finalize</span>}
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
-              {blockReason ? (
-                <section className="dm-api-action-card dm-api-action-card-muted" data-handoff-blocked={blockReason.code} aria-label="Cannot start">
-                  <div className="dm-api-action-card-icon" aria-hidden="true"><AlertTriangle size={18} /></div>
-                  <div className="dm-api-action-card-body">
-                    <p className="dm-api-action-card-eyebrow">Cannot start yet</p>
-                    <p>{blockReason.message}</p>
-                  </div>
-                </section>
-              ) : null}
+              {/* Deterministic readiness rows — plain-language pass/fail/pending
+                  evidence behind the Finalize button (replaces the old
+                  "Cannot start yet" callout). Same card grammar and width as
+                  the configuration card above. */}
+              {(() => {
+                // Receipt-driven rows once a probe attempt exists: the REAL
+                // per-checkpoint evidence the sandbox probe stamped. Before an
+                // attempt (or while probing), the local discovery rows show.
+                const probing = finalizePhase === "probing";
+                const receiptRows = preInitReceipt?.checks?.length
+                  ? preInitReceipt.checks.map((c) => ({ id: c.id, label: c.label, status: c.ok ? "pass" : (c.blocking === false ? "warn" : "fail"), detail: c.detail }))
+                  : null;
+                const rows = receiptRows || configureReadiness.rows.map((r) => (probing && r.status !== "fail" ? { ...r, status: r.status === "pass" ? "pass" : "pending" } : r));
+                const passedCount = rows.filter((r) => r.status === "pass").length;
+                const failedAttempt = Boolean(preInitReceipt) && !preInitReceipt.ok;
+                const eyebrow = failedAttempt ? "Troubleshooting — the pre-init check found a problem"
+                  : probing ? "Running the pre-init check on this machine…"
+                    : canFinalize ? "Ready to finalize" : "Before you can finalize";
+                return (
+                  <section
+                    className="dm-api-action-card dm-api-action-card-muted"
+                    data-handoff-readiness={failedAttempt ? "failed" : probing ? "probing" : canFinalize ? "ready" : "blocked"}
+                    data-handoff-preinit-receipt={preInitReceipt ? (preInitReceipt.ok ? "pass" : "fail") : "none"}
+                    {...(canFinalize && !failedAttempt ? {} : { "data-handoff-blocked": (failedAttempt ? preInitReceipt.checks.find((c) => !c.ok)?.id : configureReadiness.firstBlocked?.id) || "run-config" })}
+                    aria-label="Readiness checks"
+                  >
+                    <div className="dm-api-action-card-body">
+                      <p className="dm-api-action-card-eyebrow">{eyebrow}</p>
+                      <ul className="dm-api-action-checklist training-readiness-rows" data-handoff-readiness-rows={`${passedCount}/${rows.length}`}>
+                        {rows.map((r) => (
+                          <li key={r.id} className={r.status === "pass" ? "is-done" : r.status === "fail" ? "is-fail" : r.status === "warn" ? "is-warn" : "is-pending"} data-handoff-readiness-row={r.id} data-handoff-readiness-status={r.status}>
+                            {r.status === "pass" ? <Check size={14} aria-hidden="true" /> : r.status === "fail" ? <X size={14} aria-hidden="true" /> : r.status === "warn" ? <AlertTriangle size={14} aria-hidden="true" /> : <span className="training-readiness-pending" aria-hidden="true" />}
+                            <span>{r.label}</span>
+                            <b>{r.detail}</b>
+                          </li>
+                        ))}
+                      </ul>
+                      {failedAttempt ? (
+                        <p className="dm-api-action-card-note" data-handoff-preinit-repair="">
+                          Fix the failed item above, then press Retry finalize. Start Training stays locked until every check passes on this machine.
+                        </p>
+                      ) : null}
+                      {configureReadiness.canFinalize && !runConfig.ready && !failedAttempt ? (
+                        <p className="dm-api-action-card-note" data-handoff-runconfig-blocked="">Fix the highlighted field above, then finalize.</p>
+                      ) : null}
+                    </div>
+                  </section>
+                );
+              })()}
 
               <details className="training-advanced" data-handoff-runconfig="">
                 <summary>Advanced · exact command preview</summary>
@@ -1334,11 +1743,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               </details>
 
               <div className="training-handoff-action-row">
-                <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")}>Back</button>
-                <button type="button" className="dm-btn-primary" data-handoff-confirm="" disabled={!floorMet || !runConfig.ready} onClick={runPrepare}>
-                  Start training
-                </button>
+                <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")} disabled={finalizePhase === "preparing" || finalizePhase === "probing"}>Back</button>
+                {/* Finalize approves the configuration, prepares the governed
+                    draft, and runs the REAL pre-init sandbox probe on this
+                    machine — it never begins training. Start Training only
+                    unlocks after the probe's governed receipt reads ok. */}
+                {(() => {
+                  const finalizing = finalizePhase === "preparing" || finalizePhase === "probing";
+                  return (
+                    <button type="button" className="dm-btn-primary" data-handoff-confirm="" data-handoff-finalize-phase={finalizePhase} disabled={!canFinalize || finalizing} onClick={runFinalize}>
+                      {finalizing ? <span className="training-finalize-spinner" aria-hidden="true" /> : null}
+                      {finalizing ? "Finalizing" : finalizePhase === "failed" ? "Retry finalize" : "Finalize"}
+                    </button>
+                  );
+                })()}
               </div>
+              {finalizePhase === "preparing" || finalizePhase === "probing" ? (
+                <p className="dm-api-action-card-note" data-handoff-finalize-notice="">This may take a few minutes… Please do not close.</p>
+              ) : null}
             </div>
           )}
 
@@ -1481,7 +1903,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={async () => { const ok = await triggerTrainingRunner(); if (ok) startRunPolling(new Date().toISOString()); }}>
+                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={() => { startRunPolling(new Date().toISOString()); triggerTrainingRunner(); }}>
                       Start runner
                     </button>
                     <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach existing model result</button>
@@ -1654,7 +2076,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   <div className="dm-helper-stream dm-swarm-card-desc">{item.description}</div>
                 </div>
               ))}
-              <button type="button" className="training-action-primary" data-handoff-retry="" disabled={!recovery.retryable} onClick={runPrepare}>
+              <button type="button" className="training-action-primary" data-handoff-retry="" disabled={!recovery.retryable} onClick={() => { setPanel("profile"); runFinalize(); }}>
                 {recovery.retryable ? "Retry — resumes from where it stopped" : "Resolve blocked items above, then reopen"}
               </button>
               <button type="button" className="dm-btn-ghost" onClick={() => setPanel("curate")}>Back to curation</button>

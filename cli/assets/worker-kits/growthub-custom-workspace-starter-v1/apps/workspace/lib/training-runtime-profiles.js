@@ -31,10 +31,10 @@ export const TRAINING_RUNTIME_PROFILES = [
     // shell strings: user-influenced values (paths, tags, quant) are argv
     // elements the runner passes to execFile — no shell parses them.
     //
-    // Honest naming: dataset distillation is the pre-runner trace-curation
-    // pass (training-ledger), so this runner is NOT named distill-driven and
-    // never stamps a `distilling` stage it does not perform. It starts at
-    // fine-tuning.
+    // Distillation is a REAL runner stage: before step 1 the runner exports
+    // the curated governed traces to the JSONL at {{datasetPath}} (stamped
+    // `distilling`), so the fine-tune consumes a dataset that provably exists
+    // on the machine — never a browser-download the runner can't see.
     id: "unsloth-qlora-quantize-pipeline",
     label: "Local pipeline — QLoRA → quantize → serve (one click)",
     description:

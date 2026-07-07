@@ -66,7 +66,8 @@ import {
   DEFAULT_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_RUNTIMES,
   SANDBOX_DEFAULT_TIMEOUT_MS,
-  SANDBOX_MAX_TIMEOUT_MS
+  SANDBOX_MAX_TIMEOUT_MS,
+  SANDBOX_MAX_TIMEOUT_MS_LOCAL
 } from "@/lib/workspace-schema";
 import {
   parseSandboxAllowList,
@@ -562,8 +563,13 @@ async function executeSandboxRun(body, { emit } = {}) {
   const lifecycleStatus = String(rowForRun.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
   const version = rowForRun.version ?? "";
   const requestedTimeout = Number(rowForRun.timeoutMs);
+  // Locality-aware ceiling (mirrors the schema validator): a LOCAL run on the
+  // user's own machine may legitimately hold for hours (dependency ensure,
+  // QLoRA fine-tune, GGUF quantize) — clamping it to the serverless 10-minute
+  // cap SIGKILLs real training/pre-init work mid-flight.
+  const timeoutCap = runLocality === "local" ? SANDBOX_MAX_TIMEOUT_MS_LOCAL : SANDBOX_MAX_TIMEOUT_MS;
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
-    ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
+    ? Math.min(requestedTimeout, timeoutCap)
     : SANDBOX_DEFAULT_TIMEOUT_MS;
 
   if (runLocality === "serverless" && adapterId === "local-intelligence") {

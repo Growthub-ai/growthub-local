@@ -15,6 +15,56 @@ One click starts/resumes one `trainingRunId`; one `model-training-runner`
 sandbox object runs the ordered pipeline; one receipt row carries the monotonic
 progress; the UI polls that row and renders **only real receipt state**.
 
+## Configure → Finalize → Start Training (pre-init contract V2)
+
+The configuration step is discovery-driven and the gate between it and the
+live invocation is a REAL sandbox run, not UI validation:
+
+1. **Configure** — dropdowns offer only what
+   `GET /api/workspace/training-readiness` (`lib/training-local-readiness-probe.js`)
+   actually discovered on the machine: base models from the live Ollama server
+   **and** the on-disk model store (`OLLAMA_MODELS` / `~/.ollama/models` /
+   `<volume>/ollama[/models]` manifests — installed models are never hidden
+   behind a stopped server), writable artifact folders (external `/Volumes/*`
+   drives + candidate subfolders when they exist, workspace `./artifacts`
+   fallback; nothing hardcoded), tooling, RAM/disk/GPU. The endpoint also
+   auto-starts an installed-but-stopped server. Readiness rows
+   (`deriveConfigureReadiness`, `lib/training-local-readiness.js`) block only
+   on what an invocation genuinely needs (traces ≥ 10 · base model · writable
+   folder); system-furnished tooling renders GREEN — a user is never shown a
+   warning for work that is not theirs to do.
+2. **Finalize** — `POST /api/workspace/sandbox-run` with intent
+   `custom-model-preinit-probe` (`lib/training-preinit-probe.js`). The probe
+   receipt is a `model-training-run` row with `runKind: "preinit-probe"`
+   (excluded from the run lifecycle — a blocked probe never reads as a failed
+   training run). The probe ENSURES the full downstream blast radius, never
+   just checks it: provisions the workspace's own pipeline scripts
+   (`lib/training-pipeline-scripts.js` — `train.py`, `merge_and_export.py`,
+   converter shim), installs/starts the model server (Homebrew when truly
+   absent, `OLLAMA_MODELS` pointed at the discovered store), installs the
+   python training packages (`torch transformers datasets peft trl`, verified
+   by real import), installs the quantize tools (`brew install llama.cpp`
+   when none discovered), write-probes the artifact folder, measures the
+   machine (disk-at-folder blocks; RAM/VRAM warn), and requires a REAL
+   chat-completions HTTP 200. Phase markers are stamped before every long
+   operation so an interrupted probe reports exactly where it stopped and
+   Retry finalize resumes. Base-weight reachability (HF license gating) is
+   the one warn-only check — a token cannot be furnished for the user.
+3. **Start Training** — impossible until `deriveStartTrainingReadiness`'s
+   blocking `preinit-probe-passed` check reads a passed probe receipt for the
+   approved draft (`result.preInitRunId`). The training runner then
+   self-provisions its fresh sandbox workdir (scripts + linked llama.cpp
+   binaries + `python`→`python3` resolution), performs **distillation as a
+   real stage** (exports the curated governed traces to the JSONL the
+   fine-tune consumes, stamped `distilling`), and runs the full argv pipeline.
+   The modal starts its receipt poll BEFORE firing the synchronous
+   `sandbox-run` POST, and every governed write is read-latest-then-patch —
+   the two 0%-freeze bugs this contract fixed.
+
+Timeout truth: the sandbox route applies the locality-aware ceiling
+(`SANDBOX_MAX_TIMEOUT_MS_LOCAL`, 6 h) to local runs — the serverless 10-minute
+cap SIGKILLed real dependency-ensure/fine-tune work mid-flight before this fix.
+
 ## Canonical progress vocabulary (0–7)
 
 `TRAINING_PROGRESS_STAGES` in `lib/training-run-receipts.js` — every surface
@@ -107,10 +157,16 @@ GROWTHUB_KIT_EXPORTS_HOME=/tmp/ws node scripts/export-seed-workspace-model-qa.mj
 #    → App URL http://127.0.0.1:3777 (dev server stays up).
 
 # 2. Pure-deriver QA (no GPU): the whole governed brain.
-node scripts/unit-training-runtime.test.mjs        # 72/72 — stages, monotonic
+node --test scripts/unit-training-runtime.test.mjs  # 87/87 — stages, monotonic
                                                     #   progress, command-safety,
                                                     #   stage-issue catalog, proof
-                                                    #   checklist, completion reward
+                                                    #   checklist, completion reward,
+                                                    #   pre-init gate (Finalize receipt
+                                                    #   required before Start Training)
+node --test scripts/unit-training-local-readiness.test.mjs  # 17/17 — discovery
+                                                    #   (disk models, external folders,
+                                                    #   folder containment), configure
+                                                    #   readiness rows, honesty floor
 node scripts/e2e-custom-model-training-loop.mjs     # 29/29 ladder + demotions
 node scripts/e2e-custom-model-deployment-loop.mjs   # 17/17 chat-completion proof
 
@@ -132,8 +188,16 @@ BASE_URL=http://127.0.0.1:3777 PLAYWRIGHT_DIR=$PWD \
 argv pipeline shown in the real modal, the one-click governed receipt write, and
 the failure→one-click-remediation derivation from a real governed receipt.
 
-**Deferred to the operator's machine** (physically impossible in CI — no GPU,
-no python ML stack, no `ollama`, no `llama.cpp`): the live weights fine-tune and
-the 9-milestone real-machine proof pack. The pipeline is built to produce that
-proof on real hardware; capturing it is the operator's step, mirroring PR #270's
-deferral of live-vendor smoke. **This is the reason the PR stays a draft.**
+**Proven on the operator's machine (2026-07-07)**: real-interface Finalize
+runs the pre-init sandbox probe (installed Ollama via Homebrew from the click,
+started the server against the external-drive model store, discovered
+`gemma:2b / gemma3:4b / workspace-local-tuned-v1` from disk manifests), and a
+live invocation liveness proof through the exact Start-Training lane showed
+the governed receipt leave 0% within 1.5 s (preflight → real 12-trace
+distillation → fine-tune GH_PROGRESS stamp at 27%) before stopping honestly at
+the missing python stack — which the pre-init probe now auto-installs.
+
+**Deferred to the operator's long-run session** (hours of wall-clock, not
+capability): the full weights fine-tune through the 9-milestone proof pack.
+Dependency furnishing is no longer deferred — Finalize's probe ensures the
+python ML stack, `ollama`, and `llama.cpp` itself.
