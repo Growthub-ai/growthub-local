@@ -20,7 +20,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const { HELPER_COMMANDS, deriveVisibleHelperCommands, parseSlashInput, isGovernedHelperCommand } = await import(
   pathToFileURL(path.join(kitApp, "app/data-model/components/helper-commands.js")).href
 );
-const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, buildSyntheticTraceProvenance, buildCustomModelWorkflowVariants, buildCustomModelSandboxRow } = await import(
+const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, deriveCustomModelCockpit, buildSyntheticTraceProvenance, buildCustomModelWorkflowVariants, buildCustomModelSandboxRow } = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
 const { buildSuperAdminModelQaSeed } = await import(
@@ -339,4 +339,54 @@ test("suggested actions: each carries a real config + canvas deep-link + sandbox
   // unverified model → the verify-gated actions are blocked
   const unverified = deriveCustomModelSuggestedActions(modelFixture({ verificationStatus: "unverified", evidenceState: "deployed" }), { workspaceConfig: wsWithReg }).actions;
   assert.equal(unverified.find((a) => a.id === "use-in-workflow").enabled, false);
+});
+
+test("cockpit view-model: tiles, evidence ladder, and governed config are real and demotion-safe", () => {
+  const { workspaceConfig, sourceRecords } = buildCompletedModelWorkspace();
+  const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
+  const model = state.models.find((m) => m.id === "workspace-local");
+  const cockpit = deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords: sourceRecords });
+
+  // Health mirrors the ledger's complete state — no fabricated status.
+  assert.equal(cockpit.health.label, "Healthy");
+  assert.equal(cockpit.health.tone, "ok");
+
+  // Four real tiles off the model data table (health/version/endpoint/verified).
+  assert.equal(cockpit.tiles.length, 4);
+  const byKey = Object.fromEntries(cockpit.tiles.map((t) => [t.key, t]));
+  assert.equal(byKey.version.value, "workspace-local-tuned-v1");
+  assert.equal(byKey.endpoint.value, "local");
+
+  // Evidence ladder is the same rungs the ledger climbs; a complete model has
+  // every rung reached.
+  assert.equal(cockpit.ladder.length, 5);
+  assert.ok(cockpit.ladder.every((r) => r.done), "complete model fills the whole ladder");
+
+  // Governed config surfaced as canvas-style fields, reflecting the registry row.
+  const cfg = Object.fromEntries(cockpit.settingsFields.map((f) => [f.key, f]));
+  assert.equal(cfg.baseUrl.value, "http://127.0.0.1:11434/v1");
+  assert.equal(cfg.endpoint.value, "/chat/completions");
+  assert.equal(cfg.method.value, "POST");
+  assert.equal(cfg.method.kind, "select");
+  assert.equal(cfg.endpointMode.kind, "select");
+  assert.ok(cockpit.registryBound);
+  // Never leaks a secret value — authRef is a NAME reference only.
+  assert.equal(cfg.authRef.value, "");
+
+  // Real proof carried through, not invented.
+  assert.equal(cockpit.outputHash, "seed-out-7f3a91");
+  assert.ok(cockpit.invocations.length >= 1, "invocation receipts counted from governed source records");
+});
+
+test("cockpit view-model: an unverified/recorded model shows an honest partial ladder and '—' telemetry", () => {
+  const model = modelFixture({ verificationStatus: "unverified", evidenceState: "recorded", apiRegistryId: "", lastVerifiedAt: "", lastResponseModel: "" });
+  const cockpit = deriveCustomModelCockpit(model, { workspaceConfig: { dataModel: { objects: [] } }, workspaceSourceRecords: {} });
+  assert.equal(cockpit.health.label, "Recorded");
+  assert.notEqual(cockpit.health.tone, "ok");
+  assert.equal(cockpit.ladder[0].done, true, "recorded rung reached");
+  assert.equal(cockpit.ladder[cockpit.ladder.length - 1].done, false, "proof rung not reached");
+  assert.equal(cockpit.registryBound, false);
+  assert.equal(cockpit.served, "");
+  const verifiedTile = cockpit.tiles.find((t) => t.key === "verified");
+  assert.equal(verifiedTile.value, "—", "no fabricated verification date");
 });

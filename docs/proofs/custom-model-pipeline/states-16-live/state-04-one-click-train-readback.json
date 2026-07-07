@@ -8,7 +8,7 @@
     "modelTraining": "workspace-local (base gemma3)"
   },
   "proof": {
-    "runtime": "ollama · 127.0.0.1:11434/v1",
+    "runtime": "No local runtime configured",
     "baseModelSelectable": true,
     "commandsInAdvancedOnly": false
   },

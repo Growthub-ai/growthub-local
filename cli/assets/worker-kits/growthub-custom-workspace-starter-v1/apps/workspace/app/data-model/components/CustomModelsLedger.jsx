@@ -1,19 +1,38 @@
 "use client";
 
 /**
- * Custom Models cockpit — the /custom-models sidecar view. Read-first,
- * action-light: every status is derived by lib/custom-models-ledger.js
+ * Custom Models cockpit — the /custom-models sidecar view. A tabbed model
+ * cockpit (Overview / Health / Usage / Versions / Settings) mirroring the CEO
+ * primitives cockpit tab grammar (.dm-ceo-tabs) and the reference model-cockpit
+ * layout: name + live status, clean metric tiles, an Actions column, and one
+ * neutral "Next recommended action" card. Nothing is hidden behind accordions;
+ * every tab surfaces real, derived substance.
+ *
+ * Read-first, action-light: every status is derived by lib/custom-models-ledger.js
  * (which builds on the training-ledger evidence engine, so /training and
- * /custom-models can never disagree); every action either exports a clean
- * client-side manifest or NAVIGATES to the canonical source of truth
- * (API Registry cockpit, Workflow Canvas, Data Model). No destructive
- * writes here — delete and duplicate route to Data Model, the edit
- * authority. Background-tasks card grammar only; no new chrome.
+ * /custom-models can never disagree); the Settings tab reflects the governed
+ * API-Registry config read-only using the workflow-canvas node-config field
+ * grammar (dropdowns + text fields) — editing authority stays in the Registry /
+ * Data Model, so the cockpit can never write a divergent truth. No destructive
+ * writes here — delete and duplicate route to Data Model, the edit authority.
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { deriveCustomModelsState, buildCapabilityManifest, deriveCustomModelSuggestedActions } from "../../../lib/custom-models-ledger.js";
+import {
+  deriveCustomModelsState,
+  buildCapabilityManifest,
+  deriveCustomModelSuggestedActions,
+  deriveCustomModelCockpit,
+} from "../../../lib/custom-models-ledger.js";
 import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
+
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "health", label: "Health" },
+  { id: "usage", label: "Usage" },
+  { id: "versions", label: "Versions" },
+  { id: "settings", label: "Settings" },
+];
 
 function exportManifest(model, workspaceConfig) {
   const manifest = buildCapabilityManifest(model, { workspaceConfig });
@@ -26,35 +45,221 @@ function exportManifest(model, workspaceConfig) {
   URL.revokeObjectURL(url);
 }
 
-function ActionMenu({ model, workspaceConfig }) {
-  const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState("");
-  const item = (label, onClick, href) => href
-    ? <a key={label} className="dm-btn-ghost" href={href} style={{ display: "block" }} role="menuitem">{label}</a>
-    : <button key={label} type="button" className="dm-btn-ghost" style={{ display: "block", width: "100%", textAlign: "left" }} role="menuitem" onClick={onClick}>{label}</button>;
-  // Truthful labels only: nothing here mutates — duplicate/delete are
-  // two-step inline confirmations that NAVIGATE to Data Model, the edit
-  // authority. No browser alert/confirm dialogs.
-  const twoStep = (id, label, destination) => confirming === id
-    ? item(`Confirm — finalize in Data Model`, () => { window.location.href = destination; })
-    : item(label, () => setConfirming(id));
+// Canvas-mirror config field: read-only reflection of a governed value using
+// the exact dm-orchestration-config__field grammar the workflow node panel
+// uses (disabled control = governed, editing authority elsewhere).
+function ConfigField({ field }) {
   return (
-    <span style={{ position: "relative" }} data-model-actions={model.id}>
-      <button type="button" className="dm-btn-ghost" aria-label={`Actions for ${model.name}`} aria-haspopup="menu" aria-expanded={open}
-        onClick={() => { setOpen(!open); setConfirming(""); }}
-        onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); setConfirming(""); } }}>⋮</button>
-      {open ? (
-        <span className="dm-helper-toolcall" role="menu" style={{ position: "absolute", right: 0, zIndex: 5, display: "block", maxHeight: 220, overflowY: "auto" }}>
-          {item("Improve from gaps", null, model.links.training)}
-          {item("View proof", null, model.links.registry)}
-          {model.links.workflow ? item("Open workflow", null, model.links.workflow) : null}
-          {item("Open model row", null, model.links.dataModel)}
-          {model.canExport ? item("Export developer manifest", () => { setOpen(false); exportManifest(model, workspaceConfig); }) : null}
-          {twoStep("duplicate", "Duplicate in Data Model", model.links.dataModel)}
-          {twoStep("delete", "Delete in Data Model", model.links.dataModel)}
-        </span>
-      ) : null}
-    </span>
+    <label className="dm-orchestration-config__field" data-config-field={field.key}>
+      <span>{field.label}</span>
+      {field.kind === "select" ? (
+        <select value={String(field.value)} disabled aria-readonly="true">
+          {(field.options || [String(field.value)]).map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input
+          type={field.kind === "number" ? "number" : "text"}
+          value={field.value === "" ? "—" : field.value}
+          disabled
+          aria-readonly="true"
+        />
+      )}
+    </label>
+  );
+}
+
+function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
+  const [tab, setTab] = useState("overview");
+  const cockpit = useMemo(
+    () => deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords }),
+    [model, workspaceConfig, workspaceSourceRecords],
+  );
+  const suggested = useMemo(
+    () => deriveCustomModelSuggestedActions(model, { workspaceConfig }),
+    [model, workspaceConfig],
+  );
+  const rec = suggested.actions.find((a) => a.enabled) || suggested.actions[0] || null;
+
+  const statusPill = model.evidenceState === "complete"
+    ? { label: "Live", cls: "is-ok" }
+    : cockpit.health.tone === "ok" ? { label: cockpit.health.label, cls: "is-ok" }
+      : cockpit.health.tone === "warn" ? { label: cockpit.health.label, cls: "is-warn" }
+        : { label: cockpit.health.label, cls: "" };
+
+  return (
+    <section
+      className="dm-api-action-card"
+      data-custom-model={model.id}
+      data-model-state={model.evidenceState}
+      aria-label={`Custom model ${model.name}`}
+    >
+      <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+        <div className="dm-cockpit-head">
+          <div className="dm-api-action-card-body" style={{ gap: 2 }}>
+            <p className="dm-api-action-card-eyebrow">Custom model</p>
+            <h3>{model.name}</h3>
+          </div>
+          <span className={`dm-status-chip ${statusPill.cls}`} data-model-status={statusPill.label}>
+            <span className="dm-status-dot" aria-hidden="true" />{statusPill.label}
+          </span>
+        </div>
+
+        {/* Tabs — mirror the CEO primitives cockpit tab grammar. */}
+        <div className="dm-cockpit-tabs" role="tablist" aria-label={`${model.name} sections`}>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={tab === t.id ? "is-active" : ""}
+              onClick={() => setTab(t.id)}
+              data-cockpit-tab={t.id}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* OVERVIEW — tiles + Actions + one neutral recommended card. */}
+        {tab === "overview" ? (
+          <div data-cockpit-panel="overview">
+            <div className="dm-cockpit-metrics">
+              {cockpit.tiles.map((tile) => (
+                <span key={tile.key} data-tile={tile.key} data-tile-tone={tile.tone || "neutral"}>
+                  <small>{tile.label}</small>
+                  <strong className={tile.tone === "ok" ? "is-ok" : ""}>{tile.value}</strong>
+                  <span className="dm-cockpit-tile-sub">{tile.sub}</span>
+                </span>
+              ))}
+            </div>
+
+            <div className="dm-cockpit-overview-cols">
+              <div className="dm-cockpit-col">
+                <p className="dm-cockpit-col-title">Actions</p>
+                {model.canTest
+                  ? <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.registry} data-model-test="">Use model</a>
+                  : <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.training} data-model-test="">Open Training</a>}
+                {model.links.workflow
+                  ? <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.workflow} data-model-workflow="">Open workflow</a>
+                  : <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.training}>Improve from gaps</a>}
+                <a className="dm-btn-outline dm-cockpit-stacked-btn" href={model.links.registry} data-model-proof="">View proof</a>
+              </div>
+
+              <div className="dm-cockpit-col dm-cockpit-rec" data-model-recommended={rec ? rec.variant : "none"}>
+                <p className="dm-cockpit-col-title">Next recommended action</p>
+                {rec ? (
+                  <>
+                    <p className="dm-cockpit-rec-title">{rec.title}</p>
+                    <p className="dm-cockpit-subtle">{rec.enabled ? rec.whyNow : `Needs: ${rec.blockedReason}`}</p>
+                    {rec.enabled
+                      ? <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
+                      : <a className="dm-btn-outline dm-cockpit-rec-cta" href={model.links.training}>Resolve in Training</a>}
+                  </>
+                ) : (
+                  <p className="dm-cockpit-subtle">No reuse actions available yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* HEALTH — evidence ladder + verification proof (real, demotion-safe). */}
+        {tab === "health" ? (
+          <div data-cockpit-panel="health">
+            <ol className="dm-cockpit-ladder">
+              {cockpit.ladder.map((rung) => (
+                <li key={rung.key} data-rung={rung.key} data-done={rung.done ? "yes" : "no"}>
+                  <span className="dm-cockpit-ladder-dot" aria-hidden="true" />
+                  <span className="dm-cockpit-ladder-label">{rung.label}</span>
+                </li>
+              ))}
+            </ol>
+            <div className="dm-cockpit-facts">
+              <div><span>Verification</span><strong>{model.verificationStatus}</strong></div>
+              <div><span>Served tag</span><strong>{cockpit.served || "—"}</strong></div>
+              <div><span>Output hash</span><strong>{cockpit.outputHash ? `#${cockpit.outputHash}` : "—"}</strong></div>
+              <div data-model-serving={model.servingProfile ? model.servingProfile.adapter : "—"}>
+                <span>Serving</span>
+                <strong>
+                  {model.servingProfile
+                    ? `${model.servingProfile.adapter} · ${cockpit.servesTunedTag ? "serves tuned tag" : cockpit.servingReason || "unverified"}`
+                    : "—"}
+                </strong>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* USAGE — the real closed-loop reuse actions, fully surfaced (no
+            accordion), plus governed run/invocation receipts. */}
+        {tab === "usage" ? (
+          <div data-cockpit-panel="usage" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
+            <ul className="dm-cockpit-actions-list">
+              {suggested.actions.map((a) => (
+                <li
+                  key={a.id}
+                  data-suggested-action={a.id}
+                  data-action-enabled={a.enabled ? "yes" : "no"}
+                  data-action-variant={a.variant}
+                  className={a.enabled ? "" : "is-blocked"}
+                >
+                  <span className="dm-cockpit-action-name">{a.title}</span>
+                  <span className="dm-cockpit-subtle">{a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
+                  {a.enabled
+                    ? <a className="dm-btn-ghost dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open</a>
+                    : null}
+                </li>
+              ))}
+            </ul>
+            <div className="dm-cockpit-facts">
+              <div><span>Invocation receipts</span><strong>{cockpit.invocations.length || "—"}</strong></div>
+              <div><span>Last sandbox run</span><strong>{model.lastSandboxRunId || "—"}</strong></div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* VERSIONS — the tuned tag, base lineage, and verification timestamp. */}
+        {tab === "versions" ? (
+          <div data-cockpit-panel="versions">
+            <div className="dm-cockpit-facts">
+              <div><span>Tuned tag</span><strong>{model.modelVersion || model.localModel || "—"}</strong></div>
+              <div><span>Base model</span><strong>{model.baseModel || "—"}</strong></div>
+              <div><span>Verified</span><strong>{model.lastVerifiedAt ? model.lastVerifiedAt.slice(0, 10) : "—"}</strong></div>
+              <div><span>Registry</span><strong>{model.apiRegistryId || "—"}</strong></div>
+            </div>
+            <p className="dm-cockpit-subtle" style={{ marginTop: 8 }}>
+              Version lineage is governed in the Data Model. Retraining from gaps creates the next version — it never demotes this one.
+            </p>
+            <a className="dm-btn-ghost dm-cockpit-stacked-btn" href={model.links.dataModel} data-model-datamodel="">Open model row</a>
+          </div>
+        ) : null}
+
+        {/* SETTINGS — governed config as canvas-style dropdowns + text fields
+            (read-only), plus manifest export and Data Model edit routes. */}
+        {tab === "settings" ? (
+          <div data-cockpit-panel="settings">
+            {cockpit.registryBound ? (
+              <div className="dm-cockpit-config-grid">
+                {cockpit.settingsFields.map((f) => <ConfigField key={f.key} field={f} />)}
+              </div>
+            ) : (
+              <p className="dm-cockpit-subtle">No API Registry row bound yet — verify the endpoint in Training to populate the request contract.</p>
+            )}
+            <p className="dm-cockpit-subtle" style={{ marginTop: 8 }}>
+              Config is governed — values reflect the API Registry row and are edited there, not here.
+            </p>
+            <div className="dm-cockpit-settings-actions">
+              {model.canExport
+                ? <button type="button" className="dm-btn-ghost" onClick={() => exportManifest(model, workspaceConfig)} data-model-export="">Export developer manifest</button>
+                : null}
+              <a className="dm-btn-ghost" href={model.links.dataModel} data-model-duplicate="">Duplicate in Data Model</a>
+              <a className="dm-btn-ghost" href={model.links.dataModel} data-model-delete="">Delete in Data Model</a>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -64,7 +269,6 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [modeFilter, setModeFilter] = useState("");
 
   useEffect(() => {
     // Evidence parity: a config-only caller (the sidecar) must still fetch
@@ -92,23 +296,10 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
 
   const visible = state.models.filter((m) =>
     (!query || `${m.name} ${m.modelVersion}`.toLowerCase().includes(query.toLowerCase()))
-    && (!statusFilter || m.evidenceState === statusFilter)
-    && (!modeFilter || m.endpointMode === modeFilter));
+    && (!statusFilter || m.evidenceState === statusFilter));
 
   const verified = state.models.filter((m) => ["verified", "sandbox-ready", "complete"].includes(m.evidenceState)).length;
-  const sandboxReady = state.models.filter((m) => ["sandbox-ready", "complete"].includes(m.evidenceState)).length;
   const latest = state.filters.versions[state.filters.versions.length - 1] || "—";
-  // Feedback awareness: a complete model is never demoted by new gaps, but
-  // the cockpit surfaces them as the next training cycle's opportunity.
-  const gaps = useMemo(() => deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecords }), [workspaceConfig, workspaceSourceRecords]);
-  const hasComplete = state.models.some((m) => m.evidenceState === "complete");
-
-  // Evidence state → status pill tone (mirrors dm-status-chip across the app).
-  const pill = (s) => s === "complete" ? { label: "Live", cls: "is-ok" }
-    : s === "sandbox-ready" ? { label: "Sandbox-ready", cls: "is-ok" }
-      : s === "verified" ? { label: "Verified", cls: "is-ok" }
-        : s === "deployed" ? { label: "Deployed", cls: "" }
-          : { label: s || "recorded", cls: "is-warn" };
 
   // Empty state — read-first, one clear destination. Never a blank screen.
   if (!error && state.models.length === 0) {
@@ -144,83 +335,14 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
         </div>
       </div>
 
-      {visible.map((model) => {
-        const st = pill(model.evidenceState);
-        // End-state actions are the SAME causation-derived next actions the
-        // training checklist uses — closed loop into REUSING the local model.
-        const suggested = deriveCustomModelSuggestedActions(model, { workspaceConfig });
-        const rec = suggested.actions.find((a) => a.enabled) || null;   // recommended next
-        const more = suggested.actions.filter((a) => a !== rec);        // the rest, collapsed
-        return (
-        <section className="dm-api-action-card" key={model.id} data-custom-model={model.id} data-model-state={model.evidenceState} aria-label={`Custom model ${model.name}`}>
-          <div className="dm-api-action-card-body" style={{ width: "100%" }}>
-            <div className="dm-cockpit-head" style={{ cursor: "default" }}>
-              <div className="dm-api-action-card-body" style={{ gap: 2 }}>
-                <p className="dm-api-action-card-eyebrow">Custom model</p>
-                <h3>{model.name}</h3>
-              </div>
-              <span className={`dm-status-chip ${st.cls}`} data-model-status={st.label}><span className="dm-status-dot" aria-hidden="true" />{st.label}</span>
-            </div>
-
-            {/* Clean metric tiles (reference cockpit), NOT a wall of pills. */}
-            <div className="dm-cockpit-metrics">
-              <span><strong>{model.modelVersion || model.localModel || "—"}</strong><small>version</small></span>
-              <span><strong>{model.baseModel || "—"}</strong><small>base model</small></span>
-              <span><strong>{model.endpointMode}</strong><small>endpoint</small></span>
-              <span><strong>{model.lastVerifiedAt ? model.lastVerifiedAt.slice(0, 10) : model.verificationStatus}</strong><small>{model.lastVerifiedAt ? "verified" : "status"}</small></span>
-            </div>
-
-            {/* Primary reuse action + management menu. */}
-            <div className="dm-cockpit-actions">
-              {model.canTest
-                ? <a className="dm-btn-primary-sm" href={model.links.registry} data-model-test="">Use model</a>
-                : <a className="dm-btn-outline" href={model.links.training} data-model-test="">Open Training</a>}
-              {model.links.workflow ? <a className="dm-btn-outline" href={model.links.workflow} data-model-workflow="">Open workflow</a> : null}
-              <ActionMenu model={model} workspaceConfig={workspaceConfig} />
-            </div>
-
-            {/* ONE recommended next action — the highlighted next-best move,
-                not a wall. The rest live behind "More ways to use it". */}
-            {rec ? (
-              <div className="dm-cockpit-rec" data-model-recommended={rec.variant}>
-                <div>
-                  <p className="dm-cockpit-rec-title">Recommended · {rec.title}</p>
-                  <p className="dm-cockpit-subtle">{rec.whyNow}</p>
-                </div>
-                <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
-              </div>
-            ) : null}
-
-            {/* More ways to use it — collapsed, clean rows (no pill spam). */}
-            <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
-              <summary className="dm-cockpit-summary">More ways to use this model ({suggested.ready}/{suggested.actions.length})</summary>
-              <ul className="dm-cockpit-actions-list">
-                {more.map((a) => (
-                  <li key={a.id} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"} data-action-variant={a.variant} className={a.enabled ? "" : "is-blocked"}>
-                    <span className="dm-cockpit-action-name">{a.title}</span>
-                    <span className="dm-cockpit-subtle">{a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
-                    {a.enabled ? <a className="dm-btn-ghost dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open</a> : null}
-                  </li>
-                ))}
-              </ul>
-            </details>
-
-            {/* Details & proof — collapsed, one muted line (never pills). */}
-            <details data-model-details="">
-              <summary className="dm-cockpit-summary">Details &amp; proof</summary>
-              <p className="dm-cockpit-subtle" style={{ marginTop: 6 }}>
-                served {model.lastResponseModel || "—"} · verify {model.verificationStatus} · registry {model.apiRegistryId || "—"} · run {model.lastSandboxRunId || "—"}{model.modelOutputHash ? ` · output #${model.modelOutputHash}` : ""}
-              </p>
-              {model.servingProfile ? (
-                <p className="dm-cockpit-subtle" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
-                  serving {model.servingProfile.adapter} · {model.servingProfile.servesTunedTag ? "serves tuned tag" : model.servingProfile.reason}
-                </p>
-              ) : null}
-            </details>
-          </div>
-        </section>
-        );
-      })}
+      {visible.map((model) => (
+        <ModelCockpitCard
+          key={model.id}
+          model={model}
+          workspaceConfig={workspaceConfig}
+          workspaceSourceRecords={workspaceSourceRecords}
+        />
+      ))}
     </div>
   );
 }

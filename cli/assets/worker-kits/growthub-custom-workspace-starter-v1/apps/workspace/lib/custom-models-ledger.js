@@ -419,4 +419,97 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
   return { actions, hasActions: actions.length > 0, ready: actions.filter((a) => a.enabled).length };
 }
 
+/**
+ * Cockpit view-model for ONE derived model — the read-first data behind the
+ * /custom-models tabbed cockpit (Overview / Health / Usage / Versions /
+ * Settings). Pure: every tile, ladder rung, and config field is sourced from
+ * the SAME governed evidence the ledger derives; nothing is fabricated. Where
+ * there is no real telemetry the value is "—" (the CeoCockpit convention),
+ * never an invented number. The Settings config fields mirror the workflow
+ * canvas node-config grammar (dm-orchestration-config__field) and reflect the
+ * governed API-Registry row read-only — editing authority stays in the
+ * Registry / Data Model, so the cockpit can never write a divergent truth.
+ */
+export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords } = {}) {
+  const registryRow = registryRowsOf(workspaceConfig).find(
+    (r) => String(r.integrationId || "") === String(model?.apiRegistryId || ""),
+  ) || {};
+  const state = String(model?.evidenceState || "recorded");
+  const healthy = ["complete", "sandbox-ready", "verified"].includes(state);
+  const health = {
+    tone: healthy ? "ok" : state === "deployed" ? "warn" : "muted",
+    label: state === "complete" ? "Healthy"
+      : state === "sandbox-ready" ? "Sandbox-ready"
+        : state === "verified" ? "Verified"
+          : state === "deployed" ? "Deployed"
+            : "Recorded",
+  };
+
+  // Evidence ladder — the exact rungs deriveCustomModelsState climbs, so the
+  // cockpit's Health tab can never disagree with the ledger's grading.
+  const rungs = [
+    { key: "recorded", label: "Recorded" },
+    { key: "deployed", label: "Registry bound" },
+    { key: "verified", label: "Endpoint verified" },
+    { key: "sandbox-ready", label: "Sandbox ready" },
+    { key: "complete", label: "Proof captured" },
+  ];
+  const reached = rungs.findIndex((r) => r.key === state);
+  const ladder = rungs.map((r, i) => ({ ...r, done: reached >= 0 && i <= reached }));
+
+  // Invocation receipts for THIS model — governed source records only.
+  const invocations = Object.keys(workspaceSourceRecords || {}).filter(
+    (k) => k.startsWith("model-invocation:")
+      && (!model?.apiRegistryId || k.includes(String(model.apiRegistryId))),
+  );
+
+  // Overview tiles — real columns off the custom-model data table (no
+  // fabricated latency/uptime; timestamps and tags only where evidence exists).
+  const tiles = [
+    { key: "health", label: "Health", value: health.label, sub: state, tone: health.tone },
+    {
+      key: "version", label: "Version",
+      value: model?.modelVersion || model?.localModel || "—",
+      sub: model?.baseModel ? `base ${model.baseModel}` : "no base recorded", tone: "",
+    },
+    {
+      key: "endpoint", label: "Endpoint",
+      value: model?.endpointMode || "unknown",
+      sub: model?.servingProfile?.adapter || "—", tone: "",
+    },
+    {
+      key: "verified", label: "Last verified",
+      value: model?.lastVerifiedAt ? String(model.lastVerifiedAt).slice(0, 10) : "—",
+      sub: model?.verificationStatus || "—",
+      tone: model?.verificationStatus === "verified" ? "ok" : "",
+    },
+  ];
+
+  // Settings — governed config surfaced with the canvas node-config field
+  // grammar (dropdowns + text fields), read-only by construction. authRef is a
+  // reference NAME only, never a secret value.
+  const settingsFields = [
+    { key: "endpointMode", label: "Endpoint mode", kind: "select", value: model?.endpointMode || "unknown", options: ["local", "hosted", "serverless", "unknown"] },
+    { key: "method", label: "Method", kind: "select", value: String(registryRow.method || "POST"), options: ["POST", "GET"] },
+    { key: "baseUrl", label: "Base URL", kind: "text", value: String(registryRow.baseUrl || "") },
+    { key: "endpoint", label: "Endpoint path", kind: "text", value: String(registryRow.endpoint || "") },
+    { key: "authRef", label: "Auth reference (name only)", kind: "text", value: String(registryRow.authRef || "") },
+    { key: "timeoutMs", label: "Timeout (ms)", kind: "number", value: Number(registryRow.timeoutMs ?? 30000) },
+  ];
+
+  return {
+    health,
+    ladder,
+    tiles,
+    settingsFields,
+    invocations,
+    registryBound: Boolean(model?.apiRegistryId),
+    served: model?.lastResponseModel || "",
+    servesTunedTag: Boolean(model?.servingProfile?.servesTunedTag),
+    servingReason: model?.servingProfile?.reason || "",
+    outputHash: model?.modelOutputHash || "",
+    snippetHash: model?.snippetHash || "",
+  };
+}
+
 export { TRAINING_OBJECT_TYPE };
