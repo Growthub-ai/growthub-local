@@ -12,7 +12,6 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, X } from "lucide-react";
 import { deriveCustomModelsState, buildCapabilityManifest, deriveCustomModelSuggestedActions } from "../../../lib/custom-models-ledger.js";
 import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
 
@@ -131,38 +130,27 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
     <div data-custom-models-ledger="" className="dm-cockpit-page">
       {error ? <div className="dm-helper-error">{error}</div> : null}
 
-      <section className="dm-api-action-card dm-api-action-card-muted" data-custom-models-summary="" aria-label="Custom models summary">
-        <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+      <div className="dm-cockpit-topbar" data-custom-models-summary="">
+        <div>
           <p className="dm-api-action-card-eyebrow">Custom Models</p>
-          <div className="dm-cockpit-fields">
-            <span className="dm-cockpit-field"><b>models</b>{state.models.length}</span>
-            <span className="dm-cockpit-field"><b>verified</b>{verified}</span>
-            <span className="dm-cockpit-field"><b>sandbox</b>{sandboxReady}</span>
-            <span className="dm-cockpit-field"><b>latest</b>{latest}</span>
-          </div>
-          <p className="dm-api-action-card-note">{state.guidance}</p>
-          {hasComplete && gaps.hasGaps ? (
-            <p className="dm-api-action-card-note" data-custom-models-gaps={gaps.totalGapSignals}>Complete — and {gaps.totalGapSignals} new improvement signal(s) are ready for the next training cycle. {gaps.recommendation}</p>
-          ) : null}
-          <div className="dm-cockpit-filters">
-            <input className="dm-cockpit-input" placeholder="Search name / version" value={query} onChange={(e) => setQuery(e.target.value)} data-models-search="" />
-            <select className="dm-cockpit-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-models-status-filter="">
-              <option value="">All statuses</option>
-              {state.filters.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select className="dm-cockpit-select" value={modeFilter} onChange={(e) => setModeFilter(e.target.value)} data-models-mode-filter="">
-              <option value="">All endpoints</option>
-              {state.filters.endpointModes.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+          <p className="dm-cockpit-subtle">{state.models.length} model{state.models.length === 1 ? "" : "s"} · {verified} verified · latest {latest}</p>
         </div>
-      </section>
+        <div className="dm-cockpit-filters">
+          <input className="dm-cockpit-input" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} data-models-search="" />
+          <select className="dm-cockpit-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-models-status-filter="">
+            <option value="">All statuses</option>
+            {state.filters.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
 
       {visible.map((model) => {
         const st = pill(model.evidenceState);
         // End-state actions are the SAME causation-derived next actions the
         // training checklist uses — closed loop into REUSING the local model.
         const suggested = deriveCustomModelSuggestedActions(model, { workspaceConfig });
+        const rec = suggested.actions.find((a) => a.enabled) || null;   // recommended next
+        const more = suggested.actions.filter((a) => a !== rec);        // the rest, collapsed
         return (
         <section className="dm-api-action-card" key={model.id} data-custom-model={model.id} data-model-state={model.evidenceState} aria-label={`Custom model ${model.name}`}>
           <div className="dm-api-action-card-body" style={{ width: "100%" }}>
@@ -174,16 +162,13 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
               <span className={`dm-status-chip ${st.cls}`} data-model-status={st.label}><span className="dm-status-dot" aria-hidden="true" />{st.label}</span>
             </div>
 
-            <div className="dm-cockpit-fields" style={{ marginTop: 8 }}>
-              <span className="dm-cockpit-field"><b>version</b>{model.modelVersion || "—"}</span>
-              <span className="dm-cockpit-field"><b>base</b>{model.baseModel || "—"}</span>
-              <span className="dm-cockpit-field"><b>endpoint</b>{model.endpointMode}</span>
-              {model.apiRegistryId ? <span className="dm-cockpit-field"><b>registry</b>{model.apiRegistryId}</span> : null}
-              {model.lastVerifiedAt ? <span className="dm-cockpit-field"><b>verified</b>{model.lastVerifiedAt.slice(0, 16).replace("T", " ")}</span> : null}
-              {model.modelOutputHash ? <span className="dm-cockpit-field"><b>output</b>#{model.modelOutputHash}</span> : model.snippetHash ? <span className="dm-cockpit-field"><b>snippet</b>#{model.snippetHash}</span> : null}
+            {/* Clean metric tiles (reference cockpit), NOT a wall of pills. */}
+            <div className="dm-cockpit-metrics">
+              <span><strong>{model.modelVersion || model.localModel || "—"}</strong><small>version</small></span>
+              <span><strong>{model.baseModel || "—"}</strong><small>base model</small></span>
+              <span><strong>{model.endpointMode}</strong><small>endpoint</small></span>
+              <span><strong>{model.lastVerifiedAt ? model.lastVerifiedAt.slice(0, 10) : model.verificationStatus}</strong><small>{model.lastVerifiedAt ? "verified" : "status"}</small></span>
             </div>
-
-            <p className="dm-api-action-card-note">Next: {model.nextAction}</p>
 
             {/* Primary reuse action + management menu. */}
             <div className="dm-cockpit-actions">
@@ -194,41 +179,43 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
               <ActionMenu model={model} workspaceConfig={workspaceConfig} />
             </div>
 
-            {/* Full operational metadata — every derived field, absence shown honestly. */}
-            <details data-model-details="">
-              <summary className="dm-cockpit-summary">Details</summary>
-              <div className="dm-cockpit-fields" style={{ marginTop: 6 }}>
-                <span className="dm-cockpit-field"><b>served</b>{model.lastResponseModel || "—"}</span>
-                <span className="dm-cockpit-field"><b>verify</b>{model.verificationStatus}</span>
-                <span className="dm-cockpit-field"><b>run</b>{model.lastSandboxRunId || "—"}</span>
-                <span className="dm-cockpit-field"><b>resp#</b>{model.lastResponseHash || "—"}</span>
-                <span className="dm-cockpit-field"><b>last inv</b>{model.lastInvocationSourceId ? "yes" : "—"}</span>
+            {/* ONE recommended next action — the highlighted next-best move,
+                not a wall. The rest live behind "More ways to use it". */}
+            {rec ? (
+              <div className="dm-cockpit-rec" data-model-recommended={rec.variant}>
+                <div>
+                  <p className="dm-cockpit-rec-title">Recommended · {rec.title}</p>
+                  <p className="dm-cockpit-subtle">{rec.whyNow}</p>
+                </div>
+                <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
               </div>
-              {model.servingProfile ? (
-                <p className="dm-api-action-card-note" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
-                  serving: {model.servingProfile.adapter} · mode {model.servingProfile.mode}
-                  {model.servingProfile.continuousBatching ? " · continuous batching" : ""}
-                  {model.servingProfile.speculative ? ` · speculative (draft ${model.servingProfile.speculative.draftModel})` : ""}
-                  {" · "}{model.servingProfile.servesTunedTag ? "serves tuned tag ✓" : model.servingProfile.reason}
-                </p>
-              ) : null}
-            </details>
+            ) : null}
 
-            {/* Suggested actions — pure causation deriver, same next-action
-                grammar as the training checklist; each routes to a governed
-                surface to REUSE the local model (workflow node, more training
-                data, browser-use agent, export). Never mutates directly. */}
-            <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`} open>
-              <summary className="dm-cockpit-summary">Reuse this model — suggested actions ({suggested.ready}/{suggested.actions.length})</summary>
-              <ul className="dm-api-action-checklist" style={{ marginTop: 8 }}>
-                {suggested.actions.map((a) => (
-                  <li key={a.id} className={a.enabled ? "is-done" : "is-pending"} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"} data-action-variant={a.variant}>
-                    {a.enabled ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
-                    <span><strong>{a.title}</strong> — {a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
-                    {a.enabled ? <a className="dm-btn-outline dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open in canvas</a> : null}
+            {/* More ways to use it — collapsed, clean rows (no pill spam). */}
+            <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
+              <summary className="dm-cockpit-summary">More ways to use this model ({suggested.ready}/{suggested.actions.length})</summary>
+              <ul className="dm-cockpit-actions-list">
+                {more.map((a) => (
+                  <li key={a.id} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"} data-action-variant={a.variant} className={a.enabled ? "" : "is-blocked"}>
+                    <span className="dm-cockpit-action-name">{a.title}</span>
+                    <span className="dm-cockpit-subtle">{a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
+                    {a.enabled ? <a className="dm-btn-ghost dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open</a> : null}
                   </li>
                 ))}
               </ul>
+            </details>
+
+            {/* Details & proof — collapsed, one muted line (never pills). */}
+            <details data-model-details="">
+              <summary className="dm-cockpit-summary">Details &amp; proof</summary>
+              <p className="dm-cockpit-subtle" style={{ marginTop: 6 }}>
+                served {model.lastResponseModel || "—"} · verify {model.verificationStatus} · registry {model.apiRegistryId || "—"} · run {model.lastSandboxRunId || "—"}{model.modelOutputHash ? ` · output #${model.modelOutputHash}` : ""}
+              </p>
+              {model.servingProfile ? (
+                <p className="dm-cockpit-subtle" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
+                  serving {model.servingProfile.adapter} · {model.servingProfile.servesTunedTag ? "serves tuned tag" : model.servingProfile.reason}
+                </p>
+              ) : null}
             </details>
           </div>
         </section>
