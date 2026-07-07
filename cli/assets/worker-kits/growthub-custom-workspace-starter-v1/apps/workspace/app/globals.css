@@ -10249,15 +10249,16 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .dm-cockpit-meta-line strong { color: #111827; font-weight: 650; }
 .dm-cockpit-col-title { margin: 0 0 2px; font-size: 11px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; color: #6b7280; }
 
-/* Recommended card — NEUTRAL by design (no accent color); the black primary
-   button carries the emphasis, matching the reference cockpit. */
-.dm-cockpit-rec { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding: 11px 12px; border: 1px solid #edf0f3; border-radius: 8px; background: #fafafa; }
-.dm-cockpit-rec-title { margin: 0; font-size: 13px; font-weight: 650; color: #111827; }
-.dm-cockpit-rec-cta { align-self: flex-start; margin-top: 2px; text-decoration: none; }
-
-/* Overview primary actions — real styled buttons (never underlined links). */
-.dm-cockpit-btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.dm-cockpit-btn { flex: 1 1 auto; min-width: 120px; height: 32px; text-decoration: none; }
+/* Focused first-utilization actions — the two intentional CTAs that answer
+   "how do I use this model?". Each is a real button that performs governed
+   work; the first (create/open a canvas workflow) carries the primary accent. */
+.dm-cockpit-focus { display: grid; gap: 8px; margin-top: 12px; }
+.dm-cockpit-focus-btn { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; width: 100%; padding: 11px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; transition: border-color .12s ease, background .12s ease; }
+.dm-cockpit-focus-btn:hover:not(:disabled) { border-color: #111827; background: #fafafa; }
+.dm-cockpit-focus-btn:disabled { opacity: .55; cursor: not-allowed; }
+.dm-cockpit-focus-btn:first-child { border-color: #111827; }
+.dm-cockpit-focus-btn:first-child:hover:not(:disabled) { background: #f4f4f5; }
+.dm-cockpit-focus-title { font-size: 13px; font-weight: 650; color: #111827; }
 
 /* Fact rows — label + value, used by the Usage tab receipts. */
 .dm-cockpit-facts { display: grid; gap: 1px; margin-top: 12px; }

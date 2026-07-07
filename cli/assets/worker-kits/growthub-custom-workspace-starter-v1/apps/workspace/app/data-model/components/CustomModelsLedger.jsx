@@ -23,8 +23,9 @@ import {
   buildCapabilityManifest,
   deriveCustomModelSuggestedActions,
   deriveCustomModelCockpit,
+  deriveCustomModelFocusActions,
 } from "../../../lib/custom-models-ledger.js";
-import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
+import { buildCustomModelWorkflowProposal } from "../../../lib/custom-model-workflow-proposal.js";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -76,7 +77,51 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
     () => deriveCustomModelSuggestedActions(model, { workspaceConfig }),
     [model, workspaceConfig],
   );
-  const rec = suggested.actions.find((a) => a.enabled) || suggested.actions[0] || null;
+  const focus = useMemo(
+    () => deriveCustomModelFocusActions(model, { workspaceConfig }),
+    [model, workspaceConfig],
+  );
+
+  const [busy, setBusy] = useState("");
+  const [applyError, setApplyError] = useState("");
+
+  // The sub-atomic worker next-action: a click DOES the governed work. "open"
+  // navigates to the existing row; "create" applies the governed
+  // custom-model.workflow.create proposal (server rebuilds the graph from
+  // evidence), then opens the created workflow on the canvas. Never a dead
+  // redirect. Idempotent — re-creating an existing row preserves its history.
+  const activate = async (variant, mode, openHref) => {
+    if (mode === "blocked") return;
+    if (mode === "open") { window.location.assign(openHref); return; }
+    setBusy(variant);
+    setApplyError("");
+    try {
+      const res = await fetch("/api/workspace/helper/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          proposals: [buildCustomModelWorkflowProposal({ modelId: model.id, variant })],
+          reviewedBy: "user",
+        }),
+      });
+      const data = await res.json();
+      const applied = Array.isArray(data?.applied) ? data.applied : [];
+      const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
+      if (data?.ok === false || applied.length === 0) {
+        setApplyError(skipped[0]?.reason || data?.error || "Could not create the workflow.");
+        setBusy("");
+        return;
+      }
+      const artifact = applied.map((a) => a.artifact).find(Boolean);
+      const href = artifact
+        ? `/workflows?object=${encodeURIComponent(artifact.objectId)}&row=${encodeURIComponent(artifact.rowName)}&field=orchestrationConfig`
+        : openHref;
+      window.location.assign(href);
+    } catch (err) {
+      setApplyError(err?.message || "Apply failed.");
+      setBusy("");
+    }
+  };
 
   const statusPill = model.evidenceState === "complete"
     ? { label: "Live", cls: "is-ok" }
@@ -119,8 +164,9 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           ))}
         </div>
 
-        {/* OVERVIEW — one compact trust line, the recommended next move, and
-            styled primary actions. No redundant metric tiles. */}
+        {/* OVERVIEW — one compact trust line, then the two focused
+            first-utilization actions. Each click DOES real governed work
+            (create the wired workflow, or open it) — never a dead redirect. */}
         {tab === "overview" ? (
           <div data-cockpit-panel="overview">
             <p className="dm-cockpit-meta-line" data-model-meta="">
@@ -130,29 +176,30 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
               {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
             </p>
 
-            <div className="dm-cockpit-rec" data-model-recommended={rec ? rec.variant : "none"}>
-              <p className="dm-cockpit-col-title">Next recommended action</p>
-              {rec ? (
-                <>
-                  <p className="dm-cockpit-rec-title">{rec.title}</p>
-                  <p className="dm-cockpit-subtle">{rec.enabled ? rec.whyNow : `Needs: ${rec.blockedReason}`}</p>
-                  {rec.enabled
-                    ? <a className="dm-btn-primary-sm dm-cockpit-rec-cta" href={rec.openHref} data-action-open={rec.variant} title={rec.proofProduced}>Open in canvas</a>
-                    : <a className="dm-btn-outline dm-cockpit-rec-cta" href={model.links.training}>Resolve in Training</a>}
-                </>
-              ) : (
-                <p className="dm-cockpit-subtle">No reuse actions available yet.</p>
-              )}
-            </div>
+            {applyError ? <div className="dm-helper-error" role="alert">{applyError}</div> : null}
 
-            <div className="dm-cockpit-btn-row">
-              {model.canTest
-                ? <a className="dm-btn-outline dm-cockpit-btn" href={model.links.registry} data-model-test="">Use model</a>
-                : <a className="dm-btn-outline dm-cockpit-btn" href={model.links.training} data-model-test="">Open Training</a>}
-              {model.links.workflow
-                ? <a className="dm-btn-outline dm-cockpit-btn" href={model.links.workflow} data-model-workflow="">Open workflow</a>
-                : <a className="dm-btn-outline dm-cockpit-btn" href={model.links.training} data-model-improve="">Improve from gaps</a>}
-              <a className="dm-btn-outline dm-cockpit-btn" href={model.links.registry} data-model-proof="">View proof</a>
+            <div className="dm-cockpit-focus">
+              {focus.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="dm-cockpit-focus-btn"
+                  data-focus-action={a.id}
+                  data-focus-mode={a.mode}
+                  disabled={a.mode === "blocked" || busy === a.variant}
+                  onClick={() => activate(a.variant, a.mode, a.openHref)}
+                >
+                  <span className="dm-cockpit-focus-title">
+                    {a.title}{a.mode === "open" ? " ›" : ""}
+                  </span>
+                  <span className="dm-cockpit-subtle">
+                    {busy === a.variant ? "Setting up…"
+                      : a.mode === "create" ? a.createHint
+                        : a.mode === "open" ? a.openHint
+                          : `Verify the endpoint first`}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         ) : null}
@@ -173,7 +220,7 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
                   <span className="dm-cockpit-action-name">{a.title}</span>
                   <span className="dm-cockpit-subtle">{a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
                   {a.enabled
-                    ? <a className="dm-btn-ghost dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open</a>
+                    ? <button type="button" className="dm-btn-ghost dm-cockpit-action-cta" data-action-open={a.variant} title={a.proofProduced} disabled={busy === a.variant} onClick={() => activate(a.variant, "create", a.openHref)}>{busy === a.variant ? "Setting up…" : "Set up"}</button>
                     : null}
                 </li>
               ))}

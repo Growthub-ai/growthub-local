@@ -25,6 +25,14 @@ import { deriveServingProfile } from "./training-runtime-drivers.js";
 
 export const CUSTOM_MODEL_CAPABILITY_SCHEMA = "growthub-custom-model-capability-v1";
 
+// Well-known governed object that hosts the cockpit-created custom-model
+// workflows (a normal sandbox-environment object, same well-known-id pattern as
+// "swarm-workflows"). Defined here — the ledger has no dependency on the
+// proposal lane, so the lane imports this constant from the ledger, never the
+// reverse (no import cycle).
+export const CUSTOM_MODEL_WORKFLOWS_OBJECT_ID = "custom-model-workflows";
+export const CUSTOM_MODEL_WORKFLOWS_LABEL = "Custom Model Workflows";
+
 function registryRowsOf(workspaceConfig) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   return objects.filter((o) => o?.objectType === "api-registry").flatMap((o) => (Array.isArray(o.rows) ? o.rows : []));
@@ -417,6 +425,71 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
     applyIntent: "create_sandbox_workflow",
   }));
   return { actions, hasActions: actions.length > 0, ready: actions.filter((a) => a.enabled).length };
+}
+
+/**
+ * The two FOCUSED first-utilization actions for a live custom model — the
+ * causation-derived "what do I click to actually use this?" for a non-technical
+ * operator. Mirrors the CEO cockpit's sub-atomic worker next-action pattern:
+ * each action resolves to one of three governed modes, so a click always DOES
+ * something real (never a dead redirect):
+ *
+ *   - "create" — the workflow row does not exist yet: clicking POSTs the
+ *     governed custom-model.workflow.create proposal (helper/apply rebuilds the
+ *     full orchestration graph from evidence server-side) and then opens it.
+ *   - "open"   — the workflow already exists in sandbox records: clicking opens
+ *     that exact row on the canvas (no duplicate, no re-create).
+ *   - "blocked"— the endpoint is not verified yet: the served tag must equal the
+ *     tuned tag before a workflow can bind. Honest reason, no fake enablement.
+ *
+ * `variant` maps to a REAL closed-loop graph from buildCustomModelWorkflowVariants:
+ *   open-in-canvas     → chat               (input → model-call → save response)
+ *   build-training-data→ recursive-learning (answer → self-grade → write graded
+ *                        trace) created on a schedule trigger — a continuous
+ *                        feedback loop back into the training corpus.
+ */
+export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
+  const verified = model?.verificationStatus === "verified";
+  // Existing custom-model workflow rows across EVERY sandbox-environment object
+  // (created here, in the canvas, or seeded) — matched by Name so a click on an
+  // already-built workflow opens it instead of creating a duplicate.
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const existingNames = new Set();
+  for (const o of objects) {
+    if (o?.objectType !== "sandbox-environment") continue;
+    for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
+      const name = String(r?.Name || "").trim();
+      if (name) existingNames.add(name);
+    }
+  }
+
+  const defs = [
+    {
+      id: "open-in-canvas", variant: "chat", title: "Open in canvas",
+      createHint: "Wires your model into a ready-to-run workflow and opens it.",
+      openHint: "Open your model's workflow on the canvas.",
+    },
+    {
+      id: "build-training-data", variant: "recursive-learning", title: "Build training data",
+      createHint: "Runs your model on a schedule, self-grades, and feeds the best answers back into training.",
+      openHint: "Open your recursive training loop.",
+    },
+  ];
+
+  return defs.map((d) => {
+    const rowName = `custom-model-${d.variant}`;
+    const exists = existingNames.has(rowName);
+    const mode = !verified ? "blocked" : exists ? "open" : "create";
+    return {
+      ...d,
+      rowName,
+      mode,
+      enabled: verified,
+      blockedReason: verified ? "" : "verify the endpoint first — the served tag must equal the tuned tag",
+      // The canvas deep-link for the existing/created row (opens the config).
+      openHref: `/workflows?object=${encodeURIComponent(CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(rowName)}&field=orchestrationConfig`,
+    };
+  });
 }
 
 /**
