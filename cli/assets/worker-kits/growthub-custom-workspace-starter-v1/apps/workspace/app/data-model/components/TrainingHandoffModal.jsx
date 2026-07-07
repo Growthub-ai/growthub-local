@@ -50,7 +50,7 @@ import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
 import { applyGenomeFieldSettings } from "../../../lib/workspace-genome.js";
 import { deriveTrainingRuntimeState } from "../../../lib/training-runtime.js";
-import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState, deriveServingProfile, deriveTrainingResumeState, deriveLocalModelChoices } from "../../../lib/training-runtime-drivers.js";
+import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingStageIssue, deriveTrainingWaitState, deriveServingProfile, deriveTrainingResumeState, deriveLocalModelChoices, deriveStartTrainingReadiness } from "../../../lib/training-runtime-drivers.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -580,6 +580,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     servedModel: servingProfile.servedModel,
     smokeRun,
   });
+  // Start-training readiness gate — the deterministic pre-initialization
+  // contract that governs the ONE button that begins live local training. The
+  // button and the invocation path behind it stay inert until every blocking
+  // check (approved config · argv safety · draft-date-vs-blast-radius · first
+  // quantization chunk · runner idle) is green. readyPct is a real, monotone
+  // fraction of proven gates — never a fabricated 0% or an indeterminate spin.
+  const startReadiness = deriveStartTrainingReadiness({ runConfig, result, workspaceConfig });
 
   const tick = (pct, stage, stageId, converted = 0) => new Promise((resolve) => {
     setProgress({ pct, stage, stageId: stageId || "", converted });
@@ -692,7 +699,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       if (!reg) throw new Error("registry row not present after apply");
 
       await tick(100, "Dataset ready · training run prepared", "verify", selected.length);
-      setResult({ datasetPath, records: selected.length, integrationId, modelTag: reservedTag, version, exportId, trainingRunId: preparedReceipt.trainingRunId });
+      // Stamp the approved-configuration timestamp (the "draft date") so the
+      // Start-training readiness gate can check it against the tuned tag's blast
+      // radius — a stale draft can never silently overwrite a live model.
+      setResult({ datasetPath, records: selected.length, integrationId, modelTag: reservedTag, version, exportId, trainingRunId: preparedReceipt.trainingRunId, draftAt: new Date().toISOString() });
       setArtifact((a) => ({ ...a, modelTag: reservedTag, type: profile.outputs.includes("gguf") ? "gguf" : profile.outputs[0] }));
       setPanel("train");
     } catch (e) {
@@ -719,6 +729,16 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     setError("");
     setRemedy(null);
     setStageIssue(null);
+    // Pre-initialization gate: the live invocation cannot begin until EVERY
+    // blocking readiness check is green (approved config · argv safety ·
+    // draft-date-vs-blast-radius · first quantization chunk · runner idle).
+    // This re-derives from fresh state at click time so a race that unblocks
+    // the button can never let a stale/unsafe draft through to the runner.
+    const gate = deriveStartTrainingReadiness({ runConfig, result, workspaceConfig });
+    if (!gate.canStart) {
+      setError(`Cannot start yet — ${gate.blockingReason}`);
+      return;
+    }
     // Governed gate: never fire an unsafe/not-ready config, and the one-click
     // runner only executes argv `steps` (legacy command profiles are
     // import-only). Both surface the exact reason instead of a dark failure.
@@ -987,7 +1007,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const pill = (() => {
     if (panel === "recover") return { label: "Needs attention", cls: "is-bad" };
     if (panel === "verify") return verifyResult?.verified ? { label: "Success", cls: "is-ok" } : verifyResult ? { label: "Not verified", cls: "is-bad" } : { label: "Ready to test", cls: "" };
-    if (panel === "train") return stageIssue ? { label: "Needs attention", cls: "is-bad" } : trainPhase === "running" ? { label: "Running", cls: "is-running" } : { label: "Ready to run", cls: "" };
+    if (panel === "train") return stageIssue ? { label: "Needs attention", cls: "is-bad" } : trainPhase === "running" ? { label: "Running", cls: "is-running" } : startReadiness.canStart ? { label: "Ready to run", cls: "" } : { label: `Pre-init ${startReadiness.readyPct}%`, cls: "is-warn" };
     if (panel === "prepare") return { label: "Preparing", cls: "is-running" };
     if (panel === "done") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Proof pending", cls: "is-warn" };
     if (panel === "bind") return smokeProven ? { label: "Verified", cls: "is-ok" } : { label: "Bind", cls: "" };
@@ -1358,11 +1378,43 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </details>
               ) : null}
 
+              {/* Pre-initialization readiness gate — the deterministic loading
+                  state that must reach 100% before the live invocation can
+                  begin. The bar width is a real fraction of proven blocking
+                  gates (never a fabricated 0%); each check is a governed,
+                  evidence-derived readiness signal. */}
+              {trainPhase !== "running" ? (
+                <section className="dm-api-action-card" data-train-preinit={startReadiness.canStart ? "ready" : "gating"} aria-label="Pre-initialization readiness" style={{ marginTop: 4 }}>
+                  <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+                    <div className="training-run-top">
+                      <span className="dm-api-action-card-eyebrow">Pre-initialization</span>
+                      <span className="training-run-pct" data-train-preinit-pct={startReadiness.readyPct}>{startReadiness.readyPct}%</span>
+                    </div>
+                    <div className={`training-progress-track${startReadiness.canStart ? " is-ready" : ""}`}
+                      role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={startReadiness.readyPct}>
+                      <span style={{ width: `${startReadiness.readyPct}%` }} />
+                    </div>
+                    <div className="dm-api-action-card-note" data-train-preinit-label="" style={{ marginTop: 6 }}>{startReadiness.preInit.label}</div>
+                    <ul className="dm-cockpit-receipts" data-train-preinit-checks={`${startReadiness.preInit.done}/${startReadiness.preInit.total}`} style={{ marginTop: 8 }}>
+                      {startReadiness.checks.map((c) => (
+                        <li key={c.id} className="dm-cockpit-receipt" data-train-check={c.id} data-train-check-ok={c.ok ? "true" : "false"}>
+                          <span className={`dm-cockpit-receipt-chip dm-status-chip ${c.ok ? "is-ok" : "is-warn"}`}>
+                            {c.ok ? <Check size={12} aria-hidden="true" /> : <AlertTriangle size={12} aria-hidden="true" />}
+                            {c.label}
+                          </span>
+                          <span className="dm-cockpit-receipt-text">{c.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+              ) : null}
+
               <div className="training-handoff-action-row">
                 <a className="dm-btn-outline" href="/data-model?object=model-training-run" data-train-open-runs="">Open in Runs</a>
                 {trainPhase !== "running" ? (
-                  <button type="button" className="dm-btn-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !(runConfig.steps && runConfig.steps.length)}>
-                    {trainPhase === "starting" ? "Starting…" : "Start training"}
+                  <button type="button" className="dm-btn-primary" data-train-start="" data-train-ready={startReadiness.canStart ? "true" : "false"} data-train-ready-pct={startReadiness.readyPct} onClick={startTraining} disabled={trainPhase === "starting" || !startReadiness.canStart}>
+                    {trainPhase === "starting" ? "Starting…" : startReadiness.canStart ? "Start training" : `Locked · pre-init ${startReadiness.readyPct}%`}
                   </button>
                 ) : (
                   <>

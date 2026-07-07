@@ -29,7 +29,7 @@ const { deriveArtifactState, artifactImportComplete, ARTIFACT_TYPES, deriveQuant
 const { verifyTunedResponse, deriveEndpointVerification } = await import(lib("training-verification.js"));
 const { classifyRunStatus, deriveTrainingRunState, buildTrainingRunReceipt, trainingRunSourceKey, TRAINING_RUN_SCHEMA } = await import(lib("training-run-receipts.js"));
 const { deriveTrainingRuntimeState, toPublicState, RUNTIME_STATES } = await import(lib("training-runtime.js"));
-const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS, deriveLocalModelChoices } = await import(lib("training-runtime-drivers.js"));
+const { deriveTrainingRuntimeDrivers, deriveTrainingGapDrivers, scoreTrainingDriverImpact, rankTrainingNextActions, deriveTrainingRemediation, deriveShardPlan, deriveTraceFormatState, HIGH_QUALITY_TRACE_FLOOR, TRAINING_STAGE_ISSUES, deriveTrainingStageIssue, deriveTrainingNextAction, deriveTrainingWaitState, deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveTrainingResumeState, deriveServingProfile, SERVING_ADAPTERS, deriveLocalModelChoices, deriveStartTrainingReadiness, deriveTagBlastRadius, parseDraftDate, START_READINESS_CHUNK_SIZE } = await import(lib("training-runtime-drivers.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
 
 // --------------------------------------------------------------------------
@@ -965,4 +965,135 @@ test("local-model choices: never throws on garbage input", () => {
     assert.equal(c.configured, false);
     assert.ok(Array.isArray(c.runtimes));
   }
+});
+
+// --------------------------------------------------------------------------
+// Start-training readiness gate — the deterministic pre-initialization
+// contract for the ONE button that begins live local training.
+// --------------------------------------------------------------------------
+
+const TAG = "workspace-local-tuned-v1";
+const readyCfg = () => buildTrainingRunConfig({
+  profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma-2b",
+  datasetPath: "unsloth-dataset-v1.jsonl", outputModelTag: TAG,
+  artifactPath: `./artifacts/${TAG}`, quantization: "q4_k_m",
+});
+const approvedDraft = (over = {}) => ({
+  exportId: "ft_1_2026-07-07T12-00-00-000Z", records: 40, modelTag: TAG,
+  draftAt: "2026-07-07T12:00:00.000Z", trainingRunId: "trainrun_2026-07-07T12-00-00-000Z", ...over,
+});
+const emptyWs = () => ({ dataModel: { objects: [] } });
+
+test("start-gate: fully-approved safe draft over a clean workspace reaches 100% and unlocks", () => {
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  assert.equal(g.readyPct, 100, "all blocking gates green → 100%");
+  assert.equal(g.canStart, true);
+  assert.equal(g.blockingReason, "");
+  assert.equal(g.checks.length, 5);
+  assert.ok(g.checks.every((c) => c.ok && c.blocking));
+  assert.equal(g.preInit.complete, true);
+});
+
+test("start-gate: readiness percentage is deterministic and evidence-derived (never a stuck 0%)", () => {
+  const a = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  const b = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  assert.deepEqual(a.checks.map((c) => [c.id, c.ok]), b.checks.map((c) => [c.id, c.ok]), "same input ⇒ same gates");
+  assert.equal(a.readyPct, b.readyPct);
+  // With a draft prepared, at least the config/quant gates are already proven —
+  // the bar reflects real state, it is never pinned at 0.
+  const partial = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ modelTag: TAG }), workspaceConfig: { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_x", status: "running" }] }] } } });
+  assert.ok(partial.readyPct > 0 && partial.readyPct < 100, "one failing gate → strictly between 0 and 100");
+  assert.equal(partial.readyPct, 80, "4 of 5 gates green");
+});
+
+test("start-gate: an unprepared/unapproved config cannot start", () => {
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: { records: 3 }, workspaceConfig: emptyWs() });
+  assert.equal(g.canStart, false);
+  const approved = g.checks.find((c) => c.id === "final-config-approved");
+  assert.equal(approved.ok, false);
+  assert.match(g.blockingReason, /Prepare and approve/i);
+});
+
+test("start-gate: an unsafe / import-only run config blocks the button", () => {
+  // Injection attempt in the tuned tag → commandSafety fails.
+  const unsafe = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma-2b", datasetPath: "d.jsonl", outputModelTag: "bad; rm -rf /", artifactPath: "./artifacts/x", quantization: "q4_k_m" });
+  const g = deriveStartTrainingReadiness({ runConfig: unsafe, result: approvedDraft({ modelTag: "bad; rm -rf /" }), workspaceConfig: emptyWs() });
+  assert.equal(g.canStart, false);
+  assert.equal(g.checks.find((c) => c.id === "command-safe").ok, false);
+});
+
+test("start-gate: draft date is checked against the tuned tag's blast radius", () => {
+  const liveEndpoint = { dataModel: { objects: [
+    { objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", expectedModelTag: TAG, status: "connected", lastTested: "2026-07-08T00:00:00.000Z" }] },
+  ] } };
+  // Stale draft (older than the live model) must NOT silently overwrite it.
+  const stale = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ draftAt: "2026-07-07T12:00:00.000Z" }), workspaceConfig: liveEndpoint });
+  const staleCheck = stale.checks.find((c) => c.id === "draft-blast-radius");
+  assert.equal(staleCheck.ok, false);
+  assert.equal(stale.canStart, false);
+  assert.match(staleCheck.detail, /blast radius 1/);
+  // A genuinely newer draft is a valid re-train and passes.
+  const fresh = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ draftAt: "2026-07-09T00:00:00.000Z" }), workspaceConfig: liveEndpoint });
+  assert.equal(fresh.checks.find((c) => c.id === "draft-blast-radius").ok, true);
+  assert.equal(fresh.canStart, true);
+  // No live surface for the tag → blast radius 0, passes.
+  const clean = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: emptyWs() });
+  assert.equal(clean.checks.find((c) => c.id === "draft-blast-radius").ok, true);
+});
+
+test("start-gate: an undateable draft fails the blast-radius check closed", () => {
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: { exportId: "not-a-date", records: 40, modelTag: TAG }, workspaceConfig: emptyWs() });
+  const c = g.checks.find((x) => x.id === "draft-blast-radius");
+  assert.equal(c.ok, false);
+  assert.match(c.detail, /no valid date/i);
+});
+
+test("start-gate: the first quantization chunk must validate before invocation", () => {
+  const bad = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "gemma-2b", datasetPath: "d.jsonl", outputModelTag: TAG, artifactPath: `./artifacts/${TAG}`, quantization: "q3_bogus" });
+  const g = deriveStartTrainingReadiness({ runConfig: bad, result: approvedDraft(), workspaceConfig: emptyWs() });
+  const c = g.checks.find((x) => x.id === "quant-first-chunk");
+  assert.equal(c.ok, false);
+  assert.match(c.detail, /Unsupported quantization/i);
+  // The happy path names the validated first chunk and shard count.
+  const ok = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ records: 130 }), workspaceConfig: emptyWs() });
+  const okc = ok.checks.find((x) => x.id === "quant-first-chunk");
+  assert.equal(okc.ok, true);
+  assert.match(okc.detail, /chunk 0 of 3/, `130 records / ${START_READINESS_CHUNK_SIZE} = 3 shards`);
+});
+
+test("start-gate: a run already live blocks a second concurrent invocation", () => {
+  const busy = { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_live", status: "running" }] }] } };
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: busy });
+  assert.equal(g.checks.find((c) => c.id === "runner-idle").ok, false);
+  assert.equal(g.canStart, false);
+});
+
+test("start-gate: never throws on empty/garbage input", () => {
+  for (const bad of [undefined, {}, { runConfig: null, result: null, workspaceConfig: null }, { workspaceConfig: { dataModel: { objects: "nope" } } }]) {
+    const g = deriveStartTrainingReadiness(bad);
+    assert.equal(g.canStart, false);
+    assert.equal(typeof g.readyPct, "number");
+    assert.ok(Array.isArray(g.checks));
+  }
+});
+
+test("parseDraftDate: explicit ISO, reconstructed export id, and invalid", () => {
+  assert.equal(parseDraftDate({ draftAt: "2026-07-07T12:00:00.000Z" }), Date.parse("2026-07-07T12:00:00.000Z"));
+  assert.equal(parseDraftDate({ exportId: "ft_1_2026-07-07T12-34-56-789Z" }), Date.parse("2026-07-07T12:34:56.789Z"));
+  assert.ok(Number.isNaN(parseDraftDate({ exportId: "garbage" })));
+  assert.ok(Number.isNaN(parseDraftDate({})));
+});
+
+test("deriveTagBlastRadius: only connected endpoints and tuned model rows count", () => {
+  const ws = { dataModel: { objects: [
+    { objectType: "api-registry", rows: [
+      { expectedModelTag: TAG, status: "connected", lastTested: "2026-07-08T00:00:00.000Z" },
+      { expectedModelTag: TAG, status: "registered" }, // not connected → excluded
+    ] },
+    { objectType: "model-training", rows: [{ Name: "workspace-local-v1", localModel: TAG, lastExportAt: "2026-07-06T00:00:00.000Z" }] },
+  ] } };
+  const br = deriveTagBlastRadius(ws, TAG);
+  assert.equal(br.surfaces.length, 2, "1 connected endpoint + 1 tuned model row");
+  assert.equal(br.latestLiveAt, Date.parse("2026-07-08T00:00:00.000Z"));
+  assert.equal(deriveTagBlastRadius(ws, "some-other-tag").surfaces.length, 0);
 });

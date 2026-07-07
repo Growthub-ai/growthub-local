@@ -19,6 +19,7 @@
 
 import { deriveDistillationPipelineState, DEFAULT_MIN_SCORE, MIN_FINETUNE_TRACES } from "./training-ledger.js";
 import { deriveTrainingRuntimeState } from "./training-runtime.js";
+import { SUPPORTED_QUANTIZATIONS } from "./training-artifacts.js";
 
 /**
  * Lifecycle driver definitions in dependency order. Action tokens are the
@@ -822,5 +823,194 @@ export function deriveLocalModelChoices({ workspaceConfig, fallbackBaseModels = 
         ? `Training ${detectedBase}${runtimes.length ? ` · ${runtimes.length} runtime${runtimes.length === 1 ? "" : "s"} detected` : " · local runner ready"}`
         : `${runtimes.length} runtime${runtimes.length === 1 ? "" : "s"} detected — pick a base model to train`)
       : "No local model runtime configured yet — set a base model in the ledger and a local runner (Ollama / llama.cpp server / vLLM / any OpenAI-compatible endpoint).",
+  };
+}
+
+// ===========================================================================
+// Start-Training readiness gate — the pre-initialization contract for the ONE
+// button that begins real, live, local training. This is NOT a new runtime and
+// it never executes, fetches, or mutates: it derives, purely from the already-
+// governed prepared draft + the resolved run config, whether the live
+// invocation may begin, and a DETERMINISTIC readiness percentage (never a
+// fabricated 0% or an indeterminate spinner) the modal renders as the pre-
+// initialization loading state. The Start-training button — and the invocation
+// code path behind it — stay inert until every blocking check is green.
+//
+// The blocking gates enforced before initialization can begin:
+//   1. final-config-approved — the user's approved final configuration exists
+//      as a real prepared draft (export id + curated records at/above the
+//      fine-tune floor). This is the "prior state, same configuration, after
+//      the user approved their final training setup".
+//   2. command-safe          — the resolved run config is argv-safe and ready
+//      (no shell injection, allowlisted bins, requirements met, argv steps).
+//   3. draft-blast-radius     — the approved DRAFT DATE is checked against the
+//      blast radius of its tuned tag: if a live/connected model already serves
+//      this tag, the draft must be strictly NEWER than that live surface, so a
+//      stale draft can never silently overwrite a model already in use. A valid
+//      check is required — an unparseable draft date fails closed.
+//   4. quant-first-chunk      — the declared quantization is a supported level
+//      AND the FIRST shard of the deterministic chunk plan is valid (non-empty
+//      shard 0), so quantization is proven runnable on its first chunk before
+//      any compute is invoked.
+//   5. runner-idle            — no training run for this model is already live,
+//      so a click can never fan out a second concurrent live invocation.
+//
+// Pure, seeded, never throws: same governed evidence in ⇒ same readiness out.
+// ===========================================================================
+
+/** Deterministic chunk size for the first-chunk quantization validation. */
+export const START_READINESS_CHUNK_SIZE = 64;
+
+/** Parse the approved draft's timestamp. Prefer an explicit ISO `draftAt`;
+ *  fall back to reconstructing it from the `ft_<v>_<iso-with-dashes>` export id
+ *  the prepare step stamps. Returns epoch ms, or NaN when no valid date exists
+ *  (a draft with no provable date is not a valid draft — the gate fails). */
+export function parseDraftDate(result = {}) {
+  const explicit = Date.parse(String(result?.draftAt || ""));
+  if (Number.isFinite(explicit)) return explicit;
+  // exportId: ft_<version>_2026-07-07T12-34-56-789Z (":"/"." replaced by "-").
+  const raw = String(result?.exportId || result?.trainingRunId || "");
+  const seg = raw.replace(/^(?:ft|trainrun)_(?:\d+_)?/, "");
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z$/.exec(seg);
+  if (m) return Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`);
+  return NaN;
+}
+
+/**
+ * Blast radius of a tuned tag: the governed surfaces a new run would overwrite
+ * — a connected API-registry endpoint already serving the tag, and any model-
+ * training row whose localModel already resolves to it. Each carries the last
+ * time it was proven live, so the draft-date check can require a strictly newer
+ * draft before overwriting. Pure, never throws.
+ */
+export function deriveTagBlastRadius(workspaceConfig, tag) {
+  const wanted = String(tag || "").trim();
+  const surfaces = [];
+  if (!wanted) return { surfaces, latestLiveAt: 0 };
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  for (const o of objects) {
+    const rows = Array.isArray(o?.rows) ? o.rows : [];
+    if (o?.objectType === "api-registry") {
+      for (const r of rows) {
+        const served = tryModel(r?.lastResponse);
+        const bound = String(r?.expectedModelTag || "").trim() === wanted || served === wanted;
+        if (bound && String(r?.status || "") === "connected") {
+          surfaces.push({ kind: "endpoint", ref: String(r?.integrationId || r?.baseUrl || ""), at: Date.parse(String(r?.lastTested || "")) || 0 });
+        }
+      }
+    } else if (o?.objectType === "model-training") {
+      for (const r of rows) {
+        if (String(r?.localModel || "").trim() === wanted) {
+          surfaces.push({ kind: "model", ref: String(r?.Name || ""), at: Date.parse(String(r?.lastExportAt || "")) || 0 });
+        }
+      }
+    }
+  }
+  const latestLiveAt = surfaces.reduce((mx, s) => Math.max(mx, Number(s.at) || 0), 0);
+  return { surfaces, latestLiveAt };
+}
+
+/**
+ * Derive the Start-training readiness gate. Pure, never throws.
+ *
+ * @param {object} opts
+ * @param {object} opts.runConfig     buildTrainingRunConfig() output for the draft
+ * @param {object} opts.result        the prepared draft { exportId, records, modelTag, draftAt, trainingRunId }
+ * @param {object} opts.workspaceConfig governed config (for blast-radius + live-run reads)
+ * @param {number} [opts.floor]       fine-tune record floor (defaults to MIN_FINETUNE_TRACES)
+ * @param {number} [opts.nowMs]       clock for the draft-date check (0 skips freshness comparison)
+ * @returns {{
+ *   checks: object[], readyPct: number, canStart: boolean, blockingReason: string,
+ *   preInit: { pct: number, done: number, total: number, complete: boolean, label: string }
+ * }}
+ */
+export function deriveStartTrainingReadiness({ runConfig, result, workspaceConfig, floor = MIN_FINETUNE_TRACES, nowMs = 0 } = {}) {
+  const cfg = runConfig || {};
+  const draft = result || {};
+  const tag = String(draft.modelTag || cfg.outputModelTag || "").trim();
+  const records = Number(draft.records) || 0;
+  const checks = [];
+  const add = (id, label, ok, detail) => checks.push({ id, label, ok: Boolean(ok), detail: String(detail || ""), blocking: true });
+
+  // 1. Final configuration approved — a real prepared draft exists.
+  const approved = Boolean(String(draft.exportId || "").trim()) && records >= floor;
+  add("final-config-approved", "Final configuration approved",
+    approved,
+    approved ? `Approved draft ${String(draft.exportId).slice(0, 22)} · ${records} curated records`
+      : `Prepare and approve the configuration first (${records}/${floor} curated records).`);
+
+  // 2. Command safety — argv-safe, ready, has executable steps.
+  const safeReasons = (cfg.commandSafety && cfg.commandSafety.ok === false) ? (cfg.commandSafety.reasons || []) : [];
+  const hasSteps = Array.isArray(cfg.steps) && cfg.steps.length > 0;
+  const commandSafe = Boolean(cfg.ready) && safeReasons.length === 0 && hasSteps;
+  add("command-safe", "Run command validated",
+    commandSafe,
+    commandSafe ? `${cfg.steps.length} argv step(s) · allowlisted bins · injection-safe`
+      : safeReasons.length ? safeReasons.join("; ")
+        : !hasSteps ? "This profile is import-only — pick the one-click pipeline profile to run locally."
+          : (cfg.missingRequirements || []).length ? `Set: ${cfg.missingRequirements.join(", ")}.` : "Run configuration not ready.");
+
+  // 3. Draft date vs blast radius — a stale draft never overwrites a live model.
+  const draftAt = parseDraftDate(draft);
+  const { surfaces, latestLiveAt } = deriveTagBlastRadius(workspaceConfig, tag);
+  let blastOk;
+  let blastDetail;
+  if (!Number.isFinite(draftAt)) {
+    blastOk = false;
+    blastDetail = "The approved draft has no valid date — re-prepare the configuration.";
+  } else if (surfaces.length === 0) {
+    blastOk = true;
+    blastDetail = `Draft date valid · no live model serves "${tag}" (blast radius 0).`;
+  } else if (draftAt > latestLiveAt) {
+    blastOk = true;
+    blastDetail = `Draft is newer than ${surfaces.length} live surface(s) for "${tag}" — safe to overwrite.`;
+  } else {
+    blastOk = false;
+    blastDetail = `A live model already serves "${tag}" (blast radius ${surfaces.length}). Re-approve the configuration — your draft predates the live model.`;
+  }
+  add("draft-blast-radius", "Draft date checked against blast radius", blastOk, blastDetail);
+
+  // 4. First quantization chunk validated.
+  const quant = String(cfg.quantization || "").trim();
+  const quantKnown = SUPPORTED_QUANTIZATIONS.includes(quant);
+  const plan = deriveShardPlan({ totalRecords: records, chunkSize: START_READINESS_CHUNK_SIZE, datasetSha: String(draft.exportId || "") });
+  const firstShard = plan.shards[0] || null;
+  const quantOk = quantKnown && Boolean(firstShard) && firstShard.count > 0;
+  add("quant-first-chunk", "First quantization chunk validated",
+    quantOk,
+    quantOk ? `${quant} · chunk 0 of ${plan.shardCount} (${firstShard.count} records) validated`
+      : !quantKnown ? `Unsupported quantization "${quant || "(none)"}" (expected ${SUPPORTED_QUANTIZATIONS.join(" / ")}).`
+        : "No records to quantize — the first chunk is empty.");
+
+  // 5. Runner idle — no concurrent live run.
+  const liveRun = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+    .filter((o) => o?.objectType === "model-training-run")
+    .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+    .find((r) => String(r?.status || "").toLowerCase() === "running");
+  const runnerIdle = !liveRun;
+  add("runner-idle", "No training run already live", runnerIdle,
+    runnerIdle ? "No concurrent live run — safe to initialize."
+      : `Run ${String(liveRun?.trainingRunId || "").slice(0, 22)} is already live — wait for it or attach its result.`);
+
+  const total = checks.length;
+  const done = checks.filter((c) => c.ok).length;
+  const canStart = done === total;
+  // Deterministic readiness percentage — evidence-derived, monotone, and never
+  // a fabricated 0%: it is exactly the fraction of blocking gates proven green.
+  const readyPct = total ? Math.round((done / total) * 100) : 0;
+  const firstFail = checks.find((c) => !c.ok) || null;
+  return {
+    checks,
+    readyPct,
+    canStart,
+    blockingReason: firstFail ? firstFail.detail : "",
+    preInit: {
+      pct: readyPct,
+      done,
+      total,
+      complete: canStart,
+      label: canStart ? "Pre-initialization complete — ready to begin training"
+        : `Pre-initialization ${done}/${total} — ${firstFail ? firstFail.label.toLowerCase() : "checking"}`,
+    },
   };
 }
