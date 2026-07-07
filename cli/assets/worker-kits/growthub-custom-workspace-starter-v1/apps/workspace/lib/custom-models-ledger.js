@@ -295,58 +295,127 @@ export function buildSyntheticTraceProvenance(model, { seed = "" } = {}) {
 }
 
 /**
+ * Real closed-loop workflow variants for a deployed local model — each is a
+ * COMPLETE governed orchestration graph (input → model-call → terminal write)
+ * on the exact node/edge grammar the workflow canvas + orchestration runner
+ * understand (mirrors the seed model-sandbox config). Not a link: a config the
+ * canvas opens via `/workflows?object=<sandboxId>&row=<rowName>` and the
+ * `sandbox-run` lane executes. Each variant is a distinct, intentional way to
+ * USE the deployed model, with its own closed loop and governed proof. Pure.
+ *
+ * Variants:
+ *  - `chat`               input → model-call → tool-result (writeLastResponse)
+ *  - `recursive-learning` input → model-call → self-grade → write graded
+ *                         training-traces (feedback closes back to the corpus)
+ *  - `synthetic-scaling`  seed → model-call → write SYNTHETIC training-traces
+ *                         (provenance-safe, review-gated)
+ *  - `agentic`            input → model-call (agent: browserUse, depth) → result
+ *  - `eval-vs-base`       holdout → tuned call + base call → compare → metrics
+ */
+export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}) {
+  const registryRow = registryRowsOf(workspaceConfig).find((r) => String(r.integrationId || "") === String(model?.apiRegistryId || "")) || {};
+  const integrationId = String(model?.apiRegistryId || "");
+  const tag = String(model?.localModel || model?.lastResponseModel || model?.name || "");
+  const base = String(model?.baseModel || "");
+  const call = (id, label, subtitle, extra = {}) => ({
+    id, type: "api-registry-call", label, subtitle: subtitle || `${integrationId} · POST /chat/completions`,
+    config: { registryId: integrationId, integrationId, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
+  });
+  const input = (samplePayload, label = "Prompt") => ({ id: "input", type: "input", label, subtitle: "Chat prompt", config: { inputMode: "manual", samplePayload, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } });
+  const result = (id, label, cfg = {}) => ({ id, type: "tool-result", label, subtitle: cfg.subtitle || "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested", ...cfg } });
+  const graph = (nodes, edges) => ({ version: 1, provider: "growthub-native", nodes, edges });
+
+  return {
+    chat: graph(
+      [input({ prompt: "Reply in one short line to confirm you are the tuned workspace model." }), call("model-call", `Custom model — ${tag}`), result("result", "Result")],
+      [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "result", passes: "provider-response" }],
+    ),
+    "recursive-learning": graph(
+      [input({ prompt: "Answer this workspace task, then we score and feed the best answers back into training." }, "Task"), call("model-call", `Custom model — ${tag}`),
+        call("self-grade", "Self-grade (reward)", "score the answer 0-1", { bodyTemplate: "grade" }),
+        result("write-trace", "Write graded trace", { subtitle: "append to training-traces (feedback loop)", sourceRecordId: "training:model-training:workspace-local", outputMode: "training-trace" })],
+      [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "self-grade", passes: "provider-response" }, { from: "self-grade", to: "write-trace", passes: "graded" }],
+    ),
+    "synthetic-scaling": graph(
+      [input({ prompt: "Generate a diverse governed-task/answer pair in this workspace's domain." }, "Seed"), call("model-call", `Custom model — ${tag}`),
+        result("write-synthetic", "Write synthetic trace", { subtitle: "training-traces · synthetic · ungraded · review-gated", sourceRecordId: "training:model-training:workspace-local", outputMode: "synthetic-trace", provenance: buildSyntheticTraceProvenance(model).provenance })],
+      [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "write-synthetic", passes: "provider-response" }],
+    ),
+    agentic: graph(
+      [input({ prompt: "Complete this multi-step task using the local model as the agent brain." }, "Goal"),
+        call("agent", `Local agent — ${tag}`, "agent brain (local, loopback-only)", { permissions: { browserUse: true, depth: 2 }, runLocality: "local", networkPolicy: "loopback-only" }),
+        result("result", "Agent result")],
+      [{ from: "input", to: "agent", passes: "payload" }, { from: "agent", to: "result", passes: "provider-response" }],
+    ),
+    "eval-vs-base": graph(
+      [input({ prompt: "Run the holdout eval prompt against both the tuned model and its base." }, "Holdout"),
+        call("tuned", `Tuned — ${tag}`), call("base", `Base — ${base || "base model"}`, `base ${base}`, { bodyTemplateModel: base }),
+        result("compare", "Compare & score", { subtitle: "tuned vs base metric deltas (holdout, excluded from training)", outputMode: "eval-metrics" })],
+      [{ from: "input", to: "tuned", passes: "payload" }, { from: "input", to: "base", passes: "payload" }, { from: "tuned", to: "compare", passes: "tuned-response" }, { from: "base", to: "compare", passes: "base-response" }],
+    ),
+  };
+}
+
+/** The sandbox-environment row an action creates so the canvas can open + the
+ *  sandbox-run lane can execute the variant. Governed row shape, no secrets. */
+export function buildCustomModelSandboxRow(model, variant, orchestrationConfig) {
+  const name = `custom-model-${variant}`;
+  return {
+    Name: name, lifecycleStatus: "draft", version: "1", runLocality: orchestrationConfig?.nodes?.some((n) => n.config?.networkPolicy === "loopback-only") ? "local" : "local",
+    schedulerRegistryId: String(model?.apiRegistryId || ""), runtime: "node", adapter: "local-process", agentHost: "", envRefs: "", networkAllow: "false", allowList: "",
+    instructions: `Use the custom local model ${model?.localModel || model?.name || ""} in a ${variant} closed loop.`,
+    command: "", timeoutMs: "30000", status: "draft", resolverTemplateId: "custom-http", connectorKind: "http", executionLane: "sandbox-local",
+    orchestrationConfig: JSON.stringify(orchestrationConfig, null, 2),
+  };
+}
+
+/**
  * Suggested Actions for a custom model — a pure causation deriver (same
- * checklist grammar as the starter checklist). Each action carries: title,
- * whyNow, requiredEvidence, targetSurface, proposalPayload, blockedReason,
- * proofProduced, enabled. Actions NEVER mutate — they seed reviewable helper
- * proposals or route to an existing governed surface. Closed-by-default in UI.
+ * checklist grammar as the starter checklist). Each action is a REAL closed
+ * loop: it carries a complete `orchestrationConfig` (built above), the
+ * `sandboxRow` to create it, an `openHref` deep-link that opens that config on
+ * the workflow canvas, honest `blockedReason` gating, and the governed
+ * `proofProduced`. Actions NEVER mutate — they create a reviewable governed
+ * sandbox row / route to the canvas. Closed-by-default in UI.
  */
 export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {}) {
   const verified = model?.verificationStatus === "verified";
   const complete = model?.evidenceState === "complete";
-  const template = deriveCustomModelNodeTemplate(model, { workspaceConfig });
-  const actions = [
-    {
-      id: "use-as-workflow-node", title: "Use as a workflow node",
-      whyNow: "A verified custom model can back any governed workflow step.",
-      requiredEvidence: "verified endpoint (served tag == tuned tag)",
-      targetSurface: "/workflows", proposalPayload: template.node,
-      blockedReason: template.ready ? "" : template.blockedReason,
-      proofProduced: "a workflow graph referencing the api-registry chat-completions node",
-    },
-    {
-      id: "run-chat-smoke", title: "Run a chat-completions smoke",
-      whyNow: "Confirm the local endpoint still serves the tuned tag, not the base model.",
-      requiredEvidence: "registered API Registry row",
-      targetSurface: "/data-model", proposalPayload: { integrationId: model?.apiRegistryId, expectModel: model?.localModel },
-      blockedReason: model?.apiRegistryId ? "" : "no API Registry row bound",
-      proofProduced: "api-registry lastResponse with served model == tuned tag",
-    },
-    {
-      id: "create-local-sandbox-agent", title: "Create a local/browser-use sandbox agent",
-      whyNow: "Turn the model into a governed local agent (browser-use optional).",
-      requiredEvidence: "verified endpoint",
-      targetSurface: "/workflows", proposalPayload: { ...template.node, permissions: { browserUse: true, depth: 2 } },
-      blockedReason: verified ? "" : "endpoint not verified",
-      proofProduced: "a sandbox-environment row bound to the custom model",
-    },
-    {
-      id: "generate-synthetic-training-data", title: "Generate synthetic training data",
-      whyNow: "Grow the next-cycle corpus from the model — provenance-safe, review-gated.",
-      requiredEvidence: "complete (verified + smoke outputHash)",
-      targetSurface: "/data-model", proposalPayload: buildSyntheticTraceProvenance(model),
-      blockedReason: complete ? "" : "model must be complete (verified + workflow outputHash) before generating data",
-      proofProduced: "training-traces rows marked synthetic/ungraded/unaccepted with provenance",
-    },
-    {
-      id: "create-dashboard-widget", title: "Create a dashboard widget generator",
-      whyNow: "Expose the model's outputs as a governed dashboard widget.",
-      requiredEvidence: "verified endpoint",
-      targetSurface: "/data-model", proposalPayload: { integrationId: model?.apiRegistryId, widget: "custom-model-output" },
-      blockedReason: verified ? "" : "endpoint not verified",
-      proofProduced: "an app-surface widget bound to the model capability",
-    },
-  ].map((a) => ({ ...a, enabled: !a.blockedReason }));
+  const bound = Boolean(model?.apiRegistryId);
+  const variants = buildCustomModelWorkflowVariants(model, { workspaceConfig });
+  const openHref = (variant) => `/workflows?object=custom-model-${variant}&row=custom-model-${variant}`;
+  const defs = [
+    { id: "use-in-workflow", variant: "chat", title: "Use in a workflow",
+      whyNow: "Back any governed step with your model.",
+      blockedReason: verified ? "" : "verify the endpoint first",
+      proofProduced: "sandbox-environment row + orchestrationConfig; sandbox-run writes lastResponse (served == tuned tag)" },
+    { id: "recursive-learning-loop", variant: "recursive-learning", title: "Recursive learning loop",
+      whyNow: "Answer → self-grade → feed the best answers back into training.",
+      blockedReason: verified ? "" : "verify the endpoint first",
+      proofProduced: "graded training-traces appended (feedback), linked to model-invocation receipts" },
+    { id: "synthetic-data-scaling", variant: "synthetic-scaling", title: "Scale synthetic training data",
+      whyNow: "Grow the next-cycle corpus from the model — synthetic, review-gated.",
+      blockedReason: complete ? "" : "finish one proven run (verified + workflow outputHash) first",
+      proofProduced: "training-traces marked synthetic/ungraded/unaccepted with provenance" },
+    { id: "local-agentic-workflow", variant: "agentic", title: "Local agentic workflow",
+      whyNow: "Run the model as a loopback-only agent brain over a multi-step task.",
+      blockedReason: verified ? "" : "verify the endpoint first",
+      proofProduced: "sandbox-environment (local, loopback-only, browser-use) bound to the model" },
+    { id: "eval-vs-base", variant: "eval-vs-base", title: "Evaluate vs base model",
+      whyNow: "Prove the tuned model beats its base on a holdout set.",
+      blockedReason: bound ? "" : "no API Registry row bound",
+      proofProduced: "eval metrics (tuned vs base) on a holdout excluded from training" },
+  ];
+  const actions = defs.map((d) => ({
+    ...d,
+    enabled: !d.blockedReason,
+    orchestrationConfig: variants[d.variant],
+    sandboxRow: buildCustomModelSandboxRow(model, d.variant, variants[d.variant]),
+    openHref: openHref(d.variant),
+    // Governed create path: the UI seeds this as a reviewable sandbox row
+    // (helper-proposal / PATCH), never a direct mutation from the cockpit.
+    applyIntent: "create_sandbox_workflow",
+  }));
   return { actions, hasActions: actions.length > 0, ready: actions.filter((a) => a.enabled).length };
 }
 

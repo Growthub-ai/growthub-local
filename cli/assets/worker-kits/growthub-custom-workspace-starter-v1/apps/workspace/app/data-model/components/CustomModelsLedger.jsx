@@ -222,10 +222,10 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
               <summary className="dm-cockpit-summary">Reuse this model — suggested actions ({suggested.ready}/{suggested.actions.length})</summary>
               <ul className="dm-api-action-checklist" style={{ marginTop: 8 }}>
                 {suggested.actions.map((a) => (
-                  <li key={a.id} className={a.enabled ? "is-done" : "is-pending"} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"}>
+                  <li key={a.id} className={a.enabled ? "is-done" : "is-pending"} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"} data-action-variant={a.variant}>
                     {a.enabled ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
-                    <span><strong>{a.title}</strong> — {a.enabled ? a.whyNow : `blocked: ${a.blockedReason}`}</span>
-                    {a.enabled ? <a className="dm-btn-outline dm-cockpit-action-cta" href={a.targetSurface}>Open</a> : null}
+                    <span><strong>{a.title}</strong> — {a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
+                    {a.enabled ? <a className="dm-btn-outline dm-cockpit-action-cta" href={a.openHref} data-action-open={a.variant} title={a.proofProduced}>Open in canvas</a> : null}
                   </li>
                 ))}
               </ul>

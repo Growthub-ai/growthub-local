@@ -20,7 +20,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const { HELPER_COMMANDS, deriveVisibleHelperCommands, parseSlashInput, isGovernedHelperCommand } = await import(
   pathToFileURL(path.join(kitApp, "app/data-model/components/helper-commands.js")).href
 );
-const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, buildSyntheticTraceProvenance } = await import(
+const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, buildSyntheticTraceProvenance, buildCustomModelWorkflowVariants, buildCustomModelSandboxRow } = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
 const { buildSuperAdminModelQaSeed } = await import(
@@ -254,13 +254,89 @@ test("suggested actions: gated by evidence; synthetic data is provenance-safe + 
   const ws = { dataModel: { objects: [{ objectType: "api-registry", rows: [{ integrationId: "gh-model", baseUrl: "http://127.0.0.1:11434/v1" }] }] } };
   const s = deriveCustomModelSuggestedActions({ apiRegistryId: "gh-model", verificationStatus: "verified", evidenceState: "verified", name: "workspace-local", localModel: "gh-v1" }, { workspaceConfig: ws });
   const byId = Object.fromEntries(s.actions.map((a) => [a.id, a]));
-  assert.equal(byId["use-as-workflow-node"].enabled, true, "verified → workflow node enabled");
-  assert.equal(byId["generate-synthetic-training-data"].enabled, false, "not complete → generate-data blocked");
-  assert.match(byId["generate-synthetic-training-data"].blockedReason, /complete/);
-  // Every action carries the checklist grammar.
-  for (const a of s.actions) for (const k of ["title", "whyNow", "requiredEvidence", "targetSurface", "proposalPayload", "proofProduced"]) assert.ok(k in a, `${a.id} has ${k}`);
+  assert.equal(byId["use-in-workflow"].enabled, true, "verified → workflow node enabled");
+  assert.equal(byId["synthetic-data-scaling"].enabled, false, "not complete → synthetic scaling blocked");
+  assert.match(byId["synthetic-data-scaling"].blockedReason, /proven run|outputHash/);
+  // Every action carries the checklist grammar + a real closed loop.
+  for (const a of s.actions) for (const k of ["title", "whyNow", "blockedReason", "openHref", "orchestrationConfig", "sandboxRow", "proofProduced"]) assert.ok(k in a, `${a.id} has ${k}`);
   // Synthetic provenance never blurs real vs generated.
   const prov = buildSyntheticTraceProvenance({ apiRegistryId: "gh-model", name: "workspace-local" }).provenance;
   assert.equal(prov.synthetic, true); assert.equal(prov.generated, true);
   assert.equal(prov.accepted, false); assert.equal(prov.qualityStatus, "ungraded"); assert.equal(prov.redactionStatus, "pending");
+});
+
+// --------------------------------------------------------------------------
+// Reuse-this-model actions are REAL closed loops (not links): each variant is a
+// complete, canvas-openable orchestration graph wiring the deployed model, with
+// variant-specific semantics + honest gating.
+// --------------------------------------------------------------------------
+
+function modelFixture(over = {}) {
+  return { name: "workspace-local-v1", localModel: "workspace-local-tuned-v1", baseModel: "gemma3", apiRegistryId: "workspace-local-model", verificationStatus: "verified", evidenceState: "verified", lastResponseModel: "workspace-local-tuned-v1", ...over };
+}
+const wsWithReg = { dataModel: { objects: [{ objectType: "api-registry", rows: [{ integrationId: "workspace-local-model", baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", method: "POST" }] }] } };
+
+function assertClosedLoop(cfg, { modelNodeId }) {
+  assert.ok(cfg && Array.isArray(cfg.nodes) && Array.isArray(cfg.edges), "graph has nodes+edges");
+  assert.ok(cfg.nodes.some((n) => n.type === "input"), "has an input node");
+  const modelNodes = cfg.nodes.filter((n) => n.type === "api-registry-call");
+  assert.ok(modelNodes.length >= 1, "has a model-call node");
+  // every model-call is bound to the model's api-registry row (no fake/hardcoded)
+  for (const mn of modelNodes) assert.equal(mn.config.integrationId, "workspace-local-model", "model-call bound to the registry row");
+  assert.ok(cfg.nodes.some((n) => n.type === "tool-result"), "has a terminal write/result node");
+  // edges connect input → … → terminal (a real loop, not orphan nodes)
+  const froms = new Set(cfg.edges.map((e) => e.from)); const tos = new Set(cfg.edges.map((e) => e.to));
+  assert.ok(froms.has("input"), "input is wired out");
+  assert.ok(cfg.nodes.every((n) => n.id === "input" || tos.has(n.id) || froms.has(n.id)), "no orphan nodes");
+  if (modelNodeId) assert.ok(cfg.nodes.some((n) => n.id === modelNodeId), `has node ${modelNodeId}`);
+}
+
+test("workflow variants: every variant is a valid closed loop bound to the model", () => {
+  const v = buildCustomModelWorkflowVariants(modelFixture(), { workspaceConfig: wsWithReg });
+  assert.deepEqual(Object.keys(v).sort(), ["agentic", "chat", "eval-vs-base", "recursive-learning", "synthetic-scaling"]);
+  for (const key of Object.keys(v)) assertClosedLoop(v[key], {});
+});
+
+test("workflow variants: recursive-learning feeds graded traces back into the corpus", () => {
+  const v = buildCustomModelWorkflowVariants(modelFixture(), { workspaceConfig: wsWithReg });
+  const cfg = v["recursive-learning"];
+  assert.ok(cfg.nodes.some((n) => n.id === "self-grade"), "has a self-grade node");
+  const write = cfg.nodes.find((n) => n.type === "tool-result");
+  assert.match(String(write.config.sourceRecordId), /training:model-training/, "writes back to training-traces");
+  assert.equal(write.config.outputMode, "training-trace");
+});
+
+test("workflow variants: synthetic-scaling is provenance-safe (synthetic, ungraded, unaccepted)", () => {
+  const v = buildCustomModelWorkflowVariants(modelFixture(), { workspaceConfig: wsWithReg });
+  const write = v["synthetic-scaling"].nodes.find((n) => n.type === "tool-result");
+  assert.equal(write.config.provenance.synthetic, true);
+  assert.equal(write.config.provenance.accepted, false);
+  assert.equal(write.config.provenance.qualityStatus, "ungraded");
+});
+
+test("workflow variants: agentic is loopback-only with browser-use; eval calls BOTH tuned and base", () => {
+  const v = buildCustomModelWorkflowVariants(modelFixture(), { workspaceConfig: wsWithReg });
+  const agent = v.agentic.nodes.find((n) => n.type === "api-registry-call");
+  assert.equal(agent.config.networkPolicy, "loopback-only");
+  assert.equal(agent.config.permissions.browserUse, true);
+  const evalCalls = v["eval-vs-base"].nodes.filter((n) => n.type === "api-registry-call");
+  assert.equal(evalCalls.length, 2, "tuned + base");
+  assert.ok(evalCalls.some((n) => n.id === "tuned") && evalCalls.some((n) => n.id === "base"));
+});
+
+test("suggested actions: each carries a real config + canvas deep-link + sandbox row; gating is honest", () => {
+  const actions = deriveCustomModelSuggestedActions(modelFixture({ evidenceState: "verified" }), { workspaceConfig: wsWithReg }).actions;
+  assert.equal(actions.length, 5);
+  for (const a of actions) {
+    assert.ok(a.orchestrationConfig && a.orchestrationConfig.nodes.length >= 3, `${a.id} has a real config`);
+    assert.match(a.openHref, /^\/workflows\?object=custom-model-.*&row=custom-model-/, `${a.id} opens the canvas on its config`);
+    assert.ok(a.sandboxRow && a.sandboxRow.orchestrationConfig, `${a.id} creates a governed sandbox row`);
+    assert.equal(a.applyIntent, "create_sandbox_workflow");
+  }
+  // synthetic-scaling stays blocked until the model is complete (not just verified)
+  const synthetic = actions.find((a) => a.id === "synthetic-data-scaling");
+  assert.equal(synthetic.enabled, false, "synthetic scaling blocked until complete");
+  // unverified model → the verify-gated actions are blocked
+  const unverified = deriveCustomModelSuggestedActions(modelFixture({ verificationStatus: "unverified", evidenceState: "deployed" }), { workspaceConfig: wsWithReg }).actions;
+  assert.equal(unverified.find((a) => a.id === "use-in-workflow").enabled, false);
 });
