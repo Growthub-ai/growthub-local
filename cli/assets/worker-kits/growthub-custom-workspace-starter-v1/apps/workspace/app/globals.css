@@ -10233,6 +10233,69 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .training-run-card .training-progress-track { height: 6px; margin-top: 2px; }
 .training-run-card .training-progress-track span { background: #2563eb; }
 .training-run-card .training-progress-track.is-ready span { background: #16a34a; }
+.training-run-card,
+.training-preinit-card {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.training-run-card > .dm-api-action-card-body,
+.training-preinit-card > .dm-api-action-card-body {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.training-run-card .training-run-top,
+.training-preinit-card .training-run-top { width: 100%; }
+.training-run-card .dm-tabs { width: 100%; max-width: 100%; box-sizing: border-box; }
+.training-preinit-card .training-run-pct { font-size: 24px; }
+.training-preinit-card .training-progress-track { height: 7px; }
+.training-preinit-checks {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #e5e7eb;
+}
+.training-preinit-checks li {
+  display: grid;
+  grid-template-columns: 18px minmax(190px, .42fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid #f3f4f6;
+  min-width: 0;
+}
+.training-preinit-checks li:first-child { border-top: 0; }
+.training-preinit-check-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #92400e;
+}
+.training-preinit-check-icon.is-ok { color: #15803d; }
+.training-preinit-check-label {
+  min-width: 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.training-preinit-check-detail {
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.training-run-card .dm-cockpit-fields,
+.training-run-card .dm-cockpit-receipts,
+.training-run-card .training-progress-track { width: 100%; max-width: 100%; box-sizing: border-box; }
 .training-advanced { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; background: #fafafa; }
 .training-advanced > summary { font-size: 12px; color: #6b7280; cursor: pointer; list-style: revert; }
 .training-advanced-pre { margin: 8px 0 0; padding: 8px 10px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }

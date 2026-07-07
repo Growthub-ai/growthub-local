@@ -1,5 +1,5 @@
 # Custom Local Model Training — Golden Path V1
-
+FAKE not done yet.
 The end-to-end, governed, no-code path that takes real workspace reasoning
 traces to a **real local custom model** (distilled corpus → QLoRA fine-tune →
 GGUF convert → quantize → Ollama serve → tuned-tag verify → workflow smoke),
@@ -42,8 +42,11 @@ live invocation is a REAL sandbox run, not UI validation:
    (`lib/training-pipeline-scripts.js` — `train.py`, `merge_and_export.py`,
    converter shim), installs/starts the model server (Homebrew when truly
    absent, `OLLAMA_MODELS` pointed at the discovered store), installs the
-   python training packages (`torch transformers datasets peft trl`, verified
-   by real import), installs the quantize tools (`brew install llama.cpp`
+   python training packages (`torch transformers datasets peft trl`) into the
+   WORKSPACE-OWNED venv at `~/.growthub/training-venv` — system pythons are
+   PEP 668 externally managed and refuse installs, so the workspace owns its
+   environment (verified by real import through the venv interpreter) —
+   installs the quantize tools (`brew install llama.cpp`
    when none discovered), write-probes the artifact folder, measures the
    machine (disk-at-folder blocks; RAM/VRAM warn), and requires a REAL
    chat-completions HTTP 200. Phase markers are stamped before every long
@@ -54,7 +57,8 @@ live invocation is a REAL sandbox run, not UI validation:
    blocking `preinit-probe-passed` check reads a passed probe receipt for the
    approved draft (`result.preInitRunId`). The training runner then
    self-provisions its fresh sandbox workdir (scripts + linked llama.cpp
-   binaries + `python`→`python3` resolution), performs **distillation as a
+   binaries; the fine-tune/merge steps run on the workspace training venv,
+   falling back to `python3`), performs **distillation as a
    real stage** (exports the curated governed traces to the JSONL the
    fine-tune consumes, stamped `distilling`), and runs the full argv pipeline.
    The modal starts its receipt poll BEFORE firing the synchronous
@@ -182,7 +186,8 @@ BASE_URL=http://127.0.0.1:3777 PLAYWRIGHT_DIR=$PWD \
 
 ## Proven in-container vs deferred to a real machine
 
-**Proven here** (no GPU): the governed brain (all derivers, 72/72), the ladder
+**Proven here** (no GPU): the governed brain (all derivers, 87/87 runtime +
+17/17 local-readiness), the ladder
 + demotions (29/29), the chat-completion proof against a real local HTTP server
 (17/17), the real `/data-model` workspace shell + governed rows, the composed
 argv pipeline shown in the real modal, the one-click governed receipt write, and

@@ -1053,9 +1053,41 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       let state = derivePreInitState(probeRow || {});
 
       if (!state.present) {
+        const stdout = String(data?.response?.stdout || "");
+        const completed = /PREINIT_COMPLETE\s+PASS/i.test(stdout) && Number(data?.response?.exitCode) === 0 && !data?.response?.error;
+        if (completed) {
+          const parsedChecks = stdout.split(/\r?\n/).map((line) => {
+            const m = /^CHECK\s+(PASS|WARN)\s+([^:]+):\s*(.*)$/.exec(line.trim());
+            if (!m) return null;
+            return {
+              id: m[2],
+              label: m[2].split("-").map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(" "),
+              ok: true,
+              detail: m[3],
+              blocking: m[1] !== "WARN",
+            };
+          }).filter(Boolean);
+          const endpointLine = parsedChecks.find((c) => c.id === "endpoint-200")?.detail || "";
+          const endpointStatus = /HTTP\s+200/i.test(endpointLine) ? 200 : null;
+          const passReceipt = {
+            present: true,
+            ok: true,
+            checks: parsedChecks,
+            blockedReason: "",
+            endpointStatus,
+            completedAt: new Date().toISOString(),
+          };
+          await patchObjects((objects) => objects.map((o) => (o?.objectType !== TRAINING_RUN_OBJECT_TYPE ? o : {
+            ...o,
+            rows: (Array.isArray(o.rows) ? o.rows : []).map((row) => (String(row?.trainingRunId || "") === preInitRunId
+              ? { ...row, status: "prepared", blockedReason: "", preinit: { schema: "growthub-preinit-probe-v1", ok: true, checks: parsedChecks, endpointStatus, completedAt: passReceipt.completedAt } }
+              : row)),
+          })));
+          state = passReceipt;
+        } else {
         // The probe never stamped — reconcile the zombie row to a governed,
         // honest failure (same discipline as the training handshake deadline).
-        const reason = String(data?.response?.stderr || data?.response?.error || data?.response?.stdout || "The pre-init check could not run on this machine.").trim().slice(0, 300);
+        const reason = String(data?.response?.stderr || data?.response?.error || stdout || "The pre-init check could not run on this machine.").trim().slice(0, 300);
         await patchObjects((objects) => objects.map((o) => (o?.objectType !== TRAINING_RUN_OBJECT_TYPE ? o : {
           ...o,
           rows: (Array.isArray(o.rows) ? o.rows : []).map((row) => (String(row?.trainingRunId || "") === preInitRunId
@@ -1063,6 +1095,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             : row)),
         })));
         state = { present: true, ok: false, checks: [{ id: "probe-run", label: "Pre-init check ran", ok: false, detail: reason }], blockedReason: reason, endpointStatus: null, completedAt: "" };
+        }
       }
 
       // Stamp the model-training version row with the chosen folder + the
@@ -1875,7 +1908,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   gates (never a fabricated 0%); each check is a governed,
                   evidence-derived readiness signal. */}
               {trainPhase !== "running" ? (
-                <section className="dm-api-action-card" data-train-preinit={startReadiness.canStart ? "ready" : "gating"} aria-label="Pre-initialization readiness" style={{ marginTop: 4 }}>
+                <section className="dm-api-action-card training-preinit-card" data-train-preinit={startReadiness.canStart ? "ready" : "gating"} aria-label="Pre-initialization readiness" style={{ marginTop: 4 }}>
                   <div className="dm-api-action-card-body" style={{ width: "100%" }}>
                     <div className="training-run-top">
                       <span className="dm-api-action-card-eyebrow">Pre-initialization</span>
@@ -1886,14 +1919,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       <span style={{ width: `${startReadiness.readyPct}%` }} />
                     </div>
                     <div className="dm-api-action-card-note" data-train-preinit-label="" style={{ marginTop: 6 }}>{startReadiness.preInit.label}</div>
-                    <ul className="dm-cockpit-receipts" data-train-preinit-checks={`${startReadiness.preInit.done}/${startReadiness.preInit.total}`} style={{ marginTop: 8 }}>
+                    <ul className="training-preinit-checks" data-train-preinit-checks={`${startReadiness.preInit.done}/${startReadiness.preInit.total}`}>
                       {startReadiness.checks.map((c) => (
-                        <li key={c.id} className="dm-cockpit-receipt" data-train-check={c.id} data-train-check-ok={c.ok ? "true" : "false"}>
-                          <span className={`dm-cockpit-receipt-chip dm-status-chip ${c.ok ? "is-ok" : "is-warn"}`}>
-                            {c.ok ? <Check size={12} aria-hidden="true" /> : <AlertTriangle size={12} aria-hidden="true" />}
-                            {c.label}
+                        <li key={c.id} data-train-check={c.id} data-train-check-ok={c.ok ? "true" : "false"}>
+                          <span className={`training-preinit-check-icon ${c.ok ? "is-ok" : "is-warn"}`}>
+                            {c.ok ? <Check size={13} aria-hidden="true" /> : <AlertTriangle size={13} aria-hidden="true" />}
                           </span>
-                          <span className="dm-cockpit-receipt-text">{c.detail}</span>
+                          <span className="training-preinit-check-label">{c.label}</span>
+                          <span className="training-preinit-check-detail">{c.detail}</span>
                         </li>
                       ))}
                     </ul>

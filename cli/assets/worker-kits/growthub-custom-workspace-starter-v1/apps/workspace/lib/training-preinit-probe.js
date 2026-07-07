@@ -345,7 +345,7 @@ export function buildPreInitProbeScript({
     "    try { execFileSync(py, ['-c', `from huggingface_hub import model_info; model_info('${P.hfBaseId}')`], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 60000 }); weightsOk = true; weightsDetail = `${P.hfBaseId} reachable`; }",
     "    catch (e) { weightsDetail = `Base weights ${P.hfBaseId} not reachable yet — if the model is license-gated, accept its license and set HF_TOKEN; training stops honestly at fine-tune otherwise.`; }",
     "  } else { weightsDetail = 'Checked once the Python packages are ready.'; }",
-    "  add('base-weights', 'Base model weights reachable', weightsOk, weightsDetail, false);",
+    "  add('base-weights', 'Base model weights reachable', weightsOk, weightsDetail);",
     // ---- 7. REAL chat-completions 200 against the registered endpoint —
     // required when the server is up (never fake a 200); recorded as a
     // warning when there is no server to ask yet.

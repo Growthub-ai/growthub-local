@@ -250,8 +250,12 @@ function probeTooling(io, storageLocations, ollama) {
   // train / merge / convert scripts are the WORKSPACE'S OWN files — provisioned
   // automatically by the pre-init probe when absent, never a user install.
   const provisioned = Object.keys(PIPELINE_SCRIPTS);
-  const quantizeBin = findPipelineAsset(io, ["llama-quantize"], externalBuildDirs);
-  const imatrixBin = findPipelineAsset(io, ["llama-imatrix"], externalBuildDirs);
+  // Tool discovery is host-agnostic: first honor workspace/external llama.cpp
+  // folders, then fall back to the operator PATH. A Homebrew, apt, or manually
+  // installed llama.cpp toolchain is real evidence and must not be hidden just
+  // because it is outside the selected artifact folder.
+  const quantizeBin = findPipelineAsset(io, ["llama-quantize"], externalBuildDirs) || io.which("llama-quantize");
+  const imatrixBin = findPipelineAsset(io, ["llama-imatrix"], externalBuildDirs) || io.which("llama-imatrix");
 
   return [
     { id: "dataset-builder", label: "Training data builder", ok: true, detail: "Built into this workspace" },
