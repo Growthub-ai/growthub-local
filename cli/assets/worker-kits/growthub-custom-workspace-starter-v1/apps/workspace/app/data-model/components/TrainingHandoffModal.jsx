@@ -92,7 +92,6 @@ const STAGE_HEADLINES = {
 const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
 const TRAINING_ARTIFACT_ROOT_OPTIONS = [
   { value: "./artifacts", label: "Workspace artifacts" },
-  { value: "/Volumes", label: "Mounted external volume" },
   { value: "__custom__", label: "Custom path..." },
 ];
 
@@ -438,6 +437,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [artifactRoot, setArtifactRoot] = useState(TRAINING_ARTIFACT_ROOT_OPTIONS[0].value);
   const [customArtifactRoot, setCustomArtifactRoot] = useState("");
+  const [artifactRootOptions, setArtifactRootOptions] = useState(TRAINING_ARTIFACT_ROOT_OPTIONS);
+  const [localHostProfile, setLocalHostProfile] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [httpStatus, setHttpStatus] = useState(null); // real HTTP status from the test lane
@@ -495,6 +496,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     return () => { cancelled = true; };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/workspace/local-artifact-roots", { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.roots) && data.roots.length) setArtifactRootOptions(data.roots);
+        if (!cancelled && data?.system) setLocalHostProfile(data.system);
+      } catch { /* fall back to workspace/custom options */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
+
   const candidates = useMemo(() => eligibleTraceRows(workspaceConfig, minScore), [workspaceConfig, minScore]);
   const selected = candidates.filter(({ index }) => !excluded.has(index));
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
@@ -534,6 +549,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
+  const selectedRootOption = artifactRootOptions.find((opt) => opt.value === artifactRoot) || null;
+  const selectedDiskFreeGB = artifactRoot === "./artifacts"
+    ? Number(selectedRootOption?.diskFreeGB || localHostProfile?.workspaceDiskFreeGB || 0)
+    : Number(selectedRootOption?.diskFreeGB || 0);
+  const customPathMissing = artifactRoot === "__custom__" && !String(customArtifactRoot || "").trim();
+  const localGateReasons = [
+    customPathMissing ? "choose a custom artifact path" : "",
+    localHostProfile && Number(localHostProfile.ramGB || 0) < floor.ramGB ? `needs ${floor.ramGB} GB RAM, ${Number(localHostProfile.ramGB || 0)} GB present` : "",
+    artifactRoot !== "__custom__" && selectedDiskFreeGB > 0 && selectedDiskFreeGB < floor.diskGB ? `needs ${floor.diskGB} GB free disk, ${selectedDiskFreeGB} GB available` : "",
+  ].filter(Boolean);
+  const localGateOk = localGateReasons.length === 0;
   // A tag-specific safety failure drives a field-level error on the tag input,
   // not a scary command dump. Any other safety/missing reason is a clean block.
   const tagUnsafe = Boolean(runConfig.commandSafety && !runConfig.commandSafety.ok
@@ -736,6 +762,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
     if (!Array.isArray(runConfig.steps) || runConfig.steps.length === 0) {
       setError("This profile has no governed argv steps — it is import-only. Pick the one-click pipeline profile to run locally.");
+      return;
+    }
+    if (!localGateOk) {
+      setError(`Cannot start: ${localGateReasons.join("; ")}.`);
       return;
     }
     setTrainPhase("starting");
@@ -1312,22 +1342,24 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       </div>
                     </div>
                   ) : null}
-                  {(stageIssue || error || String(liveRunRow?.status || "").toLowerCase() === "blocked") ? (
-                    <div className="dm-helper-toolcall dm-swarm-card" data-train-drive-picker="" style={{ marginTop: 10 }}>
-                      <div className="dm-helper-toolcall-title dm-swarm-card-title">Training storage</div>
-                      <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Artifact disk{" "}
-                        <select value={artifactRoot} onChange={(e) => setArtifactRoot(e.target.value)} data-train-artifact-root="">
-                          {TRAINING_ARTIFACT_ROOT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
+                  <div className="dm-helper-toolcall dm-swarm-card" data-train-drive-picker="" style={{ marginTop: 10 }}>
+                    <div className="dm-helper-toolcall-title dm-swarm-card-title">Training storage</div>
+                    <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Artifact disk{" "}
+                      <select value={artifactRoot} onChange={(e) => setArtifactRoot(e.target.value)} data-train-artifact-root="">
+                        {artifactRootOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                      </select>
+                    </label>
+                    {artifactRoot === "__custom__" ? (
+                      <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Path{" "}
+                        <input type="text" value={customArtifactRoot} placeholder="/Volumes/Your Drive/path" onChange={(e) => setCustomArtifactRoot(e.target.value)} data-train-artifact-root-custom="" />
                       </label>
-                      {artifactRoot === "__custom__" ? (
-                        <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Path{" "}
-                          <input type="text" value={customArtifactRoot} placeholder="/Volumes/Your Drive/path" onChange={(e) => setCustomArtifactRoot(e.target.value)} data-train-artifact-root-custom="" />
-                        </label>
-                      ) : null}
-                      <div className="dm-helper-stream dm-swarm-card-desc" style={{ marginTop: 8 }}>{runConfig.artifactPath}</div>
+                    ) : null}
+                    <div className="dm-helper-stream dm-swarm-card-desc" style={{ marginTop: 8 }}>{runConfig.artifactPath}</div>
+                    <div className={`dm-status-chip ${localGateOk ? "is-ok" : "is-warn"}`} data-train-local-preflight={localGateOk ? "ok" : "blocked"} style={{ marginTop: 8 }}>
+                      <span className="dm-status-dot" aria-hidden="true" />
+                      {localGateOk ? "Local preflight ready" : localGateReasons.join(" · ")}
                     </div>
-                  ) : null}
+                  </div>
 
                   <div className="dm-tabs" role="tablist" style={{ marginTop: 12 }}>
                     <button type="button" role="tab" aria-selected="true" className="dm-tab-v2 active" data-train-tab="events">Events</button>
@@ -1386,7 +1418,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               <div className="training-handoff-action-row">
                 <a className="dm-btn-outline" href="/data-model?object=model-training-run" data-train-open-runs="">Open in Runs</a>
                 {trainPhase !== "running" ? (
-                  <button type="button" className="dm-btn-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !(runConfig.steps && runConfig.steps.length)}>
+                  <button type="button" className="dm-btn-primary" data-train-start="" onClick={startTraining} disabled={trainPhase === "starting" || !runConfig.ready || !localGateOk || !(runConfig.steps && runConfig.steps.length)}>
                     {trainPhase === "starting" ? "Starting…" : "Start training"}
                   </button>
                 ) : (
