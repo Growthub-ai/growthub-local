@@ -31,6 +31,7 @@ const lib = (rel) => pathToFileURL(path.join(DIR, "cli/assets/worker-kits/growth
 const { deriveTrainingProofChecklist, deriveTrainingCompletionReward, deriveServingProfile, deriveTrainingStageIssue, deriveTrainingResumeState, deriveTrainingWaitState } = await import(lib("training-runtime-drivers.js"));
 const { verifyTunedResponse } = await import(lib("training-verification.js"));
 const { deriveDistillationPipelineState } = await import(lib("training-ledger.js"));
+const { deriveCustomModelsState } = await import(lib("custom-models-ledger.js"));
 
 const R = [];
 const rec = (s, ok, d = "") => { R.push({ s, ok }); console.log(`${ok ? "PASS" : "FAIL"}  ${s}${d ? ` — ${d}` : ""}`); };
@@ -67,6 +68,35 @@ const liveRows = async () => {
   const reg = o.filter((x) => x.objectType === "api-registry").flatMap((x) => x.rows || []).find((r) => String(r.integrationId || "").includes("model") || String(r.baseUrl || "").includes(":11434")) || {};
   return { run, reg };
 };
+
+// Configure the workspace assistant live (the real setup a user does before
+// using slash commands) so the canonical /custom-models entry can route.
+async function ensureAssistantLive() {
+  const cfg = await getWS();
+  const objs = cfg.workspaceConfig.dataModel.objects;
+  const liveRow = { Name: "workspace-helper", lifecycleStatus: "live", runLocality: "local", adapter: "local-intelligence", intelligenceAdapterMode: "ollama", localModel: "gemma3", localEndpoint: "http://127.0.0.1:11434/v1", status: "live" };
+  const hs = objs.find((o) => o.id === "workspace-helper-sandbox");
+  if (!hs) objs.push({ id: "workspace-helper-sandbox", label: "Workspace Helper", source: "Workspace Helper", objectType: "sandbox-environment", icon: "Sparkles", columns: Object.keys(liveRow), rows: [liveRow], binding: { mode: "manual", source: "Workspace Helper" }, relations: [], fieldSettings: { hidden: [], order: Object.keys(liveRow) } });
+  else hs.rows = [{ ...(hs.rows?.[0] || {}), ...liveRow }];
+  await patchWS(objs);
+  await wait(700);
+}
+
+// Canonical cockpit entry: the AI-native deep-link (?helper=open&prompt=…) opens
+// the assistant with the composer prefilled, then the /custom-models slash
+// command routes to the Custom Models cockpit view — the same entry path every
+// sidecar view uses. Returns true if the cockpit rendered.
+async function openCustomModelsCockpit() {
+  await ensureAssistantLive();
+  await page.goto(`${BASE}/data-model?helper=open&prompt=${encodeURIComponent("/custom-models")}`, { waitUntil: "networkidle" });
+  await wait(2500);
+  const composer = page.locator(".dm-helper-composer-textarea");
+  for (let i = 0; i < 20 && !(await composer.count()); i += 1) await wait(400);
+  if (await composer.count()) { await composer.first().focus(); await page.keyboard.press("Enter"); }
+  await page.locator("[data-custom-models-view]").first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  await wait(800);
+  return (await page.locator("[data-custom-models-view]").count()) > 0;
+}
 
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", headless: true, args: ["--no-proxy-server", "--no-sandbox"] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 950 }, acceptDownloads: true });
@@ -301,11 +331,15 @@ try {
   { const { reg } = await liveRows(); const serving = deriveServingProfile(reg, { expectedTag: TAG }); rec("state-14 live-deployment: registry connected + serves tuned tag", serving.verified, serving.reason);
     write({ stateId: "state-14-live-deployment", visibleTitle: TAG, visibleStatus: reg.status === "connected" ? "Deployed · Healthy" : (reg.status || "registered"), primaryCta: "Copy request", surface: "/training ledger (deployed model + endpoint over the connected api-registry row)", governedRows: { apiRegistry: REG, modelInvocation: `model-invocation:${REG}` }, proof: { endpoint: serving.endpoint, version: TAG, registryConnected: reg.status === "connected", servedModel: serving.servedModel, servesTunedTag: serving.servesTunedTag }, nextAllowedAction: "copy_request" }); }
 
-  // ===== STATE 16 — Model Cockpit (governed model-training row = operated) ==
-  await page.goto(`${BASE}/data-model?object=model-training`, { waitUntil: "networkidle" }); await wait(1000);
+  // ===== STATE 16 — Model Cockpit (REAL /custom-models sidecar via canonical entry) =
+  const cockpitRendered = await openCustomModelsCockpit();
   await shot("state-16-model-cockpit.png");
-  { const { run } = await liveRows(); rec("state-16 model-cockpit: operated model row present (imported + tuned tag)", String(run.artifactModelTag || "") === TAG, run.status);
-    write({ stateId: "state-16-model-cockpit", visibleTitle: TAG, visibleStatus: "Live", primaryCta: "Run again", surface: "/data-model · model-training (the operated model row; cockpit is the /custom-models sidecar view over it)", governedRows: { modelTraining: "workspace-local", apiRegistry: REG, sandboxEnvironment: "model-training-runner" }, proof: { operatedModelTag: run.artifactModelTag, quant: run.artifactQuantization, tabs: ["Overview", "Health", "Usage", "Versions", "Settings"], actions: ["Rollback", "Run new evaluation", "Adjust rollout"] }, nextAllowedAction: "operate_model" }); }
+  { const src = { [`model-invocation:${REG}`]: { records: [{ at: "2026-07-06T18:00:00Z", model: TAG }] } };
+    const cockpit = deriveCustomModelsState({ workspaceConfig: (await getWS()).workspaceConfig, workspaceSourceRecords: src });
+    const model = cockpit.models[0] || null;
+    const cardVisible = (await page.locator("[data-custom-model]").count()) > 0;
+    rec("state-16 model-cockpit: REAL /custom-models cockpit via canonical /custom-models slash entry", cockpitRendered && cardVisible, cockpitRendered ? `card=${cardVisible}` : "cockpit did not render");
+    write({ stateId: "state-16-model-cockpit", visibleTitle: TAG, visibleStatus: "Live", primaryCta: model?.nextAction || "Use model", surface: "/custom-models cockpit — canonical helper deep-link (?helper=open) + /custom-models slash command", governedRows: { modelTraining: model?.name || "workspace-local", apiRegistry: model?.apiRegistryId || REG, sandboxEnvironment: "workspace-helper-sandbox" }, proof: { cockpitRendered, cardVisible, evidenceState: model?.evidenceState, servingProfile: model?.servingProfile, nextAction: model?.nextAction, canonicalEntry: "?helper=open&prompt=/custom-models → slash → setActiveView('custom-models')", actions: ["Use model", "Improve from gaps", "View proof", "Export developer manifest"] }, nextAllowedAction: "operate_model" }); }
 
 } finally {
   await browser.close();
