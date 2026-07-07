@@ -90,11 +90,6 @@ const STAGE_HEADLINES = {
 /** The seeded test prompt the response inspector opens with — editable, the
  *  same mental model as the API/Webhook test-event editor. */
 const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
-const TRAINING_ARTIFACT_ROOT_OPTIONS = [
-  { value: "./artifacts", label: "Workspace artifacts" },
-  { value: "/Volumes", label: "Mounted external volume" },
-  { value: "__custom__", label: "Custom path..." },
-];
 
 function eligibleTraceRows(workspaceConfig, minScore) {
   const objects = workspaceConfig?.dataModel?.objects || [];
@@ -436,8 +431,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [stageIssue, setStageIssue] = useState(null);
   const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
-  const [artifactRoot, setArtifactRoot] = useState(TRAINING_ARTIFACT_ROOT_OPTIONS[0].value);
-  const [customArtifactRoot, setCustomArtifactRoot] = useState("");
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [httpStatus, setHttpStatus] = useState(null); // real HTTP status from the test lane
@@ -529,8 +522,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     .filter((r) => /^.+-v\d+$/.test(String(r?.Name || ""))).length;
   const reservedTag = (tunedTag || `${SLUG}-tuned-v${version}`).trim();
   const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
-  const selectedArtifactRoot = String(artifactRoot === "__custom__" ? customArtifactRoot : artifactRoot || TRAINING_ARTIFACT_ROOT_OPTIONS[0].value).replace(/\/+$/, "");
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${selectedArtifactRoot}/${reservedTag}` });
+  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `./artifacts/${reservedTag}` });
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -1312,23 +1304,6 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                       </div>
                     </div>
                   ) : null}
-                  {(stageIssue || error || String(liveRunRow?.status || "").toLowerCase() === "blocked") ? (
-                    <div className="dm-helper-toolcall dm-swarm-card" data-train-drive-picker="" style={{ marginTop: 10 }}>
-                      <div className="dm-helper-toolcall-title dm-swarm-card-title">Training storage</div>
-                      <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Artifact disk{" "}
-                        <select value={artifactRoot} onChange={(e) => setArtifactRoot(e.target.value)} data-train-artifact-root="">
-                          {TRAINING_ARTIFACT_ROOT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                        </select>
-                      </label>
-                      {artifactRoot === "__custom__" ? (
-                        <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Path{" "}
-                          <input type="text" value={customArtifactRoot} placeholder="/Volumes/Your Drive/path" onChange={(e) => setCustomArtifactRoot(e.target.value)} data-train-artifact-root-custom="" />
-                        </label>
-                      ) : null}
-                      <div className="dm-helper-stream dm-swarm-card-desc" style={{ marginTop: 8 }}>{runConfig.artifactPath}</div>
-                    </div>
-                  ) : null}
-
                   <div className="dm-tabs" role="tablist" style={{ marginTop: 12 }}>
                     <button type="button" role="tab" aria-selected="true" className="dm-tab-v2 active" data-train-tab="events">Events</button>
                     <a role="tab" className="dm-tab-v2" href="/data-model?object=model-training-run" data-train-tab="logs">Logs</a>
