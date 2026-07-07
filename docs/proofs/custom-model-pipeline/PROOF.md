@@ -93,6 +93,8 @@ tuned tag)` · `08 API Registry connected` · `09 workflow smoke outputHash`.
 
 Same class of deferral as PR #270's live-vendor smoke.
 
+**Machine-checkable contract:** the deferred step is scoped by [`OPERATOR_PROOF_CONTRACT.md`](./OPERATOR_PROOF_CONTRACT.md) and gated by `node scripts/verify-operator-proof-contract.mjs` — the operator submits `operator-proof.json` (hardware · tool versions · seed/determinism · dataset sha · checkpoint · artifact sha · quant source/output bytes · served tag · actual HTTP status + response body · output hash · screenshot/readback) and the validator asserts every field is present and self-consistent (httpStatus 200, served==tuned!=base, quant shrank). "GPU needed" cannot hide a missing field. Crash-safety is checkpoints/hashes/atomic renames, NOT continuous batching (a serving technique validated in state 14).
+
 ---
 
 ## Section D — screenshot / readback → governed-row index

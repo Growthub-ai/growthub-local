@@ -927,6 +927,38 @@ test("local-model choices: a live model-training-runner alone counts as configur
   assert.equal(c.configured, true);
 });
 
+// --------------------------------------------------------------------------
+// Idempotency (hard criterion #5) + monotonic progress (#4) — a double-click /
+// retry must reuse the SAME trainingRunId and can NEVER regress stage/counter/pct.
+// --------------------------------------------------------------------------
+
+test("idempotency: re-stamping the same trainingRunId reuses the id (no fork on double-click/retry)", () => {
+  const id = "trainrun_2026-07-06_v1";
+  const prepared = buildTrainingRunReceipt({ trainingRunId: id, modelTrainingRowId: "workspace-local", status: "prepared", datasetExportId: "exp_1" });
+  const runningAgain = buildTrainingRunReceipt({ trainingRunId: id, modelTrainingRowId: "workspace-local", status: "running", datasetExportId: "exp_1" });
+  const importedAgain = buildTrainingRunReceipt({ trainingRunId: id, modelTrainingRowId: "workspace-local", status: "imported", datasetExportId: "exp_1", artifact: { type: "gguf", modelTag: "t", path: "/m", sha256: "h" } });
+  assert.equal(prepared.trainingRunId, id);
+  assert.equal(runningAgain.trainingRunId, id, "a retry with the same id must not fork a new run");
+  assert.equal(importedAgain.trainingRunId, id);
+  // A fresh build (no id) mints a distinct one — reuse is explicit, not accidental.
+  const fresh = buildTrainingRunReceipt({ modelTrainingRowId: "workspace-local", status: "prepared", now: "2026-06-16T00:00:00.000Z" });
+  assert.notEqual(fresh.trainingRunId, id);
+  assert.ok(fresh.trainingRunId.startsWith("trainrun_"));
+});
+
+test("monotonic progress: a stale/duplicate write can never regress stage → counter → pct", () => {
+  const finetune = normalizeProgress({ stageId: "fine-tuning", stageRank: 2, pct: 48, counter: 220, total: 500 });
+  // Higher stage wins.
+  assert.equal(nextProgress(finetune, normalizeProgress({ stageId: "quantizing", stageRank: 4, pct: 80 })).stageId, "quantizing");
+  // A stale earlier-stage write is refused (stays at fine-tuning).
+  assert.equal(nextProgress(finetune, normalizeProgress({ stageId: "distilling", stageRank: 1, pct: 99 })).stageId, "fine-tuning");
+  // Same stage, lower counter is refused; higher counter advances.
+  assert.equal(nextProgress(finetune, normalizeProgress({ stageId: "fine-tuning", stageRank: 2, pct: 10, counter: 100, total: 500 })).counter, 220);
+  assert.equal(nextProgress(finetune, normalizeProgress({ stageId: "fine-tuning", stageRank: 2, pct: 50, counter: 300, total: 500 })).counter, 300);
+  // Same stage + same counter, lower pct is refused.
+  assert.equal(nextProgress(finetune, normalizeProgress({ stageId: "fine-tuning", stageRank: 2, pct: 5, counter: 220, total: 500 })).pct, 48);
+});
+
 test("local-model choices: never throws on garbage input", () => {
   for (const bad of [undefined, null, {}, { dataModel: null }, { dataModel: { objects: "nope" } }]) {
     const c = deriveLocalModelChoices({ workspaceConfig: bad });
