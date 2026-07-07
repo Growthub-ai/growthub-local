@@ -107,7 +107,7 @@ test("normalize: creates a governed sandbox row with a REAL graph, artifact open
   assert.doesNotThrow(() => validateWorkspaceConfig(result.config));
 });
 
-test("normalize: recursive-learning carries a real schedule trigger (schedulerCron)", () => {
+test("normalize: no schedule trigger is attached (scheduler rolled back)", () => {
   const { workspaceConfig, sourceRecords } = verifiedWorkspace();
   const result = normalizeCustomModelWorkflowProposal(
     buildCustomModelWorkflowProposal({ modelId: "workspace-local", variant: "recursive-learning" }),
@@ -116,10 +116,7 @@ test("normalize: recursive-learning carries a real schedule trigger (schedulerCr
   assert.equal(result.ok, true, result.error);
   const obj = result.config.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
   const row = obj.rows.find((r) => r.Name === "custom-model-recursive-learning");
-  assert.ok(row.schedulerCron && row.schedulerCron.trim(), "schedule trigger set");
-  const graph = JSON.parse(row.orchestrationConfig);
-  assert.ok(graph.nodes.some((n) => n.id === "self-grade"), "self-grade node present");
-  assert.ok(graph.nodes.some((n) => n.id === "write-trace"), "writes graded trace back to corpus");
+  assert.ok(!row.schedulerCron, "no schedule trigger — scheduler action rolled back");
 });
 
 test("normalize: refuses an unverified endpoint (no base-model workflow can bind)", () => {
@@ -164,19 +161,18 @@ test("focus actions: causation modes — create when absent, open when present, 
   const state = deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords: sourceRecords });
   const model = state.models.find((m) => m.id === "workspace-local");
 
-  // Before any workflow exists → both focus actions are "create".
+  // A single focused action; before any workflow exists → "create".
   const before = deriveCustomModelFocusActions(model, { workspaceConfig });
-  assert.deepEqual(before.map((a) => a.id), ["open-in-canvas", "build-training-data"]);
-  assert.ok(before.every((a) => a.mode === "create"), "create when absent");
+  assert.deepEqual(before.map((a) => a.id), ["open-in-canvas"]);
+  assert.equal(before[0].mode, "create", "create when absent");
 
-  // After creating the chat workflow → that action flips to "open".
+  // After creating the chat workflow → the action flips to "open".
   const created = normalizeCustomModelWorkflowProposal(
     buildCustomModelWorkflowProposal({ modelId: "workspace-local", variant: "chat" }),
     workspaceConfig, sourceRecords,
   ).config;
   const after = deriveCustomModelFocusActions(model, { workspaceConfig: created });
   assert.equal(after.find((a) => a.id === "open-in-canvas").mode, "open");
-  assert.equal(after.find((a) => a.id === "build-training-data").mode, "create");
 
   // Unverified model → blocked (no fake enablement).
   const blocked = deriveCustomModelFocusActions({ ...model, verificationStatus: "unverified" }, { workspaceConfig });

@@ -37,11 +37,6 @@ export const CUSTOM_MODEL_WORKFLOW_VARIANTS = [
   "eval-vs-base",
 ];
 
-// The recursive training-data loop is created with a real schedule trigger so
-// it runs continuously and keeps appending graded traces to the corpus. Daily
-// at 09:00 — a governed default the operator can retune in the Schedule cockpit.
-const RECURSIVE_LEARNING_CRON = "0 9 * * *";
-
 const clean = (value) => String(value == null ? "" : value).trim();
 
 /** Client-built intent proposal — payload carries NO graph, only references. */
@@ -87,7 +82,7 @@ export function ensureCustomModelWorkflowsObject(config) {
     icon: "Workflow",
     columns: [
       "Name", "lifecycleStatus", "runLocality", "runtime", "adapter",
-      "schedulerRegistryId", "schedulerCron", "status", "lastTested", "instructions",
+      "schedulerRegistryId", "status", "lastTested", "instructions",
     ],
     rows: [],
     binding: { mode: "manual", source: CUSTOM_MODEL_WORKFLOWS_LABEL },
@@ -152,18 +147,12 @@ export function normalizeCustomModelWorkflowProposal(proposal, workspaceConfig, 
     return { ok: false, config: workspaceConfig, artifact: null, summary: "", error: `unknown variant "${variant}"` };
   }
 
-  let row = buildCustomModelSandboxRow(model, variant, orchestrationConfig);
-  // The recursive training-data loop carries a real schedule trigger so it runs
-  // continuously — surfaced/retunable in the Schedule cockpit (schedulerCron).
-  if (variant === "recursive-learning") {
-    row = { ...row, schedulerCron: RECURSIVE_LEARNING_CRON };
-  }
-
+  const row = buildCustomModelSandboxRow(model, variant, orchestrationConfig);
   const nextConfig = upsertCustomModelWorkflowRow(workspaceConfig, row);
   return {
     ok: true,
     config: nextConfig,
     artifact: { surface: "workflow", objectId: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, rowName: row.Name },
-    summary: `Created ${row.Name} bound to ${model.localModel || model.name}${variant === "recursive-learning" ? " (scheduled)" : ""}`,
+    summary: `Created ${row.Name} bound to ${model.localModel || model.name}`,
   };
 }

@@ -428,10 +428,10 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
 }
 
 /**
- * The two FOCUSED first-utilization actions for a live custom model — the
+ * The single FOCUSED first-utilization action for a live custom model — the
  * causation-derived "what do I click to actually use this?" for a non-technical
  * operator. Mirrors the CEO cockpit's sub-atomic worker next-action pattern:
- * each action resolves to one of three governed modes, so a click always DOES
+ * the action resolves to one of three governed modes, so a click always DOES
  * something real (never a dead redirect):
  *
  *   - "create" — the workflow row does not exist yet: clicking POSTs the
@@ -443,10 +443,7 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
  *     tuned tag before a workflow can bind. Honest reason, no fake enablement.
  *
  * `variant` maps to a REAL closed-loop graph from buildCustomModelWorkflowVariants:
- *   open-in-canvas     → chat               (input → model-call → save response)
- *   build-training-data→ recursive-learning (answer → self-grade → write graded
- *                        trace) created on a schedule trigger — a continuous
- *                        feedback loop back into the training corpus.
+ *   open-in-canvas → chat (input → model-call → save response).
  */
 export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
   const verified = model?.verificationStatus === "verified";
@@ -468,11 +465,6 @@ export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
       id: "open-in-canvas", variant: "chat", title: "Open in canvas",
       createHint: "Wires your model into a ready-to-run workflow and opens it.",
       openHint: "Open your model's workflow on the canvas.",
-    },
-    {
-      id: "build-training-data", variant: "recursive-learning", title: "Build training data",
-      createHint: "Runs your model on a schedule, self-grades, and feeds the best answers back into training.",
-      openHint: "Open your recursive training loop.",
     },
   ];
 
