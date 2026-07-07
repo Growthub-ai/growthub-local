@@ -275,6 +275,17 @@ try {
     rec("state-12 first-invocation: served == tuned tag (not base)", v.verified && serving.servesTunedTag && v.servedModel !== BASEM, `served=${v.servedModel}`);
     write({ stateId: "state-12-first-invocation", visibleTitle: await txt("[data-verify-result] .dm-helper-toolcall-title") || "First invocation test", visibleStatus: "Success", primaryCta: (await txt("[data-verify-continue]")) || "Continue to deploy", surface: "Training Handoff modal · verify (Response/Trace/Details/Proof inspector)", governedRows: { modelTraining: "workspace-local", modelTrainingRun: RUN, apiRegistry: REG, sandboxEnvironment: "model-training-runner" }, proof: { expectedModel: TAG, servedModel: v.servedModel, baseModel: BASEM, notBaseModel: v.servedModel !== BASEM, httpStatus: 200, servesTunedTag: serving.servesTunedTag, servingAdapter: serving.adapter }, nextAllowedAction: "continue_to_deploy" }); }
 
+  // ===== STATE 12b — First Invocation DEMOTION (base model replied → not verified) =
+  // Negative variant of the dopamine state: the endpoint answers with the BASE
+  // model, so verification must DEMOTE — no fake green, no continue CTA.
+  await setRun({ status: "imported", startedAt: "2026-07-06T18:00:00Z", completedAt: "2026-07-06T18:30:00Z", artifactType: "gguf", artifactModelTag: TAG, artifactPath: `./artifacts/${TAG}/model.q4_k_m.gguf`, artifactSha256: "deadbeefcafef00d", artifactQuantization: "q4_k_m", artifactSourceBytes: 16000000000, artifactArtifactBytes: 4400000000, datasetRecords: 12, progress: { stageId: "complete", stageRank: 7, pct: 100, detail: "served", index: 6, total: 6, totalRecords: 12 } }, { regStatus: "registered", regResponse: tuned(BASEM) });
+  await wait(1200);
+  if (await page.locator("[data-verify-run]").count()) { await page.locator("[data-verify-run]").first().click(); await wait(1800); }
+  await shot("state-12b-first-invocation-demoted.png");
+  { const { reg } = await liveRows(); const v = verifyTunedResponse({ expectedTag: TAG, baseModel: BASEM, responseBody: reg.lastResponse });
+    rec("state-12b demotion: base-model response is NOT verified (no fake green)", v.verified === false && v.demotion === "base-model", `demotion=${v.demotion}`);
+    write({ stateId: "state-12b-first-invocation-demoted", visibleTitle: "First invocation test", visibleStatus: "Not your model — base model replied", primaryCta: "Test again", surface: "Training Handoff modal · verify (demotion)", governedRows: { apiRegistry: REG, modelTrainingRun: RUN }, proof: { expectedModel: TAG, servedModel: v.servedModel, baseModel: BASEM, notBaseModel: false, verified: false, demotion: v.demotion, continueCtaShown: (await page.locator("[data-verify-continue]").count()) > 0 }, nextAllowedAction: "retest_or_reimport" }); }
+
   // ===== STATE 15 — Customer Proof Loop (modal DONE panel: 9/9 + reward) =====
   // Re-send the test now that the connected reg row is settled, so the modal
   // flips to verified and surfaces the continue → done path.

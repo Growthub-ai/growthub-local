@@ -10220,6 +10220,20 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .training-advanced { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; background: #fafafa; }
 .training-advanced > summary { font-size: 12px; color: #6b7280; cursor: pointer; list-style: revert; }
 .training-advanced-pre { margin: 8px 0 0; padding: 8px 10px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+/* Custom Models cockpit (/custom-models sidecar) — mirror the design system;
+   clean filters + inputs (never raw black selects). */
+.dm-cockpit-page { display: grid; gap: 10px; }
+.dm-cockpit-page .dm-api-action-card { display: block; }
+.dm-cockpit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dm-cockpit-input, .dm-cockpit-select { height: 30px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 9px; box-sizing: border-box; }
+.dm-cockpit-input { flex: 1 1 160px; min-width: 120px; }
+.dm-cockpit-select { flex: 0 0 auto; padding-right: 26px; cursor: pointer; -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; }
+.dm-cockpit-input:focus, .dm-cockpit-select:focus { outline: none; border-color: #94a3b8; }
+.dm-cockpit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.dm-cockpit-summary { font-size: 12px; color: #6b7280; cursor: pointer; margin-top: 8px; }
+.dm-cockpit-action-cta { margin-left: auto; height: 24px; padding: 0 8px; font-size: 11px; }
 .training-progress-marks {
   display: flex;
   justify-content: space-between;

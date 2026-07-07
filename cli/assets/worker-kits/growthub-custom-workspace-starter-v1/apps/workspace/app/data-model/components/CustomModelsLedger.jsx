@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { Check, X } from "lucide-react";
 import { deriveCustomModelsState, buildCapabilityManifest, deriveCustomModelSuggestedActions } from "../../../lib/custom-models-ledger.js";
 import { deriveTrainingGapDrivers } from "../../../lib/training-runtime-drivers.js";
 
@@ -103,108 +104,136 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
   const gaps = useMemo(() => deriveTrainingGapDrivers({ workspaceConfig, workspaceSourceRecords }), [workspaceConfig, workspaceSourceRecords]);
   const hasComplete = state.models.some((m) => m.evidenceState === "complete");
 
+  // Evidence state → status pill tone (mirrors dm-status-chip across the app).
+  const pill = (s) => s === "complete" ? { label: "Live", cls: "is-ok" }
+    : s === "sandbox-ready" ? { label: "Sandbox-ready", cls: "is-ok" }
+      : s === "verified" ? { label: "Verified", cls: "is-ok" }
+        : s === "deployed" ? { label: "Deployed", cls: "" }
+          : { label: s || "recorded", cls: "is-warn" };
+
   // Empty state — read-first, one clear destination. Never a blank screen.
   if (!error && state.models.length === 0) {
     return (
       <div data-custom-models-ledger="" data-custom-models-empty="">
-        <div className="dm-helper-toolcall dm-swarm-card">
-          <div className="dm-helper-toolcall-title dm-swarm-card-title">No verified custom models yet</div>
-          <div className="dm-helper-stream dm-swarm-card-desc">A custom model appears here only once it has real evidence — a training run, an imported artifact, a verified endpoint. Open Training to turn governed workspace traces into a custom model.</div>
-          <a className="dm-btn-ghost" href="/training" data-custom-models-open-training="">Open Training</a>
-        </div>
+        <section className="dm-api-action-card dm-api-action-card-muted" aria-label="No custom models yet">
+          <div className="dm-api-action-card-body">
+            <p className="dm-api-action-card-eyebrow">Custom Models</p>
+            <h3>No verified custom models yet</h3>
+            <p>A custom model appears here only once it has real evidence — a training run, an imported artifact, a verified endpoint. Open Training to turn governed workspace traces into a custom model.</p>
+          </div>
+          <a className="dm-btn-primary-sm dm-api-action-card-cta" href="/training" data-custom-models-open-training="">Open Training</a>
+        </section>
       </div>
     );
   }
 
   return (
-    <div data-custom-models-ledger="">
+    <div data-custom-models-ledger="" className="dm-cockpit-page">
       {error ? <div className="dm-helper-error">{error}</div> : null}
 
-      <div className="dm-helper-toolcall dm-swarm-card" data-custom-models-summary="">
-        <div className="dm-run-console__hint">
-          {state.models.length} custom models · {verified} verified · {sandboxReady} sandbox-ready · latest {latest}
+      <section className="dm-api-action-card dm-api-action-card-muted" data-custom-models-summary="" aria-label="Custom models summary">
+        <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+          <p className="dm-api-action-card-eyebrow">Custom Models</p>
+          <div className="dm-cockpit-fields">
+            <span className="dm-cockpit-field"><b>models</b>{state.models.length}</span>
+            <span className="dm-cockpit-field"><b>verified</b>{verified}</span>
+            <span className="dm-cockpit-field"><b>sandbox</b>{sandboxReady}</span>
+            <span className="dm-cockpit-field"><b>latest</b>{latest}</span>
+          </div>
+          <p className="dm-api-action-card-note">{state.guidance}</p>
+          {hasComplete && gaps.hasGaps ? (
+            <p className="dm-api-action-card-note" data-custom-models-gaps={gaps.totalGapSignals}>Complete — and {gaps.totalGapSignals} new improvement signal(s) are ready for the next training cycle. {gaps.recommendation}</p>
+          ) : null}
+          <div className="dm-cockpit-filters">
+            <input className="dm-cockpit-input" placeholder="Search name / version" value={query} onChange={(e) => setQuery(e.target.value)} data-models-search="" />
+            <select className="dm-cockpit-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-models-status-filter="">
+              <option value="">All statuses</option>
+              {state.filters.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select className="dm-cockpit-select" value={modeFilter} onChange={(e) => setModeFilter(e.target.value)} data-models-mode-filter="">
+              <option value="">All endpoints</option>
+              {state.filters.endpointModes.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="dm-helper-stream dm-swarm-card-desc">{state.guidance}</div>
-        {hasComplete && gaps.hasGaps ? (
-          <div className="dm-run-console__hint" data-custom-models-gaps={gaps.totalGapSignals}>Complete — and {gaps.totalGapSignals} new improvement signal(s) are ready for the next training cycle. {gaps.recommendation}</div>
-        ) : null}
-        <div className="dm-helper-toolcall-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <input className="dm-run-console__hint" placeholder="search name/version" value={query} onChange={(e) => setQuery(e.target.value)} data-models-search="" />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} data-models-status-filter="">
-            <option value="">all statuses</option>
-            {state.filters.statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <select value={modeFilter} onChange={(e) => setModeFilter(e.target.value)} data-models-mode-filter="">
-            <option value="">all endpoints</option>
-            {state.filters.endpointModes.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-      </div>
+      </section>
 
-      {visible.map((model) => (
-        <div className="dm-helper-toolcall dm-swarm-card" key={model.id} data-custom-model={model.id} data-model-state={model.evidenceState}>
-          <div className="dm-helper-toolcall-row">
-            <span className="dm-helper-toolcall-title dm-swarm-card-title">{model.name}</span>
-            {/* Test routes to the canonical API Registry cockpit for this
-                row — proof is written there, never faked from this view. */}
-            {/* "Open test" — this NAVIGATES to the canonical registry
-                cockpit where the real test runs and writes proof; it does
-                not invoke anything from here, so it never says "Test". */}
-            {model.canTest
-              ? <a className="dm-btn-ghost" href={model.links.registry} data-model-test="">Use model</a>
-              : <a className="dm-btn-ghost" href={model.links.training} data-model-test="">Open Training</a>}
-            <ActionMenu model={model} workspaceConfig={workspaceConfig} />
-          </div>
-          <div className="dm-run-console__hint">
-            {model.modelVersion || "no version tag"} · {model.endpointMode} · {model.evidenceState}
-            {model.baseModel ? ` · base ${model.baseModel}` : ""}
-          </div>
-          <div className="dm-run-console__hint">
-            {model.apiRegistryId ? `registry ${model.apiRegistryId}` : "no registry row"}
-            {model.lastVerifiedAt ? ` · verified ${model.lastVerifiedAt.slice(0, 16).replace("T", " ")}` : ""}
-            {model.lastSandboxRunId ? ` · run ${model.lastSandboxRunId}` : ""}
-            {model.modelOutputHash ? ` · output #${model.modelOutputHash}` : model.snippetHash ? ` · snippet #${model.snippetHash}` : ""}
-          </div>
-          <div className="dm-helper-stream dm-swarm-card-desc">Next: {model.nextAction}</div>
-          {/* Full operational metadata — every derived field, absence shown
-              honestly. Closed by default (native details). */}
-          <details data-model-details="">
-            <summary className="dm-run-console__hint">Details</summary>
-            <div className="dm-run-console__hint">
-              served tag: {model.lastResponseModel || "—"} · verification: {model.verificationStatus} · registry: {model.apiRegistryId || "—"} · endpoint mode: {model.endpointMode} · base: {model.baseModel || "—"} · version: {model.modelVersion || "—"}
-            </div>
-            <div className="dm-run-console__hint">
-              verified at: {model.lastVerifiedAt || "—"} · run: {model.lastSandboxRunId || "—"} · outputHash: {model.modelOutputHash || "—"} · response hash: {model.lastResponseHash || "—"} · last invocation: {model.lastInvocationSourceId || "—"}
-            </div>
-            {/* Serving profile — the ACTUAL adapter/mode + optional batching /
-                speculative, proof-bound to the served tuned tag. */}
-            {model.servingProfile ? (
-              <div className="dm-run-console__hint" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
-                serving: {model.servingProfile.adapter} · mode {model.servingProfile.mode}
-                {model.servingProfile.continuousBatching ? " · continuous batching" : ""}
-                {model.servingProfile.speculative ? ` · speculative (draft ${model.servingProfile.speculative.draftModel})` : ""}
-                {" · "}{model.servingProfile.servesTunedTag ? "serves tuned tag ✓" : model.servingProfile.reason}
+      {visible.map((model) => {
+        const st = pill(model.evidenceState);
+        // End-state actions are the SAME causation-derived next actions the
+        // training checklist uses — closed loop into REUSING the local model.
+        const suggested = deriveCustomModelSuggestedActions(model, { workspaceConfig });
+        return (
+        <section className="dm-api-action-card" key={model.id} data-custom-model={model.id} data-model-state={model.evidenceState} aria-label={`Custom model ${model.name}`}>
+          <div className="dm-api-action-card-body" style={{ width: "100%" }}>
+            <div className="dm-cockpit-head" style={{ cursor: "default" }}>
+              <div className="dm-api-action-card-body" style={{ gap: 2 }}>
+                <p className="dm-api-action-card-eyebrow">Custom model</p>
+                <h3>{model.name}</h3>
               </div>
-            ) : null}
-          </details>
-          {/* Suggested actions — pure causation deriver, closed by default;
-              each action seeds a reviewable proposal / routes to a governed
-              surface (never mutates directly). */}
-          {(() => {
-            const suggested = deriveCustomModelSuggestedActions(model, { workspaceConfig });
-            return (
-              <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
-                <summary className="dm-run-console__hint">Suggested actions ({suggested.ready}/{suggested.actions.length})</summary>
+              <span className={`dm-status-chip ${st.cls}`} data-model-status={st.label}><span className="dm-status-dot" aria-hidden="true" />{st.label}</span>
+            </div>
+
+            <div className="dm-cockpit-fields" style={{ marginTop: 8 }}>
+              <span className="dm-cockpit-field"><b>version</b>{model.modelVersion || "—"}</span>
+              <span className="dm-cockpit-field"><b>base</b>{model.baseModel || "—"}</span>
+              <span className="dm-cockpit-field"><b>endpoint</b>{model.endpointMode}</span>
+              {model.apiRegistryId ? <span className="dm-cockpit-field"><b>registry</b>{model.apiRegistryId}</span> : null}
+              {model.lastVerifiedAt ? <span className="dm-cockpit-field"><b>verified</b>{model.lastVerifiedAt.slice(0, 16).replace("T", " ")}</span> : null}
+              {model.modelOutputHash ? <span className="dm-cockpit-field"><b>output</b>#{model.modelOutputHash}</span> : model.snippetHash ? <span className="dm-cockpit-field"><b>snippet</b>#{model.snippetHash}</span> : null}
+            </div>
+
+            <p className="dm-api-action-card-note">Next: {model.nextAction}</p>
+
+            {/* Primary reuse action + management menu. */}
+            <div className="dm-cockpit-actions">
+              {model.canTest
+                ? <a className="dm-btn-primary-sm" href={model.links.registry} data-model-test="">Use model</a>
+                : <a className="dm-btn-outline" href={model.links.training} data-model-test="">Open Training</a>}
+              {model.links.workflow ? <a className="dm-btn-outline" href={model.links.workflow} data-model-workflow="">Open workflow</a> : null}
+              <ActionMenu model={model} workspaceConfig={workspaceConfig} />
+            </div>
+
+            {/* Full operational metadata — every derived field, absence shown honestly. */}
+            <details data-model-details="">
+              <summary className="dm-cockpit-summary">Details</summary>
+              <div className="dm-cockpit-fields" style={{ marginTop: 6 }}>
+                <span className="dm-cockpit-field"><b>served</b>{model.lastResponseModel || "—"}</span>
+                <span className="dm-cockpit-field"><b>verify</b>{model.verificationStatus}</span>
+                <span className="dm-cockpit-field"><b>run</b>{model.lastSandboxRunId || "—"}</span>
+                <span className="dm-cockpit-field"><b>resp#</b>{model.lastResponseHash || "—"}</span>
+                <span className="dm-cockpit-field"><b>last inv</b>{model.lastInvocationSourceId ? "yes" : "—"}</span>
+              </div>
+              {model.servingProfile ? (
+                <p className="dm-api-action-card-note" data-model-serving={model.servingProfile.adapter} data-serving-tuned={model.servingProfile.servesTunedTag ? "yes" : "no"}>
+                  serving: {model.servingProfile.adapter} · mode {model.servingProfile.mode}
+                  {model.servingProfile.continuousBatching ? " · continuous batching" : ""}
+                  {model.servingProfile.speculative ? ` · speculative (draft ${model.servingProfile.speculative.draftModel})` : ""}
+                  {" · "}{model.servingProfile.servesTunedTag ? "serves tuned tag ✓" : model.servingProfile.reason}
+                </p>
+              ) : null}
+            </details>
+
+            {/* Suggested actions — pure causation deriver, same next-action
+                grammar as the training checklist; each routes to a governed
+                surface to REUSE the local model (workflow node, more training
+                data, browser-use agent, export). Never mutates directly. */}
+            <details data-model-suggested-actions="" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`} open>
+              <summary className="dm-cockpit-summary">Reuse this model — suggested actions ({suggested.ready}/{suggested.actions.length})</summary>
+              <ul className="dm-api-action-checklist" style={{ marginTop: 8 }}>
                 {suggested.actions.map((a) => (
-                  <div key={a.id} className="dm-run-console__hint" data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"}>
-                    {a.enabled ? "→" : "·"} <strong>{a.title}</strong> — {a.enabled ? a.whyNow : `blocked: ${a.blockedReason}`} · <a className="dm-btn-ghost" href={a.targetSurface}>{a.targetSurface}</a>
-                  </div>
+                  <li key={a.id} className={a.enabled ? "is-done" : "is-pending"} data-suggested-action={a.id} data-action-enabled={a.enabled ? "yes" : "no"}>
+                    {a.enabled ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+                    <span><strong>{a.title}</strong> — {a.enabled ? a.whyNow : `blocked: ${a.blockedReason}`}</span>
+                    {a.enabled ? <a className="dm-btn-outline dm-cockpit-action-cta" href={a.targetSurface}>Open</a> : null}
+                  </li>
                 ))}
-              </details>
-            );
-          })()}
-        </div>
-      ))}
+              </ul>
+            </details>
+          </div>
+        </section>
+        );
+      })}
     </div>
   );
 }
