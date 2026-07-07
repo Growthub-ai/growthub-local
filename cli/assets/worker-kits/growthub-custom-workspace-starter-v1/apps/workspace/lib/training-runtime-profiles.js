@@ -155,13 +155,16 @@ export function isSafeModelTag(tag) {
 }
 
 /**
- * A pipeline artifact/dataset path must stay inside the workspace: relative,
- * no `..` traversal, no absolute or home paths. Returns true when contained.
+ * A pipeline artifact/dataset path must be either workspace-relative or an
+ * explicitly selected external local volume. The one-click trainer needs this
+ * for large model artifacts: the sandbox command is still argv-only, but disk
+ * preflight and outputs may live on `/Volumes/...`.
  */
 export function isContainedPath(p) {
   const s = String(p || "").trim();
   if (!s) return false;
-  if (s.startsWith("/") || s.startsWith("~")) return false;
+  if (s.startsWith("~")) return false;
+  if (s.startsWith("/")) return s.startsWith("/Volumes/");
   return !s.split("/").some((seg) => seg === "..");
 }
 

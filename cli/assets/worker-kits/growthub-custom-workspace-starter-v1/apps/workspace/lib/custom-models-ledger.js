@@ -115,7 +115,11 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
   const taggedRegistry = registryRows.filter((r) => isCustomModelRegistryRow(r, linkedIds));
   const invocationProofs = Object.keys(workspaceSourceRecords || {}).filter((k) => k.startsWith("model-invocation:"));
 
-  const modelRows = ledger.models.filter((m) => m.localModel || m.bondedRegistry);
+  const modelRows = ledger.models.filter((m) => {
+    const status = String(m.status || "").toLowerCase();
+    const preparationOnly = ["eligible", "prepared", "running"].includes(status);
+    return Boolean(m.bondedRegistry?.validated) || ((m.localModel || m.bondedRegistry) && !preparationOnly);
+  });
   const commandVisible = modelRows.length > 0 || taggedRegistry.length > 0 || invocationProofs.length > 0;
 
   const models = modelRows.map((m) => {
@@ -129,7 +133,7 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     // wrote no output hash stays sandbox-ready (proof incomplete), never
     // complete.
     let evidenceState = "recorded";
-    if (registryRow) evidenceState = "deployed";
+    if (registryRow) evidenceState = "registered";
     if (m.bondedRegistry?.validated) evidenceState = "verified";
     if (m.bondedRegistry?.validated && sandbox) evidenceState = "sandbox-ready";
     if (m.bondedRegistry?.validated && sandbox?.runId && sandbox?.runOk && sandbox?.outputHash) evidenceState = "complete";
@@ -137,7 +141,7 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     const nextAction = evidenceState === "complete" ? "Run again"
       : evidenceState === "sandbox-ready" ? (sandbox?.runId && sandbox?.runOk ? "Smoke ran — output hash missing; re-run to capture proof" : "Run")
         : evidenceState === "verified" ? "Create/Open workflow"
-          : evidenceState === "deployed" ? "Test"
+          : evidenceState === "registered" ? "Verify endpoint"
             : "Open Training";
 
     return {
@@ -503,11 +507,11 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
   const state = String(model?.evidenceState || "recorded");
   const healthy = ["complete", "sandbox-ready", "verified"].includes(state);
   const health = {
-    tone: healthy ? "ok" : state === "deployed" ? "warn" : "muted",
+    tone: healthy ? "ok" : state === "registered" ? "warn" : "muted",
     label: state === "complete" ? "Healthy"
       : state === "sandbox-ready" ? "Sandbox-ready"
         : state === "verified" ? "Verified"
-          : state === "deployed" ? "Deployed"
+          : state === "registered" ? "Registered"
             : "Recorded",
   };
 

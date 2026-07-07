@@ -21,17 +21,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   deriveCustomModelsState,
   buildCapabilityManifest,
-  deriveCustomModelSuggestedActions,
   deriveCustomModelCockpit,
-  deriveCustomModelFocusActions,
 } from "../../../lib/custom-models-ledger.js";
-import { buildCustomModelWorkflowProposal } from "../../../lib/custom-model-workflow-proposal.js";
-
-const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "usage", label: "Usage" },
-  { id: "settings", label: "Settings" },
-];
+import TrainingLedger from "./TrainingLedger.jsx";
 
 function exportManifest(model, workspaceConfig) {
   const manifest = buildCapabilityManifest(model, { workspaceConfig });
@@ -68,66 +60,17 @@ function ConfigField({ field }) {
 }
 
 function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
-  const [tab, setTab] = useState("overview");
   const cockpit = useMemo(
     () => deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords }),
     [model, workspaceConfig, workspaceSourceRecords],
   );
-  const suggested = useMemo(
-    () => deriveCustomModelSuggestedActions(model, { workspaceConfig }),
-    [model, workspaceConfig],
-  );
-  const focus = useMemo(
-    () => deriveCustomModelFocusActions(model, { workspaceConfig }),
-    [model, workspaceConfig],
-  );
-
-  const [busy, setBusy] = useState("");
-  const [applyError, setApplyError] = useState("");
-
-  // The sub-atomic worker next-action: a click DOES the governed work. "open"
-  // navigates to the existing row; "create" applies the governed
-  // custom-model.workflow.create proposal (server rebuilds the graph from
-  // evidence), then opens the created workflow on the canvas. Never a dead
-  // redirect. Idempotent — re-creating an existing row preserves its history.
-  const activate = async (variant, mode, openHref) => {
-    if (mode === "blocked") return;
-    if (mode === "open") { window.location.assign(openHref); return; }
-    setBusy(variant);
-    setApplyError("");
-    try {
-      const res = await fetch("/api/workspace/helper/apply", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          proposals: [buildCustomModelWorkflowProposal({ modelId: model.id, variant })],
-          reviewedBy: "user",
-        }),
-      });
-      const data = await res.json();
-      const applied = Array.isArray(data?.applied) ? data.applied : [];
-      const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
-      if (data?.ok === false || applied.length === 0) {
-        setApplyError(skipped[0]?.reason || data?.error || "Could not create the workflow.");
-        setBusy("");
-        return;
-      }
-      const artifact = applied.map((a) => a.artifact).find(Boolean);
-      const href = artifact
-        ? `/workflows?object=${encodeURIComponent(artifact.objectId)}&row=${encodeURIComponent(artifact.rowName)}&field=orchestrationConfig`
-        : openHref;
-      window.location.assign(href);
-    } catch (err) {
-      setApplyError(err?.message || "Apply failed.");
-      setBusy("");
-    }
-  };
-
   const statusPill = model.evidenceState === "complete"
     ? { label: "Live", cls: "is-ok" }
     : cockpit.health.tone === "ok" ? { label: cockpit.health.label, cls: "is-ok" }
       : cockpit.health.tone === "warn" ? { label: cockpit.health.label, cls: "is-warn" }
         : { label: cockpit.health.label, cls: "" };
+  const canShowSettings = ["verified", "sandbox-ready", "complete"].includes(model.evidenceState)
+    || Boolean(model.lastVerifiedAt && cockpit.registryBound);
 
   return (
     <section
@@ -147,95 +90,16 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           </span>
         </div>
 
-        {/* Tabs — mirror the CEO primitives cockpit tab grammar. */}
-        <div className="dm-cockpit-tabs" role="tablist" aria-label={`${model.name} sections`}>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={tab === t.id ? "is-active" : ""}
-              onClick={() => setTab(t.id)}
-              data-cockpit-tab={t.id}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <p className="dm-cockpit-meta-line" data-model-meta="">
+          {model.endpointMode}
+          {" · served "}<strong>{cockpit.served || "—"}</strong>
+          {" · "}{model.lastVerifiedAt ? `verified ${model.lastVerifiedAt.slice(0, 10)}` : "not verified yet"}
+          {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
+        </p>
 
-        {/* OVERVIEW — one compact trust line, then the two focused
-            first-utilization actions. Each click DOES real governed work
-            (create the wired workflow, or open it) — never a dead redirect. */}
-        {tab === "overview" ? (
-          <div data-cockpit-panel="overview">
-            <p className="dm-cockpit-meta-line" data-model-meta="">
-              {model.endpointMode}
-              {" · served "}<strong>{cockpit.served || "—"}</strong>
-              {" · "}{model.lastVerifiedAt ? `verified ${model.lastVerifiedAt.slice(0, 10)}` : "not verified yet"}
-              {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
-            </p>
-
-            {applyError ? <div className="dm-helper-error" role="alert">{applyError}</div> : null}
-
-            <div className="dm-cockpit-focus">
-              {focus.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  className="dm-cockpit-focus-btn"
-                  data-focus-action={a.id}
-                  data-focus-mode={a.mode}
-                  disabled={a.mode === "blocked" || busy === a.variant}
-                  onClick={() => activate(a.variant, a.mode, a.openHref)}
-                >
-                  <span className="dm-cockpit-focus-title">
-                    {a.title}{a.mode === "open" ? " ›" : ""}
-                  </span>
-                  <span className="dm-cockpit-subtle">
-                    {busy === a.variant ? "Setting up…"
-                      : a.mode === "create" ? a.createHint
-                        : a.mode === "open" ? a.openHint
-                          : `Verify the endpoint first`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {/* USAGE — the real closed-loop reuse actions, fully surfaced (no
-            accordion), plus governed run/invocation receipts. */}
-        {tab === "usage" ? (
-          <div data-cockpit-panel="usage" data-suggested-ready={`${suggested.ready}/${suggested.actions.length}`}>
-            <ul className="dm-cockpit-actions-list">
-              {suggested.actions.map((a) => (
-                <li
-                  key={a.id}
-                  data-suggested-action={a.id}
-                  data-action-enabled={a.enabled ? "yes" : "no"}
-                  data-action-variant={a.variant}
-                  className={a.enabled ? "" : "is-blocked"}
-                >
-                  <span className="dm-cockpit-action-name">{a.title}</span>
-                  <span className="dm-cockpit-subtle">{a.enabled ? a.whyNow : `needs: ${a.blockedReason}`}</span>
-                  {a.enabled
-                    ? <button type="button" className="dm-btn-ghost dm-cockpit-action-cta" data-action-open={a.variant} title={a.proofProduced} disabled={busy === a.variant} onClick={() => activate(a.variant, "create", a.openHref)}>{busy === a.variant ? "Setting up…" : "Set up"}</button>
-                    : null}
-                </li>
-              ))}
-            </ul>
-            <div className="dm-cockpit-facts">
-              <div><span>Invocation receipts</span><strong>{cockpit.invocations.length || "—"}</strong></div>
-              <div><span>Last sandbox run</span><strong>{model.lastSandboxRunId || "—"}</strong></div>
-            </div>
-          </div>
-        ) : null}
-
-        {/* SETTINGS — governed config as canvas-style dropdowns + text fields
-            (read-only), plus manifest export and Data Model edit routes. */}
-        {tab === "settings" ? (
-          <div data-cockpit-panel="settings">
+        {canShowSettings ? (
+          <details className="training-advanced" data-cockpit-settings-accordion="">
+            <summary>Settings</summary>
             {cockpit.registryBound ? (
               <div className="dm-cockpit-config-grid">
                 {cockpit.settingsFields.map((f) => <ConfigField key={f.key} field={f} />)}
@@ -243,9 +107,6 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
             ) : (
               <p className="dm-cockpit-subtle">No API Registry row bound yet — verify the endpoint in Training to populate the request contract.</p>
             )}
-            <p className="dm-cockpit-subtle" style={{ marginTop: 8 }}>
-              Config is governed — values reflect the API Registry row and are edited there, not here.
-            </p>
             <div className="dm-cockpit-settings-actions">
               {model.canExport
                 ? <button type="button" className="dm-btn-ghost" onClick={() => exportManifest(model, workspaceConfig)} data-model-export="">Export developer manifest</button>
@@ -253,7 +114,7 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
               <a className="dm-btn-ghost" href={model.links.dataModel} data-model-duplicate="">Duplicate in Data Model</a>
               <a className="dm-btn-ghost" href={model.links.dataModel} data-model-delete="">Delete in Data Model</a>
             </div>
-          </div>
+          </details>
         ) : null}
       </div>
     </section>
@@ -301,15 +162,12 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
   // Empty state — read-first, one clear destination. Never a blank screen.
   if (!error && state.models.length === 0) {
     return (
-      <div data-custom-models-ledger="" data-custom-models-empty="">
-        <section className="dm-api-action-card dm-api-action-card-muted" aria-label="No custom models yet">
-          <div className="dm-api-action-card-body">
-            <p className="dm-api-action-card-eyebrow">Custom Models</p>
-            <h3>No verified custom models yet</h3>
-            <p>A custom model appears here only once it has real evidence — a training run, an imported artifact, a verified endpoint. Open Training to turn governed workspace traces into a custom model.</p>
-          </div>
-          <a className="dm-btn-primary-sm dm-api-action-card-cta" href="/training" data-custom-models-open-training="">Open Training</a>
-        </section>
+      <div data-custom-models-ledger="" data-custom-models-empty="" data-custom-models-inline-training="">
+        <TrainingLedger
+          workspaceConfig={workspaceConfig}
+          workspaceSourceRecords={workspaceSourceRecords}
+          compactBootstrap
+        />
       </div>
     );
   }
@@ -340,6 +198,16 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
           workspaceSourceRecords={workspaceSourceRecords}
         />
       ))}
+
+      {verified === 0 ? (
+        <div data-custom-models-inline-training="" data-custom-models-unverified-training="">
+          <TrainingLedger
+            workspaceConfig={workspaceConfig}
+            workspaceSourceRecords={workspaceSourceRecords}
+            compactBootstrap
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

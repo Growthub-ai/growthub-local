@@ -90,6 +90,11 @@ const STAGE_HEADLINES = {
 /** The seeded test prompt the response inspector opens with — editable, the
  *  same mental model as the API/Webhook test-event editor. */
 const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
+const TRAINING_ARTIFACT_ROOT_OPTIONS = [
+  { value: "./artifacts", label: "Workspace artifacts" },
+  { value: "/Volumes", label: "Mounted external volume" },
+  { value: "__custom__", label: "Custom path..." },
+];
 
 function eligibleTraceRows(workspaceConfig, minScore) {
   const objects = workspaceConfig?.dataModel?.objects || [];
@@ -247,7 +252,10 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "(async () => {",
     // ---- stage 0: preflight — deep system requirements check. -------------
     "  const ramGB = gb(os.totalmem());",
-    "  let diskFreeGB = 0; try { const s = fs.statfsSync('.'); diskFreeGB = gb(s.bavail * s.bsize); } catch {}",
+    "  let diskFreeGB = 0;",
+    "  const artifactRoot = P.artifactPath ? path.resolve(P.artifactPath) : process.cwd();",
+    "  try { fs.mkdirSync(artifactRoot, { recursive: true }); } catch {}",
+    "  try { const s = fs.statfsSync(artifactRoot); diskFreeGB = gb(s.bavail * s.bsize); } catch { try { const s = fs.statfsSync('.'); diskFreeGB = gb(s.bavail * s.bsize); } catch {} }",
     "  let gpu = { present: false, name: '', vramFreeGB: 0 };",
     "  try { const out = execFileSync('nvidia-smi', ['--query-gpu=name,memory.free', '--format=csv,noheader,nounits'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); if (out) { const [name, freeMiB] = out.split('\\n')[0].split(',').map((s) => s.trim()); gpu = { present: true, name, vramFreeGB: Math.floor(Number(freeMiB) / 1024) }; } } catch {}",
     "  const preflight = { ramGB, diskFreeGB, gpu, floor: P.floor, cpuOnly: !gpu.present };",
@@ -428,6 +436,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [stageIssue, setStageIssue] = useState(null);
   const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
+  const [artifactRoot, setArtifactRoot] = useState(TRAINING_ARTIFACT_ROOT_OPTIONS[0].value);
+  const [customArtifactRoot, setCustomArtifactRoot] = useState("");
   const [verifyResult, setVerifyResult] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [httpStatus, setHttpStatus] = useState(null); // real HTTP status from the test lane
@@ -436,6 +446,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Proof tabs. State kept local; the send re-uses the governed test lane.
   const [testPrompt, setTestPrompt] = useState(DEFAULT_TEST_PROMPT);
   const [inspectorTab, setInspectorTab] = useState("response");
+  const [curateTab, setCurateTab] = useState("configuration");
+  const [traceFieldMap, setTraceFieldMap] = useState({
+    input: "inputPrompt",
+    output: "agentOutput",
+    reward: "qualityScore",
+    toolCalls: "reason",
+  });
   // Adaptive base-model choice — defaults to the workspace-detected base, but
   // the user can pick any base their workspace actually carries (no hardcoded
   // Gemma/Ollama assumption).
@@ -483,6 +500,20 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const floorMet = selected.length >= MIN_FINETUNE_TRACES;
   const blocked = blockedTraceCount(workspaceConfig);
   const target = resolveFineTuneTarget(targetId);
+  const traceFieldOptions = [
+    { value: "inputPrompt", label: "Input prompt" },
+    { value: "agentOutput", label: "Agent output" },
+    { value: "qualityScore", label: "Reward / score" },
+    { value: "reason", label: "Tool calls / reason" },
+    { value: "sessionDate", label: "Session date" },
+    { value: "exported", label: "Exported flag" },
+  ];
+  const traceMapRows = [
+    { key: "input", label: "Input", fileColumn: "inputPrompt", sample: selected[0]?.row?.inputPrompt || candidates[0]?.row?.inputPrompt || "" },
+    { key: "output", label: "Output", fileColumn: "agentOutput", sample: selected[0]?.row?.agentOutput || candidates[0]?.row?.agentOutput || "" },
+    { key: "reward", label: "Reward / score", fileColumn: "qualityScore", sample: selected[0]?.row?.qualityScore || candidates[0]?.row?.qualityScore || "" },
+    { key: "toolCalls", label: "Tool calls", fileColumn: "reason", sample: selected[0]?.row?.reason || candidates[0]?.row?.reason || "" },
+  ];
   const profile = resolveTrainingProfile(profileId);
   // Adaptive model/runtime choices derived from the workspace's OWN rows — so
   // the profile step reflects what this workspace carries, not a Gemma/Ollama
@@ -498,7 +529,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     .filter((r) => /^.+-v\d+$/.test(String(r?.Name || ""))).length;
   const reservedTag = (tunedTag || `${SLUG}-tuned-v${version}`).trim();
   const datasetPath = resume.datasetPath || `unsloth-dataset-v${version}.jsonl`;
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `./artifacts/${reservedTag}` });
+  const selectedArtifactRoot = String(artifactRoot === "__custom__" ? customArtifactRoot : artifactRoot || TRAINING_ARTIFACT_ROOT_OPTIONS[0].value).replace(/\/+$/, "");
+  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${selectedArtifactRoot}/${reservedTag}` });
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -539,6 +571,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Wait-state for the control plane: stage/status + BAR all come from ONE
   // deriver over the governed receipt. barPct is the single progress truth.
   const liveWaitState = deriveTrainingWaitState(liveRunRow, Date.now());
+  const runnerWaiting = trainPhase === "running"
+    && Number(liveWaitState.barPct || 0) === 0
+    && !liveRunRow?.progress?.stageId
+    && String(liveRunRow?.status || "").toLowerCase() === "running";
+  const runnerEndpoint = liveRegistryRow?.baseUrl
+    ? `${String(liveRegistryRow.baseUrl).replace(/\/+$/, "")}${String(liveRegistryRow.endpoint || "/chat/completions").startsWith("/") ? liveRegistryRow.endpoint : `/${liveRegistryRow.endpoint || "chat/completions"}`}`
+    : "the configured local endpoint";
   // Governed serving profile (adapter / mode / batching / speculative) + resume
   // state — proof-bound; deriveServingProfile.servedModel is the parsed served
   // tag, so the completion reward reuses it instead of re-parsing lastResponse.
@@ -701,32 +740,91 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
     setTrainPhase("starting");
     const startedAt = new Date().toISOString();
+    const trainingRunId = `trainrun_${startedAt.replace(/[:.]/g, "-")}`;
+    const exportId = result.exportId || `ft_${result.version || version}_${startedAt.replace(/[:.]/g, "-")}`;
     try {
       const runningReceipt = buildTrainingRunReceipt({
-        trainingRunId: result.trainingRunId, modelTrainingRowId: SLUG, datasetExportId: result.exportId,
+        trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
       });
+      const activeResult = { ...result, trainingRunId, exportId };
+      setResult(activeResult);
       // One governed PATCH: running receipt + the runner sandbox row.
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(runningReceipt));
-        next = upsertRunnerSandbox(next, result.trainingRunId, runConfig, result.integrationId);
+        next = upsertRunnerSandbox(next, trainingRunId, runConfig, result.integrationId);
         return next;
       });
       setTrainPhase("running");
 
-      // Real trigger. Don't await — training is long; the runner advances the
-      // governed receipt and we poll it. If no local runner is reachable, the
-      // exact command stays shown below for manual execution.
-      fetch("/api/workspace/sandbox-run", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: result.trainingRunId, intent: "model-training-run", actor: "training-runtime-modal" }),
-      }).catch(() => {});
+      await triggerTrainingRunner(trainingRunId);
 
       startRunPolling(startedAt);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setTrainPhase("idle");
     }
+  }
+
+  async function triggerTrainingRunner(trainingRunIdOverride) {
+    const trainingRunId = typeof trainingRunIdOverride === "string" ? trainingRunIdOverride : result?.trainingRunId;
+    if (!trainingRunId) return;
+    setError("");
+    await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId));
+    const res = await fetch("/api/workspace/sandbox-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: trainingRunId, intent: "model-training-run", actor: "training-runtime-modal" }),
+    });
+    if (!res.ok) {
+      const message = (await res.text()).slice(0, 240);
+      setError(`Runner did not start: ${message}`);
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    if (data?.workspaceConfig) {
+      setLiveConfig(data.workspaceConfig);
+      if (typeof onApplied === "function") onApplied(data.workspaceConfig);
+    }
+    if (data?.ok === false) {
+      const message = String(data?.response?.stderr || data?.response?.error || data?.response?.stdout || "Runner failed before writing a receipt").trim();
+      const fresh = await reconcileRunnerResult(trainingRunId, data?.response, message);
+      setLiveConfig(fresh || data?.workspaceConfig || liveConfig);
+      setTrainPhase("idle");
+    }
+  }
+
+  async function reconcileRunnerResult(trainingRunId, response, fallbackMessage = "") {
+    const reason = String(response?.stderr || response?.error || response?.stdout || fallbackMessage || "Runner failed before writing a receipt").trim();
+    if (!reason) return null;
+    return patchObjects((objects) => objects.map((o) => {
+      if (o?.objectType !== TRAINING_RUN_OBJECT_TYPE) return o;
+      return {
+        ...o,
+        rows: (Array.isArray(o.rows) ? o.rows : []).map((row) => {
+          if (String(row?.trainingRunId || "") !== String(trainingRunId)) return row;
+          return {
+            ...row,
+            status: /preflight blocked/i.test(reason) ? "blocked" : "failed",
+            blockedReason: reason,
+            preflight: row.preflight || {
+              ok: false,
+              floor: resourceFloorFor(runConfig?.baseModel),
+              artifactPath: runConfig?.artifactPath || "",
+            },
+            progress: {
+              ...(row.progress || {}),
+              stageId: "preflight",
+              stageRank: 0,
+              pct: 0,
+              detail: reason,
+              index: 0,
+              total: Array.isArray(runConfig?.steps) ? runConfig.steps.length : 0,
+            },
+          };
+        }),
+      };
+    }));
   }
 
   // Apply the single derived remedy. Auto-fixable format cleansing runs the
@@ -991,50 +1089,90 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
           {panel === "curate" && (
             <div className="dm-orch-modal-list">
-              <div className="dm-helper-toolcall dm-swarm-card">
-                <div className="training-handoff-controls">
-                  <label>
-                    <span>Min quality</span>
-                    <select value={minScore} onChange={(e) => { setMinScore(Number(e.target.value)); setExcluded(new Set()); }} data-handoff-min-score="">
-                      <option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Deploy target</span>
-                    <select value={targetId} onChange={(e) => setTargetId(e.target.value)} data-handoff-target="">
-                      {FINE_TUNE_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                    </select>
-                  </label>
+              <section className="training-config-modal" data-handoff-configure-traces="">
+                <div className="training-config-tabs" role="tablist" aria-label="Trace configuration tabs">
+                  <button type="button" role="tab" aria-selected={curateTab === "configuration"} className={curateTab === "configuration" ? "is-active" : ""} onClick={() => setCurateTab("configuration")}>Configuration</button>
+                  <button type="button" role="tab" aria-selected={curateTab === "advanced"} className={curateTab === "advanced" ? "is-active" : ""} onClick={() => setCurateTab("advanced")}>Advanced</button>
                 </div>
-                <div className="dm-run-console__hint" data-handoff-floor={floorMet ? "met" : "unmet"}>
-                  {selected.length} of {candidates.length} selected · floor {MIN_FINETUNE_TRACES}
-                  {floorMet ? " met" : ` — ${MIN_FINETUNE_TRACES - selected.length} more required`}
-                  {target.requiredEnv.length ? ` · target env: ${target.requiredEnv.join(", ")}` : ""}
-                </div>
-                {blocked > 0 ? (
-                  <div className="dm-run-console__hint" data-handoff-redaction-blocked={blocked}>
-                    {blocked} trace{blocked === 1 ? " is" : "s are"} blocked by redaction policy and cannot enter the training corpus.
-                  </div>
-                ) : null}
-              </div>
-              <div className="training-handoff-trace-list">
-              {candidates.map(({ row, index }) => (
-                <div key={index} className="dm-helper-toolcall dm-swarm-card" data-handoff-trace={index}>
-                  <div className="training-handoff-trace-row">
-                    <label className="training-handoff-trace-title">
-                      <input type="checkbox" checked={!excluded.has(index)} onChange={() => { const next = new Set(excluded); if (next.has(index)) next.delete(index); else next.add(index); setExcluded(next); }} />
-                      <span>{String(row.inputPrompt).slice(0, 90)}</span>
+
+                {curateTab === "configuration" ? (
+                  <div className="training-config-panel">
+                    <label className="training-config-field training-config-field-wide">
+                      <span>Trace source</span>
+                      <select value="training-traces" data-handoff-trace-source="" onChange={() => {}}>
+                        <option value="training-traces">Distillation traces</option>
+                      </select>
+                      <em>{selected.length.toLocaleString()} records</em>
                     </label>
-                    <span className="dm-run-console__hint">score {row.qualityScore}</span>
+
+                    <div className="training-config-toolbar">
+                      <label className="training-config-field">
+                        <span>Min quality</span>
+                        <select value={minScore} onChange={(e) => { setMinScore(Number(e.target.value)); setExcluded(new Set()); }} data-handoff-min-score="">
+                          <option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
+                        </select>
+                      </label>
+                      <label className="training-config-field">
+                        <span>Deploy target</span>
+                        <select value={targetId} onChange={(e) => setTargetId(e.target.value)} data-handoff-target="">
+                          {FINE_TUNE_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="training-map-table" data-handoff-field-map="">
+                      <div className="training-map-head">
+                        <span>Map trace fields</span>
+                        <span>Sample</span>
+                        <span>Field</span>
+                      </div>
+                      {traceMapRows.map((row) => (
+                        <label key={row.key} className="training-map-row" data-handoff-trace={row.key}>
+                          <span className="training-map-label">{row.label}</span>
+                          <span className="training-map-sample">{String(row.sample || "No sample").slice(0, 64)}</span>
+                          <select
+                            value={traceFieldMap[row.key]}
+                            onChange={(e) => setTraceFieldMap((current) => ({ ...current, [row.key]: e.target.value }))}
+                            data-handoff-field-map-select={row.key}
+                          >
+                            {traceFieldOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="dm-run-console__hint" data-handoff-floor={floorMet ? "met" : "unmet"}>
+                      {selected.length} of {candidates.length} selected · floor {MIN_FINETUNE_TRACES}
+                      {floorMet ? " met" : ` — ${MIN_FINETUNE_TRACES - selected.length} more required`}
+                      {target.requiredEnv.length ? ` · target env: ${target.requiredEnv.join(", ")}` : ""}
+                    </div>
+                    {blocked > 0 ? (
+                      <div className="dm-run-console__hint" data-handoff-redaction-blocked={blocked}>
+                        {blocked} trace{blocked === 1 ? " is" : "s are"} blocked by redaction policy and cannot enter the training corpus.
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="dm-helper-stream dm-swarm-card-desc">{String(row.agentOutput).slice(0, 140)}</div>
-                  {row.reason ? <div className="dm-run-console__hint">{row.reason}</div> : null}
-                </div>
-              ))}
-              </div>
+                ) : (
+                  <div className="training-handoff-trace-list">
+                  {candidates.map(({ row, index }) => (
+                    <div key={index} className="dm-helper-toolcall dm-swarm-card" data-handoff-trace={index}>
+                      <div className="training-handoff-trace-row">
+                        <label className="training-handoff-trace-title">
+                          <input type="checkbox" checked={!excluded.has(index)} onChange={() => { const next = new Set(excluded); if (next.has(index)) next.delete(index); else next.add(index); setExcluded(next); }} />
+                          <span>{String(row.inputPrompt).slice(0, 90)}</span>
+                        </label>
+                        <span className="dm-run-console__hint">score {row.qualityScore}</span>
+                      </div>
+                      <div className="dm-helper-stream dm-swarm-card-desc">{String(row.agentOutput).slice(0, 140)}</div>
+                      {row.reason ? <div className="dm-run-console__hint">{row.reason}</div> : null}
+                    </div>
+                  ))}
+                  </div>
+                )}
+              </section>
               <div className="training-handoff-action-row">
                 <button type="button" className="training-action-primary" data-handoff-to-profile="" disabled={!floorMet} onClick={() => setPanel("profile")}>
-                  {floorMet ? "Choose training profile" : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
+                  {floorMet ? "Save configuration" : `Need ${MIN_FINETUNE_TRACES - selected.length} more curated traces`}
                 </button>
                 <span className="training-handoff-eligibility" data-handoff-eligibility="">
                   {selected.length} selected · floor {MIN_FINETUNE_TRACES}
@@ -1163,8 +1301,33 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     <span style={{ width: `${liveWaitState.barPct}%` }} />
                   </div>
                   <div className="dm-api-action-card-note" data-train-status={trainPhase} data-train-wait-stage={liveWaitState.statusLine} style={{ marginTop: 6 }}>
-                    {trainPhase === "running" ? `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"} · ${liveWaitState.statusLine}` : trainPhase === "starting" ? "Recording governed run…" : `Dataset v${result.version} (${result.records} records) ready — one click runs the fine-tune here.`}
+                    {trainPhase === "running" ? (runnerWaiting ? "Runner not reporting yet · no preflight/progress stamp received" : `${STAGE_HEADLINES[liveRunRow?.progress?.stageId] || "Fine-tuning locally"} · ${liveWaitState.statusLine}`) : trainPhase === "starting" ? "Recording governed run…" : `Dataset v${result.version} (${result.records} records) ready — one click runs the fine-tune here.`}
                   </div>
+
+                  {runnerWaiting ? (
+                    <div className="dm-helper-toolcall dm-swarm-card" data-train-runner-waiting="" style={{ marginTop: 10 }}>
+                      <div className="dm-helper-toolcall-title dm-swarm-card-title">Local runner has not stamped preflight</div>
+                      <div className="dm-helper-stream dm-swarm-card-desc">
+                        The governed run was created, but the local runner has not reported RAM/GPU/disk, fine-tune progress, or endpoint verification. Start the local runner or endpoint for <strong>{result.modelTag}</strong> at <strong>{runnerEndpoint}</strong>, then this panel will advance from the real receipt. If the model already exists on disk, attach that existing result instead of waiting here.
+                      </div>
+                    </div>
+                  ) : null}
+                  {(stageIssue || error || String(liveRunRow?.status || "").toLowerCase() === "blocked") ? (
+                    <div className="dm-helper-toolcall dm-swarm-card" data-train-drive-picker="" style={{ marginTop: 10 }}>
+                      <div className="dm-helper-toolcall-title dm-swarm-card-title">Training storage</div>
+                      <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Artifact disk{" "}
+                        <select value={artifactRoot} onChange={(e) => setArtifactRoot(e.target.value)} data-train-artifact-root="">
+                          {TRAINING_ARTIFACT_ROOT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      </label>
+                      {artifactRoot === "__custom__" ? (
+                        <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Path{" "}
+                          <input type="text" value={customArtifactRoot} placeholder="/Volumes/Your Drive/path" onChange={(e) => setCustomArtifactRoot(e.target.value)} data-train-artifact-root-custom="" />
+                        </label>
+                      ) : null}
+                      <div className="dm-helper-stream dm-swarm-card-desc" style={{ marginTop: 8 }}>{runConfig.artifactPath}</div>
+                    </div>
+                  ) : null}
 
                   <div className="dm-tabs" role="tablist" style={{ marginTop: 12 }}>
                     <button type="button" role="tab" aria-selected="true" className="dm-tab-v2 active" data-train-tab="events">Events</button>
@@ -1227,7 +1390,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     {trainPhase === "starting" ? "Starting…" : "Start training"}
                   </button>
                 ) : (
-                  <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach the result manually</button>
+                  <>
+                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={() => triggerTrainingRunner()}>
+                      Start runner
+                    </button>
+                    <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach existing model result</button>
+                  </>
                 )}
               </div>
             </div>

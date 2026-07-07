@@ -43,19 +43,20 @@ export const HELPER_COMMANDS = [
   {
     name: "/training",
     label: "Training",
-    description: "Open your model training ledger — read-only, no writes",
+    description: "Deprecated — use /custom-models for the model path",
     scope: "workspace",
     mutates: false,
-    view: "training"
+    view: "training",
+    deprecated: true,
+    hidden: true
   },
   {
     name: "/custom-models",
     label: "Custom Models",
-    description: "View and test verified custom model endpoints",
+    description: "Open the model path — training, verification, and custom model operations",
     scope: "workspace",
     mutates: false,
-    view: "custom-models",
-    requiresEvidence: "custom-models"
+    view: "custom-models"
   },
   {
     name: "/swarm",
@@ -112,6 +113,8 @@ export const HELPER_COMMAND_ALLOWED_KEYS = [
   "mutates",
   "promptTemplate",
   "requiresEvidence",
+  "deprecated",
+  "hidden",
   "view",
   "intent"
 ];
@@ -192,6 +195,7 @@ export function parseSlashInput(value, visibleNames) {
  */
 export function deriveVisibleHelperCommands(commands, evidence = {}) {
   return commands.filter((cmd) => {
+    if (cmd.hidden) return false;
     if (!cmd.requiresEvidence) return true;
     return Boolean(evidence[cmd.requiresEvidence]);
   });

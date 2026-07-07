@@ -99,6 +99,12 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
   const apiRegistryId = focusModel?.apiRegistryId || runtime.identityChain?.apiRegistryId || "";
   const tunedTagVerified = reached("verified");
   const sandboxProven = reached("complete");
+  const runReceipt = runtime.runState?.latest || {};
+  const lifecycleStatus = String(focusModel?.status || runReceipt.status || "").toLowerCase();
+  const preparationOnly = ["eligible", "prepared", "running"].includes(lifecycleStatus)
+    && !Boolean(runReceipt.artifactType && (runReceipt.artifactPath || runReceipt.artifactModelTag || runReceipt.artifactSha256));
+  const importedProof = !preparationOnly && reached("imported");
+  const endpointRegistered = !preparationOnly && reached("deployed") && apiRegistryId;
 
   const checklist = [];
 
@@ -137,16 +143,16 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
   }));
 
   // 4 — Train and import a REAL custom model artifact.
-  checklist.push(item("model", "Train & import a real custom model", reached("imported") ? "complete" : reached("exported") ? "ready" : "pending", {
-    guidance: reached("imported") ? `Custom model ${focusModel?.localModel || ""} imported and provable.` : "Run the fine-tune on your local runner (e.g. Ollama/Unsloth), then import the artifact identity.",
-    nextAction: !reached("imported") && reached("exported") ? { kind: "open-runtime", label: "Open training runtime" } : null,
+  checklist.push(item("model", "Train & import a real custom model", importedProof ? "complete" : reached("exported") ? "ready" : "pending", {
+    guidance: importedProof ? `Custom model ${focusModel?.localModel || runReceipt.artifactModelTag || ""} imported and provable.` : "Run the fine-tune on your local runner (e.g. Ollama/Unsloth), then import the artifact identity.",
+    nextAction: !importedProof && reached("exported") ? { kind: "open-runtime", label: "Open training runtime" } : null,
     evidenceRefs: focusModel?.localModel ? [focusModel.localModel] : [],
   }));
 
   // 5 — Register the API Registry endpoint (the bonded custom-model object).
-  checklist.push(item("register", "Register the API Registry endpoint", reached("deployed") ? "complete" : reached("imported") ? "ready" : "pending", {
-    guidance: reached("deployed") ? `API Registry row ${apiRegistryId} is bonded to the custom model.` : "Register the local endpoint as the bonded custom-model API Registry row.",
-    nextAction: !reached("deployed") && reached("imported") ? { kind: "open-runtime", label: "Open training runtime" } : null,
+  checklist.push(item("register", "Register the API Registry endpoint", endpointRegistered ? "complete" : importedProof ? "ready" : "pending", {
+    guidance: endpointRegistered ? `API Registry row ${apiRegistryId} is bonded to the custom model.` : "Register the local endpoint as the bonded custom-model API Registry row.",
+    nextAction: !endpointRegistered && importedProof ? { kind: "open-runtime", label: "Open training runtime" } : null,
     evidenceRefs: apiRegistryId ? [apiRegistryId] : [],
   }));
 
@@ -158,7 +164,7 @@ export function deriveTrainingBootstrapState({ workspaceConfig, workspaceSourceR
       guidance: `Your custom model answered as ${focusModel?.localModel || "itself"} — not the base model.`,
       evidenceRefs: [focusModel?.lastVerifiedAt].filter(Boolean),
     }));
-  } else if (reached("deployed") && apiRegistryId) {
+  } else if (endpointRegistered) {
     checklist.push(item("invoke", "Test your custom model", "ready", {
       guidance: "Send a real prompt to your local model. Start it locally (ollama serve), then test — its reply must come back as your model, not the base model, to verify.",
       nextAction: { kind: "invoke-endpoint", label: "Test custom model", apiRegistryId },

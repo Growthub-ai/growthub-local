@@ -10223,7 +10223,15 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 /* Custom Models cockpit (/custom-models sidecar) — mirror the design system;
    clean filters + inputs (never raw black selects). */
 .dm-cockpit-page { display: grid; gap: 10px; }
+.dm-cockpit-page .dm-api-action-card,
+.dm-cockpit-page .dm-helper-toolcall {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
+}
 .dm-cockpit-page .dm-api-action-card { display: block; }
+.dm-cockpit-page .training-bootstrap-stack { gap: 10px; }
 .dm-cockpit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .dm-cockpit-input, .dm-cockpit-select { height: 30px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 9px; box-sizing: border-box; }
 .dm-cockpit-input { flex: 1 1 160px; min-width: 120px; }
@@ -10530,6 +10538,133 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
 .training-handoff-controls select {
   width: 100%;
   min-width: 0;
+}
+.training-config-modal {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+.training-config-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.training-config-tabs button {
+  height: 30px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.training-config-tabs button.is-active {
+  border-color: #111827;
+  box-shadow: inset 0 0 0 1px #111827;
+}
+.training-config-panel {
+  display: grid;
+  gap: 12px;
+}
+.training-config-toolbar {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr);
+  gap: 12px;
+}
+.training-config-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+}
+.training-config-field-wide {
+  max-width: 360px;
+}
+.training-config-field select,
+.training-map-row select,
+.training-handoff-controls select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #cfd6df;
+  border-radius: 7px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0 34px 0 10px;
+  box-sizing: border-box;
+}
+.training-config-field select:focus,
+.training-map-row select:focus,
+.training-handoff-controls select:focus {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(15,23,42,.07);
+}
+.training-config-field em {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  pointer-events: none;
+  color: #15803d;
+  font-size: 11px;
+  font-style: normal;
+}
+.training-map-table {
+  display: grid;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.training-map-head,
+.training-map-row {
+  display: grid;
+  grid-template-columns: minmax(118px, .8fr) minmax(140px, 1fr) minmax(190px, 1.1fr);
+  gap: 12px;
+  align-items: center;
+}
+.training-map-head {
+  min-height: 34px;
+  padding: 0 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.training-map-row {
+  min-height: 52px;
+  padding: 8px 12px;
+  border-top: 1px solid #edf0f3;
+  color: #111827;
+  font-size: 12px;
+}
+.training-map-label {
+  font-weight: 650;
+}
+.training-map-sample {
+  min-width: 0;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .training-config-toolbar,
+  .training-map-head,
+  .training-map-row {
+    grid-template-columns: 1fr;
+  }
 }
 .training-handoff-trace-row {
   display: grid;
