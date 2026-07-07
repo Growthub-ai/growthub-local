@@ -25,8 +25,14 @@ and the **governed row / deriver** the visible claim is derived from.
 
 ## State map
 
+Provenance values are one of `derived` · `seeded` · `simulated` · `operator-real`
+(the last is only stamped once `operator-proof.json` validates — see
+[`../OPERATOR_PROOF_CONTRACT.md`](../OPERATOR_PROOF_CONTRACT.md)). No state is
+marketed as a completed live tuned-model run until that operator proof passes.
+
 | # | State | Screenshot | Readback | Visible heading / status / CTA | Governed row / deriver | Provenance |
 | --- | --- | --- | --- | --- | --- | --- |
+| 00 | Eligibility agreement (gate #3) | `state-00-eligibility-agreement.png` | `state-00-eligibility-agreement-readback.json` | browser-openable ⟺ deriver.ready ⟺ API traces (agree) | `/training` opener vs `/api/workspace` vs `deriveDistillationPipelineState` — asserts browser==api==deriver, fails the run on disagreement | derived |
 | 01 | Eligible | `state-01-eligible.png` | `state-01-eligible-readback.json` | Custom Model Training · Ready to train · Configure traces | `training-traces` → `deriveDistillationPipelineState` (ready:true, graded 11/floor 10) | derived |
 | 02 | Configure traces | `state-02-configure-traces.png` | `state-02-configure-traces-readback.json` | Configure Traces · 11 of 11 selected · floor 10 met · Choose training profile | `training-traces` rows + `eligibleTraceRows`/`MIN_FINETUNE_TRACES` | derived |
 | 03 | Dataset readiness | `state-03-dataset-readiness.png` | `state-03-dataset-readiness-readback.json` | Dataset Readiness · prepared · Continue | prepare progress over real selected records (`deriveProgressStages`) | derived |
@@ -42,7 +48,7 @@ and the **governed row / deriver** the visible claim is derived from.
 | 13 | Deploy | `state-13-deploy.png` | `state-13-deploy-readback.json` | Deploy custom model · connected · Deploy (registry row, no inline secret) | `api-registry` row (`workspace-local-model`) | simulated (stamped receipt) |
 | 14 | Live deployment | `state-14-live-deployment.png` | `state-14-live-deployment-readback.json` | workspace-local-tuned-v1 · Deployed · Healthy · Copy request (serves tuned tag via ollama) | connected `api-registry` row → `deriveServingProfile` | simulated (stamped receipt) |
 | 15 | Customer proof loop | `state-15-customer-proof-loop.png` | `state-15-customer-proof-loop-readback.json` | Proof loop complete · Verified · View proof details (9/9 + reward live) | `deriveTrainingProofChecklist` (9/9) + `deriveTrainingCompletionReward` over governed rows | simulated (stamped receipt) |
-| 16 | Model cockpit | `state-16-model-cockpit.png` | `state-16-model-cockpit-readback.json` | workspace-local-tuned-v1 · Live · Run again (operated model row; reusable cockpit) | `model-training` row → `/custom-models` sidecar (`deriveCustomModelsState` + `deriveCustomModelSuggestedActions`) | simulated (stamped receipt) |
+| 16 | Model cockpit | `state-16-model-cockpit.png` | `state-16-model-cockpit-readback.json` | Custom Models · 1 verified · Use model / Suggested actions — the REAL `/custom-models` cockpit reached via the canonical helper entry (`?helper=open` → `/custom-models` slash → `setActiveView('custom-models')`), not a backing table | `deriveCustomModelsState` over the governed model/registry/sandbox rows | simulated (stamped receipt; cockpit rendered live in-browser) |
 
 ## Negative / demotion evidence (review blocker #4)
 
