@@ -1001,7 +1001,7 @@ test("start-gate: readiness percentage is deterministic and evidence-derived (ne
   assert.equal(a.readyPct, b.readyPct);
   // With a draft prepared, at least the config/quant gates are already proven —
   // the bar reflects real state, it is never pinned at 0.
-  const partial = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ modelTag: TAG }), workspaceConfig: { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_x", status: "running" }] }] } } });
+  const partial = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft({ modelTag: TAG }), workspaceConfig: { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_x", status: "running", progress: { stageId: "fine-tuning" } }] }] } } });
   assert.ok(partial.readyPct > 0 && partial.readyPct < 100, "one failing gate → strictly between 0 and 100");
   assert.equal(partial.readyPct, 80, "4 of 5 gates green");
 });
@@ -1061,11 +1061,21 @@ test("start-gate: the first quantization chunk must validate before invocation",
   assert.match(okc.detail, /chunk 0 of 3/, `130 records / ${START_READINESS_CHUNK_SIZE} = 3 shards`);
 });
 
-test("start-gate: a run already live blocks a second concurrent invocation", () => {
-  const busy = { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_live", status: "running" }] }] } };
+test("start-gate: a REPORTING live run blocks a second concurrent invocation", () => {
+  const busy = { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_live", status: "running", progress: { stageId: "fine-tuning", pct: 40 } }] }] } };
   const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: busy });
   assert.equal(g.checks.find((c) => c.id === "runner-idle").ok, false);
   assert.equal(g.canStart, false);
+});
+
+test("start-gate: a zombie `running` row that never handshaked does NOT wedge a fresh start", () => {
+  // The exact stuck-in-a-loop trap: a run marked running whose runner never
+  // reported. It must be reclaimable — runner-idle stays green so the user can
+  // start again instead of being locked out forever.
+  const zombie = { dataModel: { objects: [{ objectType: "model-training-run", rows: [{ trainingRunId: "trainrun_zombie", status: "running" }] }] } };
+  const g = deriveStartTrainingReadiness({ runConfig: readyCfg(), result: approvedDraft(), workspaceConfig: zombie });
+  assert.equal(g.checks.find((c) => c.id === "runner-idle").ok, true, "no progress stamp ⇒ reclaimable, not blocking");
+  assert.equal(g.canStart, true);
 });
 
 test("start-gate: never throws on empty/garbage input", () => {

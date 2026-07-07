@@ -91,6 +91,18 @@ const STAGE_HEADLINES = {
  *  same mental model as the API/Webhook test-event editor. */
 const DEFAULT_TEST_PROMPT = "Reply in one short line to confirm you are the tuned workspace model.";
 
+/**
+ * Runner handshake deadline. A real local runner stamps its stage-0 preflight
+ * receipt within seconds of spawning (it is the first thing it does, before any
+ * compute). If NO receipt evidence at all arrives within this window, the
+ * invocation never came up (or cannot reach this workspace) — the polling loop
+ * stops and reconciles the run to a governed failure instead of spinning at 0%
+ * forever. Once ANY stamp lands, the run has handshaked and polling continues
+ * for as long as a genuinely long fine-tune needs — this bound applies ONLY to
+ * the never-reported state.
+ */
+const RUNNER_HANDSHAKE_DEADLINE_MS = 120000;
+
 function eligibleTraceRows(workspaceConfig, minScore) {
   const objects = workspaceConfig?.dataModel?.objects || [];
   const object = objects.find((o) => o?.id === TRACES_OBJECT_ID);
@@ -769,7 +781,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       });
       setTrainPhase("running");
 
-      await triggerTrainingRunner(trainingRunId);
+      // Only begin the live poll loop if the runner was actually accepted — a
+      // hard start failure drops back to idle (the run row is left for the gate
+      // to reclaim) instead of spinning the loop at 0%.
+      const started = await triggerTrainingRunner(trainingRunId);
+      if (!started) { setTrainPhase("idle"); return; }
 
       startRunPolling(startedAt);
     } catch (e) {
@@ -778,9 +794,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     }
   }
 
+  // Returns true when the runner was accepted (a receipt will be stamped as it
+  // runs), false on a hard start failure so the caller does not begin a poll
+  // loop that could only ever spin at 0%.
   async function triggerTrainingRunner(trainingRunIdOverride) {
     const trainingRunId = typeof trainingRunIdOverride === "string" ? trainingRunIdOverride : result?.trainingRunId;
-    if (!trainingRunId) return;
+    if (!trainingRunId) return false;
     setError("");
     await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId));
     const res = await fetch("/api/workspace/sandbox-run", {
@@ -791,7 +810,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     if (!res.ok) {
       const message = (await res.text()).slice(0, 240);
       setError(`Runner did not start: ${message}`);
-      return;
+      return false;
     }
     const data = await res.json().catch(() => null);
     if (data?.workspaceConfig) {
@@ -803,7 +822,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       const fresh = await reconcileRunnerResult(trainingRunId, data?.response, message);
       setLiveConfig(fresh || data?.workspaceConfig || liveConfig);
       setTrainPhase("idle");
+      return false;
     }
+    return true;
   }
 
   async function reconcileRunnerResult(trainingRunId, response, fallbackMessage = "") {
@@ -863,6 +884,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   function startRunPolling(startedAt) {
     if (pollRef.current) clearInterval(pollRef.current);
     const startMs = Date.parse(startedAt) || Date.now();
+    // Liveness latch: flips true the instant ANY real receipt evidence lands.
+    // Until then the handshake deadline governs; after, the run is genuinely
+    // executing and polls for as long as the fine-tune needs.
+    let sawStamp = false;
     pollRef.current = setInterval(async () => {
       try {
         const probe = await fetch("/api/workspace", { cache: "no-store" });
@@ -878,6 +903,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         // Thin-delta progress the runner stamped each stage boundary (preflight
         // → fine-tune → quantize → serve). This IS the live bar — real state.
         const delta = rt.runState?.progress || null;
+        // The runner has handshaked once it stamps preflight/progress OR reaches
+        // any terminal stage — from here the loop never times out on a slow run.
+        if (delta?.stageId || rt.runState?.preflight || ["trained", "imported", "failed"].includes(runStage)) sawStamp = true;
 
         if (runStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
@@ -907,6 +935,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             sourceBytes: reported.sourceBytes || 0,
             artifactBytes: reported.artifactBytes || 0,
           });
+          return;
+        }
+        // Handshake deadline — the ONE thing that ends the "stuck at 0%" loop.
+        // If no receipt evidence has arrived within the window, the invocation
+        // never came up; stop polling, reconcile the zombie `running` row to a
+        // governed failure (freeing the start gate), and drop to idle with an
+        // actionable reason. A run that already stamped is never touched here.
+        if (!sawStamp && (Date.now() - startMs) > RUNNER_HANDSHAKE_DEADLINE_MS) {
+          clearInterval(pollRef.current); pollRef.current = null;
+          const reason = `Local runner did not report within ${Math.round(RUNNER_HANDSHAKE_DEADLINE_MS / 1000)}s — it may not have started or cannot reach this workspace at ${runnerEndpoint}. Start the local runner for ${result.modelTag} and retry, or attach an existing result.`;
+          const fresh = await reconcileRunnerResult(result.trainingRunId, null, reason);
+          if (fresh) { setLiveConfig(fresh); if (typeof onApplied === "function") onApplied(fresh); }
+          const row = (fresh ? deriveTrainingRuntimeState({ workspaceConfig: fresh, workspaceSourceRecords, slug: SLUG }).runState?.latest : rt.runState?.latest) || {};
+          setStageIssue(deriveTrainingStageIssue(row, row.preflight || null, reason));
+          setError(reason);
+          setTrainPhase("idle");
           return;
         }
         // The bar advances ONLY on real receipt progress: setLiveConfig(cfg)
@@ -1418,7 +1462,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                   </button>
                 ) : (
                   <>
-                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={() => triggerTrainingRunner()}>
+                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={async () => { const ok = await triggerTrainingRunner(); if (ok) startRunPolling(new Date().toISOString()); }}>
                       Start runner
                     </button>
                     <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach existing model result</button>

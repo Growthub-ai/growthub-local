@@ -982,15 +982,19 @@ export function deriveStartTrainingReadiness({ runConfig, result, workspaceConfi
       : !quantKnown ? `Unsupported quantization "${quant || "(none)"}" (expected ${SUPPORTED_QUANTIZATIONS.join(" / ")}).`
         : "No records to quantize — the first chunk is empty.");
 
-  // 5. Runner idle — no concurrent live run.
+  // 5. Runner idle — no concurrent live run. Only a run that is running AND
+  // actually REPORTING progress (a real stamped stage) counts as live: a
+  // `running` row that never handshaked is a reclaimable zombie (its runner
+  // never came up or could not reach the workspace) and must NOT permanently
+  // wedge a fresh start — otherwise a stuck invocation traps the user forever.
   const liveRun = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((o) => o?.objectType === "model-training-run")
     .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
-    .find((r) => String(r?.status || "").toLowerCase() === "running");
+    .find((r) => String(r?.status || "").toLowerCase() === "running" && String(r?.progress?.stageId || "").trim());
   const runnerIdle = !liveRun;
   add("runner-idle", "No training run already live", runnerIdle,
     runnerIdle ? "No concurrent live run — safe to initialize."
-      : `Run ${String(liveRun?.trainingRunId || "").slice(0, 22)} is already live — wait for it or attach its result.`);
+      : `Run ${String(liveRun?.trainingRunId || "").slice(0, 22)} is live and reporting — wait for it or attach its result.`);
 
   const total = checks.length;
   const done = checks.filter((c) => c.ok).length;
