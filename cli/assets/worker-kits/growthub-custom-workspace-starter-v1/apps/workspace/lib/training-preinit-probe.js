@@ -152,6 +152,7 @@ export function buildPreInitProbeScript({
   ollamaBin,
   modelsDir,
   pipelineScripts,
+  venvDir,
 } = {}) {
   const P = JSON.stringify({
     preInitRunId: preInitRunId || "",
@@ -173,8 +174,11 @@ export function buildPreInitProbeScript({
     // never user homework.
     pipelineScripts: pipelineScripts && typeof pipelineScripts === "object" ? pipelineScripts : {},
     // Full downstream blast radius: the python packages the fine-tune/merge
-    // stages import, and the HF id the trainer will pull base weights from.
+    // stages import, the workspace-owned venv they install into (system
+    // pythons are PEP 668 externally managed — never fought, always bypassed
+    // with our own venv), and the HF id the trainer pulls base weights from.
     pythonPackages: PYTHON_TRAINING_PACKAGES,
+    venvDir: venvDir || "",
     hfBaseId: hfBaseIdFor(baseModel),
     brewCandidates: ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"],
     schema: PREINIT_SCHEMA,
@@ -287,19 +291,31 @@ export function buildPreInitProbeScript({
     "  const findAsset = (names, extraDirs) => { for (const root of [process.cwd(), ...(extraDirs || [])]) { for (const n of names) { const p = path.join(root, n); if (fs.existsSync(p)) return p; } } return ''; };",
     "  const brew = P.brewCandidates.find((b) => { try { return fs.existsSync(b); } catch { return false; } });",
     "  let searchDirs = [...P.toolSearchDirs.flatMap((d) => [d, path.join(d, 'build/bin')]), '/opt/homebrew/bin', '/usr/local/bin'];",
-    // 5a. python packages the fine-tune/merge stages import — install if absent.
-    "  const py = which('python3') || which('python');",
-    "  const pyImport = () => { try { execFileSync(py, ['-c', `import ${P.pythonPackages.join(', ')}`], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 120000 }); return true; } catch { return false; } };",
+    // 5a. python packages the fine-tune/merge stages import — installed into
+    // the WORKSPACE-OWNED virtualenv (system pythons are PEP 668 externally
+    // managed and refuse installs; we never fight them, we own our env).
+    "  const sysPy = which('python3') || which('python');",
+    "  const venvPy = P.venvDir ? path.join(P.venvDir, 'bin', 'python') : '';",
+    "  const pyImportWith = (interp) => { try { execFileSync(interp, ['-c', `import ${P.pythonPackages.join(', ')}`], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 120000 }); return true; } catch { return false; } };",
+    "  let py = '';",
     "  let pyDepsOk = false; let pyDepsDetail = '';",
-    "  if (!py) { pyDepsDetail = 'Python runtime not found on this machine.'; }",
-    "  else if (pyImport()) { pyDepsOk = true; pyDepsDetail = `${P.pythonPackages.join(', ')} ready (${py})`; }",
+    "  if (!sysPy) { pyDepsDetail = 'Python runtime not found on this machine.'; }",
     "  else {",
-    "    await stampPhase('installing the Python training packages');",
-    "    console.log('Installing Python training packages automatically (torch is large — this can take a while)…');",
-    "    const pipTry = (extra) => { try { execFileSync(py, ['-m', 'pip', 'install', '--user', ...extra, ...P.pythonPackages], { stdio: 'inherit', timeout: 40 * 60 * 1000 }); return true; } catch { return false; } };",
-    "    if (!pipTry([])) pipTry(['--break-system-packages']);",
-    "    pyDepsOk = pyImport();",
-    "    pyDepsDetail = pyDepsOk ? `${P.pythonPackages.join(', ')} installed automatically` : 'Automatic install of the Python training packages failed — retry finalize on a working connection.';",
+    "    if (venvPy && fs.existsSync(venvPy) && pyImportWith(venvPy)) { py = venvPy; pyDepsOk = true; pyDepsDetail = `${P.pythonPackages.join(', ')} ready (workspace training environment)`; }",
+    "    else if (pyImportWith(sysPy)) { py = sysPy; pyDepsOk = true; pyDepsDetail = `${P.pythonPackages.join(', ')} ready (${sysPy})`; }",
+    "    else if (venvPy) {",
+    "      await stampPhase('setting up the training environment');",
+    "      try { if (!fs.existsSync(venvPy)) { fs.mkdirSync(path.dirname(P.venvDir), { recursive: true }); execFileSync(sysPy, ['-m', 'venv', P.venvDir], { stdio: 'inherit', timeout: 5 * 60 * 1000 }); } } catch (e) { console.error('venv create failed: ' + String((e && e.message) || e).split('\\n')[0]); }",
+    "      if (fs.existsSync(venvPy)) {",
+    "        await stampPhase('installing the Python training packages');",
+    "        console.log('Installing Python training packages into the workspace environment (torch is large — this can take a while)…');",
+    "        try { execFileSync(venvPy, ['-m', 'pip', 'install', '--upgrade', 'pip'], { stdio: 'inherit', timeout: 5 * 60 * 1000 }); } catch {}",
+    "        try { execFileSync(venvPy, ['-m', 'pip', 'install', ...P.pythonPackages], { stdio: 'inherit', timeout: 40 * 60 * 1000 }); } catch (e) { console.error('pip install failed: ' + String((e && e.message) || e).split('\\n')[0]); }",
+    "        pyDepsOk = pyImportWith(venvPy);",
+    "        if (pyDepsOk) py = venvPy;",
+    "      }",
+    "      pyDepsDetail = pyDepsOk ? `${P.pythonPackages.join(', ')} installed into the workspace training environment` : 'Automatic install of the Python training packages did not finish — press Retry finalize to continue it.';",
+    "    } else { pyDepsDetail = 'No location available for the training environment.'; }",
     "  }",
     "  add('python-packages', 'Python training packages', pyDepsOk, pyDepsDetail);",
     // 5b. llama.cpp quantize tools — brew-install automatically when absent.
@@ -313,7 +329,7 @@ export function buildPreInitProbeScript({
     "    imatrixBin = findAsset(['llama-imatrix'], searchDirs) || which('llama-imatrix');",
     "  }",
     "  const missing = [];",
-    "  if (!py) missing.push('Python runtime');",
+    "  if (!sysPy) missing.push('Python runtime');",
     "  if (!findAsset(['train.py'], [])) missing.push('Fine-tune script');",
     "  if (!findAsset(['convert_hf_to_gguf.py'], searchDirs)) missing.push('Convert script');",
     "  if (!quantBin) missing.push('Quantize tool');",

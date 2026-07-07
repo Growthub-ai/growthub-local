@@ -287,9 +287,18 @@ export async function collectTrainingLocalReadiness({ io = buildDefaultReadiness
   const gpu = io.gpuProbe();
   const preflight = { available: ramGB > 0 && diskFreeGB > 0, ramGB, diskFreeGB, gpu, cpuOnly: !gpu.present };
 
+  // Dedicated training virtualenv — Homebrew/system pythons are externally
+  // managed (PEP 668) and refuse package installs; the workspace owns its own
+  // venv instead (created by the pre-init probe, used by the training runner).
+  // Computed HERE because the sandbox lane overrides HOME to a throwaway dir.
+  const home = typeof io.homeDir === "function" ? io.homeDir() : "";
+  const venvDir = home ? path.join(home, ".growthub", "training-venv") : "";
   const out = {
     kind: TRAINING_READINESS_KIND,
-    runtime: { ollama: { reachable: ollama.reachable, baseUrl: ollama.baseUrl, binPath: ollama.binPath, modelsDir: ollama.modelsDir, appInstalled: ollama.appInstalled, autoStarted: Boolean(ollama.autoStarted) } },
+    runtime: {
+      ollama: { reachable: ollama.reachable, baseUrl: ollama.baseUrl, binPath: ollama.binPath, modelsDir: ollama.modelsDir, appInstalled: ollama.appInstalled, autoStarted: Boolean(ollama.autoStarted) },
+      python: { venvDir, venvReady: venvDir ? io.exists(path.join(venvDir, "bin", "python")) : false },
+    },
     baseModels: ollama.models,
     storageLocations,
     tooling,

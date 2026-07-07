@@ -216,7 +216,7 @@ const STAGE_RANK_BY_ID = TRAINING_PROGRESS_STAGES.reduce((acc, s) => { acc[s.id]
  * allowlist) onto the existing model-training-run + api-registry rows — the
  * causation spine, unchanged.
  */
-function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor, workspaceUrl, datasetPath, minScore, ollamaBin, modelsDir, toolSearchDirs }) {
+function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, trainingRunId, quantization, integrationId, floor, workspaceUrl, datasetPath, minScore, ollamaBin, modelsDir, toolSearchDirs, venvPython }) {
   const P = JSON.stringify({
     steps: steps || [], stageRankById: stageRankById || {}, artifactPath: artifactPath || "",
     modelTag: modelTag || "", trainingRunId: trainingRunId || "", quantization: quantization || "q4_k_m",
@@ -241,6 +241,9 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     // "train.py" relative to it.
     pipelineScripts: PIPELINE_SCRIPTS,
     toolSearchDirs: Array.isArray(toolSearchDirs) ? toolSearchDirs : [],
+    // The workspace-owned training venv the pre-init probe installed the
+    // python stack into — the fine-tune/merge steps run on it.
+    venvPython: venvPython || "",
   });
   return [
     "const { execFileSync, spawn } = require('node:child_process');",
@@ -293,9 +296,11 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "    const found = binSearchDirs.map((d) => path.join(d, tool)).find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || which(tool);",
     "    if (found) { try { fs.symlinkSync(found, dest); console.log('LINKED ' + tool + ' -> ' + found); } catch { try { fs.copyFileSync(found, dest); fs.chmodSync(dest, 0o755); } catch {} } }",
     "  }",
-    // macOS ships python3, not python — resolve the interpreter honestly
-    // (both are allowlisted bins; nothing outside the allowlist ever runs).
-    "  const resolveBin = (b) => (b === 'python' && !which('python') && which('python3')) ? 'python3' : b;",
+    // Interpreter resolution, honestly: prefer the workspace-owned training
+    // venv (where the pre-init probe installed torch/transformers/peft/trl —
+    // system pythons are PEP 668 externally managed), else python3 on macOS.
+    // The allowlisted step bin stays 'python'; this only picks WHICH python.
+    "  const resolveBin = (b) => { if (b !== 'python') return b; if (P.venvPython && fs.existsSync(P.venvPython)) return P.venvPython; if (!which('python') && which('python3')) return 'python3'; return b; };",
     // ---- stage 0: preflight — deep system requirements check. -------------
     "  const ramGB = gb(os.totalmem());",
     "  let diskFreeGB = 0;",
@@ -460,7 +465,7 @@ function upsertRunnerSandbox(objects, trainingRunId, runConfig, integrationId, r
       floor: resourceFloorFor(runConfig?.baseModel), workspaceUrl,
       datasetPath: runConfig?.datasetPath, minScore: runtimeHints.minScore,
       ollamaBin: runtimeHints.ollamaBin, modelsDir: runtimeHints.modelsDir,
-      toolSearchDirs: runtimeHints.toolSearchDirs,
+      toolSearchDirs: runtimeHints.toolSearchDirs, venvPython: runtimeHints.venvPython,
     }),
     timeoutMs: 6 * 60 * 60 * 1000, // a real fine-tune can run for hours
     networkPolicy: "allow",
@@ -1012,6 +1017,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         // provisions the workspace's own pipeline scripts.
         ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "",
         modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "",
+        venvDir: readinessProbe?.runtime?.python?.venvDir || "",
         pipelineScripts: PIPELINE_SCRIPTS,
       });
       // One governed PATCH: the pre-init receipt row + the probe runner row.
@@ -1125,7 +1131,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // One governed PATCH: running receipt + the runner sandbox row.
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(runningReceipt));
-        next = upsertRunnerSandbox(next, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)) });
+        next = upsertRunnerSandbox(next, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)), venvPython: readinessProbe?.runtime?.python?.venvDir ? `${readinessProbe.runtime.python.venvDir}/bin/python` : "" });
         return next;
       });
       setTrainPhase("running");
@@ -1157,7 +1163,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     const trainingRunId = typeof trainingRunIdOverride === "string" ? trainingRunIdOverride : result?.trainingRunId;
     if (!trainingRunId) return false;
     setError("");
-    await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)) }));
+    await patchObjects((objects) => upsertRunnerSandbox(objects, trainingRunId, runConfig, result.integrationId, { minScore, ollamaBin: readinessProbe?.runtime?.ollama?.binPath || "", modelsDir: readinessProbe?.runtime?.ollama?.modelsDir || "", toolSearchDirs: (readinessProbe?.storageLocations || []).map((l) => String(l.path || "")).filter((pp) => /\/llama\.cpp$/.test(pp)), venvPython: readinessProbe?.runtime?.python?.venvDir ? `${readinessProbe.runtime.python.venvDir}/bin/python` : "" }));
     const res = await fetch("/api/workspace/sandbox-run", {
       method: "POST",
       headers: { "content-type": "application/json" },
