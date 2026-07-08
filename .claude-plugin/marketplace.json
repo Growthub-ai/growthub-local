@@ -1,0 +1,25 @@
+{
+  "name": "growthub",
+  "owner": {
+    "name": "Growthub"
+  },
+  "metadata": {
+    "description": "Official Claude Code plugin marketplace for Growthub Local and Agent Workspace as Code (AWaC): governed workspace consoles, operator skills, and agent lanes.",
+    "logo": "./claude-plugins/growthub-governed-console/assets/ghlogo.jpg"
+  },
+  "plugins": [
+    {
+      "name": "growthub-governed-console",
+      "source": "./claude-plugins/growthub-governed-console",
+      "description": "Read + dry-run + governed hand-off console over a governed Growthub workspace: 14 MCP tools (workspace topology, blast radius, lineage, readiness, preflight_patch, next_actions) plus operator skills for the canonical mutation boundary.",
+      "category": "workflow",
+      "keywords": [
+        "growthub",
+        "awac",
+        "mcp",
+        "governed-workspace",
+        "causal-impact"
+      ]
+    }
+  ]
+}

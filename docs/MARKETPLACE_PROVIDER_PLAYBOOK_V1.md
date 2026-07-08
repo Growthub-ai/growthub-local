@@ -242,6 +242,8 @@ Mirror the shipped suites; every new provider adds:
 
 ## Phase 7 — Real-world browser QA (the proof bar — non-negotiable)
 
+Canonical protocol: [`docs/BROWSER_PROOF_PROTOCOL_V1.md`](./BROWSER_PROOF_PROTOCOL_V1.md)
+— this phase is that protocol plus the provider-specific assertions below.
 Tests alone do not close a provider. Prove it as a real user, in a real
 browser, on a real boot, with screenshots:
 

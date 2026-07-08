@@ -38,6 +38,9 @@ jobs:
       - name: Validate bundled worker kit contracts
         run: node scripts/check-worker-kits.mjs
 
+      - name: Validate Claude Code plugin marketplace surface
+        run: node scripts/check-claude-plugin.mjs
+
       - name: Validate resolver registry (drift guard + unit tests)
         run: |
           node scripts/check-resolver-registry.mjs

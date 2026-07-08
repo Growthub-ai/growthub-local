@@ -152,6 +152,6 @@ Auth work is complete when:
 
 ## What this skill does NOT do
 
-- It does not run workflows — pair it with `growthub-discover` (interactive) or `growthub-pipeline-execute` (headless).
+- It does not run workflows — use the `growthub` CLI's interactive discover hub or `growthub pipeline {assemble,validate,execute}` directly (see `cli/README.md`).
 - It does not provision new tenants — that's a hosted-app concern.
-- It does not manage fork-authority issuer trust — that's `growthub-kit-fork-authority`.
+- It does not manage fork-authority issuer trust — that's `growthub kit fork authority` (see `cli/src/commands/kit-fork.ts`).

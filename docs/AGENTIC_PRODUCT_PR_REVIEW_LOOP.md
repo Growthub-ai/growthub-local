@@ -39,15 +39,25 @@ Before any edit, know what already exists — do not rebuild what is there.
   strings, secrets redacted. **Never fake telemetry** — evidence-only.
 
 ### 3. Validate the gates
-Run from repo root before pushing:
+Run from repo root before pushing. The mandatory ladder is the **same six
+gates** as every other PR lane (canonical list:
+[`docs/AGENT_DIST_REBUILD_GUIDE.md`](./AGENT_DIST_REBUILD_GUIDE.md) §6;
+one-shot: `bash scripts/pr-ready.sh` or
+`bash scripts/agent-dist-verify.sh pre-push`):
 
 | Gate | Command |
 |------|---------|
 | Boundary present | `bash scripts/freeze-check.sh` |
 | Version lockstep | `node scripts/check-version-sync.mjs --require-bump-if-source-changed --base origin/main --head HEAD` |
+| CLI package contracts | `node scripts/check-cli-package.mjs` |
 | Worker-kit manifest | `node scripts/check-worker-kits.mjs` |
+| Fork-sync structure | `node scripts/check-fork-sync.mjs` |
 | Release shape | `node scripts/release-check.mjs` |
-| New pure libs | `node --test scripts/unit-<name>.test.mjs` |
+
+Context-dependent additions: `node scripts/check-monorepo-boundary.mjs`
+(zone-boundary changes), `node scripts/check-resolver-registry.mjs`
+(resolver/api-registry changes), and `node --test scripts/unit-<name>.test.mjs`
+for any new pure lib.
 
 Any change under `cli/src`, `cli/assets`, or `server/src` requires a lockstep
 bump of `@growthub/cli` **and** `@growthub/create-growthub-local`.
@@ -73,6 +83,9 @@ repo tree. Use `--no-dev` to materialize + validate without booting. Docs:
 [`scripts/export-seed-workspace.md`](../scripts/export-seed-workspace.md).
 
 ### 5. Exercise the customer journey
+Browser proof follows the canonical protocol in
+[`docs/BROWSER_PROOF_PROTOCOL_V1.md`](./BROWSER_PROOF_PROTOCOL_V1.md)
+(clean states → honest failure → closed loop → screenshots → secret grep).
 The flagship loop that must work end-to-end:
 
 ```

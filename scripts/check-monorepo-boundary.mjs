@@ -66,6 +66,8 @@ const ZONES = {
   ".github": "scaffolding",
   ".githooks": "scaffolding",
   ".claude": "scaffolding",
+  ".claude-plugin": "scaffolding",
+  "claude-plugins": "scaffolding",
   ".agents": "scaffolding",
   ".gitignore": "scaffolding",
   "tsconfig.json": "scaffolding",

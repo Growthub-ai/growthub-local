@@ -125,6 +125,7 @@ Pointers:
 
 - `.claude/skills/README.md` — skill catalog and authoring rules.
 - `docs/SKILLS_MCP_DISCOVERY.md` — skill/MCP primitive reference.
+- `docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md` — the installable Claude Code plugin/marketplace surface (`.claude-plugin/` + `claude-plugins/`) that packages `growthub serve --mcp` for end users.
 - `cli/README.md` — CLI-specific usage.
 
 ## Governed-workspace primitives (v1.2)
@@ -228,7 +229,7 @@ Intents: `build_dashboard` | `create_widget` | `register_api` | `create_object` 
 
 ## Worker-kit workspace convention
 
-Every worker kit with a local fork or tool clone uses the uniform env-var convention: `${<KIT>_HOME:-$HOME/<default>}`. The canonical var per kit is tabulated in `.claude/skills/growthub-worker-kits/SKILL.md`. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) remain accepted by setup scripts as aliases, but docs and new code should emit only the canonical `<KIT>_HOME` form. Kit exports use `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`. Never hardcode `/Users/<name>/…` or `/home/<name>/…` inside kit docs, templates, or fixtures.
+Every worker kit with a local fork or tool clone uses the uniform env-var convention: `${<KIT>_HOME:-$HOME/<default>}`. The canonical var per kit is declared by each kit's own docs under `cli/assets/worker-kits/<kit>/`. Legacy env-var names (e.g. `<KIT>_FORK_PATH`) remain accepted by setup scripts as aliases, but docs and new code should emit only the canonical `<KIT>_HOME` form. Kit exports use `${GROWTHUB_KIT_EXPORTS_HOME:-$HOME/growthub-worker-kit-exports}`. Never hardcode `/Users/<name>/…` or `/home/<name>/…` inside kit docs, templates, or fixtures.
 
 Authoring rules and conventions are documented in `.claude/skills/README.md`. Add new skills there rather than widening any existing one.
 
