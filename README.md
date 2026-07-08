@@ -160,8 +160,6 @@ Official marketplace plugins are governed workspace capabilities installed into 
 
 **The rule:** Plugins extend the governed workspace universe; they do not bypass it.
 
-```
-
 ---
 
 ## 🏗️ Technical Stack
