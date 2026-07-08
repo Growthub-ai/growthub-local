@@ -120,6 +120,19 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   `mode: offline-approximation`).
 - `node scripts/check-monorepo-boundary.mjs` — new top-level paths
   classified; no unclassified paths.
+- **Real-install closed-loop QA** (run at P0 on Claude Code 2.1.204):
+  `claude plugin marketplace add ./` → `claude plugin install
+  growthub-governed-console@growthub` → `claude plugin details` shows the
+  full component inventory (4 skills, 1 agent, 1 hook, 1 MCP server; ~745
+  always-on tokens); the **published npm** server (`npx -y
+  @growthub/cli@0.14.15 serve --mcp`) answered a 7-call battery against a
+  standalone workspace (incl. `preflight_patch` rejecting the
+  `workspaceSourceRecords` sidecar) with the config file hash unchanged
+  (read-only proof); the installed hook emitted orientation inside a
+  governed workspace, stayed silent (exit 0) outside one, and kept its
+  executable bit through install; a headless `claude -p` session in that
+  workspace received the hook context and successfully called
+  `describe_workspace` through the plugin's MCP server.
 
 ## 8. Anti-Patterns (must not happen)
 
@@ -133,6 +146,17 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   request/response shapes live there, not here.
 - **No secrets surfaces** — tools expose `authStatus` only; `userConfig`
   (P1) may carry a local URL, never a credential.
+- **No re-declaration of auto-discovered components** — standard-location
+  files (`hooks/hooks.json`, `.mcp.json`, `skills/`, `agents/`) load
+  automatically; listing them again in `plugin.json` fails the plugin load
+  as a duplicate (observed on 2.1.204). Manifest component fields are for
+  *non-standard* paths only.
+- **No `metadata.pluginRoot` indirection** — install resolution on 2.1.204
+  resolves entry `source` relative to the marketplace root regardless of
+  `pluginRoot`; marketplace entries must carry the full relative path
+  (`./claude-plugins/<plugin>`). Both regressions were caught by the
+  real-install QA above, not by manifest validation — keep the closed loop
+  in every release.
 - **Do not confuse the three "plugin"/"marketplace" systems**: this Claude
   Code plugin surface (`claude-plugins/`), the in-workspace provider
   marketplace (`docs/MARKETPLACE_PROVIDER_PLAYBOOK_V1.md`), and the vendored

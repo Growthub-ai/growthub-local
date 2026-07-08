@@ -18,7 +18,5 @@
     "causal-impact",
     "preflight",
     "workspace-graph"
-  ],
-  "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/hooks.json"
+  ]
 }
