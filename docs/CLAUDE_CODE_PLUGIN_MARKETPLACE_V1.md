@@ -21,6 +21,7 @@ standards ([plugins-reference](https://code.claude.com/docs/en/plugins-reference
 .claude-plugin/marketplace.json                     # marketplace "growthub"
 claude-plugins/
   growthub-governed-console/                        # plugin (v lockstep with @growthub/cli)
+    assets/ghlogo.jpg                               # rendered marketplace/README logo asset
     .claude-plugin/plugin.json                      # manifest (metadata + component paths)
     .mcp.json                                       # governed-universe MCP server (npx, exact pin)
     skills/
@@ -32,6 +33,7 @@ claude-plugins/
     hooks/hooks.json + scripts/session-context.sh   # SessionStart orientation (offline, silent outside a workspace)
     README.md
 scripts/check-claude-plugin.mjs                     # structural + lockstep CI gate (wired into ci.yml)
+docs/CLAUDE_CONNECTOR_RELEASE_QA_SMOKE_V1.md        # credential-safe release smoke proof
 ```
 
 ## 1. Current State (what existed before this surface)
@@ -120,6 +122,14 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   `mode: offline-approximation`).
 - `node scripts/check-monorepo-boundary.mjs` — new top-level paths
   classified; no unclassified paths.
+- **Release-branch local smoke (Codex, Claude Code 2.1.96):** the
+  credential-safe proof is recorded in
+  [`docs/CLAUDE_CONNECTOR_RELEASE_QA_SMOKE_V1.md`](./CLAUDE_CONNECTOR_RELEASE_QA_SMOKE_V1.md).
+  It covers marketplace/plugin validation, local marketplace install, enabled
+  plugin inventory, SessionStart hook behavior, plugin MCP health with
+  `CLAUDE_PROJECT_DIR`, the 14-tool pinned MCP server JSON-RPC smoke, and the
+  expected local auth blocker for a headless model invocation without exposing
+  credentials.
 - **Real-install closed-loop QA** (run at P0 on Claude Code 2.1.204):
   `claude plugin marketplace add ./` → `claude plugin install
   growthub-governed-console@growthub` → `claude plugin details` shows the

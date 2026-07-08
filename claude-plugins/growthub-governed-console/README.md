@@ -1,5 +1,7 @@
 # Growthub Governed Console — Claude Code plugin
 
+![Growthub logo](./assets/ghlogo.jpg)
+
 The agent-facing operating console for governed Growthub workspaces
 ([Agent Workspace as Code](https://github.com/Growthub-ai/growthub-local)),
 packaged as a first-party Claude Code plugin.
@@ -69,6 +71,15 @@ The plugin version is lockstep with the `@growthub/cli` version pinned in
 `scripts/check-claude-plugin.mjs` in the repo enforces plugin version ==
 pinned CLI version == `cli/package.json` version, so a CLI release cannot
 ship without the console following it.
+
+## Marketplace logo
+
+The marketplace manifest advertises the Growthub logo at
+`metadata.logo: ./claude-plugins/growthub-governed-console/assets/ghlogo.jpg`.
+Claude Code 2.1.96 validates arbitrary marketplace metadata but rejects
+`logo`/`icon` fields on the plugin manifest and individual plugin entries, so
+the logo is rendered in this README and kept as marketplace metadata without
+breaking local plugin installation.
 
 ## Develop → test → deploy → validate (quickstart)
 

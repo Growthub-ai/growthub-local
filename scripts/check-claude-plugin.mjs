@@ -80,6 +80,16 @@ const pluginDirs = [];
 if (marketplace) {
   if (!KEBAB.test(marketplace.name ?? "")) errors.push(`marketplace name "${marketplace.name}" must be kebab-case`);
   if (!marketplace.owner?.name) errors.push("marketplace.json: owner.name is required");
+  for (const [key, value] of Object.entries(marketplace.metadata ?? {})) {
+    if (!["logo", "icon", "image", "thumbnail"].includes(key)) continue;
+    if (typeof value !== "string" || !value.startsWith("./")) {
+      errors.push(`marketplace metadata.${key} must be a relative path starting with "./" (got ${JSON.stringify(value)})`);
+      continue;
+    }
+    const assetRel = path.normalize(value);
+    if (assetRel.startsWith("..")) errors.push(`marketplace metadata.${key} escapes the repo (${assetRel})`);
+    else if (!fs.existsSync(path.join(repoRoot, assetRel))) errors.push(`marketplace metadata.${key} points to missing asset: ${assetRel}`);
+  }
   if (!Array.isArray(marketplace.plugins) || marketplace.plugins.length === 0) {
     errors.push("marketplace.json: plugins[] must be a non-empty array");
   } else {
