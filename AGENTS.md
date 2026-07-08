@@ -125,6 +125,7 @@ Pointers:
 
 - `.claude/skills/README.md` — skill catalog and authoring rules.
 - `docs/SKILLS_MCP_DISCOVERY.md` — skill/MCP primitive reference.
+- `docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md` — the installable Claude Code plugin/marketplace surface (`.claude-plugin/` + `claude-plugins/`) that packages `growthub serve --mcp` for end users.
 - `cli/README.md` — CLI-specific usage.
 
 ## Governed-workspace primitives (v1.2)

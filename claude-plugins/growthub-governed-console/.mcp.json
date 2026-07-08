@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "governed-universe": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@growthub/cli@0.14.15",
+        "serve",
+        "--mcp",
+        "--fork",
+        "${CLAUDE_PROJECT_DIR}"
+      ]
+    }
+  }
+}

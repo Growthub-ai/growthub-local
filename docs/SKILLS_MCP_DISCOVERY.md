@@ -85,4 +85,5 @@ No new telemetry events introduced. Existing trace events added:
 - User-facing narrative: `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/docs/governed-workspace-primitives.md`
 - Root agent contract: [`AGENTS.md`](../AGENTS.md)
 - Claude Skills catalog: [`.claude/skills/README.md`](../.claude/skills/README.md)
+- Installable Claude Code plugin/marketplace surface: [`docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md`](./CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md)
 - SDK changelog: [`packages/api-contract/CHANGELOG.md`](../packages/api-contract/CHANGELOG.md)
