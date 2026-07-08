@@ -70,6 +70,52 @@ The plugin version is lockstep with the `@growthub/cli` version pinned in
 pinned CLI version == `cli/package.json` version, so a CLI release cannot
 ship without the console following it.
 
+## Develop → test → deploy → validate (quickstart)
+
+**Stage 0 — inner dev loop (no install, instant):** load the plugin in-place
+and iterate; edits apply on the next session start. First launch cold-starts
+`npx @growthub/cli`, so give the MCP server a few seconds to connect.
+
+```bash
+cd <any exported workspace>   # anything with growthub.config.json
+claude --plugin-dir <repo>/claude-plugins/growthub-governed-console
+```
+
+**Stage 1 — validate (before every push):**
+
+```bash
+node scripts/check-claude-plugin.mjs     # structure + version lockstep (CI gate)
+claude plugin validate .                 # official manifest validation
+```
+
+**Stage 2 — local marketplace rehearsal (same mechanics as production):**
+
+```bash
+claude plugin marketplace add ./
+claude plugin install growthub-governed-console@growthub
+claude plugin details growthub-governed-console   # inventory + token cost
+# after edits: claude plugin marketplace update growthub
+```
+
+Watch `claude plugin list` for **√ enabled** — a "failed to load" here is
+exactly what users would hit (this rehearsal caught both P0 defects).
+
+**Stage 3 — deploy = merge.** The marketplace is hosted by this repo itself;
+merging to `main` publishes it. No extra infrastructure.
+
+**Stage 4 — real marketplace compatibility (post-merge, clean machine):**
+
+```bash
+claude plugin marketplace remove growthub          # drop any local rehearsal
+claude plugin marketplace add Growthub-ai/growthub-local
+claude plugin install growthub-governed-console@growthub
+cd <exported workspace> && claude                  # hook fires, tools connect
+```
+
+For containers/CI images, pre-seed with `CLAUDE_CODE_PLUGIN_SEED_DIR`
+(structure mirrors `~/.claude/plugins/`). Debug any load issue with
+`claude --debug`.
+
 ## Contract references (repo)
 
 - `docs/GOVERNED_MCP_CONSOLE_V1.md` — the console pattern (canonical)
