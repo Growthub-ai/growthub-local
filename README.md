@@ -5,13 +5,15 @@
 
 > **A self-correcting, information-theoretic system that treats workspace data as a governed, low-entropy machine.**
 
+**Quick links:** [Architecture thesis](#-the-architectural-thesis) · [Operational loop](#-the-operational-loop) · [Core features](#-core-features) · [Installation](#-installation) · [Quick start](#-quick-start) · [Documentation](#-documentation) · [Contributing](#-contributing)
+
 Growthub Local is not a framework. It is not a platform. It is a **governed operating system for agent-native development**—a workspace where humans and AI agents collaborate through deterministic, auditable primitives.
 
 ---
 
 ## 📐 The Architectural Thesis
 
-### The Core Insight: Causal Derivation Intelligence (CDI)
+### Causal Derivation Intelligence (CDI)
 
 Growthub Local applies **Information-Theoretic Transformation** to the workspace state:
 
@@ -34,22 +36,6 @@ O(state) = D(state) (low-entropy output)
 
 O(state) = compress(E(state)) where compress is deterministic and information-preserving
 ```
-
-### The Scaling Law
-
-```
-For any two states S₁ and S₂ where S₂ has more evidence:
-D(S₂) has lower entropy than D(S₁)
-```
-
-**Empirical Proof:**
-
-| Release | Scope | Supervision | Errors |
-|---------|-------|-------------|--------|
-| PR #258 | Upstash QStash (1 provider) | Heavy | Multiple |
-| PR #270 | Stripe + Resend + Neon + Cloudflare R2 (4 providers) | Minimal | Zero |
-
-The marginal cost of adding new complexity *decreases* over time as the governance infrastructure accumulates evidence.
 
 ---
 
@@ -91,11 +77,11 @@ graph LR
 
 ---
 
-## 🧩 The Type Topology — Algebraic Refinement
+## 🧩 The Workspace Topology — Algebraic Refinement
 
 The system uses TypeScript's type system to enforce algebraic constraints on the derivation process. This is the governance shell that ensures all products conform to a governed shape.
 
-### Product Type Hierarchy
+### Hierarchy
 
 ```
 MarketplaceProduct
@@ -125,40 +111,6 @@ Type constraint → Product shape → Product verification → Type constraint
 ```
 
 The type system constrains what products can exist, which enables the causal layer to reason about products, which produces evidence that can be used to refine the type system.
-
----
-
-## 🔬 How PR #270 Proved the Architecture
-
-PR #270 was the first massive test of the causal layer in production. The swarm executed hundreds of commits across:
-
-- Marketplace providers (Stripe, Resend, Neon, Cloudflare R2)
-- Template packaging
-- Exporter logic
-- Smoke tests
-- Multiple UI surfaces
-- Customer experience states
-
-### How the Causal Layer Enabled This
-
-| Challenge | How Causal Layer Solved It |
-|-----------|----------------------------|
-| Adding Stripe | Simulated impact on payment workflows; traced dependencies to checkout surfaces; verified env refs ready |
-| Adding Resend | Simulated impact on email workflows; traced dependencies to notification surfaces; verified API key ready |
-| Adding Neon | Simulated impact on data layer; traced dependencies to persistence surfaces; verified connection string ready |
-| Adding Cloudflare R2 | Simulated impact on storage; traced dependencies to file management surfaces; verified access keys ready |
-| Template Packaging | Traced which templates use which providers; simulated impact of provider updates |
-| Exporter Logic | Traced which exports depend on which providers; verified golden paths remain intact |
-| UI Surfaces | Simulated impact on dashboards; verified new controls appear correctly |
-| Smoke Tests | Traced which tests cover each provider; verified coverage remains complete |
-
-### The Result
-
-- Massive cross-surface scope (4 providers + templates + exporter + UI + smoke tests)
-- Deep implementation detail (hundreds of commits)
-- Zero errors reaching final QA
-- Minimal human supervision (almost none)
-- Reusable patterns for 1K+ future plugins
 
 ---
 
@@ -208,79 +160,6 @@ Official marketplace plugins are governed workspace capabilities installed into 
 
 **The rule:** Plugins extend the governed workspace universe; they do not bypass it.
 
-### Provider Marketplace
-
-The V1 marketplace includes:
-
-| Provider | Product | Execution Lane | Status |
-|----------|---------|----------------|--------|
-| Upstash | QStash / Workflow | serverless-scheduler | ✅ Verified |
-| Upstash | Redis | workspace-data | ✅ Registered |
-| Upstash | Search | workspace-retrieval | ✅ Registered |
-| Upstash | Vector | workspace-retrieval | ✅ Registered |
-| Supabase | Postgres / Storage | workspace-data | ✅ Verified |
-| Stripe | Payments | workspace-payments | ✅ Verified |
-| Resend | Email | workspace-communication | ✅ Verified |
-| Neon | Postgres | workspace-data | ✅ Verified |
-| Cloudflare R2 | Object Storage | workspace-storage | ✅ Verified |
-
-### Serverless Scheduler
-
-The first fully validated runnable plugin product:
-
-```yaml
-providerId: upstash
-productId: upstash-qstash
-integrationId: upstash-qstash-workflow
-authRef: QSTASH
-executionLane: serverless-scheduler
-requiredEnv: QSTASH_TOKEN
-optionalEnv: QSTASH_URL, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY
-```
-
-The validated path:
-
-```
-/schedule command → Schedule Cockpit → QStash product capability →
-serverless trigger on workflow input node → signed QStash destination →
-signed callback → last-run proof → receipt ledger
-```
-
-### User Surfaces
-
-Official marketplace plugins appear in these workspace surfaces:
-
-| Surface | Purpose |
-|---------|---------|
-| Add-ons Marketplace | Provider/product setup, verification, resource selection, env reference binding |
-| API Registry | Persisted provider/product capability rows |
-| Workflow Canvas | Trigger/runtime configuration and schedule ownership |
-| Workspace Helper | `/schedule` command entry point |
-| Schedule Cockpit | Fleet view for scheduled, ready, blocked, and drifted workflows |
-| Agent Outcomes | Receipt ledger for every governed action |
-
-### Receipt Ledger
-
-Every meaningful action writes an outcome receipt:
-
-```
-aor_mqwylvwc_0e9ocp  workspace-add-on-sync
-  Upstash QStash/Workflow installed after provider sync probe.
-
-aor_mqwym1zp_krbgab  workspace-add-on-schedule
-  Schedule bound to registry-workflow; row serverless + input trigger synced.
-
-aor_mqwym7d5_svzuts  workspace-add-on-schedule-run
-  Manual scheduler run published for registry-workflow.
-
-aor_mqwymews_u41tvs  workspace-scheduled-run
-  Scheduled serverless run of registry-workflow completed via Upstash.
-
-aor_mqwymfpy_83tr3s  workspace-scheduled-run-callback
-  registry-workflow scheduled run synced (HTTP 200).
-
-aor_mqwyna8z_186dmc  workspace-add-on-schedule
-  Schedule uninstalled; row reverted to local + manual trigger.
 ```
 
 ---
@@ -302,17 +181,43 @@ aor_mqwyna8z_186dmc  workspace-add-on-schedule
 
 ## 📦 Installation
 
+### Guided installer
+
 ```bash
-# Install globally
-npm install -g @growthub/cli@latest
-
-# Create a new workspace
-npx @growthub/create-growthub-local@latest my-workspace
-cd my-workspace
-
-# Start the workspace
-growthub dev
+npm create @growthub/growthub-local@latest
 ```
+
+Choose **Custom AI Governed Workspace**, then pick the fastest source:
+
+1. [Import a GitHub repo](./docs/FIRST_RUN_PATHS.md#1-import-a-repo)
+2. [Import a skills.sh skill](./docs/FIRST_RUN_PATHS.md#2-import-a-skill)
+3. [Start from the workspace starter](./docs/FIRST_RUN_PATHS.md#3-start-from-a-workspace-starter)
+4. [Start from a workspace template](./docs/FIRST_RUN_PATHS.md#4-browse-workspace-templates)
+
+### Direct profile install
+
+```bash
+npm create @growthub/growthub-local@latest -- --profile workspace --out ./my-workspace
+npm create @growthub/growthub-local@latest -- --profile self-improving --out ./my-workspace
+```
+
+### Power-user starter export
+
+```bash
+npx -p @growthub/cli@latest growthub kit download growthub-custom-workspace-starter-v1 --out ./my-workspace --yes
+cd my-workspace/apps/workspace
+npm install
+npm run dev
+```
+
+### CLI-only install
+
+```bash
+npm install -g @growthub/cli@latest
+growthub workspace status --json
+```
+
+For version grounding, read `cli/package.json`, `packages/create-growthub-local/package.json`, and `packages/api-contract/package.json` on the branch. See [Artifact Versions](./docs/ARTIFACT_VERSIONS.md).
 
 ---
 
@@ -351,37 +256,10 @@ Open the Workspace Helper and type `/schedule`. The Schedule Cockpit opens, show
 | [Serverless Scheduler Command Guide V1](./docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md) | The `/schedule` command lifecycle |
 | [Causation ITT Eligibility Drivers](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) | The mathematical foundation of CDI |
 | [Governed MCP Console V1](./docs/GOVERNED_MCP_CONSOLE_V1.md) | The agent operational loop |
+| [First-Run Paths](./docs/FIRST_RUN_PATHS.md) | The canonical repo, skill, starter, and template entry paths |
+| [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) | The official AWaC workspace topology |
+| [Agent Dist Rebuild Guide](./docs/AGENT_DIST_REBUILD_GUIDE.md) | Source/dist lane rules and when version bumps are required |
 
----
-
-## 🔮 The Road Ahead
-
-### Current State (0.14.15) — Proven
-
-- ✅ Pure eligibility drivers work
-- ✅ Causal simulation works
-- ✅ Preflight patches work
-- ✅ The loop is stable
-- ✅ Scaling is real
-
-### Next Logical Strengthenings
-
-1. **Stronger Causal Models**
-   - More sophisticated lineage tracing (cross-workspace dependencies)
-   - Better impact prediction (probabilistic rather than deterministic)
-   - Integration with CEO Primitive for higher-level reasoning
-2. **Better Instrumentation**
-   - Measure "complexity absorption per unit supervision" as a signal
-   - Track error rates as function of governance coverage
-   - Visualize the entropy reduction over time
-3. **New Cockpits**
-   - Explicit visibility into the causal layer (what derivers are running, what they're finding)
-   - Debugging tools for agents (why was this action blocked?)
-   - Scaling dashboards (how is the entropy reduction improving?)
-4. **Self-Improving Drivers**
-   - Use accumulated proofs and traces as training signal
-   - Refine derivers based on historical success/failure
-   - Automatically discover new eligibility conditions
 
 ---
 
@@ -398,17 +276,6 @@ The graph supplies causality.
 The cockpit supplies operation.
 The receipt supplies truth.
 ```
-
-### Adding a New Provider
-
-1. Define the `providerId` and `productId`
-2. Specify the `executionLane` (e.g., `serverless-scheduler`, `workspace-data`)
-3. Define `requiredEnv` and `optionalEnv` refs
-4. Implement the readiness probe
-5. Add UI setup copy
-6. Register in the API Registry
-
-The hard governance shell is already there—new providers just fill in the provider-specific parts.
 
 ---
 
