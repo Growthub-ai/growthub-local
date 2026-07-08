@@ -3,7 +3,9 @@
   "owner": {
     "name": "Growthub"
   },
-  "description": "Official Claude Code plugin marketplace for Growthub Local and Agent Workspace as Code (AWaC): governed workspace consoles, operator skills, and agent lanes.",
+  "metadata": {
+    "description": "Official Claude Code plugin marketplace for Growthub Local and Agent Workspace as Code (AWaC): governed workspace consoles, operator skills, and agent lanes."
+  },
   "plugins": [
     {
       "name": "growthub-governed-console",
