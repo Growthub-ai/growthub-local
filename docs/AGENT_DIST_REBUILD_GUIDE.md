@@ -77,7 +77,7 @@ What am I editing?
 ├── cli/dist/**
 │       → STOP. Are you super-admin doing a Phase B rebuild?
 │       → If no: revert your dist edits and stay in Phase A.
-│       → If yes: follow docs/RELEASE_DIST_REBUILD_WORKFLOW.md §4 Phase B.
+│       → If yes: follow docs/RELEASE_DIST_REBUILD_WORKFLOW.md §3 Phase B.
 │         Run: bash scripts/agent-dist-verify.sh rebuild-dist (full workspace only)
 │
 ├── cli/package.json or packages/create-growthub-local/package.json
@@ -160,7 +160,7 @@ Agents should never run Phase B. If a task description tells you to "rebuild dis
 - The super-admin's npm credentials and GitHub Actor gate (`antonioromero1220`)
 - A separate `chore: rebuild dist` commit with only `cli/dist/**` changes
 
-Phase B is documented in full in [`docs/RELEASE_DIST_REBUILD_WORKFLOW.md`](./RELEASE_DIST_REBUILD_WORKFLOW.md) §4. This guide intentionally does not duplicate it.
+Phase B is documented in full in [`docs/RELEASE_DIST_REBUILD_WORKFLOW.md`](./RELEASE_DIST_REBUILD_WORKFLOW.md) §3. This guide intentionally does not duplicate it.
 
 ---
 

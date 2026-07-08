@@ -4,7 +4,7 @@ Canonical procedure for shipping a new `@growthub/cli` / `@growthub/create-growt
 
 This document is the single source of truth for the maintainer lane (release orchestration + npm publication). Contributors in the OSS lane only need Phase A.
 
-> **Claude Code note.** A Claude skill pointer lives at `.claude/skills/release-dist-rebuild/SKILL.md` (per-operator, gitignored). Future agent sessions invoke it via the Skill tool and read the body of this doc for the authoritative steps. If that SKILL.md is absent in your clone, recreate it from the template at the bottom of this file.
+> **Claude Code note.** Committed skills live under `.claude/skills/` (see `.claude/skills/README.md`). The agent-facing companion to this doc is [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./AGENT_DIST_REBUILD_GUIDE.md) — agents read that; maintainers read this.
 
 ---
 
@@ -12,55 +12,20 @@ This document is the single source of truth for the maintainer lane (release orc
 
 The OSS tree is a **partial view** of the real workspace. Feature PRs live in the OSS tree; dist rebuilds require the full workspace. Confusing the two loses feature code at publish time — the failure mode is shipping `vX` source to npm with `v(X-1)` behavior because `cli/dist/index.js` was never rebuilt.
 
-## 2. The two workspace views
+## 2. Shared mental model — two lanes, committed dist
 
-| Surface | Where | Contains | Cannot do |
-|---|---|---|---|
-| **OSS tree** (`growthub-ai/growthub-local`) | this repo | `cli/`, `server/`, `packages/shared`, `packages/db/src/**`, `packages/create-growthub-local`, CI gates, docs | rebuild `cli/dist/index.js` (esbuild needs adapter/plugin packages absent here) |
-| **Full workspace** (super-admin private) | super-admin environment | everything above + `packages/adapters/*` + `packages/plugins/*` + `packages/plugins/examples/*` + `packages/db/package.json` + `@paperclipai/server` source | n/a — is the complete source of truth |
+The two-lane topology (OSS tree vs full workspace), why `cli/dist/index.js` is committed, and the version-X-source ⇒ version-X-dist invariant are owned by [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./AGENT_DIST_REBUILD_GUIDE.md) §1–3 — read those sections first; this doc does not restate them.
 
-`pnpm-workspace.yaml` at repo root lists all workspace globs; many resolve to empty dirs on the OSS tree. That is intentional. `cli/esbuild.config.mjs` hard-codes `workspacePaths` that include `packages/adapters/*` — running `pnpm --filter @growthub/cli run build` on the OSS tree alone will fail (ENOENT on `packages/db/package.json`, missing adapter directories).
+Maintainer-lane specifics worth keeping here:
 
-**Mental model:** the OSS tree is the _source lane_ for feature PRs and CI; the full workspace is the _build lane_ for `cli/dist/index.js`. Committing the built dist to the OSS tree is how the two lanes stay in sync.
+- `.github/workflows/release.yml` ships the committed dist directly — no CI rebuild (established by `0d6ef0a: ci: skip esbuild rebuild in CI — ship committed dist directly`).
+- `scripts/release-check.mjs` enforces tarball _shape_ only; **dist-source parity is the super-admin's responsibility during the Phase B rebuild** — no gate verifies it.
 
-## 3. Why dist is committed to the OSS tree
-
-`.github/workflows/release.yml` explicitly ships the committed `cli/dist/index.js` directly — it does not rebuild in CI. This was established by `0d6ef0a: ci: skip esbuild rebuild in CI — ship committed dist directly`. Reasons:
-
-1. Release CI runs on ubuntu-latest against the public OSS tree — rebuilding would fail for the same workspace reason above.
-2. Reproducibility: the dist that ships to npm is the exact file committed at the release SHA; anyone can `git show <sha>:cli/dist/index.js | sha256sum` and compare to the npm tarball.
-3. Release-check (`scripts/release-check.mjs`) enforces tarball _shape_ (required files, no leaks) but does not verify dist-source parity — that is the super-admin's responsibility during rebuild.
-
-**Invariant:** for any commit on `main` where `cli/package.json.version = X`, `cli/dist/index.js` must be the esbuild output of that same source at version X. If a feature PR bumps version without rebuilding dist, the next release publishes vX source with v(X-1) behavior.
-
-## 4. End-to-end workflow
+## 3. End-to-end workflow
 
 ### Phase A — Source PR (OSS tree, any contributor)
 
-Land the feature as a source-only change. Do **not** rebuild `cli/dist/index.js` here; the super-admin rebuilds in Phase B.
-
-1. **Branch naming** — must match `^(feat|feature|fix|docs|chore|ci|refactor|test|perf|adapter|sync|cursor|codex)/.+`. Enforced by `.github/workflows/pr-validate.yml`.
-2. **Implement** the change in `cli/src/**`. Add unit tests in `cli/src/__tests__/**`.
-3. **Version bump** (required by `check-version-sync --require-bump-if-source-changed` whenever `cli/src/**` changes):
-   - `cli/package.json` → bump minor for additive feature, patch for fix
-   - `packages/create-growthub-local/package.json` → bump same semver step
-   - `packages/create-growthub-local/package.json.dependencies["@growthub/cli"]` → pin to new cli version
-4. **Local CI-gate validation** (every PR must pass these; run them before pushing):
-   ```bash
-   bash scripts/freeze-check.sh
-   node scripts/check-version-sync.mjs
-   node scripts/check-cli-package.mjs
-   node scripts/check-worker-kits.mjs
-   node scripts/check-fork-sync.mjs
-   node scripts/release-check.mjs
-   ```
-   Any red gate blocks the PR. `release-check.mjs` passes on the OSS tree even if dist is stale — it checks shape, not version parity.
-5. **Commit + push** — conventional commit, e.g. `feat(cli): Fork Authority Protocol`. PR title must also match `^(feat|fix|...): .{10,}`.
-6. **Open draft PR → `main`** with ≥20-char body. Flag "dist rebuild required in Phase B" in the PR description so super-admin catches it at merge time.
-7. **CI checks on the PR** — three jobs must go green:
-   - `PR Validate / validate` — branch name, PR title, lockfile guard, PR description, version policy
-   - `CI / verify` — all six gate scripts
-   - `Smoke / smoke` — fresh-install smoke test
+Owned by [`docs/AGENT_DIST_REBUILD_GUIDE.md`](./AGENT_DIST_REBUILD_GUIDE.md) §6 (branch/title regexes, lockstep version bump, the six gate scripts, CI job groups). Do **not** rebuild `cli/dist/index.js` in Phase A. The one maintainer-relevant requirement: the PR description must flag **"dist rebuild required in Phase B"** whenever `cli/src/**` changed, so the super-admin catches it at merge time.
 
 > **Anti-pattern:** don't include `cli/dist/index.js` changes in a feature PR from the OSS tree. The diff will be the old bundle with no new symbols — review noise, and the real rebuild must happen in Phase B anyway.
 
@@ -154,7 +119,7 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
    ./node_modules/.bin/growthub kit fork authority issuer list
    ```
 
-## 5. Failure modes and how to recognize them
+## 4. Failure modes and how to recognize them
 
 | Symptom | Root cause | Fix |
 |---|---|---|
@@ -165,13 +130,13 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
 | `release-check` fails `raw .ts source file detected in tarball` | `cli/package.json.files` mis-includes `src/` | Keep `files` at `["dist", "assets"]` only. |
 | Duplicate shebang (`#!/usr/bin/env node` appears twice in `cli/dist/index.js`) | esbuild `banner.js` + source `#!/...` collision (see `2087b26`) | Strip shebang from `cli/src/index.ts` OR remove `banner.js`; never both. |
 
-## 6. When NOT to follow this workflow
+## 5. When NOT to follow this workflow
 
 - **Not for server-only changes** (`server/src/**`). Those have their own publish path (`@paperclipai/server`) and do not require cli dist rebuild unless the bundled runtime under `cli/dist/runtime/server/` also changed.
 - **Not for docs / kernel-packet changes.** No version bump, no rebuild.
 - **Not for worker-kit manifest changes** (`assets/worker-kits/**`). Those ship in the CLI tarball as-is — rebuild not needed for kit manifest edits, but `check-worker-kits.mjs` must pass.
 
-## 7. Cross-references
+## 6. Cross-references
 
 - `docs/RELEASE_FREEZE.md` — freeze-boundary invariants and single-source-of-truth rules
 - `scripts/release-check.mjs` — executable tarball-shape gate
@@ -180,7 +145,7 @@ Immediately after the feature PR merges (or bundled with it), the super-admin pr
 - `.github/workflows/pr-validate.yml` — branch-name, title, version-policy gates
 - `.github/workflows/ci.yml` — verify job (all six gate scripts)
 
-## 8. Quick reference — the six gate scripts
+## 7. Quick reference — the six gate scripts
 
 ```bash
 bash scripts/freeze-check.sh              # freeze boundary present
@@ -192,23 +157,3 @@ node scripts/release-check.mjs            # tarball shape, UI string invariants,
 ```
 
 All six must be green before Phase A merge and again before Phase C release.
-
----
-
-## Appendix — Claude skill pointer template
-
-Create at `.claude/skills/release-dist-rebuild/SKILL.md` in your clone (gitignored — `.gitignore` line 11 blocks `SKILL.md` globally). Claude Code discovers skills by scanning `.claude/skills/<name>/SKILL.md` in the project directory:
-
-```markdown
----
-name: release-dist-rebuild
-description: End-to-end dev workflow for shipping a new @growthub/cli version. Use when bumping cli/package.json, rebuilding cli/dist/index.js, preparing the self-contained npm tarball, or triggering the Release (OSS) workflow. Covers the OSS-tree vs full-workspace split, the committed-dist pattern, and every gate between `pnpm install` and `npm publish`.
----
-
-See `docs/RELEASE_DIST_REBUILD_WORKFLOW.md` for the canonical procedure.
-
-Quick links:
-- Phase A (source PR, OSS tree)         — any contributor
-- Phase B (dist rebuild, full workspace) — super-admin only
-- Phase C (Release OSS workflow_dispatch) — super-admin only
-```

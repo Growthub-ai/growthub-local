@@ -89,6 +89,12 @@ The sanitation contract (enforced by the script — read it, don't re-derive):
 
 ## Phase 3 — Prove it (never close on source claims)
 
+Browser proof follows the canonical protocol in
+[`docs/BROWSER_PROOF_PROTOCOL_V1.md`](./BROWSER_PROOF_PROTOCOL_V1.md)
+(boot canonical export → clean states → honest failure → closed loop →
+screenshots → secret grep); this phase adds the template smoke + readback
+gates below.
+
 ```bash
 # Config-level (fast — always run):
 node scripts/workspace-template-smoke.mjs --slug <slug>
