@@ -35,6 +35,7 @@ Every skill here plugs into that journey.
 | [`growthub-marketplace-provider`](./growthub-marketplace-provider/SKILL.md) | "add a marketplace provider/plugin", integrate a SaaS into the workspace marketplace, install products, provider icons, real-browser provider QA | `docs/MARKETPLACE_PROVIDER_PLAYBOOK_V1.md`, `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-add-ons.js`, `docs/OFFICIAL_MARKETPLACE_PLUGINS_V1.md` |
 | [`growthub-workspace-template-export`](./growthub-workspace-template-export/SKILL.md) | "turn this workspace variant into a template", export a non-secret seeded config from a private repo, register a workspace template on the Discover/kit pathway, template export QA | `docs/WORKSPACE_TEMPLATE_GOLDEN_PATH_V1.md`, `scripts/export-workspace-seed-template.mjs`, `scripts/workspace-template-smoke.mjs`, `cli/src/commands/kit.ts` (`WORKSPACE_TEMPLATES`), `cli/src/starter/init.ts` (`applySeededConfig`) |
 | [`oss-investigative-architecture`](./oss-investigative-architecture/SKILL.md) | "investigate this repo", source-of-truth architecture analysis, additive implementation planning against any repository's real contracts and extension points; sub-skill `governed-workspace-mutation` guards the two canonical workspace calls (`PATCH /api/workspace`, `POST /api/workspace/sandbox-run`) | `AGENTS.md` (source-of-truth order), `docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md`, `docs/SKILLS_MCP_DISCOVERY.md`, own read-only helpers (`helpers/map-surfaces.sh`, `helpers/find-contracts.sh`) |
+| [`growthub-fable5-closed-loop`](./growthub-fable5-closed-loop/SKILL.md) | "run the closed loop golden path", build an end-to-end agent loop across `/ceo` → `/swarm` → `/schedule` → `/ceo`, wire a closed human-agent feedback loop, apply the Fable 5 reasoning patterns to a governed workspace | `docs/FABLE5_CLOSED_LOOP_GOLDEN_PATH_V1.md`, `docs/SWARM_RUN_CONTRACT_V1.md`, `docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md`, `docs/WORKSPACE_CEO_PRIMITIVE_V1.md`, `packages/api-contract/src/workspace-outcome.ts` |
 
 ## Core loop — every agent follows this order
 
@@ -61,6 +62,7 @@ Every skill here plugs into that journey.
 - **User wants to add a new marketplace provider/plugin (or install products, provider icons, provider browser-QA)** → `growthub-marketplace-provider`.
 - **User wants to convert a private workspace variant into a clean seeded template (or QA a template export end to end)** → `growthub-workspace-template-export`.
 - **User wants an architecture investigation or an additive implementation plan grounded in a repo's actual source-of-truth (contracts, invariants, extension points)** → `oss-investigative-architecture`. Not prefixed `growthub-` because it operates on any target repository, not just this one.
+- **User wants an end-to-end, receipts-closed agent loop across the four governed commands (`/ceo`, `/swarm`, `/schedule`, `/loop`) or to apply the Fable 5 reasoning patterns to workspace operation** → `growthub-fable5-closed-loop`.
 
 If multiple skills could apply, prefer the one that is the narrowest match for the user's stated outcome.
 
