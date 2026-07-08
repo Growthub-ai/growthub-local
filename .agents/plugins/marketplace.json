@@ -1,0 +1,20 @@
+{
+  "name": "growthub",
+  "interface": {
+    "displayName": "Growthub"
+  },
+  "plugins": [
+    {
+      "name": "growthub-governed-console",
+      "source": {
+        "source": "local",
+        "path": "./plugins/growthub-governed-console"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

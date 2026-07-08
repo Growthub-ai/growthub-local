@@ -200,8 +200,11 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   (`./claude-plugins/<plugin>`). Both regressions were caught by the
   real-install QA above, not by manifest validation — keep the closed loop
   in every release.
-- **Do not confuse the three "plugin"/"marketplace" systems**: this Claude
-  Code plugin surface (`claude-plugins/`), the in-workspace provider
+- **Do not confuse the host/plugin systems**: this Claude Code plugin surface
+  (`claude-plugins/`), the Codex plugin surface (`plugins/` +
+  `.agents/plugins/`; see
+  [`CODEX_PLUGIN_MARKETPLACE_V1.md`](./CODEX_PLUGIN_MARKETPLACE_V1.md)), the
+  in-workspace provider
   marketplace (`docs/MARKETPLACE_PROVIDER_PLAYBOOK_V1.md`), and the vendored
   Paperclip plugin runtime (`server/src/services/plugin-*`) are unrelated;
   never cross-wire them. Claude Desktop "connectors" are a fourth, separate

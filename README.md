@@ -256,6 +256,8 @@ Open the Workspace Helper and type `/schedule`. The Schedule Cockpit opens, show
 | [Serverless Scheduler Command Guide V1](./docs/SERVERLESS_SCHEDULER_COMMAND_GUIDE_V1.md) | The `/schedule` command lifecycle |
 | [Causation ITT Eligibility Drivers](./docs/CAUSATION_ITT_ELIGIBILITY_DRIVERS.md) | The mathematical foundation of CDI |
 | [Governed MCP Console V1](./docs/GOVERNED_MCP_CONSOLE_V1.md) | The agent operational loop |
+| [Claude Code Plugin Marketplace V1](./docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md) | The governed console packaged for Claude Code |
+| [Codex Plugin Marketplace V1](./docs/CODEX_PLUGIN_MARKETPLACE_V1.md) | The governed console packaged for Codex app, CLI, and IDE users |
 | [First-Run Paths](./docs/FIRST_RUN_PATHS.md) | The canonical repo, skill, starter, and template entry paths |
 | [Governed Workspace Topology V1](./docs/GOVERNED_WORKSPACE_TOPOLOGY_V1.md) | The official AWaC workspace topology |
 | [Agent Dist Rebuild Guide](./docs/AGENT_DIST_REBUILD_GUIDE.md) | Source/dist lane rules and when version bumps are required |
