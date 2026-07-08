@@ -133,6 +133,18 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   executable bit through install; a headless `claude -p` session in that
   workspace received the hook context and successfully called
   `describe_workspace` through the plugin's MCP server.
+- **Live-mode QA** (run at P0 against a booted export —
+  `node scripts/export-seed-workspace.mjs`, `next dev` on :3777, published
+  npm server with `--live`, one server process throughout):
+  `describe_workspace` reported `source: live:http://127.0.0.1:3777`;
+  `preflight_patch` on an exact `dataModel` rename body returned
+  `mode: live-authoritative` with `authoritative.ok: true`; the agent then
+  executed the governed hand-off itself (`PATCH /api/workspace` → HTTP 200);
+  the **same server process** re-read the renamed object and an advanced
+  `snapshotAt` (per-call rehydration — no restart, no stale snapshot); after
+  killing the runtime the next read honestly reported
+  `source: offline-fallback (http://127.0.0.1:3777 unreachable: fetch
+  failed)`. The rename was restored through the same governed PATCH lane.
 
 ## 8. Anti-Patterns (must not happen)
 
