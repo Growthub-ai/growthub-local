@@ -17,3 +17,13 @@ Entries (one lesson/correction each, newest last):
 6. **Structure lesson: evidence grading beats prose hedging.** Instead of hedging every sentence ("directionally," "appears to"), a single up-front confidence-label scheme keeps the body prose clean and honest at once. Also cut the v1 <example> appendix — the per-pattern schema already demonstrates the style, and the new spec favors signal density.
 
 7. **Self-referential validation.** The checkpointing pattern (§4.1) and calibration pattern (§8.2) are demonstrated by this document's own build process (this notes file; the confidence labels). Used sparingly as evidence — it's [observed] from one session, not proof.
+
+8. **Golden-path phase: recon overturned the assumed topology.** The schedule/ceo/loop/swarm "commands" are not CLI verbs — they are helper-sidecar slash commands + pure derivers inside the starter-kit workspace app, closing through two mutation lanes and one receipt stream. Two parallel Explore agents found this in one pass; designing from the atlas alone would have produced a parallel-architecture anti-pattern.
+
+9. **The closed dopamine loop already existed as contract language.** `docs/GOVERNED_CAPABILITY_BINDING_LOOP_V1.md:60-70` names the cockpit view-model the "agent condition packet" and `outcomeStatus` the reward signal. Lesson: search for the concept in the target repo's own vocabulary before inventing new framing — the golden path became a composition task, not an invention task.
+
+10. **Subagent-verified path corrections.** The second Explore agent falsified three skill paths named in my own brief (growthub-governed-mutation-loop, growthub-outcome-receipts-bootstrap, growthub-causal-impact-analysis — all listed in unmerged PR #276, absent on main). Lesson: session-context skill catalogs can describe a *branch*, not main; verify on-disk before citing.
+
+11. **Zone discipline set the implementation scope.** Starter-kit runtime is core-product (version bump + six gates + maintainer dist lane), so Phase A shipped scaffolding-zone primitives (contract doc + operator skill + catalog row) with Phase B/C runtime edits specified file-exactly but labeled Proposed. Lesson: "implement the core pieces" in a governed monorepo means implementing at the highest zone you can ship cleanly and specifying the rest at file precision.
+
+12. **One deliverable, one PR.** The golden-path work initially rode the atlas branch; the maintainer asked for separation, so it moved to its own branch/PR (#279) via cherry-pick off main, with this journal staying in the atlas PR to avoid a cross-PR file conflict. Lesson: default to a fresh branch per deliverable even when the session's designated branch makes stacking convenient.
