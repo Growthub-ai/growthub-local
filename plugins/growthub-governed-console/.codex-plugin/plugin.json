@@ -1,0 +1,47 @@
+{
+  "name": "growthub-governed-console",
+  "version": "0.14.15",
+  "description": "Agent-facing operating console for governed Growthub workspaces in Codex: 14 read/dry-run/hand-off MCP tools over the workspace metadata graph, plus operator skills for the governed mutation boundary. Read + dry-run + governed hand-off — never a mutation tool.",
+  "author": {
+    "name": "Growthub",
+    "url": "https://github.com/Growthub-ai"
+  },
+  "homepage": "https://github.com/Growthub-ai/growthub-local#readme",
+  "repository": "https://github.com/Growthub-ai/growthub-local",
+  "license": "MIT",
+  "keywords": [
+    "growthub",
+    "agent-workspace-as-code",
+    "governed-workspace",
+    "mcp",
+    "codex",
+    "causal-impact",
+    "preflight",
+    "workspace-graph"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Growthub Governed Console",
+    "shortDescription": "Operate governed Growthub workspaces from Codex",
+    "longDescription": "Use the Growthub Governed Console in Codex to read workspace topology, traverse the metadata graph, simulate blast radius, dry-run patches through preflight_patch, and hand off exact governed mutation calls without adding a direct mutation tool.",
+    "developerName": "Growthub",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/Growthub-ai/growthub-local",
+    "privacyPolicyURL": "https://github.com/Growthub-ai/growthub-local",
+    "termsOfServiceURL": "https://github.com/Growthub-ai/growthub-local",
+    "defaultPrompt": [
+      "Describe this Growthub workspace and its readiness.",
+      "Simulate the blast radius before changing this workspace.",
+      "Dry-run this workspace patch and return the governed next call."
+    ],
+    "brandColor": "#1079A8",
+    "composerIcon": "./assets/ghlogo.jpg",
+    "logo": "./assets/ghlogo.jpg",
+    "screenshots": []
+  }
+}

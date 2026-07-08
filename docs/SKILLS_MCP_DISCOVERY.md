@@ -86,4 +86,5 @@ No new telemetry events introduced. Existing trace events added:
 - Root agent contract: [`AGENTS.md`](../AGENTS.md)
 - Claude Skills catalog: [`.claude/skills/README.md`](../.claude/skills/README.md)
 - Installable Claude Code plugin/marketplace surface: [`docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md`](./CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md)
+- Installable Codex plugin/marketplace surface: [`docs/CODEX_PLUGIN_MARKETPLACE_V1.md`](./CODEX_PLUGIN_MARKETPLACE_V1.md)
 - SDK changelog: [`packages/api-contract/CHANGELOG.md`](../packages/api-contract/CHANGELOG.md)
