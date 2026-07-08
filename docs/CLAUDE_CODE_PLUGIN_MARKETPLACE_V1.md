@@ -145,6 +145,27 @@ remains an explicit opt-in. The SessionStart hook is offline, read-only
   killing the runtime the next read honestly reported
   `source: offline-fallback (http://127.0.0.1:3777 unreachable: fetch
   failed)`. The rename was restored through the same governed PATCH lane.
+- **Negative/positive probe matrix** (run at P0; every probe left state
+  intact, verified by re-read):
+  - *Server negatives* — unknown tool → structured `-32603` error; missing /
+    nonexistent `nodeId` → `{ error: "node not found" }`; malformed JSON-RPC
+    line mid-stream → ignored, server keeps answering; `--fork` without a
+    config → one honest error line, no crash loop.
+  - *Boundary negatives (live runtime)* — unknown top-level key and
+    full-config body → **400** + `allowed[]`; `secret` on a sandbox row →
+    **422** + `violations[] = credential_field:…` with nothing persisted
+    (positive control of the Law layer); preflight of an object removal →
+    reported the exact removed node without writing.
+  - *Scope finding* — the credential 422 is enforced only for the exact
+    field set on **sandbox rows** (`workspace-patch-policy.js::CREDENTIAL_ROW_FIELDS`);
+    a novel credential-ish field name on a non-sandbox object is accepted.
+    The plugin's mutation card now states this scoping honestly; widening
+    enforcement (or narrowing the `AGENTS.md` summary wording) is a
+    workspace-kit decision outside this surface.
+  - *Gate self-test* — `check-claude-plugin.mjs` fails (exit 1) on each
+    seeded regression: version drift, non-executable hook script, skill
+    frontmatter/slug mismatch, unpinned `npx @growthub/cli`; passes again on
+    clean state.
 
 ## 8. Anti-Patterns (must not happen)
 

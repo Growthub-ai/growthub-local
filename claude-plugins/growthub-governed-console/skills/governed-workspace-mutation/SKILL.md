@@ -31,9 +31,13 @@ the portable fallback and boundary statement.
    full-config bodies and `workspaceSourceRecords`) are rejected **400** with
    `allowed[]`.
 2. **Policy runs before any write:** surviving bodies go through the mutation
-   policy — oversized rows/node-configs, history blobs, credential-shaped
-   fields, and direct live-workflow mutations are rejected **422** with
-   structured `violations[] = { code, path, message }`.
+   policy — oversized rows/node-configs, history blobs, credential fields on
+   sandbox rows (the exact set `token`, `apiKey`, `accessToken`,
+   `refreshToken`, `bearer`, `password`, `secret`, `sessionKey`), and direct
+   live-workflow mutations are rejected **422** with structured
+   `violations[] = { code, path, message }`. The credential check is scoped
+   to sandbox rows by design — rule 4 below is agent discipline everywhere
+   else, not something the runtime will catch for you.
 3. **Live workflow state is publish-owned:** `POST /api/workspace/workflow/publish`
    is the only draft → live transition; it verifies the draft's successful
    test against server-owned run history (`draftSha256` lineage). Never PATCH

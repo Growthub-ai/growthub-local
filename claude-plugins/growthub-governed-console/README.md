@@ -35,6 +35,16 @@ missing config.
 | Agent `workspace-operator` | Read-only investigator: answers "what exists / what breaks / is it ready" and returns exact governed next calls. |
 | Hook `SessionStart` | Detects a governed workspace and injects the mutation boundary + console pointer as context. Silent elsewhere. |
 
+## How it's used (persona → lane → components)
+
+| Who | Scenario | What they use |
+| --- | --- | --- |
+| **Workspace operator** (a user driving Claude Code inside an exported/forked workspace) | "Add a field / rename an object / why is this dashboard broken?" | SessionStart hook orients the session → `governed-console` skill drives the loop → `preflight_patch` dry-runs → the agent executes the governed `PATCH` per `governed-workspace-mutation` |
+| **Builder** | "Build me a dashboard / register this API / create a custom object" | `workspace-helper` skill: `query` → review proposals (cross-checked with `find_downstream_dependencies`) → explicit `apply` |
+| **Shipper / reviewer** | "Is this workspace ready to deploy? What does this PR change break?" | `workspace-operator` agent for the readiness verdict; `workspace-causal-cli` (`plan` / `readiness --json`) as a scripted CI gate |
+| **Support / debugging** | "What backs this chart? What produced this artifact? What's stale?" | Read-only Intelligence tools: `describe_node`, `trace_lineage`, `outcome_ledger`, `simulate_causal_impact` |
+| **Autonomous agents** (headless / swarm sessions) | Safe operation without direct power | The whole console: context + simulation + `next_actions` hand-off; mutations remain observable, receipted API calls the platform validates |
+
 ## Security posture
 
 - The MCP server is read-only by construction: Intelligence tools have no
