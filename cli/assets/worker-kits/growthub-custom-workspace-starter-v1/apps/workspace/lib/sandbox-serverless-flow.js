@@ -103,11 +103,15 @@ function deriveSandboxServerlessState(input = {}) {
   steps.push({
     id: "adapter",
     label: "Pick an execution adapter",
-    status: isServerless ? (schedulerLinked ? "complete" : "active") : (adapterChosen ? "complete" : "active"),
+    // Completion tracks whether an adapter is chosen in BOTH localities. For
+    // serverless, scheduler-linking is owned by the dedicated "scheduler" step
+    // below — tying this step to schedulerLinked made it an actionless "active"
+    // step that shadowed the scheduler step and collapsed nextAction to null.
+    status: adapterChosen ? "complete" : "active",
     description: isServerless
-      ? (schedulerLinked
-          ? `Execution delegates through scheduler "${schedulerId}".`
-          : "Link a scheduler before serverless execution can run.")
+      ? (adapterChosen
+          ? `Adapter "${adapterId}" — serverless execution delegates through the linked scheduler.`
+          : "Select the execution adapter for this workflow.")
       : (adapterChosen
           ? `Adapter "${adapterId}".`
           : "Select the execution adapter for this workflow."),

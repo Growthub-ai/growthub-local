@@ -58,6 +58,7 @@ jobs:
           node --test scripts/unit-scheduler-orchestration.test.mjs
           node --test scripts/unit-serverless-readiness.test.mjs
           node --test scripts/unit-schedule-cockpit.test.mjs
+          node --test scripts/unit-sandbox-serverless-flow.test.mjs
 
       - name: Validate Supabase provider + external data sync loop
         run: |
