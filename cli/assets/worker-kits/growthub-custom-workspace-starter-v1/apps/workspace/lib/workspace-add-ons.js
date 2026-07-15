@@ -1,4 +1,5 @@
 import { readEnvVar } from "./server-secrets.js";
+import { makeAgentNativeSchedulerMethod } from "./agent-native-scheduler.js";
 
 const UPSTASH_QSTASH_INTEGRATION_ID = "upstash-qstash-workflow";
 const UPSTASH_AUTH_REF = "QSTASH";
@@ -2834,6 +2835,7 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
   const inboundMethods = resolveInboundMethodProducts(workspaceConfig);
   const webhookMethod = inboundMethods.find((method) => method.inputMode === "webhook") || null;
   const apiMethod = inboundMethods.find((method) => method.inputMode === "api-request") || null;
+  const agentNativeSchedulerMethod = makeAgentNativeSchedulerMethod(apiMethod);
   const webhookTrigger = webhookMethod?.row || null;
   const apiTrigger = apiMethod?.row || null;
   const supabaseProvider = findMarketplaceProviderRow(workspaceConfig, "supabase");
@@ -2861,6 +2863,8 @@ function deriveWorkspaceAddOnsState(workspaceConfig) {
     inboundMethods,
     webhookMethod,
     apiMethod,
+    agentNativeSchedulerMethod,
+    hasAgentNativeSchedulerCapability: Boolean(agentNativeSchedulerMethod),
     webhookTrigger,
     hasWebhookTriggerCapability: Boolean(webhookTrigger),
     apiTrigger,

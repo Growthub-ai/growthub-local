@@ -91,7 +91,7 @@ in your project's `.mcp.json`:
   "mcpServers": {
     "governed-universe": {
       "command": "npx",
-      "args": ["-y", "@growthub/cli@0.14.15", "serve", "--mcp",
+      "args": ["-y", "@growthub/cli@0.14.16", "serve", "--mcp",
                "--fork", ".", "--live", "http://127.0.0.1:3777"]
     }
   }

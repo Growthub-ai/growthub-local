@@ -545,10 +545,12 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
       const graphEdges = Array.isArray(graph?.edges) ? graph.edges : [];
       const workflowMetadataId = stableId("workflow", objectId, rowName);
       const sandboxMetadataId = stableId("sandbox", objectId, rowName);
-        const rowAgentHost = safeString(row.agentHost).trim();
-        const rowAdapter = safeString(row.adapter).trim();
+      const rowAgentHost = safeString(row.agentHost).trim();
+      const rowAdapter = safeString(row.adapter).trim();
       const inputSchema = graphNodes.length ? discoverRunInputSchema(graph) : { requiresInput: false, fields: [] };
       const inputFields = Array.isArray(inputSchema?.fields) ? inputSchema.fields : [];
+      const inputNode = graphNodes.find((node) => node?.type === "input" || node?.id === "input") || null;
+      const inputConfig = isPlainObject(inputNode?.config) ? inputNode.config : {};
 
       workflows.push({
         kind: "workspaceWorkflow",
@@ -566,7 +568,13 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
         nodeCount: graphNodes.length,
         edgeCount: graphEdges.length,
         requiresInput: Boolean(inputSchema?.requiresInput),
-        inputFieldCount: inputFields.length
+        inputFieldCount: inputFields.length,
+        inputMode: safeString(inputConfig.inputMode).trim(),
+        inputProfile: safeString(inputConfig.inputProfile).trim(),
+        schedulerOwner: safeString(inputConfig.schedulerOwner).trim(),
+        agentSchedulerAdapter: safeString(inputConfig.agentSchedulerAdapter).trim(),
+        agentSchedulerTaskRef: safeString(inputConfig.agentSchedulerTaskRef).trim(),
+        agentSchedulerTimezone: safeString(inputConfig.agentSchedulerTimezone).trim()
       });
 
       for (const node of graphNodes) {
@@ -607,7 +615,13 @@ function deriveWorkspaceWorkflowMetadataItems(workspaceConfig, objectItems) {
           sandboxMetadataId,
           agentHost: nodeAgentHost,
           adapter: nodeAdapter,
-          permissions: nodeType === "api-registry-call" ? ["integration:read"] : []
+          permissions: nodeType === "api-registry-call" ? ["integration:read"] : [],
+          inputMode: safeString(config.inputMode).trim(),
+          inputProfile: safeString(config.inputProfile).trim(),
+          schedulerOwner: safeString(config.schedulerOwner).trim(),
+          agentSchedulerAdapter: safeString(config.agentSchedulerAdapter).trim(),
+          agentSchedulerTaskRef: safeString(config.agentSchedulerTaskRef).trim(),
+          agentSchedulerTimezone: safeString(config.agentSchedulerTimezone).trim()
         });
       }
 

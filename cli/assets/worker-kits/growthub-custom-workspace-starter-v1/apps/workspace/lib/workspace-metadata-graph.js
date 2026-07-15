@@ -189,7 +189,13 @@ function buildWorkspaceMetadataGraph(metadataStore) {
       lifecycleStatus: workflow.lifecycleStatus,
       nodeCount: workflow.nodeCount,
       requiresInput: workflow.requiresInput,
-      inputFieldCount: workflow.inputFieldCount
+      inputFieldCount: workflow.inputFieldCount,
+      inputMode: workflow.inputMode,
+      inputProfile: workflow.inputProfile,
+      schedulerOwner: workflow.schedulerOwner,
+      agentSchedulerAdapter: workflow.agentSchedulerAdapter,
+      agentSchedulerTaskRef: workflow.agentSchedulerTaskRef,
+      agentSchedulerTimezone: workflow.agentSchedulerTimezone
     }, workflow));
   }
 
@@ -204,7 +210,13 @@ function buildWorkspaceMetadataGraph(metadataStore) {
       integrationId: node.integrationId,
       requiresHumanInput: node.requiresHumanInput,
       inputFieldCount: node.inputFieldCount,
-      permissions: node.permissions
+      permissions: node.permissions,
+      inputMode: node.inputMode,
+      inputProfile: node.inputProfile,
+      schedulerOwner: node.schedulerOwner,
+      agentSchedulerAdapter: node.agentSchedulerAdapter,
+      agentSchedulerTaskRef: node.agentSchedulerTaskRef,
+      agentSchedulerTimezone: node.agentSchedulerTimezone
     }, node));
   }
 

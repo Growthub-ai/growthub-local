@@ -66,6 +66,7 @@ import { deriveSandboxServerlessState } from "@/lib/sandbox-serverless-flow";
 import { deriveServerlessUpgradeState, SERVERLESS_UPGRADE_DISMISS_FLAG } from "@/lib/serverless-upgrade";
 import { UPSTASH_QSTASH_INTEGRATION_ID, deriveWorkspaceAddOnsState, orchestrationGraphContentEquals } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, readinessFieldFlags } from "@/lib/serverless-readiness";
+import { isAgentNativeSchedulerConfig } from "@/lib/agent-native-scheduler";
 
 // Set a flag on the governed workspace-ui-cache "activation" row (pure helper,
 // same transform the rail/lens one-time dismisses use).
@@ -2471,7 +2472,10 @@ export default function WorkflowSurface() {
                       // verified 200 proof, all through the governed growthub
                       // schedule route and the real destination door.
                       const inputMode = String(selectedNode.config.inputMode).trim();
-                      const meta = inboundMethodMeta(inputMode);
+                      const baseMeta = inboundMethodMeta(inputMode);
+                      const meta = isAgentNativeSchedulerConfig(selectedNode.config)
+                        ? { ...baseMeta, label: "Agent Native Scheduler" }
+                        : baseMeta;
                       // Native readiness: the signing secret / invoke token env
                       // ref resolving in this runtime IS the capability — the
                       // same signal the server bind gate enforces.
