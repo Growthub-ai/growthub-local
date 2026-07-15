@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
+import { Bot, CalendarClock, Check, ChevronDown, Database, FileInput, KeyRound, ListTree, Webhook } from "lucide-react";
 import {
   CAPABILITY_NODE_TYPES,
   detectFieldIdsFromLastResponse,
@@ -14,6 +14,13 @@ import {
 import { SandboxAgentAuthPanel } from "./SandboxAgentAuthPanel.jsx";
 import { isSandboxLocalAgentHost } from "@/lib/sandbox-agent-auth-eligibility";
 import { HOST_AUTH_CATALOG } from "@/lib/sandbox-agent-host-catalog";
+import {
+  AGENT_NATIVE_SCHEDULER_ADAPTERS,
+  AGENT_NATIVE_SCHEDULER_PROFILE,
+  inputModePatchForSelection,
+  inputModeSelectionValue,
+  isAgentNativeSchedulerConfig
+} from "@/lib/agent-native-scheduler";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const SUPABASE_DATA_OPERATIONS = ["select", "insert", "update", "upsert", "delete", "rpc"];
@@ -1363,8 +1370,10 @@ export function OrchestrationNodeConfigPanel({
     // trigger panel and on the server bind; both name the exact missing ref.
     { value: "webhook", label: "Webhook", Icon: Webhook },
     { value: "api-request", label: "API Request", Icon: KeyRound },
+    { value: AGENT_NATIVE_SCHEDULER_PROFILE, label: "Agent Native Scheduler", Icon: Bot },
   ];
-  const selectedInputMode = inputModeOptions.find((option) => option.value === (config.inputMode || "manual")) || inputModeOptions[0];
+  const selectedInputMode = inputModeOptions.find((option) => option.value === inputModeSelectionValue(config)) || inputModeOptions[0];
+  const agentNativeSchedulerSelected = isAgentNativeSchedulerConfig(config);
   const meta = config.requestHeadersMetadata || {};
   const workspaceObjects = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.id && object?.objectType !== "sandbox-environment" && object?.objectType !== "api-registry");
@@ -1471,7 +1480,7 @@ export function OrchestrationNodeConfigPanel({
                         className={`dm-select-option${option.value === selectedInputMode.value ? " selected" : ""}`}
                         onMouseDown={(event) => {
                           event.preventDefault();
-                          patchConfig({ inputMode: option.value });
+                          patchConfig(inputModePatchForSelection(option.value, config));
                           setInputModeOpen(false);
                         }}
                       >
@@ -1484,6 +1493,50 @@ export function OrchestrationNodeConfigPanel({
               ) : null}
             </div>
           </div>
+          {agentNativeSchedulerSelected ? (
+            <>
+              <label className="dm-orchestration-config__field">
+                <span>Agent scheduler</span>
+                <select
+                  value={config.agentSchedulerAdapter || "codex-task"}
+                  disabled={disabled}
+                  onChange={(event) => patchConfig({ agentSchedulerAdapter: event.target.value })}
+                >
+                  {AGENT_NATIVE_SCHEDULER_ADAPTERS.map((adapter) => (
+                    <option key={adapter.value} value={adapter.value} disabled={!adapter.enabled}>{adapter.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Task or routine reference</span>
+                <input
+                  value={config.agentSchedulerTaskRef || ""}
+                  disabled={disabled}
+                  placeholder="Automation/task ID after schedule creation"
+                  onChange={(event) => patchConfig({ agentSchedulerTaskRef: event.target.value })}
+                />
+              </label>
+              <label className="dm-orchestration-config__field">
+                <span>Schedule timezone</span>
+                <input
+                  value={config.agentSchedulerTimezone || ""}
+                  disabled={disabled}
+                  placeholder="America/New_York"
+                  onChange={(event) => patchConfig({ agentSchedulerTimezone: event.target.value })}
+                />
+                <small className="dm-run-setup__help">Codex is the validated scheduler. Future agent adapters remain visible but disabled until they pass the same heartbeat acceptance gate. Growthub reuses the authenticated API Request binding and stores only non-secret read-back metadata.</small>
+              </label>
+              <div className="dm-agent-scheduler-adapters" aria-label="Agent scheduler availability">
+                {AGENT_NATIVE_SCHEDULER_ADAPTERS.map((adapter) => (
+                  <div key={adapter.value} className={`dm-agent-scheduler-adapter${adapter.enabled ? " is-validated" : " is-disabled"}`}>
+                    <Bot size={14} aria-hidden="true" />
+                    <span>{adapter.label.replace(/ — coming soon$/, "")}</span>
+                    <strong>{adapter.enabled ? "Validated" : "Coming soon"}</strong>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
           {config.inputMode === "webhook" ? (
             <label className="dm-orchestration-config__field">
               <span>HTTP method</span>

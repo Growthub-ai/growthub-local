@@ -1,5 +1,14 @@
 # @growthub/cli
 
+## 0.14.16
+
+### Patch Changes
+
+- Adds the validated Agent Native Scheduler input profile to the exported Growthub Local workspace starter.
+- Reuses the existing authenticated API Request thin bridge while exposing non-secret Codex task and timezone read-back through workspace and MCP views.
+- Enables Codex only; Claude Code cloud and Gemini remain visible but disabled until separately validated.
+- Ships the complete draft-to-scheduled image-generation QA evidence set and byte-first `--4:5` media guidance.
+
 ## 0.8.0
 
 ### Minor Changes

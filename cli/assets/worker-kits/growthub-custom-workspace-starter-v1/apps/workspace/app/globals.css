@@ -5506,6 +5506,11 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-orchestration-config__add-filter { justify-self: start; }
 .dm-orchestration-config__preview { margin: 0; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 5px; font-size: 10px; overflow: auto; max-height: 160px; }
 .dm-orchestration-config__hint { margin: 0; font-size: 11px; color: #6b7280; }
+.dm-agent-scheduler-adapters { display: grid; gap: 5px; padding: 8px; border: 1px solid #dbe6ef; border-radius: 7px; background: #f8fbfd; }
+.dm-agent-scheduler-adapter { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; color: #64748b; font-size: 11px; }
+.dm-agent-scheduler-adapter strong { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.dm-agent-scheduler-adapter.is-validated { color: #0f766e; }
+.dm-agent-scheduler-adapter.is-disabled { opacity: .62; }
 .dm-orchestration-config__error { margin: 0; font-size: 12px; color: #b91c1c; }
 
 /* Email editor V1 (resend-email node) — same grammar as the config tabs/fields:
