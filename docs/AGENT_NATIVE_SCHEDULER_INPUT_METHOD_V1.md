@@ -95,3 +95,34 @@ All screenshots and the original artifact are committed under [`docs/proofs/agen
 - Contract tests: `apps/workspace/lib/agent-native-scheduler.test.js`
 
 All implementation paths above are rooted at `cli/assets/worker-kits/growthub-custom-workspace-starter-v1/`.
+
+## Temporary export acceptance — July 15, 2026
+
+The canonical feature-work export lane was run from this branch:
+
+```text
+node scripts/export-seed-workspace.mjs --no-dev
+```
+
+Exported workspace:
+
+```text
+/Users/antonio/growthub-worker-kit-exports/feature-work-2026-07-15T21-55-09-952Z/growthub-custom-workspace-starter-v1/apps/workspace
+```
+
+The official exporter reported `export OK`; the seed validator reported activation `5/5` and API Registry cockpit score `100`. Ten release-boundary files were then compared between the source kit and the temporary exported workspace using byte equality and SHA-256. All ten matched exactly:
+
+| Exported file | SHA-256 |
+|---|---|
+| `lib/agent-native-scheduler.js` | `7616b8506d5c383f5547202a4e39308922aa4283aabccbd86ffcd03218dffb08` |
+| `lib/agent-native-scheduler.test.js` | `20287a29c1cce05fea6ad8921c631481768bb759dd67cd5dfa690943c4c4611f` |
+| `lib/workspace-add-ons.js` | `6e099dab13e56240ef4fece1f8bd84534cd7f41566768656e1b8a38df834269f` |
+| `lib/workspace-metadata-graph.js` | `da74c1f889a6008915350eb595b4236ef4c5fd8833a95ec4d532211a24d10427` |
+| `lib/workspace-metadata-store.js` | `2b6727ee481ca4dac3c9e3ae0229c8d74e2edaa3cac10b81932a060e4b1f288a` |
+| `app/data-model/components/OrchestrationNodeConfigPanel.jsx` | `a43c712c839f5202c75b531104fd9648da2514a698ebe4ade211a119b1f02f94` |
+| `app/workflows/WorkflowSurface.jsx` | `da6b548e212ae39102ee5a446ee81a6271e4e8c4daf616fc290795aa8e759d9e` |
+| `app/globals.css` | `6386969e39f8f1e4236e177905ba6e0be8fb58a3185cf266ff6b84c403a39cbc` |
+| `package.json` | `ad6300791c90748970e2d3a5459956a26f747117c5e2b0b9a0ff4aa5000a44bb` |
+| `package-lock.json` | `7bf52dc1817200bb1bde9d5169b1e6f4bc5883e2fe54eb458b27469f71d3b606` |
+
+The Agent Native Scheduler contract suite was executed from inside that exported workspace and passed `3/3`. This confirms the code shipped by the Growthub Local export feature is byte-for-byte identical to the reviewed source kit and behaves identically at the contract boundary.
