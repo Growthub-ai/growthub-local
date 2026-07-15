@@ -126,3 +126,35 @@ The official exporter reported `export OK`; the seed validator reported activati
 | `package-lock.json` | `7bf52dc1817200bb1bde9d5169b1e6f4bc5883e2fe54eb458b27469f71d3b606` |
 
 The Agent Native Scheduler contract suite was executed from inside that exported workspace and passed `3/3`. This confirms the code shipped by the Growthub Local export feature is byte-for-byte identical to the reviewed source kit and behaves identically at the contract boundary.
+
+## Exported UI acceptance — July 15, 2026
+
+The same temporary export was installed and booted with its own dependencies at `http://localhost:3777`. QA was performed through the rendered no-code interface, not against the source repository app.
+
+The exported `sandbox-probe/registry-workflow` completed the full UI lifecycle:
+
+1. Loaded the exported v1 live four-node workflow.
+2. Opened the Input node and rendered the robot-icon **Agent Native Scheduler** option.
+3. Selected the profile; the canvas moved to draft while canonical runtime mode remained API Request.
+4. Confirmed Codex scheduled task was selected and marked Validated.
+5. Confirmed Claude Code cloud and Gemini were visible but disabled and marked Coming soon.
+6. Saved task reference `codex-export-ui-qa-2026-07-15` and timezone `America/New_York`.
+7. Reloaded the browser and confirmed both fields and the profile persisted.
+8. Ran one draft test; all four workflow nodes completed and the UI reported `Draft test passed. Publish is now available.`
+9. Published through the UI; the workflow advanced to `v2 · live`.
+10. Opened the run console and confirmed completed run `run_mrmmiuls_q3r5bc`, exit code `0`, with one saved run and connected row preview.
+
+Export-native browser evidence:
+
+| Screenshot | State |
+|---|---|
+| `09-exported-live-workflow.png` | Temporary export loaded, v1 live |
+| `10-exported-agent-native-dropdown.png` | Robot-icon Agent Native Scheduler option rendered |
+| `11-exported-codex-only-configured.png` | Codex validated; future adapters disabled; task/timezone configured |
+| `12-exported-saved-draft-persisted.png` | Saved draft survived full reload |
+| `13-exported-draft-test-passed.png` | Four nodes completed and Publish unlocked |
+| `14-exported-published-v2.png` | UI publish completed, v2 live |
+| `15-exported-published-agent-native-config.png` | Published v2 retained scheduler profile and metadata |
+| `16-exported-run-console-completed.png` | Completed run `run_mrmmiuls_q3r5bc` in exported run console |
+
+These files are committed beside the original end-to-end workflow proof under [`docs/proofs/agent-native-scheduler-input-method`](./proofs/agent-native-scheduler-input-method).
