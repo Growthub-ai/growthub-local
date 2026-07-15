@@ -107,7 +107,7 @@ node scripts/export-seed-workspace.mjs --no-dev
 Exported workspace:
 
 ```text
-/Users/antonio/growthub-worker-kit-exports/feature-work-2026-07-15T21-55-09-952Z/growthub-custom-workspace-starter-v1/apps/workspace
+$GROWTHUB_KIT_EXPORTS_HOME/feature-work-2026-07-15T21-55-09-952Z/growthub-custom-workspace-starter-v1/apps/workspace
 ```
 
 The official exporter reported `export OK`; the seed validator reported activation `5/5` and API Registry cockpit score `100`. Ten release-boundary files were then compared between the source kit and the temporary exported workspace using byte equality and SHA-256. All ten matched exactly:
