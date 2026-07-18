@@ -73,6 +73,11 @@ const DEFAULT_SANDBOX_RUN_LOCALITY = "local";
 const DEFAULT_SANDBOX_ADAPTER = "local-process";
 const SANDBOX_DEFAULT_TIMEOUT_MS = 60000;
 const SANDBOX_MAX_TIMEOUT_MS = 600000;
+// Local-machine runs (runLocality: "local") are not bound by the serverless
+// 10-minute ceiling — a real on-machine job like a QLoRA fine-tune + GGUF
+// quantize legitimately runs for hours. Serverless/remote lanes keep the
+// tighter cap; only the user's own machine may hold a long-lived run.
+const SANDBOX_MAX_TIMEOUT_MS_LOCAL = 6 * 60 * 60 * 1000;
 /**
  * Canonical Paperclip local agent-host slugs — mirrors the upstream
  * `AGENT_ADAPTER_TYPES` enum in `packages/shared/src/constants.ts`. The
@@ -363,6 +368,76 @@ const DASHBOARD_TEMPLATES = [
       }),
       createWidget("rich-text", "Daily Ritual Notes", { x: 0, y: 13, w: 12, h: 3 }, {
         text: "Morning: set today's focus. Midday: launch or review. Afternoon: unblock the failing one first. End of day: confirm the receipts. Define reusable Agent Teams, then launch them as governed swarms — runs land in the Fleet. Open /ceo for the live next move.",
+        binding: { mode: "manual", source: "Manual text", rows: [] }
+      })
+    ]
+  },
+  {
+    id: "custom-model-operating",
+    name: "Custom Model Operating Dashboard",
+    description: "An operating surface for the Custom Model Training Runtime: readiness and next step, the training loop scorecard, your custom models and their state, recent training runs, endpoint verification proof, and improvement gaps. Companion to the Custom Models cockpit (/custom-models) and Training (/training) — the live next move and proof live in those surfaces; this dashboard is the at-a-glance observability view over the same governed objects (model-training, model-training-run, api-registry, training-traces).",
+    category: "reporting",
+    bestFor: ["Super admins", "ML operators", "Workspace orchestrators"],
+    tags: ["custom-model", "training", "observability", "operating", "proof"],
+    preview: {
+      layout: "operating-grid",
+      summary: "Readiness, training loop scorecard, custom models, recent runs, verification proof, and improvement gaps"
+    },
+    dashboard: { name: "Custom Model Operating Dashboard", status: "draft" },
+    widgets: [
+      createWidget("rich-text", "Custom Model Focus", { x: 0, y: 0, w: 8, h: 4 }, {
+        text: "The at-a-glance view of your custom model loop: how many models are verified and complete, what ran recently, and what to improve next. The live next best action is always in Training — open it with /training; verify and use models in /custom-models.",
+        binding: { mode: "manual", source: "Manual text", rows: [] }
+      }),
+      createWidget("chart", "Training Loop Scorecard", { x: 8, y: 0, w: 4, h: 4 }, {
+        values: [12, 4, 3, 2, 1, 3],
+        binding: { mode: "manual", source: "Sample — Examples · Exported · Trained · Verified · Complete · Gaps (live: deriveTrainingRuntimeDrivers + deriveCustomModelsState)", rows: [] }
+      }),
+      createWidget("view", "Custom Models", { x: 0, y: 4, w: 7, h: 5 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Model", "State", "Endpoint", "Verified", "Last Run"],
+        rows: [
+          { Model: "workspace-local-tuned-v1", State: "complete", Endpoint: "local", Verified: "yes", "Last Run": "run_smoke_1" },
+          { Model: "workspace-local-tuned-v2", State: "verified", Endpoint: "local", Verified: "yes", "Last Run": "—" },
+          { Model: "workspace-local-tuned-v3", State: "deployed", Endpoint: "compatible", Verified: "no", "Last Run": "—" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — the live cockpit is /custom-models (derived from model-training + api-registry + sandbox proof)", rows: [] }
+      }),
+      createWidget("view", "Recent Training Runs", { x: 7, y: 4, w: 5, h: 5 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Run", "Status", "Profile", "Artifact"],
+        rows: [
+          { Run: "trainrun_3", Status: "imported", Profile: "unsloth-qlora-local", Artifact: "gguf" },
+          { Run: "trainrun_2", Status: "completed", Profile: "ollama-modelfile-import", Artifact: "ollama-model" },
+          { Run: "trainrun_1", Status: "failed", Profile: "unsloth-qlora-local", Artifact: "—" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — live runs are model-training-run rows (the governed run-receipt object)", rows: [] }
+      }),
+      createWidget("view", "Verification & Invocation Proof", { x: 0, y: 9, w: 7, h: 4 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Model", "Expected Tag", "Actual Reply", "Output Hash", "Result"],
+        rows: [
+          { Model: "workspace-local-tuned-v1", "Expected Tag": "workspace-local-tuned-v1", "Actual Reply": "workspace-local-tuned-v1", "Output Hash": "present", Result: "verified" },
+          { Model: "workspace-local-tuned-v3", "Expected Tag": "workspace-local-tuned-v3", "Actual Reply": "qwen3:8b (base)", "Output Hash": "missing", Result: "not verified" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — live proof is the api-registry test response (verified when the reply tag matches; complete when an outputHash exists)", rows: [] }
+      }),
+      createWidget("view", "Improvement Gaps", { x: 7, y: 9, w: 5, h: 4 }, {
+        source: "Sample",
+        layout: "Table",
+        columns: ["Gap", "Count", "Next Action"],
+        rows: [
+          { Gap: "Failed sandbox runs", Count: "2", "Next Action": "Collect corrective traces" },
+          { Gap: "Base-model responses", Count: "1", "Next Action": "Re-test endpoint" },
+          { Gap: "Corrected helper outputs", Count: "4", "Next Action": "Export gap traces" }
+        ],
+        binding: { mode: "manual", source: "Sample rows — live gaps are deriveTrainingGapDrivers; export them with growthub intelligence export --gaps-only", rows: [] }
+      }),
+      createWidget("rich-text", "Observability Notes", { x: 0, y: 13, w: 12, h: 3 }, {
+        text: "A model is complete only when it is verified (its reply tag matches) and a workflow run wrote a proof hash. New failures or corrections become improvement gaps for the next training cycle — they never demote a complete model. Open /training for the next step and /custom-models to use a model.",
         binding: { mode: "manual", source: "Manual text", rows: [] }
       })
     ]
@@ -1187,8 +1262,11 @@ function validateSandboxEnvironmentRow(row, path, errors) {
   }
   if (row.timeoutMs !== undefined && row.timeoutMs !== "") {
     const ms = Number(row.timeoutMs);
-    if (!Number.isFinite(ms) || ms < 0 || ms > SANDBOX_MAX_TIMEOUT_MS) {
-      errors.push(`${path}.timeoutMs must be a finite number between 0 and ${SANDBOX_MAX_TIMEOUT_MS}`);
+    // Local-machine runs may hold a long-lived job (e.g. a fine-tune); every
+    // other locality keeps the serverless 10-minute ceiling.
+    const cap = String(row.runLocality || "") === "local" ? SANDBOX_MAX_TIMEOUT_MS_LOCAL : SANDBOX_MAX_TIMEOUT_MS;
+    if (!Number.isFinite(ms) || ms < 0 || ms > cap) {
+      errors.push(`${path}.timeoutMs must be a finite number between 0 and ${cap}`);
     }
   }
   for (const traceField of ["resolverTemplateId", "connectorKind", "executionLane"]) {
@@ -1772,6 +1850,7 @@ export {
   DEFAULT_SANDBOX_ADAPTER,
   SANDBOX_DEFAULT_TIMEOUT_MS,
   SANDBOX_MAX_TIMEOUT_MS,
+  SANDBOX_MAX_TIMEOUT_MS_LOCAL,
   NAV_FOLDERS_OBJECT_ID,
   NAV_FOLDER_NAME_MAX,
   NAV_ITEM_LABEL_MAX,

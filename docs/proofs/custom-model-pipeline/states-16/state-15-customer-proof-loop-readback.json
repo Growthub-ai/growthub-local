@@ -1,0 +1,36 @@
+{
+  "stateId": "state-15-customer-proof-loop",
+  "visibleTitle": "Proof loop complete",
+  "visibleStatus": "Verified",
+  "primaryCta": "View proof details",
+  "secondaryCta": "Open in Workspace",
+  "modalHook": "[data-training-proof-checklist] / [data-training-reward=live]",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "modelTrainingRun": "run_2026-07-06_v1",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "custom-model-workflow"
+  },
+  "proof": {
+    "checklistDone": "9/9",
+    "complete": true,
+    "headline": "Your custom model is live locally.",
+    "trainedTag": "custom-model-v1",
+    "baseModel": "gemma3",
+    "quantDelta": "16.0 GB → 4.4 GB (q4_k_m)",
+    "artifactSha": "a1b2c3d4e5f6",
+    "outputHash": "oh_v1_7f3a91",
+    "verifiedResponseModel": "custom-model-v1",
+    "verificationTimestamp": "2026-07-06T18:00:00.000Z"
+  },
+  "nluExamples": [
+    "Show proof.",
+    "What changed in the workspace?",
+    "Where did the data come from?"
+  ],
+  "derivedFrom": [
+    "deriveTrainingProofChecklist",
+    "deriveTrainingCompletionReward"
+  ],
+  "nextAllowedAction": "open_workspace"
+}

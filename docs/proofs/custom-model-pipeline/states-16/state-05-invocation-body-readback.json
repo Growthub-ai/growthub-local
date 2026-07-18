@@ -1,0 +1,29 @@
+{
+  "stateId": "state-05-invocation-body",
+  "visibleTitle": "Training request body",
+  "visibleStatus": "Editable",
+  "primaryCta": "Start run",
+  "modalHook": "[data-verify-prompt] pattern (test-event editor)",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1 (payload source)"
+  },
+  "proof": {
+    "requestBody": {
+      "model_name": "custom-model-v1",
+      "trace_scope": "distillation-traces",
+      "eval_set": "10percent-holdout",
+      "deployment_target": "staging"
+    },
+    "derivedFromConfig": true,
+    "unsafeInputBlocked": true
+  },
+  "nluExamples": [
+    "Show the request that starts training.",
+    "Edit the training payload.",
+    "What exactly gets sent?"
+  ],
+  "derivedFrom": [
+    "buildTrainingRunConfig (payload projection)"
+  ],
+  "nextAllowedAction": "start_run"
+}

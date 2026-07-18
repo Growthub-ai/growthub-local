@@ -1,0 +1,15 @@
+{
+  "stateId": "state-02-configure-traces",
+  "visibleTitle": "Configure Traces",
+  "visibleStatus": "11 of 11 selected · floor 10 met",
+  "primaryCta": "Choose training profile",
+  "surface": "Training Handoff modal · curate",
+  "governedRows": {
+    "trainingTraces": "training-traces"
+  },
+  "proof": {
+    "qualified": 11,
+    "floor": "11 of 11 selected · floor 10 met"
+  },
+  "nextAllowedAction": "choose_profile"
+}

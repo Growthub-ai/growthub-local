@@ -66,7 +66,8 @@ import {
   DEFAULT_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_RUNTIMES,
   SANDBOX_DEFAULT_TIMEOUT_MS,
-  SANDBOX_MAX_TIMEOUT_MS
+  SANDBOX_MAX_TIMEOUT_MS,
+  SANDBOX_MAX_TIMEOUT_MS_LOCAL
 } from "@/lib/workspace-schema";
 import {
   parseSandboxAllowList,
@@ -143,6 +144,42 @@ function findRegistryRecord(workspaceConfig, registryId) {
     if (match) return match;
   }
   return null;
+}
+
+function reconcileModelTrainingRunnerResult({ workspaceConfig, objectId, name, response }) {
+  if (objectId !== "model-training-runner") return null;
+  const trainingRunId = String(name || "").trim();
+  if (!trainingRunId) return null;
+  const runOk = response?.exitCode === 0 && !response?.error;
+  if (runOk) return null;
+  const reason = String(response?.stderr || response?.error || response?.stdout || "Runner failed before writing a progress receipt").trim();
+  if (!reason) return null;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  let changed = false;
+  const nextObjects = objects.map((entry) => {
+    if (entry?.objectType !== "model-training-run") return entry;
+    const rows = Array.isArray(entry.rows) ? entry.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.trainingRunId || "") !== trainingRunId) return row;
+      changed = true;
+      return {
+        ...row,
+        status: /preflight blocked/i.test(reason) ? "blocked" : "failed",
+        blockedReason: reason,
+        preflight: row.preflight && typeof row.preflight === "object" ? row.preflight : { ok: false },
+        progress: {
+          ...(row.progress && typeof row.progress === "object" ? row.progress : {}),
+          stageId: "preflight",
+          stageRank: 0,
+          pct: 0,
+          detail: reason,
+          index: 0,
+        },
+      };
+    });
+    return { ...entry, rows: nextRows };
+  });
+  return changed ? nextObjects : null;
 }
 
 async function runServerlessScheduler({
@@ -526,8 +563,13 @@ async function executeSandboxRun(body, { emit } = {}) {
   const lifecycleStatus = String(rowForRun.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
   const version = rowForRun.version ?? "";
   const requestedTimeout = Number(rowForRun.timeoutMs);
+  // Locality-aware ceiling (mirrors the schema validator): a LOCAL run on the
+  // user's own machine may legitimately hold for hours (dependency ensure,
+  // QLoRA fine-tune, GGUF quantize) — clamping it to the serverless 10-minute
+  // cap SIGKILLs real training/pre-init work mid-flight.
+  const timeoutCap = runLocality === "local" ? SANDBOX_MAX_TIMEOUT_MS_LOCAL : SANDBOX_MAX_TIMEOUT_MS;
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
-    ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
+    ? Math.min(requestedTimeout, timeoutCap)
     : SANDBOX_DEFAULT_TIMEOUT_MS;
 
   if (runLocality === "serverless" && adapterId === "local-intelligence") {
@@ -731,7 +773,7 @@ async function executeSandboxRun(body, { emit } = {}) {
       const compactResponse = JSON.stringify(response, null, 2);
       const sourceIdValue = sourceId || "";
       const objects = Array.isArray(workspaceConfig.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-      const nextObjects = objects.map((entry) => {
+      let nextObjects = objects.map((entry) => {
         if (entry.id !== object.id) return entry;
         const rows = Array.isArray(entry.rows) ? entry.rows : [];
         const nextRows = rows.map((existingRow, index) => {
@@ -753,6 +795,16 @@ async function executeSandboxRun(body, { emit } = {}) {
         });
         return { ...entry, rows: nextRows };
       });
+      const reconciledObjects = reconcileModelTrainingRunnerResult({
+        workspaceConfig: {
+          ...(workspaceConfig || {}),
+          dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
+        },
+        objectId,
+        name: rowForRun.Name || name,
+        response
+      });
+      if (reconciledObjects) nextObjects = reconciledObjects;
       await writeWorkspaceConfig({
         dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
       });

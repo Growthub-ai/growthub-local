@@ -1,0 +1,23 @@
+{
+  "stateId": "state-12-first-invocation",
+  "visibleTitle": "First invocation test",
+  "visibleStatus": "Success",
+  "primaryCta": "Continue to deploy",
+  "surface": "Training Handoff modal · verify (Response/Trace/Details/Proof inspector)",
+  "governedRows": {
+    "modelTraining": "workspace-local",
+    "modelTrainingRun": "qa_run",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "expectedModel": "workspace-local-tuned-v1",
+    "servedModel": "workspace-local-tuned-v1",
+    "baseModel": "gemma3",
+    "notBaseModel": true,
+    "httpStatus": 200,
+    "servesTunedTag": true,
+    "servingAdapter": "ollama"
+  },
+  "nextAllowedAction": "continue_to_deploy"
+}

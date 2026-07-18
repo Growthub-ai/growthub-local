@@ -52,6 +52,11 @@ jobs:
       - name: Validate workspace metadata blast-radius deriver
         run: node --test scripts/unit-workspace-metadata-impact.test.mjs
 
+      - name: Validate custom-model training runtime (incl. start-training gate)
+        run: |
+          node --test scripts/unit-training-runtime.test.mjs
+          node --test scripts/unit-training-ledger.test.mjs
+
       - name: Validate workspace add-ons scheduler loop
         run: |
           node --test scripts/unit-workspace-add-ons-scheduler.test.mjs

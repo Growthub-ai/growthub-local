@@ -1,0 +1,57 @@
+{
+  "runningNoProgress": {
+    "note": "receipt status=running, NO progress block → bar must be 0"
+  },
+  "proofChecklist": {
+    "done": 9,
+    "total": 9,
+    "complete": true,
+    "items": [
+      {
+        "id": "preflight-pass",
+        "proven": true
+      },
+      {
+        "id": "distilling-counter",
+        "proven": true
+      },
+      {
+        "id": "finetune-step",
+        "proven": true
+      },
+      {
+        "id": "convert-gguf",
+        "proven": true
+      },
+      {
+        "id": "quant-size-proof",
+        "proven": true
+      },
+      {
+        "id": "ollama-create",
+        "proven": true
+      },
+      {
+        "id": "chat-verify-tuned",
+        "proven": true
+      },
+      {
+        "id": "registry-live",
+        "proven": true
+      },
+      {
+        "id": "workflow-smoke-outputhash",
+        "proven": true
+      }
+    ]
+  },
+  "completionReward": {
+    "live": true,
+    "headline": "Your custom model is live locally.",
+    "trainedTag": "workspace-local-tuned-v1",
+    "baseModel": "gemma3",
+    "quantDelta": "16.0 GB → 4.4 GB (q4_k_m)",
+    "verifiedResponseModel": "workspace-local-tuned-v1",
+    "outputHash": "oh_qa_1"
+  }
+}

@@ -7106,6 +7106,32 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.training-bootstrap-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.training-bootstrap-stack .dm-helper-toolcall-row {
+  cursor: default;
+}
+.training-bootstrap-stack .dm-helper-toolcall-title {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+.training-bootstrap-stack .dm-swarm-card-desc {
+  margin: 0 12px 10px;
+}
+.training-bootstrap-stack .dm-btn-ghost[data-setup-action],
+.training-bootstrap-toggle {
+  align-self: flex-start;
+  margin: 0 12px 12px;
+}
+.training-bootstrap-toggle {
+  margin: -4px 0 0;
+}
 .dm-helper-toolcall-chevron {
   color: #9ca3af;
   transition: transform .15s ease;
@@ -10089,3 +10115,676 @@ body.workspace-rail-collapsed .workspace-builder.workspace-lens-page,
   box-sizing: border-box;
 }
 .dm-inbound-test-modal .dm-inbound-example .dm-json-tree { max-height: 180px; overflow-y: auto; scrollbar-gutter: stable; }
+/* Training sidecar — Distillation Stats. Minimal, model-first, no code blocks. */
+.training-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.training-stats-head,
+.training-model-row,
+.training-progress-meta,
+.training-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.training-stats-title {
+  font-size: 18px;
+  line-height: 1.15;
+  font-weight: 650;
+  color: #111827;
+  letter-spacing: 0;
+}
+.training-stats-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #6b7280;
+}
+.training-model-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-model-select:disabled {
+  color: #9ca3af;
+  background: #f9fafb;
+}
+.training-path-row,
+.training-path-pill {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #6b7280;
+  font-size: 11.5px;
+}
+.training-progress-block {
+  display: grid;
+  gap: 7px;
+}
+.training-progress-meta {
+  font-size: 12px;
+  color: #4b5563;
+}
+.training-progress-meta strong {
+  color: #111827;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.training-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e5e7eb;
+}
+.training-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8b8f96;
+  transition: width 160ms ease, background 160ms ease;
+}
+.training-progress-track.is-ready span { background: #16a34a; }
+/* Custom-model training modal — reference-matched design-system pieces. */
+.training-impact { margin: 8px 0 0; padding: 0; display: grid; gap: 0; }
+.training-impact > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 7px 0; border-top: 1px solid #edf0f3; }
+.training-impact > div:first-child { border-top: 0; }
+.training-impact dt { margin: 0; font-size: 12px; color: #6b7280; }
+.training-impact dd { margin: 0; font-size: 13px; font-weight: 600; color: #111827; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+.training-config-fields .dm-api-action-card-body { gap: 8px; }
+/* Inside the training modal every card shares ONE full width — the page-level
+   .dm-api-action-card margin would inset cards against .training-advanced /
+   .training-config-modal (the configuration-step width drift). */
+.dm-orch-modal[data-training-handoff] .dm-api-action-card { margin: 0; }
+.training-field { display: grid; gap: 4px; margin: 0; }
+.training-field > span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; }
+.training-field select, .training-field input { height: 32px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 13px; padding: 0 9px; width: 100%; box-sizing: border-box; }
+.training-field input[aria-invalid="true"] { border-color: #dc2626; }
+.training-field em { font-size: 11px; color: #6b7280; font-style: normal; }
+/* Probe placeholder while the local substrate check answers (or the friendly
+   empty state) — input-shaped, never a selectable fake value. */
+.training-probe-note { min-height: 32px; display: flex; align-items: center; gap: 8px; border: 1px dashed #d1d5db; border-radius: 6px; background: #fff; color: #6b7280; font-size: 12px; padding: 4px 9px; }
+/* Configuration-step readiness rows: pass/fail/pending in plain language. */
+.training-readiness-rows li b { margin-left: auto; font-weight: 600; text-align: right; word-break: break-word; max-width: 60%; }
+.training-readiness-rows li.is-fail { color: #991b1b; }
+.training-readiness-rows li.is-warn { color: #92400e; }
+.training-readiness-pending { width: 13px; height: 13px; border-radius: 50%; border: 2px dotted #9ca3af; flex: 0 0 auto; }
+/* Finalize-in-flight spinner (button-embedded, beside the label). */
+.training-finalize-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; display: inline-block; margin-right: 7px; vertical-align: -1px; animation: training-finalize-spin 0.7s linear infinite; }
+@keyframes training-finalize-spin { to { transform: rotate(360deg); } }
+.training-run-card .dm-api-action-card-body { gap: 6px; }
+.training-run-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.training-run-pct { font-size: 26px; font-weight: 700; color: #111827; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.training-run-card .training-progress-track { height: 6px; margin-top: 2px; }
+.training-run-card .training-progress-track span { background: #2563eb; }
+.training-run-card .training-progress-track.is-ready span { background: #16a34a; }
+.training-run-card,
+.training-preinit-card {
+  display: block;
+  grid-template-columns: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.training-run-card > .dm-api-action-card-body,
+.training-preinit-card > .dm-api-action-card-body {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.training-run-card .training-run-top,
+.training-preinit-card .training-run-top { width: 100%; }
+.training-run-card .dm-tabs { width: 100%; max-width: 100%; box-sizing: border-box; }
+.training-preinit-card .training-run-pct { font-size: 24px; }
+.training-preinit-card .training-progress-track { height: 7px; }
+.training-preinit-checks {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #e5e7eb;
+}
+.training-preinit-checks li {
+  display: grid;
+  grid-template-columns: 18px minmax(190px, .42fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid #f3f4f6;
+  min-width: 0;
+}
+.training-preinit-checks li:first-child { border-top: 0; }
+.training-preinit-check-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #92400e;
+}
+.training-preinit-check-icon.is-ok { color: #15803d; }
+.training-preinit-check-label {
+  min-width: 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.training-preinit-check-detail {
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.training-run-card .dm-cockpit-fields,
+.training-run-card .dm-cockpit-receipts,
+.training-run-card .training-progress-track { width: 100%; max-width: 100%; box-sizing: border-box; }
+.training-advanced { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; background: #fafafa; }
+.training-advanced > summary { font-size: 12px; color: #6b7280; cursor: pointer; list-style: revert; }
+.training-advanced-pre { margin: 8px 0 0; padding: 8px 10px; background: #0f172a; color: #e2e8f0; border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+/* Custom Models cockpit (/custom-models sidecar) — mirror the design system;
+   clean filters + inputs (never raw black selects). */
+.dm-cockpit-page { display: grid; gap: 10px; }
+.dm-cockpit-page .dm-api-action-card,
+.dm-cockpit-page .dm-helper-toolcall {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  box-sizing: border-box;
+}
+.dm-cockpit-page .dm-api-action-card { display: block; }
+.dm-cockpit-page .training-bootstrap-stack { gap: 10px; }
+.dm-cockpit-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dm-cockpit-input, .dm-cockpit-select { height: 30px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; color: #111827; font: inherit; font-size: 12px; padding: 0 9px; box-sizing: border-box; }
+.dm-cockpit-input { flex: 1 1 160px; min-width: 120px; }
+.dm-cockpit-select { flex: 0 0 auto; padding-right: 26px; cursor: pointer; -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; }
+.dm-cockpit-input:focus, .dm-cockpit-select:focus { outline: none; border-color: #94a3b8; }
+.dm-cockpit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.dm-cockpit-summary { font-size: 12px; color: #6b7280; cursor: pointer; margin-top: 12px; }
+.dm-cockpit-action-cta { margin-left: auto; }
+/* Clean cockpit — metric tiles + one recommended action (no pill spam). */
+.dm-cockpit-topbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 2px 2px 4px; }
+.dm-cockpit-subtle { margin: 2px 0 0; font-size: 12px; color: #6b7280; line-height: 1.45; }
+/* Tabs — mirror the CEO primitives cockpit tab grammar (.dm-ceo-tabs button),
+   laid out as a horizontal, wrap-friendly row for the model cockpit's sections. */
+.dm-cockpit-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 2px; }
+.dm-cockpit-tabs button { min-height: 30px; padding: 5px 12px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fff; color: #374151; font-size: 12px; font-weight: 600; cursor: pointer; }
+.dm-cockpit-tabs button:hover { border-color: #cbd5e1; color: #111827; }
+.dm-cockpit-tabs button.is-active { background: #111827; border-color: #111827; color: #fff; }
+
+/* Overview — one compact trust line (no metric-tile bloat). */
+.dm-cockpit-meta-line { margin: 12px 0 0; font-size: 12px; color: #6b7280; line-height: 1.5; word-break: break-word; }
+.dm-cockpit-meta-line strong { color: #111827; font-weight: 650; }
+.dm-cockpit-col-title { margin: 0 0 2px; font-size: 11px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; color: #6b7280; }
+
+/* Focused first-utilization actions — the two intentional CTAs that answer
+   "how do I use this model?". Each is a real button that performs governed
+   work; the first (create/open a canvas workflow) carries the primary accent. */
+.dm-cockpit-focus { display: grid; gap: 8px; margin-top: 12px; }
+.dm-cockpit-focus-btn { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; width: 100%; padding: 11px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; font: inherit; transition: border-color .12s ease, background .12s ease; }
+.dm-cockpit-focus-btn:hover:not(:disabled) { border-color: #111827; background: #fafafa; }
+.dm-cockpit-focus-btn:disabled { opacity: .55; cursor: not-allowed; }
+.dm-cockpit-focus-btn:first-child { border-color: #111827; }
+.dm-cockpit-focus-btn:first-child:hover:not(:disabled) { background: #f4f4f5; }
+.dm-cockpit-focus-title { font-size: 13px; font-weight: 650; color: #111827; }
+
+/* Fact rows — label + value, used by the Usage tab receipts. */
+.dm-cockpit-facts { display: grid; gap: 1px; margin-top: 12px; }
+.dm-cockpit-facts > div { display: grid; grid-template-columns: minmax(120px, .5fr) minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #f1f3f5; }
+.dm-cockpit-facts > div:first-child { border-top: 0; }
+.dm-cockpit-facts span { font-size: 12px; color: #6b7280; font-weight: 600; }
+.dm-cockpit-facts strong { font-size: 12.5px; color: #111827; font-weight: 600; word-break: break-word; }
+
+/* Settings — canvas-mirrored config fields, rendered clean in the sidecar
+   (the canvas's disabled-field polish is scoped to .dm-workflow-orchestration,
+   so mirror it here for the read-only governed values). */
+.dm-cockpit-config-grid { display: grid; gap: 10px; margin-top: 12px; }
+.dm-cockpit-config-grid .dm-orchestration-config__field { gap: 5px; }
+.dm-cockpit-config-grid .dm-orchestration-config__field span { font-size: 11px; font-weight: 650; color: #475569; }
+.dm-cockpit-config-grid .dm-orchestration-config__field input,
+.dm-cockpit-config-grid .dm-orchestration-config__field select {
+  width: 100%; min-height: 34px; border: 1px solid #cbd5e1; border-radius: 6px;
+  padding: 7px 9px; font-size: 12px; background: #fff; color: #111827;
+  -webkit-text-fill-color: #111827; opacity: 1; cursor: default;
+}
+.dm-cockpit-config-grid .dm-orchestration-config__field select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+}
+.dm-cockpit-settings-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.dm-cockpit-settings-actions .dm-btn-ghost { text-decoration: none; }
+
+.dm-cockpit-actions-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 2px; }
+.dm-cockpit-actions-list li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 10px; padding: 8px 0; border-top: 1px solid #f1f3f5; }
+.dm-cockpit-actions-list li:first-child { border-top: 0; }
+.dm-cockpit-actions-list li.is-blocked { opacity: .6; }
+.dm-cockpit-action-name { font-size: 13px; font-weight: 600; color: #111827; }
+.dm-cockpit-actions-list .dm-cockpit-subtle { grid-column: 1; margin: 0; }
+.dm-cockpit-actions-list .dm-cockpit-action-cta { grid-row: 1 / span 2; grid-column: 2; margin-left: 0; }
+.training-progress-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.training-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.training-readiness-grid span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.training-readiness-grid strong {
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.15;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-readiness-grid small {
+  color: #6b7280;
+  font-size: 10.5px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.training-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #eef0f2;
+}
+.training-config-section {
+  padding-top: 0;
+  border-top: 0;
+}
+.training-section-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: #111827;
+}
+.training-field-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.42fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.training-field-row > span {
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+}
+.training-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.training-chip,
+.training-path-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+.training-chip strong {
+  color: #111827;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.training-path-pill {
+  justify-content: flex-start;
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.training-action-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.training-action-help-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.training-action-help {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  display: none;
+  width: min(340px, 72vw);
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #374151;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.training-action-help strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #111827;
+  font-size: 12px;
+}
+.training-action-help span {
+  display: block;
+  margin-top: 6px;
+}
+.training-action-help-wrap:hover .training-action-help,
+.training-action-help-wrap:focus-within .training-action-help {
+  display: block;
+}
+.training-action-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  border: 1px solid #d1d5db;
+}
+.training-action-primary {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+  cursor: pointer;
+}
+.training-action-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dm-orch-modal[data-training-handoff] {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dm-orch-modal[data-training-handoff] .dm-orch-modal-body {
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.dm-orch-modal[data-training-handoff] .dm-orch-modal-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.training-handoff-head h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #111827;
+}
+.training-handoff-summary,
+.training-handoff-process {
+  display: grid;
+  gap: 8px;
+}
+.training-handoff-summary {
+  /* Fits however many fact cells render (target cell removed — the deploy
+     target is chosen in the configuration dropdown, never pre-announced). */
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+}
+.training-handoff-summary div,
+.training-handoff-process div {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #fafafa;
+}
+.training-handoff-summary strong,
+.training-handoff-process strong {
+  color: #111827;
+  font-size: 13px;
+}
+.training-handoff-summary span,
+.training-handoff-process span {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.training-handoff-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.training-handoff-eligibility {
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.training-handoff-controls {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(220px, 2fr);
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+}
+.training-handoff-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.training-handoff-controls select {
+  width: 100%;
+  min-width: 0;
+}
+.training-config-modal {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+.training-config-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.training-config-tabs button {
+  height: 30px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.training-config-tabs button.is-active {
+  border-color: #111827;
+  box-shadow: inset 0 0 0 1px #111827;
+}
+.training-config-panel {
+  display: grid;
+  gap: 12px;
+}
+.training-config-toolbar {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(220px, 1fr);
+  gap: 12px;
+}
+.training-config-field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+}
+.training-config-field-wide {
+  /* Trace source spans the full card width — matches every other field. */
+  max-width: none;
+  width: 100%;
+}
+.training-config-field select,
+.training-map-row select,
+.training-handoff-controls select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #cfd6df;
+  border-radius: 7px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0 34px 0 10px;
+  box-sizing: border-box;
+}
+.training-config-field select:focus,
+.training-map-row select:focus,
+.training-handoff-controls select:focus {
+  outline: none;
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(15,23,42,.07);
+}
+.training-config-field em {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  pointer-events: none;
+  color: #15803d;
+  font-size: 11px;
+  font-style: normal;
+}
+.training-map-table {
+  display: grid;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.training-map-head,
+.training-map-row {
+  display: grid;
+  grid-template-columns: minmax(118px, .8fr) minmax(140px, 1fr) minmax(190px, 1.1fr);
+  gap: 12px;
+  align-items: center;
+}
+.training-map-head {
+  min-height: 34px;
+  padding: 0 12px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.training-map-row {
+  min-height: 52px;
+  padding: 8px 12px;
+  border-top: 1px solid #edf0f3;
+  color: #111827;
+  font-size: 12px;
+}
+.training-map-label {
+  font-weight: 650;
+}
+.training-map-sample {
+  min-width: 0;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .training-config-toolbar,
+  .training-map-head,
+  .training-map-row {
+    grid-template-columns: 1fr;
+  }
+}
+.training-handoff-trace-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 12px 6px;
+}
+.training-handoff-trace-title {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.training-handoff-trace-title input {
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+.training-handoff-trace-title span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.training-handoff-trace-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}

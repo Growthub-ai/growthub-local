@@ -1,0 +1,32 @@
+{
+  "stateId": "state-04-one-click-train",
+  "visibleTitle": "Train custom model",
+  "visibleStatus": "Ready",
+  "primaryCta": "Start training",
+  "modalHook": "[data-handoff-runsummary] / [data-handoff-confirm]",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "modelTrainingRun": "prepared (on confirm)"
+  },
+  "proof": {
+    "source": "Distillation traces (11)",
+    "modelName": "custom-model-v1",
+    "baseModel": "gemma3",
+    "computeMode": "local-command",
+    "trainingProfile": "unsloth-qlora-quantize-pipeline",
+    "commandSafety": true,
+    "preflight": "pending (checked on run)",
+    "estTime": "~42 minutes (est)",
+    "estCost": "$0 local"
+  },
+  "nluExamples": [
+    "Train it now.",
+    "How long will it take?",
+    "What model am I training from?"
+  ],
+  "derivedFrom": [
+    "buildTrainingRunConfig",
+    "deriveLocalModelChoices"
+  ],
+  "nextAllowedAction": "start_training"
+}
