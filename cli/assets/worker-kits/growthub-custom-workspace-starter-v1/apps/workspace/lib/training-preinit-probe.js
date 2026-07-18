@@ -191,6 +191,15 @@ export function buildPreInitProbeScript({
     "const gb = (bytes) => Math.floor(Number(bytes || 0) / 1e9);",
     "const checks = [];",
     "const add = (id, label, ok, detail, blocking = true) => { checks.push({ id, label, ok: Boolean(ok), detail: String(detail || ''), blocking: blocking !== false }); console.log(`CHECK ${ok ? 'PASS' : (blocking !== false ? 'FAIL' : 'WARN')} ${id}: ${detail}`); };",
+    "async function patchDataModel(objects) {",
+    "  const patch = { dataModel: { objects } };",
+    "  const pre = await fetch(`${WS}/api/workspace/patch/preflight`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });",
+    "  const verdict = await pre.json();",
+    "  if (!pre.ok || verdict.ok !== true) throw new Error('governed preflight refused: ' + JSON.stringify(verdict.policy?.violations || verdict.schema?.errors || verdict));",
+    "  const written = await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });",
+    "  if (!written.ok) throw new Error('governed PATCH refused: ' + (await written.text()).slice(0, 300));",
+    "  return written.json();",
+    "}",
     // One governed write lane — identical discipline to the training runner:
     // read the workspace, map ONLY this pre-init run row, PATCH it back.
     "async function stampPreInit(patch, regPatch) {",
@@ -201,8 +210,8 @@ export function buildPreInitProbeScript({
     "      if (regPatch && o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => String(row.integrationId || '') === P.integrationId ? { ...row, ...regPatch } : row) };",
     "      return o;",
     "    });",
-    "    await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
-    "  } catch (e) { console.error('stampPreInit failed', (e && e.message) || e); }",
+    "    await patchDataModel(objects);",
+    "  } catch (e) { console.error('stampPreInit failed', (e && e.message) || e); throw e; }",
     "}",
     // Phase stamp — a governed marker written BEFORE each long operation so
     // an interrupted probe (power loss, kill) always carries evidence of the
@@ -345,7 +354,7 @@ export function buildPreInitProbeScript({
     "    try { execFileSync(py, ['-c', `from huggingface_hub import model_info; model_info('${P.hfBaseId}')`], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 60000 }); weightsOk = true; weightsDetail = `${P.hfBaseId} reachable`; }",
     "    catch (e) { weightsDetail = `Base weights ${P.hfBaseId} not reachable yet — if the model is license-gated, accept its license and set HF_TOKEN; training stops honestly at fine-tune otherwise.`; }",
     "  } else { weightsDetail = 'Checked once the Python packages are ready.'; }",
-    "  add('base-weights', 'Base model weights reachable', weightsOk, weightsDetail);",
+    "  add('base-weights', 'Base model weights reachable', weightsOk, weightsDetail, false);",
     // ---- 7. REAL chat-completions 200 against the registered endpoint —
     // required when the server is up (never fake a 200); recorded as a
     // warning when there is no server to ask yet.

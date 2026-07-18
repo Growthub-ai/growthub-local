@@ -27,7 +27,12 @@ const {
   ensureCustomModelWorkflowsObject,
   upsertCustomModelWorkflowRow,
 } = await import(pathToFileURL(path.join(kitApp, "lib/custom-model-workflow-proposal.js")).href);
-const { CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, deriveCustomModelsState, deriveCustomModelFocusActions } = await import(
+const {
+  CUSTOM_MODEL_WORKFLOWS_OBJECT_ID,
+  customModelWorkflowRowName,
+  deriveCustomModelsState,
+  deriveCustomModelFocusActions,
+} = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
 const { validateWorkspaceConfig } = await import(
@@ -92,11 +97,12 @@ test("normalize: creates a governed sandbox row with a REAL graph, artifact open
   const result = normalizeCustomModelWorkflowProposal(proposal, workspaceConfig, sourceRecords);
   assert.equal(result.ok, true, result.error);
   assert.equal(result.artifact.objectId, CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
-  assert.equal(result.artifact.rowName, "custom-model-chat");
+  const rowName = customModelWorkflowRowName({ id: "workspace-local" }, "chat");
+  assert.equal(result.artifact.rowName, rowName);
 
   const obj = result.config.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
   assert.ok(obj, "custom-model-workflows object created");
-  const row = obj.rows.find((r) => r.Name === "custom-model-chat");
+  const row = obj.rows.find((r) => r.Name === rowName);
   assert.ok(row, "row created");
   const graph = JSON.parse(row.orchestrationConfig);
   assert.ok(graph.nodes.some((n) => n.type === "input"), "has input node");
@@ -115,7 +121,7 @@ test("normalize: no schedule trigger is attached (scheduler rolled back)", () =>
   );
   assert.equal(result.ok, true, result.error);
   const obj = result.config.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
-  const row = obj.rows.find((r) => r.Name === "custom-model-recursive-learning");
+  const row = obj.rows.find((r) => r.Name === customModelWorkflowRowName({ id: "workspace-local" }, "recursive-learning"));
   assert.ok(!row.schedulerCron, "no schedule trigger — scheduler action rolled back");
 });
 
@@ -133,7 +139,7 @@ test("normalize: refuses an unverified endpoint (no base-model workflow can bind
     workspaceConfig, sourceRecords,
   );
   assert.equal(result.ok, false);
-  assert.match(result.error, /not verified/i);
+  assert.match(result.error, /no real serving route/i);
 });
 
 test("upsert is idempotent — re-creating a workflow does not duplicate rows or lose history", () => {
@@ -145,15 +151,74 @@ test("upsert is idempotent — re-creating a workflow does not duplicate rows or
   // Stamp a run-history marker as if it had executed.
   let cfg = once.config;
   const obj0 = cfg.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
-  obj0.rows.find((r) => r.Name === "custom-model-chat").lastRunId = "run_alpha";
+  const rowName = customModelWorkflowRowName({ id: "workspace-local" }, "chat");
+  obj0.rows.find((r) => r.Name === rowName).lastRunId = "run_alpha";
   const twice = normalizeCustomModelWorkflowProposal(
     buildCustomModelWorkflowProposal({ modelId: "workspace-local", variant: "chat" }),
     cfg, sourceRecords,
   );
   const obj = twice.config.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
-  const rows = obj.rows.filter((r) => r.Name === "custom-model-chat");
+  const rows = obj.rows.filter((r) => r.Name === rowName);
   assert.equal(rows.length, 1, "no duplicate row");
   assert.equal(rows[0].lastRunId, "run_alpha", "run history preserved");
+});
+
+test("model-scoped identities: the same workflow variant cannot collide across models", () => {
+  const { workspaceConfig, sourceRecords } = verifiedWorkspace();
+  const objects = workspaceConfig.dataModel.objects;
+  const training = objects.find((object) => object.id === "model-training");
+  training.rows.push({
+    ...training.rows[0],
+    Name: "support-specialist",
+    localModel: "support-specialist-v2",
+    modelVersion: "support-specialist-v2",
+    apiRegistryId: "support-specialist-api",
+    lastExportSummary: JSON.stringify({ registryId: "support-specialist-api" }),
+    lastSandboxObjectId: "support-specialist-proof",
+    lastSandboxRunId: "run_support_smoke",
+  });
+  const registry = objects.find((object) => object.objectType === "api-registry");
+  registry.rows.push({
+    ...registry.rows.find((row) => row.integrationId === "workspace-local-model"),
+    integrationId: "support-specialist-api",
+    expectedModelTag: "support-specialist-v2",
+    lastResponse: JSON.stringify({ model: "support-specialist-v2", choices: [{ message: { content: "ok" } }] }),
+  });
+  const sandbox = objects.find((object) => object.id === "sandbox-probe");
+  sandbox.rows.push({
+    ...sandbox.rows[0],
+    Name: "support-specialist-proof",
+    schedulerRegistryId: "support-specialist-api",
+    lastRunId: "run_support_smoke",
+    orchestrationConfig: JSON.stringify({ nodes: [{ config: { registryId: "support-specialist-api" } }] }),
+  });
+  sourceRecords["model-invocation:support-specialist-api:seed"] = {
+    records: [{ status: 200, modelVersion: "support-specialist-v2" }],
+  };
+
+  const first = normalizeCustomModelWorkflowProposal(
+    buildCustomModelWorkflowProposal({ modelId: "workspace-local", variant: "chat" }),
+    workspaceConfig,
+    sourceRecords,
+  );
+  assert.equal(first.ok, true, first.error);
+  const second = normalizeCustomModelWorkflowProposal(
+    buildCustomModelWorkflowProposal({ modelId: "support-specialist", variant: "chat" }),
+    first.config,
+    sourceRecords,
+  );
+  assert.equal(second.ok, true, second.error);
+
+  const rows = second.config.dataModel.objects
+    .find((object) => object.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID).rows;
+  const workspaceRow = rows.find((row) => row.Name === "custom-model-workspace-local-chat");
+  const supportRow = rows.find((row) => row.Name === "custom-model-support-specialist-chat");
+  assert.ok(workspaceRow);
+  assert.ok(supportRow);
+  assert.notEqual(workspaceRow.Name, supportRow.Name);
+  assert.equal(workspaceRow.customModelId, "workspace-local");
+  assert.equal(supportRow.customModelId, "support-specialist");
+  assert.equal(supportRow.servingRegistryId, "support-specialist-api");
 });
 
 test("focus actions: causation modes — create when absent, open when present, blocked when unverified", () => {

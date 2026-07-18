@@ -95,3 +95,49 @@ export function scaffoldHandoffRows({ slug, version, target, modelTag, datasetRe
   };
   return { registryRow, versionRow, integrationId };
 }
+
+/**
+ * Rebind an attached model result across the existing governed identity chain.
+ * Pure and immutable: the version row, direct API Registry record, and its
+ * mothership policy always name the same exact served tag.
+ */
+export function rebindCustomModelServingIdentity(objects, { trainingRowId, integrationId, modelTag } = {}) {
+  const tag = String(modelTag || "").trim();
+  if (!tag) return Array.isArray(objects) ? objects : [];
+  return (Array.isArray(objects) ? objects : []).map((object) => {
+    if (object?.objectType === "model-training") {
+      return {
+        ...object,
+        rows: (object.rows || []).map((row) => String(row?.Name || "") === String(trainingRowId || "")
+          ? { ...row, localModel: tag, status: "imported" }
+          : row),
+      };
+    }
+    if (object?.objectType !== "api-registry") return object;
+    return {
+      ...object,
+      rows: (object.rows || []).map((row) => {
+        if (String(row?.integrationId || "") === String(integrationId || "")) {
+          return { ...row, expectedModelTag: tag };
+        }
+        const proxy = row?.metadata?.mothershipProxy;
+        if (!proxy || !Array.isArray(proxy.routes)
+          || !proxy.routes.some((route) => String(route?.registryId || "") === String(integrationId || ""))) return row;
+        return {
+          ...row,
+          name: `${tag} (mothership proxy)`,
+          metadata: {
+            ...row.metadata,
+            mothershipProxy: {
+              ...proxy,
+              modelTag: tag,
+              routes: proxy.routes.map((route) => String(route?.target || "") === "local-student"
+                ? { ...route, modelTag: tag }
+                : route),
+            },
+          },
+        };
+      }),
+    };
+  });
+}

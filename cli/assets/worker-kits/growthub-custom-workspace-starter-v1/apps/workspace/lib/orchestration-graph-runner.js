@@ -20,6 +20,7 @@ import {
 import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
 import { readEnvVar, readServerSecret } from "./server-secrets.js";
+import { executeCustomModelWorkflow } from "./custom-model-inference.js";
 
 /** The governed record (or its resolved URL) declares a chat endpoint. */
 function isChatCompletionsRecord(record, url) {
@@ -167,7 +168,7 @@ function getValueAtPath(obj, path) {
   return cursor;
 }
 
-async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload, timeoutMs) {
+async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload, timeoutMs, executionContext = {}) {
   const registryId = String(nodeConfig?.registryId || nodeConfig?.integrationId || "").trim();
   const registryRecord = findRegistryRecord(workspaceConfig, registryId);
   if (!registryRecord) {
@@ -197,6 +198,58 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
       || registryRecord.authHeader,
     authPrefix: nodeConfig?.requestHeadersMetadata?.authPrefix || registryRecord.authPrefix
   };
+
+  if (merged?.metadata?.mothershipProxy) {
+    const startedAt = Date.now();
+    const inference = await executeCustomModelWorkflow({
+      workspaceConfig,
+      policyRow: merged,
+      inputPayload,
+      runId: executionContext?.runId,
+      clusterId: String(nodeConfig?.clusterId || nodeConfig?.workflowVariant || "workflow"),
+      maxTokens: Number(nodeConfig?.maxTokens) || 512,
+      workflowVariant: String(executionContext?.workflowVariant || nodeConfig?.workflowVariant || "chat"),
+    });
+    if (!inference.ok) {
+      return {
+        ok: false,
+        exitCode: 1,
+        durationMs: Date.now() - startedAt,
+        stdout: "",
+        stderr: "",
+        error: inference.error || "custom-model mothership inference failed",
+        adapterMeta: {
+          mode: "orchestration-graph",
+          registryId,
+          customModel: { attempts: inference.attempts || [] },
+        },
+      };
+    }
+    return {
+      ok: true,
+      exitCode: 0,
+      durationMs: Date.now() - startedAt,
+      stdout: JSON.stringify(inference.response, null, 2),
+      stderr: "",
+      rawPayload: inference.response,
+      httpStatus: inference.status,
+      adapterMeta: {
+        mode: "orchestration-graph",
+        registryId,
+        nodeType: "api-registry-call",
+        transport: "mothership-policy",
+        customModel: {
+          route: String(inference.route?.target || ""),
+          attempts: inference.attempts,
+          invocation: inference.invocation,
+          trace: inference.trace,
+          invocations: inference.invocations || (inference.invocation ? [inference.invocation] : []),
+          traces: inference.traces || (inference.trace ? [inference.trace] : []),
+          evaluation: inference.evaluation || null,
+        },
+      },
+    };
+  }
 
   let url;
   try {
@@ -890,7 +943,8 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     workspaceConfig,
     apiNode.config,
     inputPayload,
-    Number(apiNode.config?.timeoutMs) || timeoutMs
+    Number(apiNode.config?.timeoutMs) || timeoutMs,
+    executionContext
   );
 
   if (raw.ok && raw.rawPayload !== undefined) {
@@ -906,6 +960,25 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     if (raw.ok) emitNode(apiNode.id, "completed");
     else emitNode(apiNode.id, "failed", raw.error);
   }
+
+  // Custom-model variants execute their additional calls inside the governed
+  // mothership executor (recursive, agentic, and eval). Mirror those REAL
+  // completed requests onto their declared canvas nodes so the run trace and
+  // the visible graph tell the same story. No invocation evidence means no
+  // completed badge.
+  const additionalApiNodes = (Array.isArray(graph.nodes) ? graph.nodes : [])
+    .filter((candidate) => candidate?.type === "api-registry-call" && candidate?.id !== apiNode?.id);
+  const customInvocations = Array.isArray(raw?.adapterMeta?.customModel?.invocations)
+    ? raw.adapterMeta.customModel.invocations
+    : [];
+  additionalApiNodes.forEach((candidate, index) => {
+    if (raw.ok && customInvocations[index + 1]) {
+      emitNode(candidate.id, "started");
+      emitNode(candidate.id, "completed");
+    } else {
+      emitNode(candidate.id, "skipped");
+    }
+  });
 
   if (raw.ok && raw.rawPayload !== undefined) {
     if (transformNode?.id) emitNode(transformNode.id, "started");

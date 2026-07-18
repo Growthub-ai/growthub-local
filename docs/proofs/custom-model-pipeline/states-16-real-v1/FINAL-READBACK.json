@@ -1,0 +1,54 @@
+{
+  "schema": "growthub-custom-model-v1-release-proof",
+  "capturedAt": "2026-07-18T23:52:00.000Z",
+  "workspaceUrl": "http://127.0.0.1:3778",
+  "browser": "Codex IAB via browser-client.mjs",
+  "backend": "iab",
+  "qaInput": {
+    "trainingTraceRows": 12,
+    "eligibleRows": 11,
+    "label": "seed QA evidence"
+  },
+  "trainingInvocation": {
+    "button": "Start training",
+    "preInitChecks": "9/9",
+    "preInitEndpointStatus": 200,
+    "argvSteps": 6,
+    "runnerStatus": "blocked",
+    "runnerStage": "preflight",
+    "runnerReason": "Preflight blocked — needs 21 GB RAM, 8 GB present",
+    "countedAsModelCompletion": false
+  },
+  "completedModelFixture": {
+    "kind": "existing-installed-model",
+    "modelId": "workspace-local-v1",
+    "modelTag": "workspace-local-tuned-v1",
+    "registryId": "workspace-local-model",
+    "testHttpStatus": 200,
+    "responseModel": "workspace-local-tuned-v1"
+  },
+  "workflow": {
+    "objectId": "custom-model-workflows",
+    "name": "custom-model-workspace-local-v1-chat",
+    "version": "3",
+    "lifecycleStatus": "live",
+    "nodesCompleted": 3,
+    "nodesTotal": 3,
+    "registryPolicyId": "mothership-proxy-workspace-local-tuned-v1",
+    "runId": "run_mrr0tlsr_xi0vxk",
+    "runStatus": "connected",
+    "servedModel": "workspace-local-tuned-v1",
+    "httpStatus": 200,
+    "outputHash": "1f37aeadea28c884"
+  },
+  "closedLoop": {
+    "invocationCount": 2,
+    "traceCount": 2,
+    "traceRootHash": "ac1a95888c1349d0",
+    "provenRuns": 1,
+    "workflows": 1,
+    "promptTokens": 168,
+    "completionTokens": 39,
+    "totalTokens": 207
+  }
+}

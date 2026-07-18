@@ -18,6 +18,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -197,7 +198,7 @@ test("summary parsing never throws and rejects non-objects", () => {
 // Distillation pipeline + handoff cockpit + scaffold (continuum add-ons)
 // ---------------------------------------------------------------------------
 
-const { FINE_TUNE_TARGETS, defaultFineTuneTarget, scaffoldHandoffRows } = await import(
+const { FINE_TUNE_TARGETS, defaultFineTuneTarget, scaffoldHandoffRows, rebindCustomModelServingIdentity } = await import(
   pathToFileURL(path.join(kitApp, "lib/adapters/fine-tune-targets.js")).href
 );
 
@@ -289,6 +290,31 @@ test("scaffoldHandoffRows produces registry + version rows in existing column sh
   assert.equal(summary.recordCount, 14);
   assert.equal(summary.registryId, "workspace-local-model");
   assert.equal(summary.version, 2);
+});
+
+test("attached model tag rebinds training, direct registry, and mothership identity atomically", () => {
+  const objects = [
+    { objectType: "model-training", rows: [{ Name: "workspace-local-v1", localModel: "reserved-tag", status: "prepared" }] },
+    { objectType: "api-registry", rows: [
+      { integrationId: "workspace-local-model", expectedModelTag: "reserved-tag" },
+      { integrationId: "mothership-proxy-reserved-tag", name: "reserved-tag (mothership proxy)", metadata: { mothershipProxy: { modelTag: "reserved-tag", routes: [
+        { target: "local-student", registryId: "workspace-local-model", modelTag: "reserved-tag" },
+        { target: "local-base", modelTag: "gemma3:4b" },
+      ] } } },
+    ] },
+  ];
+  const rebound = rebindCustomModelServingIdentity(objects, {
+    trainingRowId: "workspace-local-v1",
+    integrationId: "workspace-local-model",
+    modelTag: "workspace-local-tuned-v1:latest",
+  });
+  assert.equal(rebound[0].rows[0].localModel, "workspace-local-tuned-v1:latest");
+  assert.equal(rebound[0].rows[0].status, "imported");
+  assert.equal(rebound[1].rows[0].expectedModelTag, "workspace-local-tuned-v1:latest");
+  assert.equal(rebound[1].rows[1].metadata.mothershipProxy.modelTag, "workspace-local-tuned-v1:latest");
+  assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[0].modelTag, "workspace-local-tuned-v1:latest");
+  assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[1].modelTag, "gemma3:4b", "fallback identity is unchanged");
+  assert.equal(objects[0].rows[0].localModel, "reserved-tag", "input remains immutable");
 });
 
 test("handoff cockpit mirrors the registry-cockpit contract: milestone score + closure steps", () => {
@@ -414,4 +440,11 @@ test("seed invocation proof is absent until a real tuned-model run exists", () =
   const { sourceRecords } = buildSuperAdminModelQaSeed({});
   const proof = sourceRecords["model-invocation:workspace-local-model:seed"];
   assert.equal(proof, undefined);
+});
+
+test("training checklist invokes custom models through the API Registry test lane", () => {
+  const source = fs.readFileSync(path.join(kitApp, "app/data-model/components/TrainingLedger.jsx"), "utf8");
+  assert.match(source, /fetch\("\/api\/workspace\/test-api-record"/);
+  assert.doesNotMatch(source, /fetch\("\/api\/workspace\/test-source"/);
+  assert.match(source, /lastResponse: JSON\.stringify\(payload\.response/);
 });

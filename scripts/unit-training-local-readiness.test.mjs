@@ -39,6 +39,11 @@ const { collectTrainingLocalReadiness, checkFolderWritable } = await import(lib(
 const { classifyRunStatus, buildTrainingRunReceipt, deriveTrainingRunState } = await import(lib("training-run-receipts.js"));
 const { buildPreInitProbeScript, derivePreInitState, PREINIT_RUN_KIND, PREINIT_INTENT } = await import(lib("training-preinit-probe.js"));
 
+test("pre-init records unavailable Hugging Face weights as advisory, never a blocker for an installed local model", () => {
+  const script = buildPreInitProbeScript({ baseModel: "workspace-local-tuned-v1:latest" });
+  assert.match(script, /add\('base-weights', 'Base model weights reachable', weightsOk, weightsDetail, false\)/);
+});
+
 // --------------------------------------------------------------------------
 // Fake IO surface — a deterministic machine the collector probes.
 // --------------------------------------------------------------------------

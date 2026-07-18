@@ -5,8 +5,9 @@
  * cockpit (Overview / Health / Usage / Versions / Settings) mirroring the CEO
  * primitives cockpit tab grammar (.dm-ceo-tabs) and the reference model-cockpit
  * layout: name + live status, clean metric tiles, an Actions column, and one
- * neutral "Next recommended action" card. Nothing is hidden behind accordions;
- * every tab surfaces real, derived substance.
+ * neutral "Next recommended action" card. Secondary workflow recipes and
+ * governed settings stay in compact accordions so the primary outcome remains
+ * obvious without discarding any evidence.
  *
  * Read-first, action-light: every status is derived by lib/custom-models-ledger.js
  * (which builds on the training-ledger evidence engine, so /training and
@@ -24,9 +25,8 @@ import {
   deriveCustomModelCockpit,
   deriveCustomModelSuggestedActions,
   deriveCustomModelFocusActions,
-  CUSTOM_MODEL_WORKFLOWS_OBJECT_ID,
-  CUSTOM_MODEL_WORKFLOWS_LABEL,
 } from "../../../lib/custom-models-ledger.js";
+import { buildCustomModelWorkflowProposal } from "../../../lib/custom-model-workflow-proposal.js";
 import TrainingLedger from "./TrainingLedger.jsx";
 
 /**
@@ -36,34 +36,27 @@ import TrainingLedger from "./TrainingLedger.jsx";
  * POST /api/workspace/workflow/publish path promotes it), then opens it on
  * the workflow canvas. Never a dead redirect: an existing row just opens.
  */
-async function createDraftWorkflowAndOpen(action) {
-  const res = await fetch("/api/workspace", { cache: "no-store" });
-  const data = await res.json();
-  const objs = data?.workspaceConfig?.dataModel?.objects || [];
-  const rowName = String(action?.sandboxRow?.Name || "");
-  const exists = objs.some((o) => o?.objectType === "sandbox-environment"
-    && (o.rows || []).some((r) => String(r?.Name || "") === rowName));
-  if (!exists) {
-    const { orchestrationConfig, ...draftRow } = action.sandboxRow;
-    draftRow.orchestrationDraftConfig = orchestrationConfig;
-    let wf = objs.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
-    if (!wf) {
-      wf = {
-        id: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, label: CUSTOM_MODEL_WORKFLOWS_LABEL, source: "Custom Models",
-        objectType: "sandbox-environment", icon: "Workflow", columns: Object.keys(draftRow), rows: [],
-        binding: { mode: "manual", source: "Custom Models" }, relations: [], fieldSettings: { hidden: [], order: Object.keys(draftRow) },
-      };
-      objs.push(wf);
-    }
-    wf.rows.push(draftRow);
-    const patched = await fetch("/api/workspace", {
-      method: "PATCH", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ dataModel: { objects: objs } }),
-    });
-    if (!patched.ok) return false;
+async function createDraftWorkflowAndOpen(model, action) {
+  const proposal = buildCustomModelWorkflowProposal({
+    modelId: model?.id || model?.name,
+    variant: action?.variant,
+    rationale: action?.whyNow,
+  });
+  const response = await fetch("/api/workspace/helper/apply", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ proposals: [proposal], reviewedBy: "custom-models-cockpit" }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  const applied = Array.isArray(payload?.applied)
+    ? payload.applied.find((receipt) => receipt?.type === proposal.type && receipt?.artifact)
+    : null;
+  if (!response.ok || !applied?.artifact) {
+    const skipped = Array.isArray(payload?.skipped) ? payload.skipped[0]?.reason : "";
+    throw new Error(String(skipped || payload?.error || "The governed workflow could not be created."));
   }
-  window.location.href = action.openHref;
-  return true;
+  const artifact = applied.artifact;
+  window.location.href = `/workflows?object=${encodeURIComponent(artifact.objectId)}&row=${encodeURIComponent(artifact.rowName)}&field=orchestrationConfig`;
 }
 
 function exportManifest(model, workspaceConfig) {
@@ -115,13 +108,25 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
   );
   const chatAction = suggested.actions.find((a) => a.variant === "chat") || null;
   const [busyAction, setBusyAction] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const runAction = async (action) => {
     if (!action?.enabled || busyAction) return;
+    if (action.mode === "open" && action.openHref) {
+      window.location.href = action.openHref;
+      return;
+    }
     setBusyAction(action.id);
-    try { await createDraftWorkflowAndOpen(action); } finally { setBusyAction(""); }
+    setActionMessage("");
+    try {
+      await createDraftWorkflowAndOpen(model, action);
+    } catch (error) {
+      setActionMessage(error?.message || "The workflow could not be created.");
+    } finally {
+      setBusyAction("");
+    }
   };
-  const statusPill = model.evidenceState === "complete"
-    ? { label: "Live", cls: "is-ok" }
+  const statusPill = cockpit.availability?.available
+    ? { label: cockpit.availability.label, cls: "is-ok" }
     : cockpit.health.tone === "ok" ? { label: cockpit.health.label, cls: "is-ok" }
       : cockpit.health.tone === "warn" ? { label: cockpit.health.label, cls: "is-warn" }
         : { label: cockpit.health.label, cls: "" };
@@ -201,17 +206,18 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
             ) : (
               <button
                 type="button"
-                className="dm-btn-ghost"
+                className="dm-btn-primary-sm"
                 disabled={!focus.enabled || Boolean(busyAction)}
                 title={focus.enabled ? chatAction.proofProduced : focus.blockedReason}
                 onClick={() => runAction(chatAction)}
                 data-model-focus-action={focus.mode}
               >
-                {busyAction === chatAction.id ? "Wiring…" : "Use in a workflow"}
+                {busyAction === chatAction.id ? "Creating…" : "Create workflow"}
               </button>
             )
           ) : null}
         </div>
+        {actionMessage ? <p className="dm-helper-error" role="alert" data-model-action-error="">{actionMessage}</p> : null}
         {suggested.hasActions ? (
           <details className="training-advanced" data-model-loops-accordion="">
             <summary>Closed loops ({suggested.ready} ready)</summary>
@@ -233,7 +239,7 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
                     onClick={() => runAction(a)}
                     data-model-loop-action={a.id}
                   >
-                    {busyAction === a.id ? "Wiring…" : "Wire loop"}
+                    {busyAction === a.id ? "Creating…" : a.mode === "open" ? "Open" : "Create"}
                   </button>
                 </li>
               ))}
@@ -277,19 +283,22 @@ export default function CustomModelsLedger({ workspaceConfig: providedConfig, wo
     // source records — the sidecar and page may never derive different truth.
     if (providedConfig && providedRecords) return;
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch("/api/workspace");
+        const res = await fetch("/api/workspace", { signal: controller.signal });
+        if (!res.ok) throw new Error(`workspace request failed (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
         if (data?.workspaceConfig) setWorkspaceConfig(data.workspaceConfig);
         if (data?.workspaceSourceRecords) setWorkspaceSourceRecords(data.workspaceSourceRecords);
-      } catch {
+      } catch (fetchError) {
+        if (fetchError?.name === "AbortError") return;
         if (!cancelled) setError("Workspace config unavailable — start the workspace app.");
       }
     })();
-    return () => { cancelled = true; };
-  }, [providedConfig]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [providedConfig, providedRecords]);
 
   const state = useMemo(
     () => deriveCustomModelsState({ workspaceConfig, workspaceSourceRecords }),

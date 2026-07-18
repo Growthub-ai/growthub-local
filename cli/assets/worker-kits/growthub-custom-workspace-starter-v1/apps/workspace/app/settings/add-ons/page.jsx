@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { SettingsShell } from "../settings-shell.jsx";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
 import { computeConfiguredEnvRefs, listPersistenceAdapterReadiness } from "@/lib/env-status";
@@ -14,7 +15,9 @@ async function AddOnsSettingsPage() {
     providerProductReadiness: listAllProviderProductReadiness(process.env),
   };
   return <SettingsShell active="/settings/add-ons" eyebrow="Settings" title="Marketplace">
-    <AddOnsSettingsClient initialWorkspaceConfig={workspaceConfig} envSignals={envSignals} />
+    <Suspense fallback={<div className="settings-empty">Loading marketplace settings…</div>}>
+      <AddOnsSettingsClient initialWorkspaceConfig={workspaceConfig} envSignals={envSignals} />
+    </Suspense>
   </SettingsShell>;
 }
 

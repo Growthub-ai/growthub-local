@@ -314,14 +314,15 @@ test("workflow variants: synthetic-scaling is provenance-safe (synthetic, ungrad
   assert.equal(write.config.provenance.qualityStatus, "ungraded");
 });
 
-test("workflow variants: agentic is loopback-only with browser-use; eval calls BOTH tuned and base", () => {
+test("workflow variants: agentic performs governed reasoning only; eval calls tuned, base, and teacher judge", () => {
   const v = buildCustomModelWorkflowVariants(modelFixture(), { workspaceConfig: wsWithReg });
   const agent = v.agentic.nodes.find((n) => n.type === "api-registry-call");
-  assert.equal(agent.config.networkPolicy, "loopback-only");
-  assert.equal(agent.config.permissions.browserUse, true);
+  assert.equal(agent.config.networkPolicy, "governed-registry-only");
+  assert.equal(agent.config.permissions.browserUse, false, "the workflow does not claim browser automation it cannot execute");
+  assert.equal(agent.config.permissions.depth, 3, "plan, critique, and final answer");
   const evalCalls = v["eval-vs-base"].nodes.filter((n) => n.type === "api-registry-call");
-  assert.equal(evalCalls.length, 2, "tuned + base");
-  assert.ok(evalCalls.some((n) => n.id === "tuned") && evalCalls.some((n) => n.id === "base"));
+  assert.equal(evalCalls.length, 3, "tuned + base + teacher judge");
+  assert.ok(["tuned", "base", "judge"].every((id) => evalCalls.some((node) => node.id === id)));
 });
 
 test("suggested actions: each carries a real config + canvas deep-link + sandbox row; gating is honest", () => {

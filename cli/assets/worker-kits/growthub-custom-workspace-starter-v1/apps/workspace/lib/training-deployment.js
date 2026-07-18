@@ -53,7 +53,7 @@ export function findRegistryRow(workspaceConfig, integrationId) {
  * `fetchImpl` is injectable for tests/runners. Never throws — returns an
  * envelope: { ok, status, response, error }.
  */
-export async function captureChatCompletion({ registryRow, modelTag, prompt, fetchImpl, headers = {}, authToken = "" } = {}) {
+export async function captureChatCompletion({ registryRow, modelTag, prompt, messages, maxTokens = 64, temperature, fetchImpl, headers = {}, authToken = "" } = {}) {
   const f = fetchImpl || (typeof fetch === "function" ? fetch : null);
   if (!f) return { ok: false, error: "no fetch implementation available", response: null };
   const tag = String(modelTag || registryRow?.expectedModelTag || "").trim();
@@ -63,7 +63,15 @@ export async function captureChatCompletion({ registryRow, modelTag, prompt, fet
   const hdrs = { "content-type": "application/json", ...headers };
   if (authToken) hdrs.authorization = `Bearer ${authToken}`;
   try {
-    const res = await f(url, { method: "POST", headers: hdrs, body: JSON.stringify(buildChatProbeBody({ modelTag: tag, prompt })) });
+    const requestBody = buildChatProbeBody({ modelTag: tag, prompt, maxTokens });
+    if (Array.isArray(messages) && messages.length) {
+      requestBody.messages = messages.map((message) => ({
+        role: String(message?.role || "user"),
+        content: String(message?.content || ""),
+      }));
+    }
+    if (Number.isFinite(Number(temperature))) requestBody.temperature = Number(temperature);
+    const res = await f(url, { method: "POST", headers: hdrs, body: JSON.stringify(requestBody) });
     const text = await res.text();
     let body;
     try { body = JSON.parse(text); } catch { body = text; }

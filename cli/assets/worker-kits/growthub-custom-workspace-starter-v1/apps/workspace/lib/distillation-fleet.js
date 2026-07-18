@@ -61,6 +61,7 @@ export function buildMothershipProxyRow({
         schema: MOTHERSHIP_PROXY_SCHEMA,
         modelTag: tag,
         workspaceSlug: String(workspaceSlug || "workspace-local"),
+        fallbackBaseModel: String(fallbackBaseModel || ""),
         routes: [
           { target: "local-student", registryId: String(studentRegistryId || ""), modelTag: tag },
           { target: "local-base", baseUrl: String(fallbackBaseUrl || "http://127.0.0.1:11434"), modelTag: String(fallbackBaseModel || "") },

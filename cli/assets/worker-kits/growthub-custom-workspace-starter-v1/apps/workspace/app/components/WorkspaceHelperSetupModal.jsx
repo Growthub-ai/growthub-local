@@ -202,11 +202,26 @@ function WorkspaceHelperSetupModal({ workspaceConfig, open, onClose, onSaved }) 
     setSaving(true);
     setError("");
     try {
-      const next = upsertHelperSandbox(workspaceConfig || {}, draft);
+      const latestResponse = await fetch("/api/workspace", { cache: "no-store" });
+      const latestBody = await latestResponse.json().catch(() => ({}));
+      if (!latestResponse.ok || !latestBody?.workspaceConfig) {
+        throw new Error(latestBody?.error || "Could not read the latest workspace before saving helper setup");
+      }
+      const next = upsertHelperSandbox(latestBody.workspaceConfig, draft);
+      const patch = { dataModel: next.dataModel };
+      const preflight = await fetch("/api/workspace/patch/preflight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const verdict = await preflight.json().catch(() => ({}));
+      if (!preflight.ok || verdict?.ok !== true) {
+        throw new Error(verdict?.error || "Helper setup did not pass governed preflight");
+      }
       const res = await fetch("/api/workspace", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dataModel: next.dataModel }),
+        body: JSON.stringify(patch),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Could not save helper setup");

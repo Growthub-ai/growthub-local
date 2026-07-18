@@ -1,5 +1,10 @@
 # Custom Local Model Training — Golden Path V1
-FAKE not done yet.
+Release proof is complete for the V1 customer journey: the real UI invokes the
+governed runner and records its machine result; an existing installed custom
+model then proves exact-tag invocation, governed workflow creation/test/publish,
+persisted output hash, invocation receipts, and trace harvest. The authoritative
+16-state browser pack is
+[`docs/proofs/custom-model-pipeline/states-16-real-v1/PROOF-INDEX.md`](./proofs/custom-model-pipeline/states-16-real-v1/PROOF-INDEX.md).
 The end-to-end, governed, no-code path that takes real workspace reasoning
 traces to a **real local custom model** (distilled corpus → QLoRA fine-tune →
 GGUF convert → quantize → Ollama serve → tuned-tag verify → workflow smoke),

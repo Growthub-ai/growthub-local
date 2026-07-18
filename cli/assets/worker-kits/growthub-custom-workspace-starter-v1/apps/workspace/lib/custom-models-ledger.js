@@ -339,6 +339,43 @@ export function buildSyntheticTraceProvenance(model, { seed = "" } = {}) {
   };
 }
 
+function safeWorkflowIdentity(value) {
+  return String(value || "custom-model")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "custom-model";
+}
+
+/** Resolve the durable serving identity. A mothership policy upgrades its
+ * implementation without forcing any workflow to be rewritten. */
+export function resolveCustomModelServingRegistry(model, { workspaceConfig } = {}) {
+  const rows = registryRowsOf(workspaceConfig);
+  const directId = String(model?.apiRegistryId || "").trim();
+  const modelId = String(model?.id || model?.name || "").trim();
+  const policyRow = rows.find((row) => {
+    const policy = row?.metadata?.mothershipProxy;
+    if (!policy) return false;
+    if (String(policy.workspaceSlug || "").trim() === modelId) return true;
+    return (Array.isArray(policy.routes) ? policy.routes : []).some(
+      (route) => String(route?.target || "") === "local-student"
+        && String(route?.registryId || "").trim() === directId,
+    );
+  }) || null;
+  const directRow = rows.find((row) => String(row?.integrationId || "").trim() === directId) || null;
+  return {
+    row: policyRow || directRow,
+    integrationId: String((policyRow || directRow)?.integrationId || directId),
+    mode: policyRow ? "mothership" : directRow ? "direct" : "missing",
+    available: Boolean(policyRow || (directRow && model?.verificationStatus === "verified")),
+  };
+}
+
+export function customModelWorkflowRowName(model, variant) {
+  const modelIdentity = safeWorkflowIdentity(model?.id || model?.name || model?.apiRegistryId);
+  return `custom-model-${modelIdentity}-${safeWorkflowIdentity(variant)}`;
+}
+
 /**
  * Real closed-loop workflow variants for a deployed local model — each is a
  * COMPLETE governed orchestration graph (input → model-call → terminal write)
@@ -350,16 +387,17 @@ export function buildSyntheticTraceProvenance(model, { seed = "" } = {}) {
  *
  * Variants:
  *  - `chat`               input → model-call → tool-result (writeLastResponse)
- *  - `recursive-learning` input → model-call → self-grade → write graded
+ *  - `recursive-learning` input → answer → self-grade → improve → write graded
  *                         training-traces (feedback closes back to the corpus)
  *  - `synthetic-scaling`  seed → model-call → write SYNTHETIC training-traces
  *                         (provenance-safe, review-gated)
- *  - `agentic`            input → model-call (agent: browserUse, depth) → result
- *  - `eval-vs-base`       holdout → tuned call + base call → compare → metrics
+ *  - `agentic`            input → plan → critique → final answer → result
+ *  - `eval-vs-base`       holdout → tuned + base → teacher judge → metrics
  */
 export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}) {
-  const registryRow = registryRowsOf(workspaceConfig).find((r) => String(r.integrationId || "") === String(model?.apiRegistryId || "")) || {};
-  const integrationId = String(model?.apiRegistryId || "");
+  const serving = resolveCustomModelServingRegistry(model, { workspaceConfig });
+  const registryRow = serving.row || {};
+  const integrationId = serving.integrationId;
   const tag = String(model?.localModel || model?.lastResponseModel || model?.name || "");
   const base = String(model?.baseModel || "");
   const call = (id, label, subtitle, extra = {}) => ({
@@ -367,7 +405,7 @@ export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}
     // No bodyTemplate: the runner builds the canonical chat-completions body
     // from the record's declared capability + this modelTag (JSON-safe for
     // any prompt; a bodyTemplate here would break on quoted/multiline input).
-    config: { registryId: integrationId, integrationId, modelTag: tag, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
+    config: { registryId: integrationId, integrationId, customModelId: String(model?.id || model?.name || ""), servingMode: serving.mode, modelTag: tag, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
   });
   const input = (samplePayload, label = "Prompt") => ({ id: "input", type: "input", label, subtitle: "Chat prompt", config: { inputMode: "manual", samplePayload, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } });
   const result = (id, label, cfg = {}) => ({ id, type: "tool-result", label, subtitle: cfg.subtitle || "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested", ...cfg } });
@@ -381,36 +419,42 @@ export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}
     "recursive-learning": graph(
       [input({ prompt: "Answer this workspace task, then we score and feed the best answers back into training." }, "Task"), call("model-call", `Custom model — ${tag}`),
         call("self-grade", "Self-grade (reward)", "score the answer 0-1", { bodyTemplate: "grade" }),
-        result("write-trace", "Write graded trace", { subtitle: "append to training-traces (feedback loop)", sourceRecordId: "training:model-training:workspace-local", outputMode: "training-trace" })],
-      [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "self-grade", passes: "provider-response" }, { from: "self-grade", to: "write-trace", passes: "graded" }],
+        call("improve", "Improve answer", "apply the grader feedback"),
+        result("write-trace", "Write graded trace", { subtitle: "append to training-traces (feedback loop)", sourceRecordId: `training:model-training:${String(model?.id || model?.name || "workspace-local")}`, outputMode: "training-trace" })],
+      [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "self-grade", passes: "provider-response" }, { from: "self-grade", to: "improve", passes: "grade-and-feedback" }, { from: "improve", to: "write-trace", passes: "improved-answer-and-grade" }],
     ),
     "synthetic-scaling": graph(
       [input({ prompt: "Generate a diverse governed-task/answer pair in this workspace's domain." }, "Seed"), call("model-call", `Custom model — ${tag}`),
-        result("write-synthetic", "Write synthetic trace", { subtitle: "training-traces · synthetic · ungraded · review-gated", sourceRecordId: "training:model-training:workspace-local", outputMode: "synthetic-trace", provenance: buildSyntheticTraceProvenance(model).provenance })],
+        result("write-synthetic", "Write synthetic trace", { subtitle: "training-traces · synthetic · ungraded · review-gated", sourceRecordId: `training:model-training:${String(model?.id || model?.name || "workspace-local")}`, outputMode: "synthetic-trace", provenance: buildSyntheticTraceProvenance(model).provenance })],
       [{ from: "input", to: "model-call", passes: "payload" }, { from: "model-call", to: "write-synthetic", passes: "provider-response" }],
     ),
     agentic: graph(
       [input({ prompt: "Complete this multi-step task using the local model as the agent brain." }, "Goal"),
-        call("agent", `Local agent — ${tag}`, "agent brain (local, loopback-only)", { permissions: { browserUse: true, depth: 2 }, runLocality: "local", networkPolicy: "loopback-only" }),
+        call("plan", `Plan — ${tag}`, "build assumptions and success criteria", { permissions: { browserUse: false, depth: 3 }, runLocality: "local", networkPolicy: "governed-registry-only" }),
+        call("critique", "Critique plan", "find unsafe assumptions and verification gaps"),
+        call("final", "Final answer", "apply the plan and critique"),
         result("result", "Agent result")],
-      [{ from: "input", to: "agent", passes: "payload" }, { from: "agent", to: "result", passes: "provider-response" }],
+      [{ from: "input", to: "plan", passes: "payload" }, { from: "plan", to: "critique", passes: "plan" }, { from: "critique", to: "final", passes: "plan-and-critique" }, { from: "final", to: "result", passes: "provider-response" }],
     ),
     "eval-vs-base": graph(
       [input({ prompt: "Run the holdout eval prompt against both the tuned model and its base." }, "Holdout"),
         call("tuned", `Tuned — ${tag}`), call("base", `Base — ${base || "base model"}`, `base ${base}`, { bodyTemplateModel: base }),
-        result("compare", "Compare & score", { subtitle: "tuned vs base metric deltas (holdout, excluded from training)", outputMode: "eval-metrics" })],
-      [{ from: "input", to: "tuned", passes: "payload" }, { from: "input", to: "base", passes: "payload" }, { from: "tuned", to: "compare", passes: "tuned-response" }, { from: "base", to: "compare", passes: "base-response" }],
+        call("judge", "Teacher judge", "scores tuned vs base using the governed teacher route"),
+        result("compare", "Verdict & evidence", { subtitle: "teacher-judged holdout result, excluded from training", outputMode: "eval-metrics" })],
+      [{ from: "input", to: "tuned", passes: "payload" }, { from: "input", to: "base", passes: "payload" }, { from: "tuned", to: "judge", passes: "tuned-response" }, { from: "base", to: "judge", passes: "base-response" }, { from: "judge", to: "compare", passes: "evaluation-verdict" }],
     ),
   };
 }
 
 /** The sandbox-environment row an action creates so the canvas can open + the
  *  sandbox-run lane can execute the variant. Governed row shape, no secrets. */
-export function buildCustomModelSandboxRow(model, variant, orchestrationConfig) {
-  const name = `custom-model-${variant}`;
+export function buildCustomModelSandboxRow(model, variant, orchestrationConfig, { workspaceConfig } = {}) {
+  const serving = resolveCustomModelServingRegistry(model, { workspaceConfig });
+  const name = customModelWorkflowRowName(model, variant);
   return {
     Name: name, lifecycleStatus: "draft", version: "1", runLocality: orchestrationConfig?.nodes?.some((n) => n.config?.networkPolicy === "loopback-only") ? "local" : "local",
-    schedulerRegistryId: String(model?.apiRegistryId || ""), runtime: "node", adapter: "local-process", agentHost: "", envRefs: "", networkAllow: "false", allowList: "",
+    customModelId: String(model?.id || model?.name || ""), workflowVariant: String(variant || ""), servingRegistryId: serving.integrationId,
+    schedulerRegistryId: serving.integrationId, runtime: "node", adapter: "local-process", agentHost: "", envRefs: "", networkAllow: "false", allowList: "",
     instructions: `Use the custom local model ${model?.localModel || model?.name || ""} in a ${variant} closed loop.`,
     command: "", timeoutMs: "30000", status: "draft", resolverTemplateId: "custom-http", connectorKind: "http", executionLane: "sandbox-local",
     orchestrationConfig: JSON.stringify(orchestrationConfig, null, 2),
@@ -429,41 +473,62 @@ export function buildCustomModelSandboxRow(model, variant, orchestrationConfig) 
 export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {}) {
   const verified = model?.verificationStatus === "verified";
   const complete = model?.evidenceState === "complete";
-  const bound = Boolean(model?.apiRegistryId);
+  const serving = resolveCustomModelServingRegistry(model, { workspaceConfig });
+  const bound = Boolean(serving.integrationId);
+  const usable = serving.available;
   const variants = buildCustomModelWorkflowVariants(model, { workspaceConfig });
-  const openHref = (variant) => `/workflows?object=${encodeURIComponent(CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(`custom-model-${variant}`)}&field=orchestrationConfig`;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const existingWorkflow = (variant) => {
+    const rowName = customModelWorkflowRowName(model, variant);
+    for (const object of objects) {
+      if (object?.objectType !== "sandbox-environment") continue;
+      const row = (Array.isArray(object.rows) ? object.rows : []).find((candidate) =>
+        (String(candidate?.customModelId || "") === String(model?.id || model?.name || "")
+          && String(candidate?.workflowVariant || "") === variant)
+        || (String(candidate?.Name || "") === rowName
+          && String(candidate?.servingRegistryId || candidate?.schedulerRegistryId || "") === serving.integrationId),
+      );
+      if (row) return { objectId: String(object.id || CUSTOM_MODEL_WORKFLOWS_OBJECT_ID), row };
+    }
+    return null;
+  };
   const defs = [
     { id: "use-in-workflow", variant: "chat", title: "Use in a workflow",
       whyNow: "Back any governed step with your model.",
-      blockedReason: verified ? "" : "verify the endpoint first",
+      blockedReason: usable ? "" : "connect a serving route first",
       proofProduced: "sandbox-environment row + orchestrationConfig; sandbox-run writes lastResponse (served == tuned tag)" },
     { id: "recursive-learning-loop", variant: "recursive-learning", title: "Recursive learning loop",
       whyNow: "Answer → self-grade → feed the best answers back into training.",
-      blockedReason: verified ? "" : "verify the endpoint first",
+      blockedReason: usable ? "" : "connect a serving route first",
       proofProduced: "graded training-traces appended (feedback), linked to model-invocation receipts" },
     { id: "synthetic-data-scaling", variant: "synthetic-scaling", title: "Scale synthetic training data",
       whyNow: "Grow the next-cycle corpus from the model — synthetic, review-gated.",
       blockedReason: complete ? "" : "finish one proven run (verified + workflow outputHash) first",
       proofProduced: "training-traces marked synthetic/ungraded/unaccepted with provenance" },
     { id: "local-agentic-workflow", variant: "agentic", title: "Local agentic workflow",
-      whyNow: "Run the model as a loopback-only agent brain over a multi-step task.",
-      blockedReason: verified ? "" : "verify the endpoint first",
-      proofProduced: "sandbox-environment (local, loopback-only, browser-use) bound to the model" },
+      whyNow: "Run a real plan → critique → final-answer reasoning loop.",
+      blockedReason: usable ? "" : "connect a serving route first",
+      proofProduced: "three model invocations and traces bound to one governed run" },
     { id: "eval-vs-base", variant: "eval-vs-base", title: "Evaluate vs base model",
       whyNow: "Prove the tuned model beats its base on a holdout set.",
-      blockedReason: bound ? "" : "no API Registry row bound",
+      blockedReason: verified ? "" : bound ? "verify the trained student before evaluating it against base" : "no API Registry row bound",
       proofProduced: "eval metrics (tuned vs base) on a holdout excluded from training" },
   ];
-  const actions = defs.map((d) => ({
-    ...d,
-    enabled: !d.blockedReason,
-    orchestrationConfig: variants[d.variant],
-    sandboxRow: buildCustomModelSandboxRow(model, d.variant, variants[d.variant]),
-    openHref: openHref(d.variant),
-    // Governed create path: the UI seeds this as a reviewable sandbox row
-    // (helper-proposal / PATCH), never a direct mutation from the cockpit.
-    applyIntent: "create_sandbox_workflow",
-  }));
+  const actions = defs.map((d) => {
+    const existing = existingWorkflow(d.variant);
+    const rowName = customModelWorkflowRowName(model, d.variant);
+    return {
+      ...d,
+      enabled: !d.blockedReason,
+      mode: existing ? "open" : (!d.blockedReason ? "create" : "blocked"),
+      orchestrationConfig: variants[d.variant],
+      sandboxRow: buildCustomModelSandboxRow(model, d.variant, variants[d.variant], { workspaceConfig }),
+      openHref: `/workflows?object=${encodeURIComponent(existing?.objectId || CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(existing ? String(existing.row?.Name || rowName) : rowName)}&field=orchestrationConfig`,
+      // Governed create path: the UI seeds this as a reviewable sandbox row
+      // (helper-proposal / PATCH), never a direct mutation from the cockpit.
+      applyIntent: "create_sandbox_workflow",
+    };
+  });
   return { actions, hasActions: actions.length > 0, ready: actions.filter((a) => a.enabled).length };
 }
 
@@ -486,17 +551,16 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
  *   open-in-canvas → chat (input → model-call → save response).
  */
 export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
-  const verified = model?.verificationStatus === "verified";
+  const serving = resolveCustomModelServingRegistry(model, { workspaceConfig });
   // Existing custom-model workflow rows across EVERY sandbox-environment object
   // (created here, in the canvas, or seeded) — matched by Name so a click on an
   // already-built workflow opens it instead of creating a duplicate.
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-  const existingNames = new Set();
+  const existingRows = [];
   for (const o of objects) {
     if (o?.objectType !== "sandbox-environment") continue;
     for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
-      const name = String(r?.Name || "").trim();
-      if (name) existingNames.add(name);
+      existingRows.push({ objectId: String(o.id || ""), row: r });
     }
   }
 
@@ -509,17 +573,22 @@ export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
   ];
 
   return defs.map((d) => {
-    const rowName = `custom-model-${d.variant}`;
-    const exists = existingNames.has(rowName);
-    const mode = !verified ? "blocked" : exists ? "open" : "create";
+    const rowName = customModelWorkflowRowName(model, d.variant);
+    const existing = existingRows.find(({ row }) =>
+      (String(row?.customModelId || "").trim() === String(model?.id || model?.name || "").trim()
+        && String(row?.workflowVariant || "").trim() === d.variant)
+      || (String(row?.Name || "").trim() === rowName
+        && String(row?.servingRegistryId || row?.schedulerRegistryId || "").trim() === serving.integrationId),
+    );
+    const mode = !serving.available ? "blocked" : existing ? "open" : "create";
     return {
       ...d,
       rowName,
       mode,
-      enabled: verified,
-      blockedReason: verified ? "" : "verify the endpoint first — the served tag must equal the tuned tag",
+      enabled: serving.available,
+      blockedReason: serving.available ? "" : "connect a real mothership, base, or verified student route first",
       // The canvas deep-link for the existing/created row (opens the config).
-      openHref: `/workflows?object=${encodeURIComponent(CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(rowName)}&field=orchestrationConfig`,
+      openHref: `/workflows?object=${encodeURIComponent(existing?.objectId || CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(existing ? String(existing.row?.Name || rowName) : rowName)}&field=orchestrationConfig`,
     };
   });
 }
@@ -537,9 +606,11 @@ export function deriveCustomModelFocusActions(model, { workspaceConfig } = {}) {
  * in the Registry / Data Model, so the cockpit can never write a divergent truth.
  */
 export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords } = {}) {
-  const registryRow = registryRowsOf(workspaceConfig).find(
+  const servingRegistry = resolveCustomModelServingRegistry(model, { workspaceConfig });
+  const directRegistryRow = registryRowsOf(workspaceConfig).find(
     (r) => String(r.integrationId || "") === String(model?.apiRegistryId || ""),
   ) || {};
+  const registryRow = servingRegistry.row || directRegistryRow;
 
   // Continuum — the harvest → train → evaluate → serve loop, derived from
   // the SAME governed evidence as everything else in this cockpit: the trace
@@ -587,22 +658,35 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
   };
 
   // Invocation receipts for THIS model — governed source records only.
-  const invocations = Object.keys(workspaceSourceRecords || {}).filter(
-    (k) => k.startsWith("model-invocation:")
-      && (!model?.apiRegistryId || k.includes(String(model.apiRegistryId))),
+  const invocationSources = Object.entries(workspaceSourceRecords || {}).filter(([key]) =>
+    key.startsWith("model-invocation:")
+      && (key.endsWith(`:${String(model?.id || model?.name || "")}`)
+        || (!model?.apiRegistryId || key.includes(String(model.apiRegistryId)))),
   );
+  const invocations = invocationSources.flatMap(([, source]) => Array.isArray(source?.records) ? source.records : []);
+  const lastInvocation = [...invocations].sort((a, b) => String(a?.completedAt || "").localeCompare(String(b?.completedAt || ""))).at(-1) || null;
 
   // Usage — governed telemetry only, the CeoCockpit convention: every number
   // is counted from a real stamped row/record; where no evidence exists the
   // UI shows "—", never an invented figure.
-  const registryId = String(model?.apiRegistryId || "");
+  const registryId = String(servingRegistry.integrationId || model?.apiRegistryId || "");
+  const boundRegistryIds = new Set([
+    registryId,
+    String(model?.apiRegistryId || ""),
+  ].filter(Boolean));
   const allObjects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   const boundWorkflows = [];
   for (const o of allObjects) {
     if (o?.objectType !== "sandbox-environment") continue;
     for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
       const graphs = `${r?.orchestrationConfig || ""}${r?.orchestrationDraftConfig || ""}`;
-      if (registryId && (String(r?.schedulerRegistryId || "") === registryId || graphs.includes(`"registryId": "${registryId}"`) || graphs.includes(`"registryId":"${registryId}"`))) {
+      const rowRegistryId = String(r?.servingRegistryId || r?.schedulerRegistryId || "");
+      const graphBindsModel = [...boundRegistryIds].some((id) =>
+        graphs.includes(`"registryId": "${id}"`) || graphs.includes(`"registryId":"${id}"`),
+      );
+      if ((String(r?.customModelId || "") === String(model?.id || model?.name || ""))
+        || boundRegistryIds.has(rowRegistryId)
+        || graphBindsModel) {
         boundWorkflows.push(r);
       }
     }
@@ -615,9 +699,22 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
   let promptTokens = 0;
   let completionTokens = 0;
   const countUsage = (u) => { if (u && typeof u === "object") { promptTokens += Number(u.prompt_tokens) || 0; completionTokens += Number(u.completion_tokens) || 0; } };
-  try { countUsage(JSON.parse(String(registryRow.lastResponse || "null"))?.usage); } catch { /* unstamped */ }
-  for (const r of provenRuns) {
-    try { countUsage(JSON.parse(JSON.parse(String(r.lastResponse || "null"))?.stdout || "null")?.usage); } catch { /* not a completion payload */ }
+  if (invocations.length > 0) {
+    // Canonical V1 telemetry: mothership invocation receipts are one record
+    // per real upstream call, so they avoid double-counting the same response
+    // when it is also stamped on a Registry row and sandbox run.
+    for (const invocation of invocations) {
+      promptTokens += Number(invocation?.promptTokens) || 0;
+      completionTokens += Number(invocation?.completionTokens) || 0;
+    }
+  } else {
+    // Backward compatibility for pre-mothership workspaces: retain their
+    // direct-student Registry stamp and proven workflow output as the only
+    // available usage evidence.
+    try { countUsage(JSON.parse(String(directRegistryRow.lastResponse || "null"))?.usage); } catch { /* unstamped */ }
+    for (const r of provenRuns) {
+      try { countUsage(JSON.parse(JSON.parse(String(r.lastResponse || "null"))?.stdout || "null")?.usage); } catch { /* not a completion payload */ }
+    }
   }
   // Tool-call surface: the model/agent call nodes across bound graphs.
   let toolCallNodes = 0;
@@ -666,8 +763,12 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
     invocations,
     continuum,
     usage,
-    registryBound: Boolean(model?.apiRegistryId),
-    served: model?.lastResponseModel || "",
+    registryBound: Boolean(registryId),
+    servingRegistryId: registryId,
+    availability: lastInvocation
+      ? { available: true, label: `Available · ${String(lastInvocation.route || "governed route")}`, servedModel: String(lastInvocation.servedModel || ""), completedAt: String(lastInvocation.completedAt || "") }
+      : { available: servingRegistry.available, label: servingRegistry.available ? "Ready · not invoked yet" : "Not available", servedModel: model?.lastResponseModel || "", completedAt: "" },
+    served: lastInvocation?.servedModel || model?.lastResponseModel || "",
     outputHash: model?.modelOutputHash || "",
   };
 }

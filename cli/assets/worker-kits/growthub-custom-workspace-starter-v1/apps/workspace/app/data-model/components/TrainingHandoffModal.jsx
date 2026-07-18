@@ -23,11 +23,10 @@
  *             → bind (open the smoke workflow; the proof checklist)
  *             → done (complete capability + identity chain)
  *
- * Compute substrate stays external (local runner / container / Ollama-Unsloth
- * / llama.cpp / compatible endpoint) but the lifecycle, the run receipts, the
- * artifact identity, the verification, and the user's processing experience
- * are all Growthub Local-controlled and provable. Writes happen ONLY through
- * the existing governed PATCH (dataModel allowlist).
+ * Compute runs through the workspace-owned local runner and its discovered
+ * Ollama/Unsloth/llama.cpp tooling. The lifecycle, receipts, artifact identity,
+ * routing policy, verification, and user experience remain Growthub-controlled
+ * and provable. Writes happen only through governed preflight + PATCH.
  */
 
 import { useMemo, useState, useEffect, useRef } from "react";
@@ -43,7 +42,7 @@ import {
   deriveProgressStages,
 } from "../../../lib/training-ledger.js";
 import { isCustomModelRegistryRow } from "../../../lib/custom-models-ledger.js";
-import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows } from "../../../lib/adapters/fine-tune-targets.js";
+import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows, rebindCustomModelServingIdentity } from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
@@ -54,6 +53,7 @@ import { deriveTrainingRemediation, deriveTrainingProofChecklist, deriveTraining
 import { deriveConfigureReadiness, labelStorageLocation } from "../../../lib/training-local-readiness.js";
 import { buildPreInitProbeScript, derivePreInitState, PREINIT_RUN_KIND, PREINIT_INTENT, OLLAMA_BIN_CANDIDATES } from "../../../lib/training-preinit-probe.js";
 import { PIPELINE_SCRIPTS } from "../../../lib/training-pipeline-scripts.js";
+import { buildMothershipProxyRow } from "../../../lib/distillation-fleet.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
@@ -268,6 +268,15 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "    if (nc !== pc) return nc > pc ? next : prev;",
     "    return (Number(next.pct) || 0) >= (Number(prev.pct) || 0) ? next : prev;",
     "  }",
+    "  async function patchDataModel(objects) {",
+    "    const nextPatch = { dataModel: { objects } };",
+    "    const pre = await fetch(`${WS}/api/workspace/patch/preflight`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(nextPatch) });",
+    "    const verdict = await pre.json();",
+    "    if (!pre.ok || verdict.ok !== true) throw new Error('governed preflight refused: ' + JSON.stringify(verdict.policy?.violations || verdict.schema?.errors || verdict));",
+    "    const written = await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(nextPatch) });",
+    "    if (!written.ok) throw new Error('governed PATCH refused: ' + (await written.text()).slice(0, 300));",
+    "    return written.json();",
+    "  }",
     "  async function stampRun(patch) {",
     "    try {",
     "      const r = await fetch(`${WS}/api/workspace`, { cache: 'no-store' }); const data = await r.json();",
@@ -277,8 +286,8 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "        if (patch && patch.progress) merged.progress = mono(row.progress, patch.progress);",
     "        return merged;",
     "      }) }) : o);",
-    "      await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
-    "    } catch (e) { console.error('stampRun failed', (e && e.message) || e); }",
+    "      await patchDataModel(objects);",
+    "    } catch (e) { console.error('stampRun failed', (e && e.message) || e); throw e; }",
     "  }",
     "  const gb = (bytes) => Math.floor(Number(bytes || 0) / 1e9);",
     "(async () => {",
@@ -432,7 +441,7 @@ function buildRunnerScript({ steps, stageRankById, artifactPath, modelTag, train
     "    if (o.objectType === 'api-registry') return { ...o, rows: (o.rows || []).map((row) => matchReg(row) ? ({ ...row, lastResponse: typeof chat === 'string' ? chat : JSON.stringify(chat || ''), lastTested: now, status: (served && served === P.modelTag) ? 'connected' : (row.status || 'registered') }) : row) };",
     "    return o;",
     "  });",
-    "  await fetch(`${WS}/api/workspace`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dataModel: { objects } }) });",
+    "  await patchDataModel(objects);",
     "  console.log('TRAINING_COMPLETE', sha, 'SERVED', served, 'BYTES', sourceBytes, '->', quantBytes);",
     "})().catch((e) => { console.error(e); process.exit(1); });",
   ].join("\n");
@@ -796,17 +805,27 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     // sequential patches inside one click handler (running receipt → runner
     // row → reconcile) would otherwise overwrite each other's rows and the
     // runner's own live stamps, pinning the bar at 0%.
-    let basis = workspaceConfig;
-    try {
-      const probe = await fetch("/api/workspace", { cache: "no-store" });
-      const data = await probe.json();
-      if (data?.workspaceConfig) basis = data.workspaceConfig;
-    } catch { /* offline blip — fall back to the render snapshot */ }
+    const probe = await fetch("/api/workspace", { cache: "no-store" });
+    if (!probe.ok) throw new Error(`workspace read refused: ${probe.status}`);
+    const data = await probe.json();
+    if (!data?.workspaceConfig) throw new Error("workspace read returned no governed config");
+    const basis = data.workspaceConfig;
     const objects = transform(basis?.dataModel?.objects || []);
+    const patch = { dataModel: { objects } };
+    const preflight = await fetch("/api/workspace/patch/preflight", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const verdict = await preflight.json().catch(() => ({}));
+    if (!preflight.ok || verdict?.ok !== true) {
+      const reasons = verdict?.policy?.violations || verdict?.schema?.errors || [];
+      throw new Error(`governed preflight refused: ${JSON.stringify(reasons).slice(0, 300)}`);
+    }
     const res = await fetch("/api/workspace", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ dataModel: { objects } }),
+      body: JSON.stringify(patch),
     });
     if (!res.ok) throw new Error(`governed PATCH refused: ${(await res.text()).slice(0, 200)}`);
     const applied = await res.json();
@@ -895,6 +914,19 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // agent/sandbox/workflow binds to via apiRegistryId.
       registryRow.kind = "custom-model";
       registryRow.capabilityType = "custom-model-inference";
+      const mothershipRow = buildMothershipProxyRow({
+        modelTag: reservedTag,
+        workspaceSlug: versionRow.Name,
+        studentRegistryId: integrationId,
+        fallbackBaseModel: baseModel,
+        fallbackBaseUrl: String(target.baseUrl || "http://127.0.0.1:11434").replace(/\/v1\/?$/, ""),
+      });
+      mothershipRow.status = "registered";
+      mothershipRow.method = "POST";
+      mothershipRow.authRef = "";
+      mothershipRow.connectorKind = "http";
+      mothershipRow.executionLane = "sandbox-local";
+      mothershipRow.description = `Governed serving identity for ${reservedTag}: verified student first, ${baseModel} fallback until promotion, every completed call harvested.`;
       const selectedIdx = new Set(selected.map(({ index }) => index));
 
       const fresh = await patchObjects((objects) => {
@@ -909,10 +941,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             // is one row forever — a re-prepare must refresh it, never
             // append a duplicate identity.
             const rows = Array.isArray(o.rows) ? o.rows : [];
-            const existingIdx = rows.findIndex((r) => String(r?.integrationId || "") === integrationId);
-            const nextRows = existingIdx >= 0
-              ? rows.map((r, i) => (i === existingIdx ? { ...r, ...registryRow } : r))
-              : [...rows, registryRow];
+            const upsert = (inputRows, nextRow) => {
+              const existingIdx = inputRows.findIndex((r) => String(r?.integrationId || "") === String(nextRow.integrationId || ""));
+              return existingIdx >= 0
+                ? inputRows.map((r, i) => (i === existingIdx ? { ...r, ...nextRow } : r))
+                : [...inputRows, nextRow];
+            };
+            const nextRows = upsert(upsert(rows, registryRow), mothershipRow);
             const withRow = { ...o, rows: nextRows };
             return { ...withRow, fieldSettings: applyGenomeFieldSettings(withRow) };
           }
@@ -923,7 +958,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         }
         if (!next.some((o) => o?.objectType === "api-registry")) {
           const cols = ["integrationId", "authRef", "baseUrl", "endpoint", "method", "status", "lastTested", "lastResponse", "entityTypes", "description", "connectorKind", "resolverTemplateId", "schemaVersion", "capabilities", "executionLane", "kind", "capabilityType", "modelTrainingRowId", "trainingRunId", "expectedModelTag"];
-          const apiObj = { id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } };
+          const apiObj = { id: "api-registry", label: "API Registry", source: "API Registry", objectType: "api-registry", icon: "Code", columns: cols, rows: [registryRow, mothershipRow], binding: { mode: "manual", source: "API Registry" }, relations: [], fieldSettings: { hidden: [], order: cols } };
           // Genome field visibility from the start — the custom-model record is
           // present, so its binding fields show; nango fields stay hidden.
           next.push({ ...apiObj, fieldSettings: applyGenomeFieldSettings(apiObj) });
@@ -1396,13 +1431,19 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       setBusyPct(55); setBusyMsg("Activating the tuned model in the Data Model + API Registry record…");
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(importedReceipt));
-        // Activate the tuned tag on the version row — the model is now real.
-        next = next.map((o) => {
-          if (o?.objectType !== TRAINING_OBJECT_TYPE) return o;
-          return { ...o, rows: (o.rows || []).map((r) => (String(r?.Name || "") === `${SLUG}-v${result.version}` ? { ...r, localModel: a.modelTag, status: "imported" } : r)) };
+        // Activate ONE exact served identity across the whole release chain.
+        // Attaching an already-installed model may legitimately choose a tag
+        // different from the draft reservation; the training row, direct
+        // registry record, and mothership policy must move together or the UI
+        // would claim activation while the first real invocation requests a
+        // nonexistent tag.
+        return rebindCustomModelServingIdentity(next, {
+          trainingRowId: `${SLUG}-v${result.version}`,
+          integrationId: result.integrationId,
+          modelTag: a.modelTag,
         });
-        return next;
       });
+      setResult((current) => current ? { ...current, modelTag: a.modelTag } : current);
       setBusyPct(100); setBusyMsg(`Model record ready — ${a.modelTag} is registered and callable. Verify the endpoint next.`);
       setPanel("verify");
     } catch (e) {
@@ -1644,8 +1685,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                     <div><dt>Base model</dt><dd>{baseModel || "—"}</dd></div>
                     <div><dt>Artifact location</dt><dd data-handoff-artifact-location="">{chosenFolder?.path || "—"}</dd></div>
                     <div><dt>Compute</dt><dd>{profile.runnerMode === "local-command" ? "Local · " + (modelChoices.runtimes[0]?.adapter || "ollama") : profile.runnerMode}</dd></div>
-                    <div><dt>Est. time</dt><dd>~{Math.max(5, Math.round(selected.length * 3.5))} minutes</dd></div>
-                    <div><dt>Est. cost</dt><dd>$0.00 (local)</dd></div>
+                    <div><dt>Runtime</dt><dd>Measured after machine preflight</dd></div>
+                    <div><dt>Provider charge</dt><dd>None · uses your local compute</dd></div>
                   </dl>
                   <p className="dm-api-action-card-note" data-handoff-resource-floor={`${floor.ramGB}/${floor.diskGB}/${floor.vramGB}`}>
                     One click runs training, quantization, and local serving. Needs ~{floor.ramGB} GB RAM · {floor.diskGB} GB disk{floor.vramGB ? ` · ${floor.vramGB} GB VRAM` : ""} — checked before anything runs. It must reply as <strong>{runConfig.verification.expectedModel}</strong> to verify.
@@ -1945,16 +1986,13 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               <div className="training-handoff-action-row">
                 <a className="dm-btn-outline" href="/data-model?object=model-training-run" data-train-open-runs="">Open in Runs</a>
                 {trainPhase !== "running" ? (
-                  <button type="button" className="dm-btn-primary" data-train-start="" data-train-ready={startReadiness.canStart ? "true" : "false"} data-train-ready-pct={startReadiness.readyPct} onClick={startTraining} disabled={trainPhase === "starting" || !startReadiness.canStart}>
-                    {trainPhase === "starting" ? "Starting…" : startReadiness.canStart ? "Start training" : `Locked · pre-init ${startReadiness.readyPct}%`}
+                  <button type="button" className="dm-btn-primary" data-train-start="" data-train-ready={startReadiness.canStart ? "true" : "false"} data-train-ready-pct={startReadiness.readyPct} onClick={startTraining} disabled={trainPhase === "starting" || !startReadiness.canStart || !Array.isArray(runConfig.steps) || runConfig.steps.length === 0}>
+                    {trainPhase === "starting" ? "Starting…" : Array.isArray(runConfig.steps) && runConfig.steps.length === 0 ? "Choose a training pipeline" : startReadiness.canStart ? "Start training" : `Locked · pre-init ${startReadiness.readyPct}%`}
                   </button>
                 ) : (
-                  <>
-                    <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={() => { startRunPolling(new Date().toISOString()); triggerTrainingRunner(); }}>
-                      Start runner
-                    </button>
-                    <button type="button" className="dm-btn-ghost" data-train-to-import="" onClick={() => setPanel("import")}>Attach existing model result</button>
-                  </>
+                  <button type="button" className="dm-btn-primary" data-train-retry-runner="" onClick={() => { startRunPolling(new Date().toISOString()); triggerTrainingRunner(); }}>
+                    Start runner
+                  </button>
                 )}
               </div>
             </div>
@@ -1966,19 +2004,35 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <div className="dm-helper-toolcall-title dm-swarm-card-title">Attach your model result</div>
                 <div className="dm-helper-stream dm-swarm-card-desc">What did training produce? Growthub Local records its identity so your model is provable, not assumed.</div>
                 <label className="dm-run-console__hint" style={{ display: "block", marginTop: 8 }}>Result type{" "}
-                  <select value={artifact.type} onChange={(e) => setArtifact({ ...artifact, type: e.target.value })} data-import-type="">
+                  <select value={artifact.type} onChange={(e) => {
+                    const type = e.target.value;
+                    const discoveredTag = type === "ollama-model" && availableBases?.length ? availableBases[0] : artifact.modelTag;
+                    setArtifact({ ...artifact, type, modelTag: discoveredTag, ...(type === "ollama-model" ? { path: "", sha256: "" } : {}) });
+                  }} data-import-type="">
                     {profile.outputs.concat(["openai-compatible-endpoint", "ollama-model"]).filter((v, i, a) => a.indexOf(v) === i).map((t) => <option key={t} value={t}>{ARTIFACT_TYPE_LABELS[t] || t}</option>)}
                   </select>
                 </label>
                 <label className="dm-run-console__hint" style={{ display: "block" }}>Model name{" "}
-                  <input type="text" value={artifact.modelTag} onChange={(e) => setArtifact({ ...artifact, modelTag: e.target.value })} data-import-tag="" />
+                  {artifact.type === "ollama-model" && availableBases?.length ? (
+                    <select value={artifact.modelTag} onChange={(e) => setArtifact({ ...artifact, modelTag: e.target.value, path: "", sha256: "" })} data-import-tag="">
+                      <option value="">Choose an installed model</option>
+                      {availableBases.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" value={artifact.modelTag} onChange={(e) => setArtifact({ ...artifact, modelTag: e.target.value })} data-import-tag="" />
+                  )}
                 </label>
-                <label className="dm-run-console__hint" style={{ display: "block" }}>File path{" "}
-                  <input type="text" value={artifact.path} placeholder="./artifacts/…" onChange={(e) => setArtifact({ ...artifact, path: e.target.value })} data-import-path="" />
-                </label>
-                <label className="dm-run-console__hint" style={{ display: "block" }}>File hash (sha256){" "}
-                  <input type="text" value={artifact.sha256} onChange={(e) => setArtifact({ ...artifact, sha256: e.target.value })} data-import-sha="" />
-                </label>
+                {deriveArtifactState(artifact).tagOnly ? null : (
+                  <>
+                    <label className="dm-run-console__hint" style={{ display: "block" }}>Model file{" "}
+                      <input type="text" value={artifact.path} placeholder="./artifacts/…" onChange={(e) => setArtifact({ ...artifact, path: e.target.value })} data-import-path="" />
+                    </label>
+                    <label className="dm-run-console__hint" style={{ display: "block" }}>File identity (sha256){" "}
+                      <input type="text" value={artifact.sha256} onChange={(e) => setArtifact({ ...artifact, sha256: e.target.value })} data-import-sha="" />
+                    </label>
+                  </>
+                )}
+                {artifact.type === "ollama-model" ? <div className="dm-run-console__hint">Installed models are discovered from this machine; no file path or secret is needed.</div> : null}
                 <div className="dm-run-console__hint" data-import-state={deriveArtifactState(artifact).identified ? "ok" : "incomplete"}>
                   {deriveArtifactState(artifact).identified ? "Your model result is provable — ready to attach." : deriveArtifactState(artifact).reason}
                 </div>
@@ -1991,7 +2045,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 </div>
               ) : null}
               <button type="button" className="training-action-primary" data-import-confirm="" disabled={busy || !deriveArtifactState(artifact).identified} onClick={() => importArtifact()}>
-                {busy ? "Setting up your model record…" : "Attach model & activate"}
+                {busy ? "Setting up your model record…" : artifact.type === "ollama-model" ? "Use installed model & activate" : "Attach model & activate"}
               </button>
             </div>
           )}

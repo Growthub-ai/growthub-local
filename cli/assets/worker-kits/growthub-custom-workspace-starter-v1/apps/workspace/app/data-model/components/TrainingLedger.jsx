@@ -103,19 +103,22 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
     // Evidence parity with the page: config-only callers still fetch records.
     if (providedConfig && providedRecords) return;
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch("/api/workspace");
+        const res = await fetch("/api/workspace", { signal: controller.signal });
+        if (!res.ok) throw new Error(`workspace request failed (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
         if (data?.workspaceConfig) setWorkspaceConfig(data.workspaceConfig);
         if (data?.workspaceSourceRecords) setWorkspaceSourceRecords(data.workspaceSourceRecords);
-      } catch {
+      } catch (fetchError) {
+        if (fetchError?.name === "AbortError") return;
         if (!cancelled) setError("Workspace config unavailable — start the workspace app.");
       }
     })();
-    return () => { cancelled = true; };
-  }, [providedConfig]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [providedConfig, providedRecords]);
 
   const state = deriveTrainingLedgerState({ workspaceConfig, workspaceSourceRecords });
   const pipeline = deriveDistillationPipelineState({ workspaceConfig });
@@ -148,6 +151,28 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
   const modelLabel = activeModelLabel(state.models, workspaceConfig);
   const modelOptions = modelOptionsFromDataModel(workspaceConfig);
   const canAdvance = pipeline.ready;
+  const applyDataModelObjects = async (objects) => {
+    const patch = { dataModel: { ...workspaceConfig.dataModel, objects } };
+    const preflight = await fetch("/api/workspace/patch/preflight", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const verdict = await preflight.json().catch(() => ({}));
+    if (!preflight.ok || verdict?.ok !== true) {
+      const reasons = verdict?.policy?.violations || verdict?.schema?.errors || [];
+      throw new Error(`governed preflight refused: ${JSON.stringify(reasons).slice(0, 240)}`);
+    }
+    const res = await fetch("/api/workspace", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "governed PATCH refused");
+    setWorkspaceConfig(data.workspaceConfig);
+    return data.workspaceConfig;
+  };
   const updateModelSelection = async (nextModel) => {
     if (!nextModel || !workspaceConfig?.dataModel) return;
     const objects = (workspaceConfig.dataModel.objects || []).map((object) => {
@@ -161,18 +186,12 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
         )),
       };
     });
-    const res = await fetch("/api/workspace", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ dataModel: { ...workspaceConfig.dataModel, objects } }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data?.error || "Model selection update failed.");
-      return;
+    try {
+      await applyDataModelObjects(objects);
+      setError("");
+    } catch (updateError) {
+      setError(updateError?.message || "Model selection update failed.");
     }
-    setWorkspaceConfig(data.workspaceConfig);
-    setError("");
   };
 
   // First-use setup checklist — the cockpit bootstrap pattern (mirrors CEO).
@@ -195,15 +214,39 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
     if (!apiRegistryId) return;
     setBusy("invoke"); setError("");
     try {
-      const res = await fetch("/api/workspace/test-source", {
+      const current = await fetch("/api/workspace", { cache: "no-store" });
+      const currentBody = await current.json().catch(() => ({}));
+      if (!current.ok || !currentBody?.workspaceConfig) throw new Error("Could not read the registered model endpoint");
+      const registryObject = (currentBody.workspaceConfig.dataModel?.objects || []).find((object) => object?.objectType === "api-registry");
+      const registryRecord = (registryObject?.rows || []).find((row) => String(row?.integrationId || "") === String(apiRegistryId));
+      if (!registryRecord) throw new Error(`API Registry row ${apiRegistryId} was not found`);
+      const res = await fetch("/api/workspace/test-api-record", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ integrationId: apiRegistryId }),
+        body: JSON.stringify({ record: registryRecord }),
       });
-      if (!res.ok) throw new Error((await res.text()).slice(0, 200));
-      // Refresh so the checklist re-derives from the stamped real response.
-      const probe = await fetch("/api/workspace", { cache: "no-store" });
-      const fresh = await probe.json();
-      if (fresh?.workspaceConfig) setWorkspaceConfig(fresh.workspaceConfig);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload?.ok !== true) throw new Error(payload?.error || `Model endpoint returned HTTP ${payload?.status || res.status}`);
+      const testedAt = new Date().toISOString();
+      const objects = (currentBody.workspaceConfig.dataModel?.objects || []).map((object) => object?.objectType !== "api-registry"
+        ? object
+        : {
+          ...object,
+          rows: (object.rows || []).map((row) => String(row?.integrationId || "") !== String(apiRegistryId)
+            ? row
+            : { ...row, status: "connected", lastTested: testedAt, lastResponse: JSON.stringify(payload.response ?? {}) }),
+        });
+      const patch = { dataModel: { ...currentBody.workspaceConfig.dataModel, objects } };
+      const preflight = await fetch("/api/workspace/patch/preflight", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(patch),
+      });
+      const verdict = await preflight.json().catch(() => ({}));
+      if (!preflight.ok || verdict?.ok !== true) throw new Error("Model test proof did not pass governed preflight");
+      const write = await fetch("/api/workspace", {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch),
+      });
+      const fresh = await write.json().catch(() => ({}));
+      if (!write.ok || !fresh?.workspaceConfig) throw new Error(fresh?.error || "Could not save model test proof");
+      setWorkspaceConfig(fresh.workspaceConfig);
       if (fresh?.workspaceSourceRecords) setWorkspaceSourceRecords(fresh.workspaceSourceRecords);
     } catch (e) {
       setError(`Invoke failed — start your local model endpoint and retry. ${e instanceof Error ? e.message : String(e)}`);
@@ -217,13 +260,7 @@ export default function TrainingLedger({ workspaceConfig: providedConfig, worksp
     if (!objects) { setError("Workspace helper row not found — cannot stamp completion."); return; }
     setBusy("complete"); setError("");
     try {
-      const res = await fetch("/api/workspace", {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dataModel: { ...workspaceConfig.dataModel, objects } }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "completion PATCH refused");
-      setWorkspaceConfig(data.workspaceConfig);
+      await applyDataModelObjects(objects);
     } catch (e) {
       setError(`Could not complete setup. ${e instanceof Error ? e.message : String(e)}`);
     } finally { setBusy(""); }

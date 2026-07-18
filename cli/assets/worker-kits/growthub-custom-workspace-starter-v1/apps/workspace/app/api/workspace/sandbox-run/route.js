@@ -92,11 +92,95 @@ import {
 // Single canonical secret resolver — shared with the serverless add-on lane so
 // both run lanes resolve stored env tokens identically (no copy-pasted logic).
 import { readServerSecret } from "@/lib/server-secrets";
+import {
+  buildTraceCaptureReceiptFields,
+  distillationTracesSourceKey,
+  TRACE_CAPTURE_RUN_KIND
+} from "@/lib/distillation-gateway";
+import { trainingRunSourceKey } from "@/lib/training-run-receipts";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
   const text = String(value ?? "").trim().toLowerCase();
   return ["true", "1", "on", "yes"].includes(text);
+}
+
+async function persistCustomModelExecutionEvidence(response, ranAt) {
+  const evidence = response?.adapterMeta?.customModel;
+  const invocationsToAppend = Array.isArray(evidence?.invocations) && evidence.invocations.length
+    ? evidence.invocations
+    : evidence?.invocation ? [evidence.invocation] : [];
+  const tracesToAppend = Array.isArray(evidence?.traces) && evidence.traces.length
+    ? evidence.traces
+    : evidence?.trace ? [evidence.trace] : [];
+  const invocation = invocationsToAppend[0];
+  const trace = tracesToAppend[0];
+  if (!invocation || !trace) return null;
+
+  const modelId = String(invocation.modelId || "workspace-local").trim() || "workspace-local";
+  const policyRegistryId = String(invocation.policyRegistryId || modelId).trim() || modelId;
+  const invocationSourceId = `model-invocation:${policyRegistryId}:${modelId}`;
+  const invocationEntry = await readWorkspaceSourceRecords(invocationSourceId);
+  const priorInvocations = Array.isArray(invocationEntry?.records) ? invocationEntry.records : [];
+  const invocations = [...priorInvocations, ...invocationsToAppend].slice(-500);
+  await writeWorkspaceSourceRecords(invocationSourceId, invocations, {
+    integrationId: policyRegistryId,
+    fetchedAt: ranAt,
+  });
+
+  const traceSourceId = distillationTracesSourceKey(modelId);
+  const traceEntry = await readWorkspaceSourceRecords(traceSourceId);
+  const priorTraces = Array.isArray(traceEntry?.records) ? traceEntry.records : [];
+  const traces = [...priorTraces, ...tracesToAppend].slice(-5000);
+  await writeWorkspaceSourceRecords(traceSourceId, traces, {
+    integrationId: policyRegistryId,
+    fetchedAt: ranAt,
+  });
+
+  const receiptSourceId = trainingRunSourceKey(modelId);
+  const receiptEntry = await readWorkspaceSourceRecords(receiptSourceId);
+  const priorReceipts = Array.isArray(receiptEntry?.records) ? receiptEntry.records : [];
+  const distillation = buildTraceCaptureReceiptFields({
+    traces,
+    teacherModel: String(trace.teacherModel || ""),
+    teacherProviderId: String(trace.teacherProviderId || ""),
+    clusterId: String(trace.clusterId || ""),
+  });
+  const captureReceipt = {
+    schema: "growthub-local-model-training-run-v1",
+    trainingRunId: `capture_${String(response.runId || Date.now().toString(36))}`,
+    modelTrainingRowId: modelId,
+    status: "completed",
+    runKind: TRACE_CAPTURE_RUN_KIND,
+    capturedAt: ranAt,
+    invocationSourceId,
+    distillation,
+  };
+  await writeWorkspaceSourceRecords(receiptSourceId, [...priorReceipts, captureReceipt].slice(-500), {
+    integrationId: modelId,
+    fetchedAt: ranAt,
+  });
+
+  let evaluationSourceId = "";
+  if (evidence?.evaluation && typeof evidence.evaluation === "object") {
+    evaluationSourceId = `model-evaluation:${policyRegistryId}:${modelId}`;
+    const evaluationEntry = await readWorkspaceSourceRecords(evaluationSourceId);
+    const priorEvaluations = Array.isArray(evaluationEntry?.records) ? evaluationEntry.records : [];
+    await writeWorkspaceSourceRecords(evaluationSourceId, [
+      ...priorEvaluations,
+      { schema: "growthub-custom-model-evaluation-v1", runId: response.runId, evaluatedAt: ranAt, ...evidence.evaluation },
+    ].slice(-250), { integrationId: policyRegistryId, fetchedAt: ranAt });
+  }
+
+  return {
+    invocationSourceId,
+    traceSourceId,
+    receiptSourceId,
+    invocationCount: invocations.length,
+    traceCount: traces.length,
+    traceRootHash: distillation.traceRootHash,
+    evaluationSourceId: evaluationSourceId || undefined,
+  };
 }
 
 function normalizeRunLocality(row) {
@@ -637,6 +721,8 @@ async function executeSandboxRun(body, { emit } = {}) {
         command,
         timeoutMs,
         sandboxName: rowForRun.Name || name,
+        customModelId: String(rowForRun.customModelId || ""),
+        workflowVariant: String(rowForRun.workflowVariant || "chat"),
         onEvent: emit
       }
     });
@@ -775,6 +861,13 @@ async function executeSandboxRun(body, { emit } = {}) {
       persisted = true;
     } catch (error) {
       persistError = error?.message || "failed to persist sandbox run record";
+    }
+
+    try {
+      const customModelEvidence = await persistCustomModelExecutionEvidence(response, ranAt);
+      if (customModelEvidence) response.customModelEvidence = customModelEvidence;
+    } catch (error) {
+      persistError = persistError || error?.message || "failed to persist custom-model execution evidence";
     }
 
     try {

@@ -18,6 +18,7 @@ import {
   deriveCustomModelsState,
   buildCustomModelWorkflowVariants,
   buildCustomModelSandboxRow,
+  resolveCustomModelServingRegistry,
   CUSTOM_MODEL_WORKFLOWS_OBJECT_ID,
   CUSTOM_MODEL_WORKFLOWS_LABEL,
 } from "./custom-models-ledger.js";
@@ -133,12 +134,18 @@ export function normalizeCustomModelWorkflowProposal(proposal, workspaceConfig, 
   if (!model) {
     return { ok: false, config: workspaceConfig, artifact: null, summary: "", error: `no custom model "${modelId}" in this workspace` };
   }
-  // Causation gate — an unverified/base-model endpoint can never bind a workflow.
-  if (model.verificationStatus !== "verified") {
+  // The durable custom-model identity may be usable through a real mothership
+  // or base route before its student is trained. Direct endpoints still need
+  // tuned-tag verification. Student-only evaluation remains gated below.
+  const serving = resolveCustomModelServingRegistry(model, { workspaceConfig });
+  if (!serving.available) {
     return {
       ok: false, config: workspaceConfig, artifact: null, summary: "",
-      error: "endpoint not verified — the served tag must equal the tuned tag before a workflow can bind",
+      error: "no real serving route is available — connect the mothership, local base, or verified student first",
     };
+  }
+  if (variant === "eval-vs-base" && model.verificationStatus !== "verified") {
+    return { ok: false, config: workspaceConfig, artifact: null, summary: "", error: "verify the trained student before evaluating it against base" };
   }
 
   const variants = buildCustomModelWorkflowVariants(model, { workspaceConfig });
@@ -147,7 +154,7 @@ export function normalizeCustomModelWorkflowProposal(proposal, workspaceConfig, 
     return { ok: false, config: workspaceConfig, artifact: null, summary: "", error: `unknown variant "${variant}"` };
   }
 
-  const row = buildCustomModelSandboxRow(model, variant, orchestrationConfig);
+  const row = buildCustomModelSandboxRow(model, variant, orchestrationConfig, { workspaceConfig });
   const nextConfig = upsertCustomModelWorkflowRow(workspaceConfig, row);
   return {
     ok: true,
