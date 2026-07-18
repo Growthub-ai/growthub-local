@@ -51,7 +51,10 @@ function runRowsFromConfig(workspaceConfig, slug) {
     // A pre-init probe receipt proves readiness to invoke — it is NOT a
     // training run, so it never enters the run lifecycle (a blocked probe
     // must not read as a failed training run on /training or /custom-models).
+    // A trace-capture receipt (distillation harvest) is evidence of corpus
+    // growth, not of training compute, and is excluded for the same reason.
     .filter((r) => String(r?.runKind || "") !== "preinit-probe")
+    .filter((r) => String(r?.runKind || "") !== "trace-capture")
     .map(normalizeRunRow);
 }
 
@@ -121,6 +124,10 @@ export function normalizeProgress(p) {
     step: Number.isFinite(Number(p.step)) ? Number(p.step) : undefined,
     loss: Number.isFinite(Number(p.loss)) ? Number(p.loss) : undefined,
     checkpointPath: p.checkpointPath ? String(p.checkpointPath) : undefined,
+    // Distillation sub-stage riding a canonical stage (e.g. `curation` inside
+    // `distilling`). Ordering within the stage is carried by `counter`, so the
+    // monotonic merge needs no new rules to stay regression-proof.
+    subStageId: p.subStageId ? String(p.subStageId) : undefined,
   };
 }
 
@@ -189,8 +196,13 @@ export function parseTrainingRunReceipts(workspaceSourceRecords, slug = "workspa
  */
 export function deriveTrainingRunState({ workspaceConfig, workspaceSourceRecords, slug = "workspace-local", knownExportIds = [] } = {}) {
   // Merge BOTH write lanes: CLI-owned sidecar history + app-owned governed
-  // data-model rows. Either path can advance the lifecycle.
-  const receipts = [...parseTrainingRunReceipts(workspaceSourceRecords, slug), ...runRowsFromConfig(workspaceConfig, slug)];
+  // data-model rows. Either path can advance the lifecycle. Non-training
+  // receipt kinds (preinit-probe readiness, trace-capture harvests) are
+  // evidence of other things and never enter the RUN lifecycle, whichever
+  // lane stamped them.
+  const NON_RUN_KINDS = new Set(["preinit-probe", "trace-capture"]);
+  const receipts = [...parseTrainingRunReceipts(workspaceSourceRecords, slug), ...runRowsFromConfig(workspaceConfig, slug)]
+    .filter((r) => !NON_RUN_KINDS.has(String(r?.runKind || "")));
   if (receipts.length === 0) {
     return { present: false, runState: "none", runs: [], latest: null, stage: "none", stageRank: 0, datasetExportLinked: false, artifact: deriveArtifactState(null), failed: false, reason: "no training run recorded" };
   }
@@ -263,6 +275,8 @@ export function buildTrainingRunReceipt({
   progress = null,
   preflight = null,
   blockedReason = "",
+  runKind = "",
+  distillation = null,
   now = "",
 } = {}) {
   const at = startedAt || now || new Date().toISOString();
@@ -299,6 +313,56 @@ export function buildTrainingRunReceipt({
     progress: normalizeProgress(progress),
     preflight: preflight && typeof preflight === "object" ? preflight : null,
     blockedReason: String(blockedReason || "").trim(),
+    // Non-training receipt kinds ("preinit-probe", "trace-capture") are
+    // excluded from the run lifecycle by the readers; "" = a training run.
+    runKind: String(runKind || "").trim(),
+    distillation: normalizeDistillationBlock(distillation),
     receipts: Array.isArray(receipts) ? receipts.map(String) : [],
+  };
+}
+
+/**
+ * Normalize the optional distillation evidence block a receipt may carry —
+ * the Kimi-teacher → student flywheel fields. Every field is optional and
+ * numeric fields are clamped; a receipt with no distillation evidence carries
+ * `null` so pre-flywheel receipts and readers are entirely unaffected.
+ */
+export function normalizeDistillationBlock(d) {
+  if (!d || typeof d !== "object") return null;
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const pct = (v) => Math.max(0, Math.min(100, num(v)));
+  return {
+    teacherModel: String(d.teacherModel || "").trim(),
+    teacherProviderId: String(d.teacherProviderId || "").trim(),
+    clusterId: String(d.clusterId || "").trim(),
+    traceRootHash: String(d.traceRootHash || "").trim(),
+    traceCount: Math.max(0, Math.floor(num(d.traceCount))),
+    // Which realization this receipt trained: "dense" | "sparse-moe".
+    studentArchitecture: String(d.studentArchitecture || "").trim(),
+    // Flywheel generation: 1 = first student from harvested traces; n+1 =
+    // a student retrained on traces its predecessor served.
+    generation: Math.max(0, Math.floor(num(d.generation))),
+    sparsity: d.sparsity && typeof d.sparsity === "object" ? {
+      activeExpertsPct: pct(d.sparsity.activeExpertsPct),
+      trainableParamsReductionPct: pct(d.sparsity.trainableParamsReductionPct),
+      estimatedFlopsSavedPct: pct(d.sparsity.estimatedFlopsSavedPct),
+      routingHistogramHash: String(d.sparsity.routingHistogramHash || "").trim(),
+      selectedExperts: Math.max(0, Math.floor(num(d.sparsity.selectedExperts))),
+      totalExperts: Math.max(0, Math.floor(num(d.sparsity.totalExperts))),
+    } : null,
+    benchmarkWins: d.benchmarkWins && typeof d.benchmarkWins === "object" ? {
+      total: Math.max(0, Math.floor(num(d.benchmarkWins.total))),
+      wins: Math.max(0, Math.floor(num(d.benchmarkWins.wins))),
+      winRatePct: pct(d.benchmarkWins.winRatePct),
+      latencyDeltaPct: num(d.benchmarkWins.latencyDeltaPct),
+      costDeltaPct: num(d.benchmarkWins.costDeltaPct),
+      promoted: d.benchmarkWins.promoted === true,
+    } : null,
+    delta: d.delta && typeof d.delta === "object" ? {
+      path: String(d.delta.path || "").trim(),
+      sha256: String(d.delta.sha256 || "").trim(),
+      deltaBytes: Math.max(0, Math.floor(num(d.delta.deltaBytes))),
+      fullFineTuneBytes: Math.max(0, Math.floor(num(d.delta.fullFineTuneBytes))),
+    } : null,
   };
 }

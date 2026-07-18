@@ -134,6 +134,10 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     // complete.
     let evidenceState = "recorded";
     if (registryRow) evidenceState = "registered";
+    // Deployed: the endpoint is live (a stamped test response or a connected
+    // status exists) but the tuned tag is NOT proven — a base-model response
+    // reaches here and never higher (verifyTunedResponse demotion semantics).
+    if (registryRow && (String(registryRow.status || "") === "connected" || String(registryRow.lastResponse || "").trim())) evidenceState = "deployed";
     if (m.bondedRegistry?.validated) evidenceState = "verified";
     if (m.bondedRegistry?.validated && sandbox) evidenceState = "sandbox-ready";
     if (m.bondedRegistry?.validated && sandbox?.runId && sandbox?.runOk && sandbox?.outputHash) evidenceState = "complete";
@@ -141,7 +145,7 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     const nextAction = evidenceState === "complete" ? "Run again"
       : evidenceState === "sandbox-ready" ? (sandbox?.runId && sandbox?.runOk ? "Smoke ran — output hash missing; re-run to capture proof" : "Run")
         : evidenceState === "verified" ? "Create/Open workflow"
-          : evidenceState === "registered" ? "Verify endpoint"
+          : evidenceState === "deployed" || evidenceState === "registered" ? "Verify endpoint"
             : "Open Training";
 
     return {

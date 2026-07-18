@@ -41,14 +41,15 @@ export const HELPER_COMMANDS = [
     view: "swarm-list"
   },
   {
+    // The training ledger is the JOURNEY surface (16-state loop, state 00
+    // enters here); /custom-models is the post-proof cockpit. Both stay
+    // first-class: hiding /training would orphan the no-code entry point.
     name: "/training",
     label: "Training",
-    description: "Deprecated — use /custom-models for the model path",
+    description: "Open the training ledger — corpus, runs, and custom model training",
     scope: "workspace",
     mutates: false,
-    view: "training",
-    deprecated: true,
-    hidden: true
+    view: "training"
   },
   {
     name: "/custom-models",
@@ -56,7 +57,10 @@ export const HELPER_COMMANDS = [
     description: "Open the model path — training, verification, and custom model operations",
     scope: "workspace",
     mutates: false,
-    view: "custom-models"
+    view: "custom-models",
+    // Evidence-gated: visible only when deriveCustomModelsState proves at
+    // least one model/registry/invocation row exists (never hardcoded on).
+    requiresEvidence: "custom-models"
   },
   {
     name: "/swarm",

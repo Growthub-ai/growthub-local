@@ -58,6 +58,58 @@ export const TRAINING_RUNTIME_PROFILES = [
     verification: { type: "api-registry-chat-completion", expectedModel: "{{outputModelTag}}" },
   },
   {
+    // Sprint 1 flywheel profile: dense student distilled FROM HARVESTED
+    // TEACHER TRACES. Trains offline from the governed corpus at
+    // {{datasetPath}} (teacher logits/reasoning ride inside the traces), so
+    // no network is required at train time; {{teacherModel}} is recorded
+    // provenance the receipt stamps. Same argv-only, allowlisted posture.
+    id: "kimi-distill-dense-student",
+    label: "Distill dense student from teacher traces (one click)",
+    description:
+      "Train a dense student on the harvested teacher reasoning traces (KL-guided when teacher logits are present, plain QLoRA otherwise), then merge, convert, quantize, and serve — the full flywheel pipeline sized to this machine.",
+    input: "growthub-distillation-trace-v1.jsonl",
+    outputs: ["ollama-model"],
+    requires: ["baseModel", "datasetPath", "outputModelTag"],
+    runnerMode: "local-command",
+    steps: [
+      { stageId: "distilling", label: "Curating teacher traces", bin: "python", args: ["distill_student.py", "--curate-only", "--dataset", "{{datasetPath}}", "--out", "{{artifactPath}}/corpus"] },
+      { stageId: "fine-tuning", label: "Training dense student", bin: "python", args: ["distill_student.py", "--dataset", "{{datasetPath}}", "--base", "{{baseModel}}", "--teacher", "{{teacherModel}}", "--out", "{{artifactPath}}/adapter"] },
+      { stageId: "fine-tuning", label: "Extracting adapter delta", bin: "python", args: ["extract_delta.py", "--adapter", "{{artifactPath}}/adapter", "--out", "{{artifactPath}}/delta"] },
+      { stageId: "fine-tuning", label: "Merging adapter", bin: "python", args: ["merge_and_export.py", "--base", "{{baseModel}}", "--adapter", "{{artifactPath}}/adapter", "--out", "{{artifactPath}}/merged"] },
+      { stageId: "converting", label: "Converting to GGUF", bin: "python", args: ["convert_hf_to_gguf.py", "{{artifactPath}}/merged", "--outfile", "{{artifactPath}}/model.f16.gguf"] },
+      { stageId: "quantizing", label: "Quantizing {{quantization}}", bin: "./llama-quantize", args: ["{{artifactPath}}/model.f16.gguf", "{{artifactPath}}/model.{{quantization}}.gguf", "{{quantization}}"] },
+      { stageId: "serving", label: "Registering local model", bin: "ollama", args: ["create", "{{outputModelTag}}", "-f", "{{artifactPath}}/Modelfile"] },
+    ],
+    importProof: { artifactPathRequired: true, sha256Required: true, modelTagRequired: true, quantProofRequired: true },
+    verification: { type: "api-registry-chat-completion", expectedModel: "{{outputModelTag}}" },
+  },
+  {
+    // Sprint 2 flywheel profile: the sparse-MoE path. A calibration forward
+    // pass profiles expert routing over the traces; only the top-k salient
+    // experts (+ attention/router/shared parts) receive adaptation — the
+    // MoE-Sieve / DR-LoRA posture. The routing histogram and delta metrics
+    // are stamped into the receipt as operator proof.
+    id: "kimi-distill-sparse-moe-student",
+    label: "Distill sparse-MoE student (calibrate → top-k experts)",
+    description:
+      "Calibrate expert routing on the harvested traces, select the top-k salient experts per layer, train adapters only on those plus always-active parts, extract the delta, then convert, quantize, and serve.",
+    input: "growthub-distillation-trace-v1.jsonl",
+    outputs: ["ollama-model"],
+    requires: ["baseModel", "datasetPath", "outputModelTag"],
+    runnerMode: "local-command",
+    steps: [
+      { stageId: "fine-tuning", label: "Calibrating expert routing", bin: "python", args: ["calibrate_routing.py", "--dataset", "{{datasetPath}}", "--base", "{{baseModel}}", "--out", "{{artifactPath}}/routing-histogram.json"] },
+      { stageId: "fine-tuning", label: "Training sparse student (top-{{expertTopK}} experts)", bin: "python", args: ["distill_student.py", "--dataset", "{{datasetPath}}", "--base", "{{baseModel}}", "--teacher", "{{teacherModel}}", "--sparse", "--routing-histogram", "{{artifactPath}}/routing-histogram.json", "--expert-top-k", "{{expertTopK}}", "--out", "{{artifactPath}}/adapter"] },
+      { stageId: "fine-tuning", label: "Extracting adapter delta", bin: "python", args: ["extract_delta.py", "--adapter", "{{artifactPath}}/adapter", "--out", "{{artifactPath}}/delta"] },
+      { stageId: "fine-tuning", label: "Merging adapter", bin: "python", args: ["merge_and_export.py", "--base", "{{baseModel}}", "--adapter", "{{artifactPath}}/adapter", "--out", "{{artifactPath}}/merged"] },
+      { stageId: "converting", label: "Converting to GGUF", bin: "python", args: ["convert_hf_to_gguf.py", "{{artifactPath}}/merged", "--outfile", "{{artifactPath}}/model.f16.gguf"] },
+      { stageId: "quantizing", label: "Quantizing {{quantization}}", bin: "./llama-quantize", args: ["{{artifactPath}}/model.f16.gguf", "{{artifactPath}}/model.{{quantization}}.gguf", "{{quantization}}"] },
+      { stageId: "serving", label: "Registering local model", bin: "ollama", args: ["create", "{{outputModelTag}}", "-f", "{{artifactPath}}/Modelfile"] },
+    ],
+    importProof: { artifactPathRequired: true, sha256Required: true, modelTagRequired: true, quantProofRequired: true },
+    verification: { type: "api-registry-chat-completion", expectedModel: "{{outputModelTag}}" },
+  },
+  {
     id: "unsloth-qlora-local",
     label: "Unsloth QLoRA (local)",
     description:
@@ -183,6 +235,10 @@ function resolveSteps(profile, vars) {
   const reasons = [];
   if (!isSafeModelTag(vars.outputModelTag)) reasons.push(`unsafe model tag "${vars.outputModelTag}"`);
   if (!isSafeModelTag(vars.quantization)) reasons.push(`unsafe quantization "${vars.quantization}"`);
+  // Distillation vars: the teacher tag is optional provenance (validated when
+  // present); expert top-k must be a small integer — both are argv tokens.
+  if (String(vars.teacherModel || "") && !isSafeModelTag(vars.teacherModel)) reasons.push(`unsafe teacher model tag "${vars.teacherModel}"`);
+  if (!/^([1-9]|[1-5][0-9]|6[0-4])$/.test(String(vars.expertTopK ?? "8"))) reasons.push(`unsafe expert top-k "${vars.expertTopK}" (must be an integer 1-64)`);
   for (const [k, v] of [["datasetPath", vars.datasetPath], ["artifactPath", vars.artifactPath]]) {
     if (v && !isContainedPath(v)) reasons.push(`unsafe ${k} "${v}" (must stay inside the workspace)`);
   }
@@ -212,9 +268,11 @@ export function buildTrainingRunConfig({
   outputModelTag = "",
   artifactPath = "",
   quantization = "q4_k_m",
+  teacherModel = "",
+  expertTopK = "8",
 } = {}) {
   const profile = resolveTrainingProfile(profileId);
-  const vars = { baseModel, datasetPath, outputModelTag, artifactPath, quantization };
+  const vars = { baseModel, datasetPath, outputModelTag, artifactPath, quantization, teacherModel, expertTopK };
   const missing = profile.requires.filter((key) => !String(vars[key] || "").trim());
   // Argv step profiles (the one-click pipeline) resolve to structured specs +
   // a safety verdict; legacy string-command profiles keep their shell preview.
@@ -233,6 +291,8 @@ export function buildTrainingRunConfig({
     outputModelTag,
     artifactPath,
     quantization,
+    teacherModel,
+    expertTopK,
     // Preview strings (display only) + the ARGV steps the runner execFiles.
     commands,
     steps: resolvedSteps,
