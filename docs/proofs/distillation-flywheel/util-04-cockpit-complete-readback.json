@@ -16,7 +16,7 @@
     "usageLine": "1 proven run · 1 workflow · 198 tokens (43 in / 155 out) · sandbox-local · network off",
     "evidenceState": "complete",
     "verificationStatus": "verified",
-    "modelOutputHash": "5efee0e585f04a85",
+    "modelOutputHash": "a30fc1b1f35cb09b",
     "lastResponseModel": "workspace-local-tuned-v1",
     "nextAction": "Run again"
   },

@@ -501,6 +501,103 @@ async function openCustomModelsCockpit() {
   rec("util-07 teacher provenance chain intact (pack → served → harvested → hashed)", harvested.length > 0 && Boolean(sample?.reasoning));
 }
 
+// ---------------------------------------------------------------------------
+// util-08 — WORKFLOW CANVAS: the one-click product of util-04 IS a governed
+// sandbox object record; the canvas renders its orchestration graph and the
+// api-registry node's config sidecar straight from that record.
+// ---------------------------------------------------------------------------
+{
+  await page.goto(`${BASE}/workflows?object=${encodeURIComponent(CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=custom-model-chat&field=orchestrationConfig`, { waitUntil: "networkidle" });
+  await wait(2500);
+  const nodeCards = page.locator(".dm-orchestration-node");
+  for (let i = 0; i < 20 && (await nodeCards.count()) === 0; i += 1) await wait(400);
+  const nodesRendered = await nodeCards.count();
+  // Open the model-call node's config sidecar — the canvas's own click path
+  // (the node card renders its TYPE, "api-registry-call").
+  const modelNode = page.locator(".dm-orchestration-node", { hasText: "api-registry-call" }).first();
+  if (await modelNode.count()) { await modelNode.click(); await wait(1200); }
+  const configFields = await page.locator(".dm-orchestration-config__field").count();
+  await shot("util-08-workflow-canvas.png");
+  // The governed record itself — every claim above parsed from the live row.
+  const ws = await getWS();
+  const wfRow = (ws.workspaceConfig.dataModel.objects.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)?.rows || []).find((r) => r.Name === "custom-model-chat") || {};
+  let graph = null;
+  try { graph = JSON.parse(String(wfRow.orchestrationConfig || "null")); } catch { graph = null; }
+  const modelCallNode = (graph?.nodes || []).find((n) => n.type === "api-registry-call") || null;
+  // The binding truth is the atomic RECORD: the node carries registryId; the
+  // served tag comes from the record's expectedModelTag (node modelTag is an
+  // optional override the newer variant builder also stamps).
+  const boundRecord = await liveRegistryRow();
+  const tagBound = String(modelCallNode?.config?.modelTag || "") === TAG || String(boundRecord?.expectedModelTag || "") === TAG;
+  rec("util-08 canvas renders the governed graph; the api-registry node binds the atomic record", nodesRendered >= 3 && configFields > 0 && String(modelCallNode?.config?.registryId || "") === REG && tagBound, `nodes=${nodesRendered} fields=${configFields}`);
+  write({
+    stateId: "util-08-workflow-canvas",
+    visibleTitle: "custom-model-chat",
+    visibleStatus: `${String(wfRow.lifecycleStatus || "")} · v${String(wfRow.version || "")}`,
+    primaryCta: "Run workflow",
+    surface: "/workflows canvas — the governed sandbox object record (orchestrationConfig) rendered as nodes + the api-registry node config sidecar",
+    governedRows: { customModelWorkflows: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, row: "custom-model-chat", apiRegistry: REG },
+    proof: {
+      nodesRendered,
+      configFieldsRendered: configFields,
+      graphNodes: (graph?.nodes || []).map((n) => ({ id: n.id, type: n.type })),
+      graphEdges: (graph?.edges || []).length,
+      registryNodeBinding: modelCallNode ? { registryId: modelCallNode.config?.registryId, modelTag: modelCallNode.config?.modelTag, endpoint: modelCallNode.config?.endpoint } : null,
+      lifecycleStatus: wfRow.lifecycleStatus,
+      publishedAt: wfRow.orchestrationPublishedAt || "",
+      lastRunId: wfRow.lastRunId || "",
+    },
+    provenance: "derived",
+    nextAllowedAction: "run_workflow",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// util-09 — THE LOOP, VISIBLY: one more REAL workflow run grows the harvested
+// corpus, and the cockpit renders the growth — use → harvest → next student.
+// ---------------------------------------------------------------------------
+{
+  const before = HARVEST && fs.existsSync(HARVEST) ? fs.readFileSync(HARVEST, "utf8").trim().split("\n").filter(Boolean).length : 0;
+  const run = await (await fetch(`${BASE}/api/workspace/sandbox-run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ objectId: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, name: "custom-model-chat" }) })).json();
+  const after = HARVEST && fs.existsSync(HARVEST) ? fs.readFileSync(HARVEST, "utf8").trim().split("\n").filter(Boolean).length : 0;
+  rec("util-09 a real workflow run grows the harvest (use → corpus, observed on disk)", run.ok === true && after === before + 1, `${before} → ${after}`);
+  // Refresh the governed sidecar from the grown harvest (CLI lane) so the
+  // cockpit renders the new count from governed records, not the raw file.
+  const harvested = fs.readFileSync(HARVEST, "utf8").trim().split("\n").filter(Boolean).map((l) => normalizeDistillationTrace(JSON.parse(l)));
+  const fields = buildTraceCaptureReceiptFields({ traces: harvested, teacherModel: "claude-subagent-teacher" });
+  if (APP_DIR) {
+    const srPath = path.join(APP_DIR, "growthub.source-records.json");
+    const sr = JSON.parse(fs.readFileSync(srPath, "utf8"));
+    sr[distillationTracesSourceKey("workspace-local")] = { records: harvested };
+    sr[trainingRunSourceKey("workspace-local")] = { records: [{ schema: "growthub-local-model-training-run-v1", trainingRunId: "run_trace_capture_live", modelTrainingRowId: "workspace-local", status: "completed", runKind: "trace-capture", distillation: fields }] };
+    fs.writeFileSync(srPath, `${JSON.stringify(sr, null, 2)}\n`);
+  }
+  const cockpitOpen = await openCustomModelsCockpit();
+  const harvestChipText = await txt("[data-continuum-step='harvest'] .dm-cockpit-receipt-text");
+  rec("util-09 the cockpit renders the grown corpus from governed records (the behavior loop, on screen)", cockpitOpen && harvestChipText.includes(`${after} governed traces`), harvestChipText);
+  await shot("util-09-loop-growth-cockpit.png");
+  const sampleReasoning = harvested.filter((t) => t.reasoning).slice(-1)[0] || null;
+  write({
+    stateId: "util-09-loop-growth-cockpit",
+    visibleTitle: TAG,
+    visibleStatus: `harvest ${before} → ${after} traces after one real workflow run`,
+    primaryCta: "Wire loop",
+    surface: "/custom-models cockpit — the harvest chip re-rendered from the grown trace sidecar after a real canvas-published workflow run",
+    governedRows: { traceSidecar: distillationTracesSourceKey("workspace-local"), runSidecar: trainingRunSourceKey("workspace-local"), customModelWorkflows: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID },
+    proof: {
+      runId: run.runId,
+      harvestBefore: before,
+      harvestAfter: after,
+      traceRootHash: fields.traceRootHash,
+      renderedHarvestChip: harvestChipText,
+      reasoningTracesPresent: harvested.filter((t) => t.reasoning).length,
+      sampleReasoningTrace: sampleReasoning ? { traceId: sampleReasoning.traceId, clusterId: sampleReasoning.clusterId, reasoning: String(sampleReasoning.reasoning).slice(0, 120), score: sampleReasoning.score } : null,
+    },
+    provenance: "live-http-transport, simulated-model (sidecar refresh cli-stamped)",
+    nextAllowedAction: "train_next_generation",
+  });
+}
+
 await browser.close();
 const failed = R.filter((r) => !r.ok).length;
 console.log(`\n${failed === 0 ? "✅" : "❌"} Distillation utilization closed loop — ${R.length - failed}/${R.length} live checks passed.`);

@@ -1,7 +1,7 @@
 {
   "stateId": "util-07-teacher-provenance",
   "visibleTitle": "Teacher → student provenance",
-  "visibleStatus": "claude-subagent-teacher · 17 harvested traces",
+  "visibleStatus": "claude-subagent-teacher · 43 harvested traces",
   "primaryCta": "Train next generation",
   "surface": "teacher pack (agent-generated content) ⟷ live harvest JSONL ⟷ trace-capture receipt root hash",
   "governedRows": {
@@ -25,7 +25,7 @@
       "promptChars": 69,
       "reasoningPresent": true
     },
-    "rootHash": "0e5f85593e44b17a"
+    "rootHash": "dd0fd45dd2a5bc58"
   },
   "provenance": "live-http-transport, simulated-model",
   "nextAllowedAction": "close_loop"

@@ -1,0 +1,28 @@
+{
+  "stateId": "util-09-loop-growth-cockpit",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "harvest 43 → 44 traces after one real workflow run",
+  "primaryCta": "Wire loop",
+  "surface": "/custom-models cockpit — the harvest chip re-rendered from the grown trace sidecar after a real canvas-published workflow run",
+  "governedRows": {
+    "traceSidecar": "distillation-traces:model-training:workspace-local",
+    "runSidecar": "training-run:model-training:workspace-local",
+    "customModelWorkflows": "custom-model-workflows"
+  },
+  "proof": {
+    "runId": "run_mrqx9muy_c9paac",
+    "harvestBefore": 43,
+    "harvestAfter": 44,
+    "traceRootHash": "5fa0e14845e11b48",
+    "renderedHarvestChip": "44 governed traces harvested",
+    "reasoningTracesPresent": 44,
+    "sampleReasoningTrace": {
+      "traceId": "live_1784412730621_44",
+      "clusterId": "workspace-operations",
+      "reasoning": "{\"intent\":\"identity-probe\",\"policy\":\"confirm tag + provenance in one line\"}",
+      "score": 0
+    }
+  },
+  "provenance": "live-http-transport, simulated-model (sidecar refresh cli-stamped)",
+  "nextAllowedAction": "train_next_generation"
+}
