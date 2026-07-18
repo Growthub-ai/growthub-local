@@ -13,7 +13,7 @@ so they can never disagree.
 Resolve the CLI in this order (first available wins):
 
 1. `growthub …` — installed CLI (`npm i -g @growthub/cli`)
-2. `npx -y @growthub/cli@0.14.16 …` — no install required
+2. `npx -y @growthub/cli@0.14.24 …` — no install required
 
 All commands accept `--fork <path>` (default: cwd; the path must contain
 `growthub.config.json` at root or under `apps/workspace/`) and `--json`.
