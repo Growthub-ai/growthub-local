@@ -536,6 +536,36 @@ test("profiles: distillation profiles are argv-only, allowlisted, safety-gated; 
   assert.ok(unsafe.commandSafety.reasons.length >= 2);
 });
 
+test("cockpit: continuum + usage derive from governed evidence only (never invented numbers)", async () => {
+  const { deriveCustomModelCockpit } = await import(lib("custom-models-ledger.js"));
+  const chatCompletion = JSON.stringify({ model: "gh-tuned-v1", choices: [{ message: { role: "assistant", content: "hi" } }], usage: { prompt_tokens: 40, completion_tokens: 60 } });
+  const workspaceConfig = { dataModel: { objects: [
+    { objectType: "api-registry", rows: [
+      { integrationId: "gh-model", baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", status: "connected", lastResponse: chatCompletion, executionLane: "sandbox-local" },
+      { ...buildMothershipProxyRow({ modelTag: "gh-tuned-v1", studentRegistryId: "gh-model", fallbackBaseModel: "gemma3:1b" }), status: "connected" },
+    ] },
+    { objectType: "sandbox-environment", id: "custom-model-workflows", rows: [
+      { Name: "custom-model-chat", schedulerRegistryId: "gh-model", lastRunId: "r1", lastResponse: JSON.stringify({ exitCode: 0, outputHash: "abc", stdout: chatCompletion }), orchestrationConfig: JSON.stringify({ nodes: [{ type: "api-registry-call", config: { registryId: "gh-model" } }] }) },
+    ] },
+  ] } };
+  const model = { name: "workspace-local", baseModel: "gemma3", localModel: "gh-tuned-v1", apiRegistryId: "gh-model", evidenceState: "complete", verificationStatus: "verified" };
+  const cockpit = deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords: {} });
+  assert.equal(cockpit.continuum.active, true, "proxy row activates the continuum");
+  assert.equal(cockpit.continuum.loop.find((s) => s.id === "serve").done, true, "verified registry response lights Serve");
+  assert.equal(cockpit.continuum.loop.find((s) => s.id === "evaluate").done, false, "no promoted benchmark ⇒ Evaluate honestly pending");
+  assert.equal(cockpit.usage.provenRuns, 1);
+  assert.equal(cockpit.usage.workflowsBound, 1);
+  assert.equal(cockpit.usage.promptTokens, 80, "registry stamp + run stdout usage, both real");
+  assert.equal(cockpit.usage.completionTokens, 120);
+  assert.equal(cockpit.usage.toolCallNodes, 1);
+  assert.equal(cockpit.usage.permissions.networkAllow, false);
+  // Never throws, and empty evidence yields zeros — not fabricated activity.
+  const empty = deriveCustomModelCockpit({ name: "m" }, { workspaceConfig: {}, workspaceSourceRecords: {} });
+  assert.equal(empty.continuum.active, false);
+  assert.equal(empty.usage.provenRuns, 0);
+  assert.equal(empty.usage.promptTokens, 0);
+});
+
 test("runner scripts: the distillation trio is provisioned alongside the #273 scripts", () => {
   for (const name of ["distill_student.py", "calibrate_routing.py", "extract_delta.py", "train.py"]) {
     assert.ok(typeof PIPELINE_SCRIPTS[name] === "string" && PIPELINE_SCRIPTS[name].includes("GH_PROGRESS"), `${name} stamps governed progress`);

@@ -1,0 +1,20 @@
+{
+  "stateId": "util-05-demotion-negative",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Demoted — base tag served (real 200) · fallback serving",
+  "primaryCta": "Verify endpoint",
+  "surface": "live endpoint flipped to the base tag → real invocation → governed row demotes → mothership proxy falls back",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "proxyRow": "mothership-proxy-workspace-local-tuned-v1"
+  },
+  "proof": {
+    "httpStatus": 200,
+    "servedModel": "gemma3",
+    "evidenceState": "deployed",
+    "activeRoute": "local-base",
+    "studentSkipReason": "student not tuned-tag verified yet"
+  },
+  "provenance": "live-http",
+  "nextAllowedAction": "recover_verification"
+}

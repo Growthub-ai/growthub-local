@@ -22,6 +22,9 @@
 
 import { deriveTrainingLedgerState, TRAINING_OBJECT_TYPE } from "./training-ledger.js";
 import { deriveServingProfile } from "./training-runtime-drivers.js";
+import { deriveFlywheelState, deriveProxyServingState } from "./distillation-fleet.js";
+import { buildAdaptiveStudentPlan } from "./distillation-student-plan.js";
+import { deriveTrainingRunState } from "./training-run-receipts.js";
 
 export const CUSTOM_MODEL_CAPABILITY_SCHEMA = "growthub-custom-model-capability-v1";
 
@@ -399,7 +402,7 @@ export function deriveCustomModelSuggestedActions(model, { workspaceConfig } = {
   const complete = model?.evidenceState === "complete";
   const bound = Boolean(model?.apiRegistryId);
   const variants = buildCustomModelWorkflowVariants(model, { workspaceConfig });
-  const openHref = (variant) => `/workflows?object=custom-model-${variant}&row=custom-model-${variant}`;
+  const openHref = (variant) => `/workflows?object=${encodeURIComponent(CUSTOM_MODEL_WORKFLOWS_OBJECT_ID)}&row=${encodeURIComponent(`custom-model-${variant}`)}&field=orchestrationConfig`;
   const defs = [
     { id: "use-in-workflow", variant: "chat", title: "Use in a workflow",
       whyNow: "Back any governed step with your model.",
@@ -508,6 +511,41 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
   const registryRow = registryRowsOf(workspaceConfig).find(
     (r) => String(r.integrationId || "") === String(model?.apiRegistryId || ""),
   ) || {};
+
+  // Continuum — the harvest → train → evaluate → serve loop, derived from
+  // the SAME governed evidence as everything else in this cockpit: the trace
+  // sidecar, model-training-run receipts (distillation block), the proxy
+  // policy row, and the registry row's stamped chat-completions response.
+  // `serve` is done only when the student actually serves (routing priority
+  // earned through real verification), never on a claim.
+  const slug = String(model?.name || "workspace-local");
+  const flywheel = deriveFlywheelState({ workspaceConfig, workspaceSourceRecords, slug });
+  const serving = deriveProxyServingState({ workspaceConfig, baseModel: model?.baseModel || "" });
+  const runReceipts = deriveTrainingRunState({ workspaceConfig, workspaceSourceRecords, slug });
+  const plan = buildAdaptiveStudentPlan({ preflight: runReceipts.preflight || null });
+  const stepDone = (id) => flywheel.steps.find((s) => s.id === id)?.done === true;
+  const continuum = {
+    active: flywheel.hasProxy || flywheel.completed > 0,
+    traceCount: flywheel.traceCount,
+    generation: flywheel.generation,
+    serving: serving.active
+      ? {
+        target: serving.active.target,
+        servedTag: serving.verification?.servedModel || "",
+        // Any non-student route is by definition still harvesting toward the
+        // next student — the dopamine line the cockpit renders.
+        harvesting: serving.active.target !== "local-student",
+      }
+      : null,
+    plan: { mode: plan.mode, tierLabel: plan.tierLabel || "", baseModel: plan.baseModel || "" },
+    loop: [
+      { id: "harvest", label: "Harvest", done: stepDone("traces-harvested") },
+      { id: "train", label: "Train", done: stepDone("student-trained") },
+      { id: "evaluate", label: "Evaluate", done: stepDone("benchmark-promoted") },
+      { id: "serve", label: "Serve", done: serving.active?.target === "local-student" },
+    ],
+    next: flywheel.next,
+  };
   const state = String(model?.evidenceState || "recorded");
   const healthy = ["complete", "sandbox-ready", "verified"].includes(state);
   const health = {
@@ -525,6 +563,58 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
       && (!model?.apiRegistryId || k.includes(String(model.apiRegistryId))),
   );
 
+  // Usage — governed telemetry only, the CeoCockpit convention: every number
+  // is counted from a real stamped row/record; where no evidence exists the
+  // UI shows "—", never an invented figure.
+  const registryId = String(model?.apiRegistryId || "");
+  const allObjects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const boundWorkflows = [];
+  for (const o of allObjects) {
+    if (o?.objectType !== "sandbox-environment") continue;
+    for (const r of (Array.isArray(o.rows) ? o.rows : [])) {
+      const graphs = `${r?.orchestrationConfig || ""}${r?.orchestrationDraftConfig || ""}`;
+      if (registryId && (String(r?.schedulerRegistryId || "") === registryId || graphs.includes(`"registryId": "${registryId}"`) || graphs.includes(`"registryId":"${registryId}"`))) {
+        boundWorkflows.push(r);
+      }
+    }
+  }
+  const provenRuns = boundWorkflows.filter((r) => {
+    try { const p = JSON.parse(String(r?.lastResponse || "null")); return p?.ok === true || Number(p?.exitCode) === 0; } catch { return false; }
+  });
+  // Tokens from STAMPED chat-completions usage blocks: the registry row's
+  // last response + every proven run whose stdout is a completion.
+  let promptTokens = 0;
+  let completionTokens = 0;
+  const countUsage = (u) => { if (u && typeof u === "object") { promptTokens += Number(u.prompt_tokens) || 0; completionTokens += Number(u.completion_tokens) || 0; } };
+  try { countUsage(JSON.parse(String(registryRow.lastResponse || "null"))?.usage); } catch { /* unstamped */ }
+  for (const r of provenRuns) {
+    try { countUsage(JSON.parse(JSON.parse(String(r.lastResponse || "null"))?.stdout || "null")?.usage); } catch { /* not a completion payload */ }
+  }
+  // Tool-call surface: the model/agent call nodes across bound graphs.
+  let toolCallNodes = 0;
+  for (const r of boundWorkflows) {
+    try {
+      const g = JSON.parse(String(r?.orchestrationConfig || r?.orchestrationDraftConfig || "null"));
+      toolCallNodes += (Array.isArray(g?.nodes) ? g.nodes : []).filter((n) => ["api-registry-call", "agent"].includes(String(n?.type || ""))).length;
+    } catch { /* malformed graph counts nothing */ }
+  }
+  const usage = {
+    invocations: invocations.length,
+    workflowsBound: boundWorkflows.length,
+    provenRuns: provenRuns.length,
+    promptTokens,
+    completionTokens,
+    toolCallNodes,
+    // Runtime/environment permission surface of the endpoint + bound rows —
+    // read-only oversight, authority stays in the Data Model.
+    permissions: {
+      executionLane: String(registryRow.executionLane || "sandbox-local"),
+      runLocality: [...new Set(boundWorkflows.map((r) => String(r?.runLocality || "local")))].join("/") || "local",
+      networkAllow: boundWorkflows.some((r) => String(r?.networkAllow) === "true"),
+      envRefs: boundWorkflows.filter((r) => String(r?.envRefs || "").trim()).length,
+    },
+  };
+
   // Settings — governed config surfaced with the canvas node-config field
   // grammar (dropdowns + text fields), read-only by construction. authRef is a
   // reference NAME only, never a secret value.
@@ -541,6 +631,8 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
     health,
     settingsFields,
     invocations,
+    continuum,
+    usage,
     registryBound: Boolean(model?.apiRegistryId),
     served: model?.lastResponseModel || "",
     outputHash: model?.modelOutputHash || "",

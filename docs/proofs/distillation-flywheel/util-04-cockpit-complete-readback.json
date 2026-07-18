@@ -1,0 +1,25 @@
+{
+  "stateId": "util-04-cockpit-complete",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "complete · verified",
+  "primaryCta": "Run again",
+  "surface": "/custom-models cockpit via the canonical helper entry (?helper=open → /custom-models slash)",
+  "governedRows": {
+    "modelTraining": "workspace-local",
+    "apiRegistry": "workspace-local-model",
+    "customModelWorkflows": "custom-model-workflows"
+  },
+  "proof": {
+    "cockpitRendered": true,
+    "continuumVisible": true,
+    "utilizeVisible": true,
+    "usageLine": "1 proven run · 1 workflow · 198 tokens (43 in / 155 out) · 1 call node",
+    "evidenceState": "complete",
+    "verificationStatus": "verified",
+    "modelOutputHash": "c3055b7d4b494b26",
+    "lastResponseModel": "workspace-local-tuned-v1",
+    "nextAction": "Run again"
+  },
+  "provenance": "live-http",
+  "nextAllowedAction": "operate_model"
+}

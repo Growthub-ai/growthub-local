@@ -22,8 +22,49 @@ import {
   deriveCustomModelsState,
   buildCapabilityManifest,
   deriveCustomModelCockpit,
+  deriveCustomModelSuggestedActions,
+  deriveCustomModelFocusActions,
+  CUSTOM_MODEL_WORKFLOWS_OBJECT_ID,
+  CUSTOM_MODEL_WORKFLOWS_LABEL,
 } from "../../../lib/custom-models-ledger.js";
 import TrainingLedger from "./TrainingLedger.jsx";
+
+/**
+ * One-click utilization — the CEO-cockpit pattern: a single click materializes
+ * the ready-to-run orchestration graph as a governed DRAFT sandbox row (the
+ * live orchestrationConfig is publish-owned; the canvas test-run → attest →
+ * POST /api/workspace/workflow/publish path promotes it), then opens it on
+ * the workflow canvas. Never a dead redirect: an existing row just opens.
+ */
+async function createDraftWorkflowAndOpen(action) {
+  const res = await fetch("/api/workspace", { cache: "no-store" });
+  const data = await res.json();
+  const objs = data?.workspaceConfig?.dataModel?.objects || [];
+  const rowName = String(action?.sandboxRow?.Name || "");
+  const exists = objs.some((o) => o?.objectType === "sandbox-environment"
+    && (o.rows || []).some((r) => String(r?.Name || "") === rowName));
+  if (!exists) {
+    const { orchestrationConfig, ...draftRow } = action.sandboxRow;
+    draftRow.orchestrationDraftConfig = orchestrationConfig;
+    let wf = objs.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
+    if (!wf) {
+      wf = {
+        id: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID, label: CUSTOM_MODEL_WORKFLOWS_LABEL, source: "Custom Models",
+        objectType: "sandbox-environment", icon: "Workflow", columns: Object.keys(draftRow), rows: [],
+        binding: { mode: "manual", source: "Custom Models" }, relations: [], fieldSettings: { hidden: [], order: Object.keys(draftRow) },
+      };
+      objs.push(wf);
+    }
+    wf.rows.push(draftRow);
+    const patched = await fetch("/api/workspace", {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dataModel: { objects: objs } }),
+    });
+    if (!patched.ok) return false;
+  }
+  window.location.href = action.openHref;
+  return true;
+}
 
 function exportManifest(model, workspaceConfig) {
   const manifest = buildCapabilityManifest(model, { workspaceConfig });
@@ -64,6 +105,21 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
     () => deriveCustomModelCockpit(model, { workspaceConfig, workspaceSourceRecords }),
     [model, workspaceConfig, workspaceSourceRecords],
   );
+  const suggested = useMemo(
+    () => deriveCustomModelSuggestedActions(model, { workspaceConfig }),
+    [model, workspaceConfig],
+  );
+  const focus = useMemo(
+    () => deriveCustomModelFocusActions(model, { workspaceConfig })[0] || null,
+    [model, workspaceConfig],
+  );
+  const chatAction = suggested.actions.find((a) => a.variant === "chat") || null;
+  const [busyAction, setBusyAction] = useState("");
+  const runAction = async (action) => {
+    if (!action?.enabled || busyAction) return;
+    setBusyAction(action.id);
+    try { await createDraftWorkflowAndOpen(action); } finally { setBusyAction(""); }
+  };
   const statusPill = model.evidenceState === "complete"
     ? { label: "Live", cls: "is-ok" }
     : cockpit.health.tone === "ok" ? { label: cockpit.health.label, cls: "is-ok" }
@@ -96,6 +152,101 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           {" · "}{model.lastVerifiedAt ? `verified ${model.lastVerifiedAt.slice(0, 10)}` : "not verified yet"}
           {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
         </p>
+
+        {/* Continuum — harvest → train → evaluate → serve, every dot derived
+            from governed evidence (traces sidecar, receipts, proxy policy,
+            verified registry response). Renders only once the loop has begun
+            so the pre-flywheel cockpit is unchanged. */}
+        {cockpit.continuum?.active ? (
+          <div data-model-continuum="" data-continuum-generation={cockpit.continuum.generation}>
+            <div className="dm-run-console__tree" aria-label="Model continuum" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+              {cockpit.continuum.loop.map((step) => (
+                <span key={step.id} data-continuum-step={step.id} data-continuum-done={step.done ? "true" : "false"} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span className="dm-run-console__tree-dot" data-variant={step.done ? "ok" : "pending"} aria-hidden="true" />
+                  <span className="dm-cockpit-subtle" style={{ fontWeight: step.done ? 600 : 400 }}>{step.label}</span>
+                </span>
+              ))}
+              {cockpit.continuum.traceCount > 0 ? (
+                <span className="dm-run-console__hint" data-continuum-traces={cockpit.continuum.traceCount}>
+                  {cockpit.continuum.traceCount} traces harvested{cockpit.continuum.generation >= 2 ? ` · generation ${cockpit.continuum.generation}` : ""}
+                </span>
+              ) : null}
+            </div>
+            {cockpit.continuum.serving ? (
+              <p className="dm-cockpit-subtle" data-continuum-serving={cockpit.continuum.serving.target}>
+                {cockpit.continuum.serving.target === "local-student"
+                  ? `Serving your trained model — response tag ${cockpit.continuum.serving.servedTag} verified.`
+                  : cockpit.continuum.serving.target === "local-base"
+                    ? "Serving the local base model — every reply is harvested toward your next training run."
+                    : "Serving via the teacher — every reply is harvested toward your next training run."}
+              </p>
+            ) : null}
+            {cockpit.continuum.plan.mode === "harvest-only" ? (
+              <p className="dm-cockpit-subtle" data-continuum-plan="harvest-only">
+                Training runs when a capable machine is measured — harvesting continues meanwhile, so the corpus is ready.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Usage — every number counted from a stamped row/record, "—" where
+            no evidence exists (the CeoCockpit convention, no invented figures). */}
+        <p className="dm-cockpit-meta-line" data-model-usage="">
+          {cockpit.usage.provenRuns > 0 ? `${cockpit.usage.provenRuns} proven run${cockpit.usage.provenRuns === 1 ? "" : "s"}` : "no runs yet"}
+          {" · "}{cockpit.usage.workflowsBound > 0 ? `${cockpit.usage.workflowsBound} workflow${cockpit.usage.workflowsBound === 1 ? "" : "s"}` : "no workflows"}
+          {" · "}{(cockpit.usage.promptTokens + cockpit.usage.completionTokens) > 0 ? `${cockpit.usage.promptTokens + cockpit.usage.completionTokens} tokens (${cockpit.usage.promptTokens} in / ${cockpit.usage.completionTokens} out)` : "— tokens"}
+          {" · "}{cockpit.usage.toolCallNodes > 0 ? `${cockpit.usage.toolCallNodes} call node${cockpit.usage.toolCallNodes === 1 ? "" : "s"}` : "— call nodes"}
+        </p>
+        <p className="dm-cockpit-subtle" data-model-permissions="">
+          {cockpit.usage.permissions.executionLane} · {cockpit.usage.permissions.runLocality}
+          {" · network "}{cockpit.usage.permissions.networkAllow ? "allowed" : "off"}
+          {" · env refs "}{cockpit.usage.permissions.envRefs || 0}
+        </p>
+
+        {/* Utilization — one primary click (create-or-open, never a dead
+            redirect) + the other governed closed loops, closed by default. */}
+        <div className="dm-cockpit-settings-actions" data-model-utilize="">
+          {focus && chatAction ? (
+            focus.mode === "open" ? (
+              <a className="dm-btn-ghost" href={focus.openHref} data-model-focus-action="open">Open in canvas</a>
+            ) : (
+              <button
+                type="button"
+                className="dm-btn-ghost"
+                disabled={!focus.enabled || Boolean(busyAction)}
+                title={focus.enabled ? chatAction.proofProduced : focus.blockedReason}
+                onClick={() => runAction(chatAction)}
+                data-model-focus-action={focus.mode}
+              >
+                {busyAction === chatAction.id ? "Wiring…" : "Use in a workflow"}
+              </button>
+            )
+          ) : null}
+        </div>
+        {suggested.hasActions ? (
+          <details className="training-advanced" data-model-loops-accordion="">
+            <summary>Closed loops ({suggested.ready} ready)</summary>
+            <div className="dm-run-console__tree" aria-label="Model closed loops">
+              {suggested.actions.filter((a) => a.variant !== "chat").map((a) => (
+                <div key={a.id} className="dm-helper-toolcall-row" data-model-loop={a.id}>
+                  <span className="dm-run-console__tree-dot" data-variant={a.enabled ? "active" : "pending"} aria-hidden="true" />
+                  <span className="dm-helper-toolcall-title">{a.title}</span>
+                  <span className="dm-run-console__hint">{a.enabled ? a.whyNow : a.blockedReason}</span>
+                  <button
+                    type="button"
+                    className="dm-btn-ghost"
+                    disabled={!a.enabled || Boolean(busyAction)}
+                    title={a.enabled ? a.proofProduced : a.blockedReason}
+                    onClick={() => runAction(a)}
+                    data-model-loop-action={a.id}
+                  >
+                    {busyAction === a.id ? "Wiring…" : "Wire loop"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
 
         {canShowSettings ? (
           <details className="training-advanced" data-cockpit-settings-accordion="">

@@ -1,0 +1,18 @@
+{
+  "stateId": "util-00-live-boot-eligible",
+  "visibleTitle": "Training",
+  "visibleStatus": "eligible (graded 11 / floor 10)",
+  "primaryCta": "Configure traces",
+  "surface": "/training ledger on the live exported boot",
+  "governedRows": {
+    "trainingTraces": "training-traces",
+    "modelTraining": "workspace-local"
+  },
+  "proof": {
+    "deriverReady": true,
+    "graded": 11,
+    "apiStatus": 200
+  },
+  "provenance": "derived",
+  "nextAllowedAction": "wire_model_identity"
+}

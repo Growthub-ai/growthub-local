@@ -56,8 +56,8 @@ disappear into that language:
   `title`; tabular counts.
 - **Color** — zero new hues. Route modes and flywheel steps reuse the existing
   status token set; one accent maximum per view.
-- **Layout** — the `/training` page's single 760px column rhythm; the flywheel
-  is one horizontal evidence strip, not a dashboard of cards.
+- **Layout** — everything lives inside the existing `/custom-models` cockpit
+  card (per-card minimalism); no new page, no dashboard of cards.
 - **Motion** — none added. Determinate progress only when a receipt proves it
   (the #273 "no fabricated progress" invariant is a design rule here, not just
   a data rule).
@@ -157,11 +157,35 @@ disappear into that language:
 ## 5. The 16 states: preserved and extended
 
 States 00–16 are untouched, and the additions are NOT a parallel system —
-they read the exact same governed rows and derivers the 16 states prove:
-- the flywheel strip on `/training` reports the model's evidence ladder
-  verbatim from `deriveCustomModelsState` (the cockpit's own deriver, so the
-  two surfaces can never disagree) and renders only once flywheel evidence
-  exists — an empty workspace keeps the proven first-run journey untouched;
+there is deliberately **no new page**: the closed loop is the api-registry
+chat-completions endpoint returning real 200s, and everything renders inside
+the existing `/custom-models` cockpit card (same `dm-*` grammar, per-card
+minimalism):
+- a **continuum strip** (Harvest → Train → Evaluate → Serve) where every dot
+  is governed evidence — Serve lights only when the student actually takes
+  routing priority through real verification;
+- a **usage line** counted from stamped rows only (proven runs, bound
+  workflows, tokens in/out from real `usage` blocks, call nodes) and a
+  **permissions line** (execution lane, locality, network, env refs) — the
+  CeoCockpit "—" convention, never an invented number;
+- **one-click utilization** — "Use in a workflow" materializes the
+  ready-to-run orchestration graph as a governed DRAFT sandbox row and opens
+  the canvas (live `orchestrationConfig` stays publish-owned: draft →
+  test-run → attest → `POST /api/workspace/workflow/publish`), plus the
+  other four closed loops (recursive learning, synthetic scaling, agentic,
+  eval-vs-base) behind a closed-by-default accordion.
+
+The runtime also now stamps a real `outputHash` (sha256 of the run's stdout)
+on successful sandbox runs — previously only seeded fixtures carried one, so
+no REAL run could ever reach `complete`. Live proof set:
+[`docs/proofs/distillation-flywheel/`](proofs/distillation-flywheel/PROOF-INDEX.md)
+(15/15 live checks: real 200 chat completions, one-click publish lane,
+demotion + fallback + recovery, data-model tables, teacher provenance).
+
+The distillation layer contributes derivers + receipts those surfaces
+already know how to render:
+- the model's evidence ladder stays `deriveCustomModelsState` (the cockpit's
+  own deriver, so no second source of truth can disagree);
 - "what serves right now" comes from `deriveProxyServingState`, which is
   `deriveEndpointVerification` over the api-registry row's stamped
   chat-completions `lastResponse` (state-12 semantics: the served tag must

@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import { useState } from "react";
 import { HelperSidecar } from "../data-model/components/HelperSidecar.jsx";
 import TrainingLedger from "../data-model/components/TrainingLedger.jsx";
-import DistillationFlywheel from "../data-model/components/DistillationFlywheel.jsx";
 
 /**
  * /training — the continued-training ledger, full-width. Same component the
@@ -24,10 +23,6 @@ export default function TrainingPage() {
             setHelperOpen(true);
           }}
         />
-        {/* Teacher → student flywheel evidence strip. Renders only once the
-            flywheel has begun (proxy row or harvested evidence), so the
-            proven first-run journey above is untouched. */}
-        <DistillationFlywheel />
         <HelperSidecar
           open={helperOpen}
           onClose={() => setHelperOpen(false)}

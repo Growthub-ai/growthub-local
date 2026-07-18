@@ -245,7 +245,9 @@ export function buildStudentShardRegistration({ modelTag = "", clusterId = "", b
 // Flywheel state — the composed journey deriver
 // ---------------------------------------------------------------------------
 
-/** All receipts (both write lanes) that carry distillation evidence. */
+/** All receipts (both write lanes) that carry distillation evidence. A
+ *  data-model row persists `distillation` as a JSON string column — parse it
+ *  so app-lane receipts count exactly like sidecar receipts. */
 function distillationReceipts(workspaceConfig, workspaceSourceRecords, slug) {
   const sidecar = parseTrainingRunReceipts(workspaceSourceRecords, slug);
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
@@ -253,7 +255,13 @@ function distillationReceipts(workspaceConfig, workspaceSourceRecords, slug) {
   const rows = (Array.isArray(rowObject?.rows) ? rowObject.rows : [])
     .filter((r) => r && typeof r === "object")
     .filter((r) => !slug || String(r?.modelTrainingRowId || "") === slug);
-  return [...sidecar, ...rows].filter((r) => r?.distillation && typeof r.distillation === "object");
+  return [...sidecar, ...rows]
+    .map((r) => {
+      let d = r?.distillation;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch { d = null; } }
+      return d && typeof d === "object" ? { ...r, distillation: d } : r;
+    })
+    .filter((r) => r?.distillation && typeof r.distillation === "object");
 }
 
 /** Registry rows of the workspace (pure read). */

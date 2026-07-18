@@ -1,0 +1,59 @@
+# Distillation Utilization — Live Closed-Loop Proof Index
+
+Real-browser + real-HTTP capture of the custom-models **utilization** closed
+loop on a fresh exported boot, extending the 16-state journey proofs
+(`../custom-model-pipeline/states-16-live/`). Every PNG is the real UI;
+every readback field is read from the DOM or derived from the live governed
+rows; **every chat completion in this set is a real HTTP round trip with a
+real 200** — no response body is fabricated by the harness.
+
+## Capture provenance
+
+- **Boot:** `GROWTHUB_KIT_EXPORTS_HOME=… node scripts/export-seed-workspace-model-qa.mjs`
+  → fresh `next dev` on `http://127.0.0.1:3777` (same lane as the 16-state capture;
+  ledger-hydration parity asserted: graded=11, ready=true, floor=10).
+- **Model endpoint:** `node scripts/lib/distillation-teacher-endpoint.mjs`
+  → a REAL local OpenAI-compatible HTTP server on `127.0.0.1:11434`. The
+  content it serves under the workspace tag is **teacher-generated**
+  (produced by dispatched Claude agent runs — the teacher/professor dynamic;
+  provenance declared in `scripts/lib/distillation-teacher-pack.json`), and
+  **every exchange is harvested** to a `growthub-distillation-trace-v1`
+  JSONL — serving IS trace capture. This is the mothership-proxy
+  realization of the custom model: honest about what generates the content,
+  real about every byte on the wire.
+- **Harness:** `BASE_URL=… MODEL_URL=… APP_DIR=… HARVEST=… node
+  scripts/e2e-distillation-utilization-playwright.mjs` → **15/15 live checks**.
+- **Provenance legend:** `derived` = read live from the governed workspace;
+  `live-http` = a real HTTP round trip observed by the harness (status codes
+  and payloads recorded from the wire, not synthesized).
+
+## State map
+
+| # | State | Screenshot | Readback | What is proven | Lane |
+| --- | --- | --- | --- | --- | --- |
+| util-00 | Live boot eligible | `util-00-live-boot-eligible.png` | `util-00-live-boot-eligible-readback.json` | browser ⟺ API ⟺ `deriveDistillationPipelineState` agree (graded 11 / floor 10) | derived |
+| util-01 | First invocation · HTTP 200 | `util-01-first-invocation-200.png` | `util-01-first-invocation-200-readback.json` | the APP SERVER calls the endpoint through `POST /api/workspace/test-api-record` → real 200 chat completion → stamped on the registry row → `deriveEndpointVerification` proves served == tuned tag | live-http |
+| util-02 | Utilization across clusters | — | `util-02-utilization-clusters-readback.json` | the SHIPPED `captureChatCompletion()` drives 4 real business prompts (GTM, narrative continuity, code transformation, probe) — 200 × 4, tuned tag on every reply, `model-invocation` receipts written | live-http |
+| util-03 | Harvest receipt | — | `util-03-harvest-receipt-readback.json` | the endpoint harvested every live exchange (22 traces) → root-hashed `trace-capture` receipt in the sidecar → provably NOT a training run (`deriveTrainingRunState` unchanged) | live-http |
+| util-04 | One-click workflow + cockpit complete | `util-04-cockpit-complete.png` | `util-04-cockpit-complete-readback.json` | the cockpit's one-click lane end-to-end: draft PATCH → **real draft test-run** (orchestration-graph adapter executes the api-registry-call against the endpoint) → attest → `POST /api/workspace/workflow/publish` → **live run whose stdout IS the chat completion**, with the runtime-hashed `outputHash` — `/custom-models` reads **complete · verified**, rendering the continuum (Harvest/Train/Evaluate/Serve), usage (runs · workflows · tokens · call nodes), permissions, and the one-click utilization actions | live-http |
+| util-05 | Demotion negative + recovery | `util-05-demotion-negative.png` | `util-05-demotion-negative-readback.json` | the endpoint REALLY serves the base tag (still a 200) → cockpit demotes to `deployed`, mothership proxy falls back to `local-base` (the model keeps answering) → a real re-invocation restores `complete` | live-http |
+| util-06 | Data-model tables | `util-06-table-apiRegistry.png`, `util-06-table-modelTrainingRun.png`, `util-06-table-trainingTraces.png` | `util-06-data-model-tables-readback.json` | the governed tables themselves — api-registry (endpoint + stamped completion), model-training-run (distillation receipt), training-traces — the single source of truth every claim above derives from; no secrets in any row | derived |
+| util-07 | Teacher provenance | — | `util-07-teacher-provenance-readback.json` | the chain: teacher pack (agent-generated, provenance declared) → served bytes → harvested traces (reasoning present) → sidecar root hash | live-http |
+
+## Governance negatives observed during capture (not staged)
+
+- Direct PATCH of runtime-owned sandbox fields (`lastRunId`, `lastResponse`)
+  → **422 patch rejected by workspace mutation policy** — which is exactly
+  why the one-click lane goes draft → test-run → attest → publish.
+- Live `orchestrationConfig` on a new row via PATCH → refused
+  (`live_workflow_field`), forcing the `orchestrationDraft*` path.
+- A base-model response never verifies and demotes the cockpit to
+  `deployed` while the proxy keeps the model serviceable.
+
+## What remains operator-real
+
+The physical fine-tune that would replace the teacher-backed realization
+with locally trained weights runs on operator hardware (same deferred class
+as the 16-state capture). The loop proven here is the exact loop that model
+drops into: the registry row, verification, workflow lane, harvest, and
+cockpit do not change — only the process behind `127.0.0.1:11434` does.

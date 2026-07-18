@@ -408,6 +408,14 @@ function buildRunResponse({
     stdout: result.stdout,
     stderr: result.stderr,
     error: result.error || undefined,
+    // Output proof: the runtime hashes what the run actually produced, at
+    // run time, server-side. This is the "output-hash" proofKind the custom
+    // -model evidence ladder requires for `complete` — a REAL run now carries
+    // it natively (previously only seeded fixtures could, which meant no real
+    // run could ever finish the proof loop).
+    outputHash: result.exitCode === 0 && !result.error && String(result.stdout || "").length > 0
+      ? createHash("sha256").update(String(result.stdout), "utf8").digest("hex").slice(0, 16)
+      : undefined,
     envRefsResolved,
     envRefsMissing,
     networkAllow,
