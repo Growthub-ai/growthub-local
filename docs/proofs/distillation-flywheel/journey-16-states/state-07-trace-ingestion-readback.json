@@ -1,0 +1,17 @@
+{
+  "stateId": "state-07-trace-ingestion",
+  "visibleTitle": "",
+  "visibleStatus": "Running",
+  "primaryCta": "View logs",
+  "surface": "Training Handoff modal · train (distilling)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "barPct": 22,
+    "accepted": 2184,
+    "skipped": 164,
+    "total": 3248
+  },
+  "nextAllowedAction": "view_run"
+}

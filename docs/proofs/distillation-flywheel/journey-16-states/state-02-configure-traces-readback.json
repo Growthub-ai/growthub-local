@@ -1,0 +1,15 @@
+{
+  "stateId": "state-02-configure-traces",
+  "visibleTitle": "Configure Traces",
+  "visibleStatus": "met",
+  "primaryCta": "Save configuration",
+  "surface": "Training Handoff modal · curate",
+  "governedRows": {
+    "trainingTraces": "training-traces"
+  },
+  "proof": {
+    "qualified": 4,
+    "floor": "met"
+  },
+  "nextAllowedAction": "choose_profile"
+}

@@ -402,17 +402,17 @@ test("proxy: routing is evidence-gated — student needs VERIFIED, teacher needs
     teacher: { providerId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1", modelTag: "kimi-k3", authEnvVar: "KIMI_API_KEY" },
   });
   // Day one: nothing trained, runtime up, teacher configured.
-  const day1 = deriveActiveRoute({ policyRow: row, studentVerified: false, localRuntimeReachable: true, teacherAuthPresent: true });
+  const day1 = deriveActiveRoute({ policyRow: row, studentVerified: false, localRuntimeConnected: true, teacherAuthPresent: true });
   assert.equal(day1.active.target, "local-base", "local-first: base fallback beats remote teacher");
   assert.ok(day1.skipped.find((s) => s.target === "local-student").reason.includes("not tuned-tag verified"));
   // Student verified: it takes priority.
-  const later = deriveActiveRoute({ policyRow: row, studentVerified: true, localRuntimeReachable: true, teacherAuthPresent: true });
+  const later = deriveActiveRoute({ policyRow: row, studentVerified: true, localRuntimeConnected: true, teacherAuthPresent: true });
   assert.equal(later.active.target, "local-student");
   // Runtime down, teacher configured: teacher serves (and harvests).
-  const offlineLocal = deriveActiveRoute({ policyRow: row, studentVerified: true, localRuntimeReachable: false, teacherAuthPresent: true });
+  const offlineLocal = deriveActiveRoute({ policyRow: row, studentVerified: true, localRuntimeConnected: false, teacherAuthPresent: true });
   assert.equal(offlineLocal.active.target, "teacher");
   // Nothing serviceable: honest null with the fix named.
-  const nothing = deriveActiveRoute({ policyRow: row, studentVerified: false, localRuntimeReachable: false, teacherAuthPresent: false });
+  const nothing = deriveActiveRoute({ policyRow: row, studentVerified: false, localRuntimeConnected: false, teacherAuthPresent: false });
   assert.equal(nothing.active, null);
   assert.ok(nothing.reason.includes("no route"));
   assert.equal(deriveActiveRoute({}).active, null, "never throws on garbage");
@@ -564,6 +564,48 @@ test("cockpit: continuum + usage derive from governed evidence only (never inven
   assert.equal(empty.continuum.active, false);
   assert.equal(empty.usage.provenRuns, 0);
   assert.equal(empty.usage.promptTokens, 0);
+});
+
+test("ladder hardening: the runtime sidecar is authoritative — a forged row stamp cannot mint run proof", async () => {
+  const { deriveCustomModelsState } = await import(lib("custom-models-ledger.js"));
+  const chatCompletion = JSON.stringify({ model: "gh-v1", choices: [{ message: { role: "assistant", content: "hi" } }], usage: { prompt_tokens: 1, completion_tokens: 1 } });
+  const base = (sandboxRow) => ({
+    workspaceConfig: { dataModel: { objects: [
+      { objectType: "model-training", id: "model-training", rows: [{ Name: "workspace-local", status: "exported", baseModel: "gemma3", localModel: "gh-v1", lastExportSummary: JSON.stringify({ registryId: "gh-model" }) }] },
+      { objectType: "api-registry", rows: [{ integrationId: "gh-model", baseUrl: "http://127.0.0.1:11434/v1", endpoint: "/chat/completions", status: "connected", lastTested: "2026-07-18T00:00:00Z", lastResponse: chatCompletion }] },
+      { objectType: "sandbox-environment", id: "wf", rows: [sandboxRow] },
+    ] } },
+  });
+  const forgedRow = { Name: "w1", schedulerRegistryId: "gh-model", lastRunId: "run_forged", lastResponse: JSON.stringify({ exitCode: 0, outputHash: "forged" }) };
+  // No sidecar at all → legacy row-stamp path still counts (seed/QA lane).
+  const legacy = deriveCustomModelsState({ ...base(forgedRow), workspaceSourceRecords: {} });
+  assert.equal(legacy.models[0].evidenceState, "complete", "legacy path without a runtime sidecar keeps working");
+  // A runtime sidecar EXISTS but has no record of the claimed run → demoted.
+  const crossChecked = deriveCustomModelsState({ ...base(forgedRow), workspaceSourceRecords: { "sandbox:wf:w1": { records: [{ runId: "run_real", exitCode: 0, outputHash: "realhash" }] } } });
+  assert.equal(crossChecked.models[0].evidenceState, "sandbox-ready", "forged lastRunId with a live sidecar demotes — no output proof");
+  // The matching runtime record is what proves it.
+  const genuine = deriveCustomModelsState({ ...base({ ...forgedRow, lastRunId: "run_real" }), workspaceSourceRecords: { "sandbox:wf:w1": { records: [{ runId: "run_real", exitCode: 0, outputHash: "realhash" }] } } });
+  assert.equal(genuine.models[0].evidenceState, "complete");
+  assert.equal(genuine.models[0].modelOutputHash, "realhash", "output proof comes from the runtime record, not the row stamp");
+});
+
+test("ladder hardening: 'deployed' requires a PARSED captured completion — a status string alone stays registered", async () => {
+  const { deriveCustomModelsState } = await import(lib("custom-models-ledger.js"));
+  const ws = (registryRow) => ({
+    workspaceConfig: { dataModel: { objects: [
+      { objectType: "model-training", id: "model-training", rows: [{ Name: "workspace-local", status: "exported", baseModel: "gemma3", localModel: "gh-v1", lastExportSummary: JSON.stringify({ registryId: "gh-model" }) }] },
+      { objectType: "api-registry", rows: [registryRow] },
+    ] } },
+    workspaceSourceRecords: {},
+  });
+  const claimOnly = deriveCustomModelsState(ws({ integrationId: "gh-model", status: "connected" }));
+  assert.equal(claimOnly.models[0].evidenceState, "registered", "a writable status claim never reads as deployed");
+  const errorBody = deriveCustomModelsState(ws({ integrationId: "gh-model", status: "connected", lastResponse: JSON.stringify({ error: { message: "boom" } }) }));
+  assert.equal(errorBody.models[0].evidenceState, "registered", "an error envelope never reads as deployed");
+  const malformed = deriveCustomModelsState(ws({ integrationId: "gh-model", lastResponse: "not-json" }));
+  assert.equal(malformed.models[0].evidenceState, "registered", "malformed body never reads as deployed");
+  const captured = deriveCustomModelsState(ws({ integrationId: "gh-model", lastResponse: JSON.stringify({ model: "gemma3", choices: [{ message: { content: "hi" } }] }) }));
+  assert.equal(captured.models[0].evidenceState, "deployed", "a parsed captured completion (even base-tag) reads deployed, never higher");
 });
 
 test("runner scripts: the distillation trio is provisioned alongside the #273 scripts", () => {

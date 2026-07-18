@@ -1,0 +1,24 @@
+{
+  "stateId": "state-16-model-cockpit",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Live",
+  "primaryCta": "Use model",
+  "surface": "/custom-models cockpit — canonical helper deep-link (?helper=open) + /custom-models slash command",
+  "governedRows": {
+    "modelTraining": "workspace-local",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "workspace-helper-sandbox"
+  },
+  "proof": {
+    "cockpitRendered": true,
+    "cardVisible": false,
+    "canonicalEntry": "?helper=open&prompt=/custom-models → slash → setActiveView('custom-models')",
+    "actions": [
+      "Use model",
+      "Improve from gaps",
+      "View proof",
+      "Export developer manifest"
+    ]
+  },
+  "nextAllowedAction": "operate_model"
+}

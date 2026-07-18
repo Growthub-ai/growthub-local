@@ -4,12 +4,25 @@
  *
  * Runs against a live `next dev` boot of the exported model-QA workspace AND
  * a live local OpenAI-compatible endpoint (scripts/lib/
- * distillation-teacher-endpoint.mjs — real sockets, real 200s, teacher-
- * generated content, every exchange harvested as a governed trace). No
- * fabricated responses anywhere: every chat completion in these proofs is a
- * real HTTP round trip; every readback is read from the DOM or derived from
- * the live governed rows; the SHIPPED captureChatCompletion() is the
- * utilization code path.
+ * distillation-teacher-endpoint.mjs — real sockets, real 200s, strict
+ * OpenAI contract, every exchange harvested as a governed trace).
+ *
+ * HONESTY CONTRACT (what is and is not real here):
+ *   - TRANSPORT IS REAL: every chat completion is a real HTTP round trip
+ *     observed on the wire; browser captures are the real UI on the live
+ *     boot; the one-click workflow lane executes for real (draft test-run →
+ *     attest → publish gate → live run, runtime-hashed output).
+ *   - THE MODEL IS A STAND-IN: no weights were trained. The endpoint serves
+ *     teacher-pack content under the workspace tag (the mothership-proxy
+ *     realization); "served == tuned tag" is therefore a TAG-CONTRACT proof
+ *     of the verification plumbing, not evidence a tuned model exists. The
+ *     training receipt wired below is a labeled FIXTURE (runnerMode
+ *     "fixture") — the physical fine-tune is the operator's deferred step.
+ *   - Provenance legend per readback: "live-http" = observed on the wire;
+ *     "live-http-transport, simulated-model" = real transport, stand-in
+ *     model identity; "cli-stamped" = written to the sidecar file by this
+ *     harness through the CLI-owned lane; "derived" = pure derivation over
+ *     live governed rows.
  *
  * The loop proven, in the identical shapes the mothership custom-model
  * training structures use (api-registry row + chat-completions lastResponse,
@@ -147,12 +160,16 @@ async function openCustomModelsCockpit() {
   let run = objs.find((o) => o.objectType === "model-training-run");
   if (!run) { run = { id: "model-training-run", label: "Model Training Runs", source: "Training Runtime", objectType: "model-training-run", icon: "Database", columns: RUN_COLUMNS, rows: [], binding: { mode: "manual", source: "Training Runtime" }, relations: [], fieldSettings: { hidden: [], order: RUN_COLUMNS } }; objs.push(run); }
   run.columns = RUN_COLUMNS;
+  // A LABELED FIXTURE receipt (runnerMode "fixture") — the same class as the
+  // 16-state capture's "simulated (stamped receipt)" provenance: it exercises
+  // the ladder/UI, it is NOT evidence a training run executed. The physical
+  // fine-tune is the operator's deferred step.
   run.rows = [{
-    trainingRunId: "run_distill_dense_1", modelTrainingRowId: "workspace-local", datasetExportId: row.lastExportId,
-    baseModel: BASEM, trainingProfile: "kimi-distill-dense-student", runnerMode: "local-command", status: "verified",
+    trainingRunId: "run_distill_dense_fixture_1", modelTrainingRowId: "workspace-local", datasetExportId: row.lastExportId,
+    baseModel: BASEM, trainingProfile: "kimi-distill-dense-student", runnerMode: "fixture", status: "verified",
     startedAt: "2026-07-18T20:00:00.000Z", completedAt: "2026-07-18T20:40:00.000Z",
     artifactType: "ollama-model", artifactModelTag: TAG, artifactPath: "./artifacts/run1/model.q4_k_m.gguf",
-    artifactSha256: "abc123distill", artifactQuantization: "q4_k_m", artifactSourceBytes: 8000000000, artifactArtifactBytes: 2200000000,
+    artifactSha256: "fixture-not-a-real-artifact", artifactQuantization: "q4_k_m", artifactSourceBytes: 8000000000, artifactArtifactBytes: 2200000000,
     distillation: JSON.stringify({ teacherModel: "claude-subagent-teacher", studentArchitecture: "dense", generation: 1 }),
     schema: "growthub-local-model-training-run-v1",
   }];
@@ -177,17 +194,18 @@ async function openCustomModelsCockpit() {
 {
   const res = await fetch(`${BASE}/api/workspace/test-api-record`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ record: { baseUrl: `${MODEL_URL}/v1`, endpoint: "/chat/completions", method: "POST", integrationId: REG } }),
+    body: JSON.stringify({ record: { baseUrl: `${MODEL_URL}/v1`, endpoint: "/chat/completions", method: "POST", integrationId: REG, capabilities: "chat-completions", expectedModelTag: TAG } }),
   });
   const body = await res.json();
-  rec("util-01 app-server → endpoint HTTP 200", res.status === 200 && body.ok === true && body.status === 200, `status=${body.status}`);
+  rec("util-01 app-server → endpoint HTTP 200 (strict contract: real probe body, no bodyless POST)", res.status === 200 && body.ok === true && body.status === 200, `status=${body.status}`);
   const verdict = verifyTunedResponse({ expectedTag: TAG, baseModel: BASEM, responseBody: body.response });
-  rec("util-01 served tag == tuned tag (state-12 semantics)", verdict.verified === true, verdict.servedModel);
-  // Stamp the invocation into the registry row — the modal's own flow.
+  rec("util-01 tag-contract proof: response model field matches the expected tag (stand-in model — see header)", verdict.verified === true, verdict.servedModel);
+  // Stamp the invocation into the registry row — the modal's own flow. The
+  // re-read below proves ONLY persistence round-trip, not new verification.
   await upsertRegistryRow({ integrationId: REG, status: "connected", lastTested: new Date().toISOString(), lastResponse: JSON.stringify(body.response) });
   const liveRow = await liveRegistryRow();
   const liveVerdict = deriveEndpointVerification({ registryRow: liveRow, expectedTag: TAG, baseModel: BASEM });
-  rec("util-01 live governed row verifies", liveVerdict.verified === true);
+  rec("util-01 stamped verification persists round-trip (persistence check, not independent proof)", liveVerdict.verified === true);
   await page.goto(`${BASE}/training`, { waitUntil: "networkidle" });
   await wait(2500);
   await shot("util-01-first-invocation-200.png");
@@ -203,7 +221,7 @@ async function openCustomModelsCockpit() {
       verified: liveVerdict.verified, snippet: liveVerdict.snippet,
       responseShape: { hasChoices: Array.isArray(body.response?.choices), hasUsage: Boolean(body.response?.usage), model: body.response?.model },
     },
-    provenance: "live-http",
+    provenance: "live-http-transport, simulated-model",
     nextAllowedAction: "utilize_model",
   });
 }
@@ -243,7 +261,7 @@ async function openCustomModelsCockpit() {
     surface: "shipped captureChatCompletion() over the live governed api-registry row",
     governedRows: { apiRegistry: REG, modelInvocation: `model-invocation:${REG}:live` },
     proof: { results, everyReplyTunedTag: results.every((r) => r.servedModel === TAG) },
-    provenance: "live-http",
+    provenance: "live-http-transport, simulated-model",
     nextAllowedAction: "harvest_receipt",
   });
 }
@@ -266,8 +284,16 @@ async function openCustomModelsCockpit() {
     fs.writeFileSync(srPath, `${JSON.stringify(sr, null, 2)}\n`);
   }
   const ws = await getWS();
+  // STRONG exclusion form: the REAL capture receipt, alone, must derive to
+  // "no training run present" — this cannot pass by accident of the fixture
+  // training receipt also existing in the workspace.
+  const captureOnly = deriveTrainingRunState({
+    workspaceConfig: {},
+    workspaceSourceRecords: { [trainingRunSourceKey("workspace-local")]: { records: [{ schema: "growthub-local-model-training-run-v1", trainingRunId: "run_trace_capture_live", modelTrainingRowId: "workspace-local", status: "completed", runKind: "trace-capture", distillation: fields }] } },
+    slug: "workspace-local",
+  });
+  rec("util-03 the capture receipt ALONE derives to no-training-run (strong exclusion, not masked by other receipts)", captureOnly.present === false);
   const runState = deriveTrainingRunState({ workspaceConfig: ws.workspaceConfig, workspaceSourceRecords: ws.workspaceSourceRecords, slug: "workspace-local" });
-  rec("util-03 trace-capture receipt never reads as a training run", runState.runState === "imported" || runState.runState === "trained", `runState=${runState.runState}`);
   const flywheel = deriveFlywheelState({ workspaceConfig: ws.workspaceConfig, workspaceSourceRecords: ws.workspaceSourceRecords, slug: "workspace-local" });
   write({
     stateId: "util-03-harvest-receipt",
@@ -277,7 +303,7 @@ async function openCustomModelsCockpit() {
     surface: "endpoint harvest JSONL → governed trace sidecar + trace-capture receipt (CLI lane)",
     governedRows: { traceSidecar: distillationTracesSourceKey("workspace-local"), runSidecar: trainingRunSourceKey("workspace-local") },
     proof: { traceCount: fields.traceCount, traceRootHash: fields.traceRootHash, clusters: [...new Set(harvested.map((t) => t.clusterId))], runLifecycleUndisturbed: runState.runState, flywheelTraceStep: flywheel.steps.find((s) => s.id === "traces-harvested")?.done },
-    provenance: "live-http",
+    provenance: "cli-stamped (harvest of live requests)",
     nextAllowedAction: "open_cockpit",
   });
 }
@@ -305,9 +331,16 @@ async function openCustomModelsCockpit() {
   }
   const existing = wf.rows.find((r) => r.Name === draftRow.Name);
   if (!existing) {
+    // Governance negative observed LIVE first: a new row carrying the live
+    // orchestrationConfig must be refused by the mutation policy.
+    const liveAttempt = JSON.parse(JSON.stringify(objs));
+    const wfLive = liveAttempt.find((o) => o.id === CUSTOM_MODEL_WORKFLOWS_OBJECT_ID);
+    wfLive.rows.push({ ...draftRow, Name: `${draftRow.Name}-live-attempt`, orchestrationConfig });
+    const refused = await patchWS(liveAttempt);
+    rec("util-04 governance negative: live orchestrationConfig on a new row is REFUSED by the patch policy", refused !== 200, `PATCH ${refused}`);
     wf.rows.push(draftRow);
     const created = await patchWS(objs);
-    rec("util-04 one-click: draft workflow row created through PATCH (live fields refused by policy, draft allowed)", created === 200, `PATCH ${created}`);
+    rec("util-04 one-click: DRAFT workflow row created through PATCH", created === 200, `PATCH ${created}`);
   }
   const alreadyLive = Boolean(String(existing?.orchestrationConfig || "").trim());
   if (!alreadyLive) {
@@ -352,7 +385,7 @@ async function openCustomModelsCockpit() {
     surface: "/custom-models cockpit via the canonical helper entry (?helper=open → /custom-models slash)",
     governedRows: { modelTraining: "workspace-local", apiRegistry: REG, customModelWorkflows: CUSTOM_MODEL_WORKFLOWS_OBJECT_ID },
     proof: { cockpitRendered, continuumVisible, utilizeVisible, usageLine, evidenceState: model?.evidenceState, verificationStatus: model?.verificationStatus, modelOutputHash: model?.modelOutputHash, lastResponseModel: model?.lastResponseModel, nextAction: model?.nextAction },
-    provenance: "live-http",
+    provenance: "live-http-transport, simulated-model",
     nextAllowedAction: "operate_model",
   });
 }
@@ -383,7 +416,7 @@ async function openCustomModelsCockpit() {
     surface: "live endpoint flipped to the base tag → real invocation → governed row demotes → mothership proxy falls back",
     governedRows: { apiRegistry: REG, proxyRow: `mothership-proxy-${TAG.replace(/[^a-z0-9]+/g, "-")}` },
     proof: { httpStatus: demotedCall.status, servedModel: demotedCall.response?.model, evidenceState: demotedModel?.evidenceState, activeRoute: proxyState.active?.target, studentSkipReason: proxyState.skipped?.find((s) => s.target === "local-student")?.reason },
-    provenance: "live-http",
+    provenance: "live-http-transport, simulated-model (route fields derived)",
     nextAllowedAction: "recover_verification",
   });
 
@@ -426,7 +459,13 @@ async function openCustomModelsCockpit() {
       modelTrainingRunRows: (tables.modelTrainingRun?.rows || []).map((r) => ({ trainingRunId: r.trainingRunId, status: r.status, profile: r.trainingProfile, artifactModelTag: r.artifactModelTag })),
       trainingTracesCount: (tables.trainingTraces?.rows || []).length,
     },
-    proof: { registryRowCarriesRealCompletion: Boolean(regRow?.lastResponse), noSecretsInRows: !JSON.stringify(objs).includes("sk-") },
+    proof: {
+      // Parsed, not truthiness: the stamped body must be a structurally
+      // valid chat completion (model + choices + usage) to count here.
+      stampedCompletionParses: (() => { try { const p = JSON.parse(regRow?.lastResponse || "null"); return Boolean(p?.model && Array.isArray(p?.choices) && p?.usage); } catch { return false; } })(),
+      noSecretsInRows: !JSON.stringify(objs).includes("sk-"),
+      trainingRunRowsAreLabeledFixtures: (tables.modelTrainingRun?.rows || []).every((r) => String(r.runnerMode || "") === "fixture" || String(r.runKind || "") === "trace-capture"),
+    },
     provenance: "derived",
     nextAllowedAction: "teacher_provenance",
   });
@@ -456,7 +495,7 @@ async function openCustomModelsCockpit() {
       sampleTrace: sample ? { schema: sample.schema, clusterId: sample.clusterId, teacherModel: sample.teacherModel, promptChars: String(sample.prompt || "").length, reasoningPresent: Boolean(sample.reasoning) } : null,
       rootHash: computeTraceRootHash(harvested.map(normalizeDistillationTrace)).root,
     },
-    provenance: "live-http",
+    provenance: "live-http-transport, simulated-model",
     nextAllowedAction: "close_loop",
   });
   rec("util-07 teacher provenance chain intact (pack → served → harvested → hashed)", harvested.length > 0 && Boolean(sample?.reasoning));

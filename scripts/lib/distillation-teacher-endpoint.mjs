@@ -68,7 +68,10 @@ function harvest(prompt, entry, usage) {
     reasoning: entry.reasoning || "",
     promptTokens: usage.prompt_tokens,
     completionTokens: usage.completion_tokens,
-    score: 5,
+    // Harvested traces are UNGRADED (score 0) — grading is a separate
+    // governed curation step; a harvest must never auto-clear the quality
+    // floor it is supposed to be judged against.
+    score: 0,
   };
   fs.appendFileSync(HARVEST_PATH, `${JSON.stringify(trace)}\n`);
 }
@@ -92,10 +95,14 @@ const server = http.createServer((req, res) => {
       return send(200, { ok: true, servedTag });
     }
     if (req.method === "POST" && (req.url === "/v1/chat/completions" || req.url === "/chat/completions")) {
+      // Strict OpenAI contract: a bodyless / message-less request is a 400,
+      // exactly like a real server (Ollama/vLLM). The fixture never bends
+      // the contract to make a malformed caller look successful.
+      const messages = Array.isArray(body.messages) ? body.messages.filter((m) => m && typeof m === "object") : [];
+      if (messages.length === 0) {
+        return send(400, { error: { message: "messages is required", type: "invalid_request_error" } });
+      }
       requestCount += 1;
-      const messages = Array.isArray(body.messages) && body.messages.length
-        ? body.messages
-        : [{ role: "user", content: "Reply in one short line to confirm you are the tuned workspace model." }];
       const entry = respondTo(messages);
       const prompt = String([...messages].reverse().find((m) => m?.role === "user")?.content || "");
       const usage = {

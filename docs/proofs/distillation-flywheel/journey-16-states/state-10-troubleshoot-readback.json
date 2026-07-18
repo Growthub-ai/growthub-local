@@ -1,0 +1,26 @@
+{
+  "stateId": "state-10-troubleshoot",
+  "visibleTitle": "Training blocked",
+  "visibleStatus": "Needs attention",
+  "primaryCta": "Retry check",
+  "surface": "Training Handoff modal · train (stage issue card + one next action)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "stageId": "fine-tuning",
+    "issue": "fine_tune_oom",
+    "userMessage": "Fine-tuning stopped at step 3800/9000: GPU memory ran out.",
+    "nextAction": {
+      "label": "Resume with a smaller batch",
+      "action": "retry_finetune",
+      "variant": "retry_finetune_smaller_batch",
+      "oneClick": true,
+      "stageId": "fine-tuning",
+      "issue": "fine_tune_oom",
+      "destination": "/custom-models",
+      "cta": "Open Custom Models"
+    }
+  },
+  "nextAllowedAction": "retry_finetune"
+}

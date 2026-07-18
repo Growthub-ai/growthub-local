@@ -153,58 +153,47 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           {cockpit.outputHash ? ` · proof #${cockpit.outputHash}` : ""}
         </p>
 
-        {/* Continuum — harvest → train → evaluate → serve, every dot derived
-            from governed evidence (traces sidecar, receipts, proxy policy,
-            verified registry response). Renders only once the loop has begun
-            so the pre-flywheel cockpit is unchanged. */}
+        {/* Model loop — harvest → train → evaluate → serve in the SAME
+            receipt-row grammar as the training modal's proof checklist
+            (dm-cockpit-receipts / dm-status-chip). Every chip is governed
+            evidence; renders only once the loop has begun so the
+            pre-flywheel cockpit is unchanged. */}
         {cockpit.continuum?.active ? (
-          <div data-model-continuum="" data-continuum-generation={cockpit.continuum.generation}>
-            <div className="dm-run-console__tree" aria-label="Model continuum" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="dm-cockpit-receipts" data-model-continuum="" data-continuum-generation={cockpit.continuum.generation}>
+            <p className="dm-api-action-card-eyebrow">Model loop{cockpit.continuum.generation >= 2 ? ` · generation ${cockpit.continuum.generation}` : ""}</p>
+            <ul>
               {cockpit.continuum.loop.map((step) => (
-                <span key={step.id} data-continuum-step={step.id} data-continuum-done={step.done ? "true" : "false"} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <span className="dm-run-console__tree-dot" data-variant={step.done ? "ok" : "pending"} aria-hidden="true" />
-                  <span className="dm-cockpit-subtle" style={{ fontWeight: step.done ? 600 : 400 }}>{step.label}</span>
-                </span>
+                <li key={step.id} className="dm-cockpit-receipt" data-continuum-step={step.id} data-continuum-done={step.done ? "true" : "false"}>
+                  <span className={`dm-cockpit-receipt-chip dm-status-chip${step.done ? " is-ok" : ""}`}>
+                    <span className="dm-status-dot" aria-hidden="true" />{step.label}
+                  </span>
+                  <span className="dm-cockpit-receipt-text">
+                    {step.id === "harvest" ? (cockpit.continuum.traceCount > 0 ? `${cockpit.continuum.traceCount} governed traces harvested` : "No traces yet — every reply through this model is harvested")
+                      : step.id === "train" ? (step.done ? "Training receipt recorded" : cockpit.continuum.plan.mode === "harvest-only" ? "Runs when a capable machine is measured — the corpus keeps growing meanwhile" : `Plan sized to this machine: ${cockpit.continuum.plan.baseModel}`)
+                        : step.id === "evaluate" ? (step.done ? "Benchmark wins promoted" : "Not benchmarked yet — wins gate routing priority")
+                          : step.done ? `Serving your trained model — response tag ${cockpit.continuum.serving?.servedTag || ""} verified`
+                            : cockpit.continuum.serving
+                              ? (cockpit.continuum.serving.target === "local-base" ? "Serving the local base — every reply is harvested toward your next run" : "Serving via the teacher — every reply is harvested toward your next run")
+                              : "Not serving yet — verify the endpoint"}
+                  </span>
+                </li>
               ))}
-              {cockpit.continuum.traceCount > 0 ? (
-                <span className="dm-run-console__hint" data-continuum-traces={cockpit.continuum.traceCount}>
-                  {cockpit.continuum.traceCount} traces harvested{cockpit.continuum.generation >= 2 ? ` · generation ${cockpit.continuum.generation}` : ""}
-                </span>
-              ) : null}
-            </div>
-            {cockpit.continuum.serving ? (
-              <p className="dm-cockpit-subtle" data-continuum-serving={cockpit.continuum.serving.target}>
-                {cockpit.continuum.serving.target === "local-student"
-                  ? `Serving your trained model — response tag ${cockpit.continuum.serving.servedTag} verified.`
-                  : cockpit.continuum.serving.target === "local-base"
-                    ? "Serving the local base model — every reply is harvested toward your next training run."
-                    : "Serving via the teacher — every reply is harvested toward your next training run."}
-              </p>
-            ) : null}
-            {cockpit.continuum.plan.mode === "harvest-only" ? (
-              <p className="dm-cockpit-subtle" data-continuum-plan="harvest-only">
-                Training runs when a capable machine is measured — harvesting continues meanwhile, so the corpus is ready.
-              </p>
-            ) : null}
+            </ul>
           </div>
         ) : null}
 
         {/* Usage — every number counted from a stamped row/record, "—" where
             no evidence exists (the CeoCockpit convention, no invented figures). */}
-        <p className="dm-cockpit-meta-line" data-model-usage="">
+        <p className="dm-cockpit-meta-line" data-model-usage="" title={cockpit.usage.usageBasis}>
           {cockpit.usage.provenRuns > 0 ? `${cockpit.usage.provenRuns} proven run${cockpit.usage.provenRuns === 1 ? "" : "s"}` : "no runs yet"}
           {" · "}{cockpit.usage.workflowsBound > 0 ? `${cockpit.usage.workflowsBound} workflow${cockpit.usage.workflowsBound === 1 ? "" : "s"}` : "no workflows"}
           {" · "}{(cockpit.usage.promptTokens + cockpit.usage.completionTokens) > 0 ? `${cockpit.usage.promptTokens + cockpit.usage.completionTokens} tokens (${cockpit.usage.promptTokens} in / ${cockpit.usage.completionTokens} out)` : "— tokens"}
-          {" · "}{cockpit.usage.toolCallNodes > 0 ? `${cockpit.usage.toolCallNodes} call node${cockpit.usage.toolCallNodes === 1 ? "" : "s"}` : "— call nodes"}
-        </p>
-        <p className="dm-cockpit-subtle" data-model-permissions="">
-          {cockpit.usage.permissions.executionLane} · {cockpit.usage.permissions.runLocality}
-          {" · network "}{cockpit.usage.permissions.networkAllow ? "allowed" : "off"}
-          {" · env refs "}{cockpit.usage.permissions.envRefs || 0}
+          {" · "}{cockpit.usage.permissions.executionLane} · network {cockpit.usage.permissions.networkAllow ? "allowed" : "off"}
         </p>
 
         {/* Utilization — one primary click (create-or-open, never a dead
-            redirect) + the other governed closed loops, closed by default. */}
+            redirect) + the other governed closed loops in the cockpit-steps
+            grammar, closed by default. */}
         <div className="dm-cockpit-settings-actions" data-model-utilize="">
           {focus && chatAction ? (
             focus.mode === "open" ? (
@@ -226,12 +215,16 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
         {suggested.hasActions ? (
           <details className="training-advanced" data-model-loops-accordion="">
             <summary>Closed loops ({suggested.ready} ready)</summary>
-            <div className="dm-run-console__tree" aria-label="Model closed loops">
+            <ul className="dm-cockpit-steps" aria-label="Model closed loops">
               {suggested.actions.filter((a) => a.variant !== "chat").map((a) => (
-                <div key={a.id} className="dm-helper-toolcall-row" data-model-loop={a.id}>
-                  <span className="dm-run-console__tree-dot" data-variant={a.enabled ? "active" : "pending"} aria-hidden="true" />
-                  <span className="dm-helper-toolcall-title">{a.title}</span>
-                  <span className="dm-run-console__hint">{a.enabled ? a.whyNow : a.blockedReason}</span>
+                <li key={a.id} className={`dm-cockpit-step${a.enabled ? "" : " dm-cockpit-step-muted"}`} data-model-loop={a.id}>
+                  <span className={`dm-cockpit-step-chip dm-status-chip${a.enabled ? " is-ok" : ""}`}>
+                    <span className="dm-status-dot" aria-hidden="true" />{a.enabled ? "ready" : "gated"}
+                  </span>
+                  <span className="dm-cockpit-step-body">
+                    <span className="dm-cockpit-step-label">{a.title}</span>
+                    <span className="dm-cockpit-step-desc">{a.enabled ? a.whyNow : a.blockedReason}</span>
+                  </span>
                   <button
                     type="button"
                     className="dm-btn-ghost"
@@ -242,9 +235,9 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
                   >
                     {busyAction === a.id ? "Wiring…" : "Wire loop"}
                   </button>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </details>
         ) : null}
 

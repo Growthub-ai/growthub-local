@@ -83,12 +83,12 @@ export function buildMothershipProxyRow({
 /**
  * Resolve which route is ACTIVE right now from live evidence:
  *   - studentVerified: tuned-tag verification passed (deriveEndpointVerification)
- *   - localRuntimeReachable: the local server answered a probe
+ *   - localRuntimeConnected: the local server answered a probe
  *   - teacherAuthPresent: the runner found the env var NAME set (boolean only)
  * Returns { active, order, skipped[] } — every skipped target carries the
  * exact reason, so the UI never shows an unexplained downgrade. Pure.
  */
-export function deriveActiveRoute({ policyRow = null, studentVerified = false, localRuntimeReachable = false, teacherAuthPresent = false } = {}) {
+export function deriveActiveRoute({ policyRow = null, studentVerified = false, localRuntimeConnected = false, teacherAuthPresent = false } = {}) {
   const policy = policyRow?.metadata?.mothershipProxy;
   const routes = Array.isArray(policy?.routes) ? policy.routes : [];
   if (routes.length === 0) {
@@ -100,11 +100,11 @@ export function deriveActiveRoute({ policyRow = null, studentVerified = false, l
   for (const route of routes) {
     const target = String(route?.target || "");
     if (target === "local-student") {
-      if (studentVerified && localRuntimeReachable) order.push(route);
-      else skipped.push({ target, reason: !studentVerified ? "student not tuned-tag verified yet" : "local runtime unreachable" });
+      if (studentVerified && localRuntimeConnected) order.push(route);
+      else skipped.push({ target, reason: !studentVerified ? "student not tuned-tag verified yet" : "local runtime not recorded as connected — test the endpoint" });
     } else if (target === "local-base") {
-      if (localRuntimeReachable && String(route.modelTag || "")) order.push(route);
-      else skipped.push({ target, reason: !localRuntimeReachable ? "local runtime unreachable" : "no fallback base model chosen" });
+      if (localRuntimeConnected && String(route.modelTag || "")) order.push(route);
+      else skipped.push({ target, reason: !localRuntimeConnected ? "local runtime not recorded as connected — test the endpoint" : "no fallback base model chosen" });
     } else if (target === "teacher") {
       if (teacherAuthPresent && String(route.baseUrl || "")) order.push(route);
       else skipped.push({ target, reason: !teacherAuthPresent ? `teacher auth env (${String(route.authEnvVar || "unset")}) not present` : "teacher endpoint not configured" });
@@ -129,8 +129,11 @@ export function deriveActiveRoute({ policyRow = null, studentVerified = false, l
  *   - student verification = deriveEndpointVerification over the student's
  *     api-registry row's stamped chat-completions `lastResponse` (the exact
  *     state-12 semantics: served tag must match the tuned tag, base demotes)
- *   - local reachability = the row's recorded `connected` status (the same
- *     evidence state 14 renders as "Deployed · Healthy")
+ *   - `localRuntimeConnected` = the row's RECORDED `connected` status (the
+ *     same evidence state 14 renders as "Deployed · Healthy"). It is a
+ *     stamped claim from the last test, NOT a live probe — named
+ *     accordingly, and the route it gates is a derived recommendation the
+ *     actual request path re-verifies at call time.
  *   - teacher availability cannot be read from the workspace (the auth env
  *     var exists only at runtime) — it rides in as explicit probe evidence,
  *     default false, honest.
@@ -151,17 +154,17 @@ export function deriveProxyServingState({ workspaceConfig, policyRow = null, bas
     expectedTag: String(studentRoute?.modelTag || meta?.modelTag || ""),
     baseModel,
   });
-  const localRuntimeReachable = rows.some(
+  const localRuntimeConnected = rows.some(
     (r) => String(r?.status || "") === "connected" && /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(String(r?.baseUrl || "")),
   );
 
   const route = deriveActiveRoute({
     policyRow: policy,
     studentVerified: verification.verified,
-    localRuntimeReachable,
+    localRuntimeConnected,
     teacherAuthPresent: teacherAuthPresent === true,
   });
-  return { policyRow: policy, verification, localRuntimeReachable, ...route };
+  return { policyRow: policy, verification, localRuntimeConnected, ...route };
 }
 
 // ---------------------------------------------------------------------------

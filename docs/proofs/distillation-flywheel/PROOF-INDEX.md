@@ -23,9 +23,59 @@ real 200** — no response body is fabricated by the harness.
   real about every byte on the wire.
 - **Harness:** `BASE_URL=… MODEL_URL=… APP_DIR=… HARVEST=… node
   scripts/e2e-distillation-utilization-playwright.mjs` → **15/15 live checks**.
-- **Provenance legend:** `derived` = read live from the governed workspace;
-  `live-http` = a real HTTP round trip observed by the harness (status codes
-  and payloads recorded from the wire, not synthesized).
+- **Provenance legend:**
+  - `derived` — pure derivation over the live governed rows;
+  - `live-http-transport, simulated-model` — the HTTP round trip, status
+    codes, payloads, browser captures, and workflow executions are REAL and
+    observed on the wire; the MODEL IDENTITY is a stand-in (teacher-pack
+    content served under the workspace tag — no weights were trained). Tag
+    verification here proves the VERIFICATION PLUMBING (tag contract), not
+    that a tuned model exists;
+  - `cli-stamped` — written into the sidecar file by the harness through the
+    CLI-owned lane (filesystem persistence mode);
+  - the training receipt wired for the ladder is a labeled FIXTURE
+    (`runnerMode: "fixture"`) — same class as the 16-state capture's
+    "simulated (stamped receipt)" provenance. The physical fine-tune remains
+    the operator's deferred step.
+
+## Real defects found and fixed BY this proof (strict-contract dividends)
+
+1. **Bodyless chat POST** — the orchestration-graph runner sent NO request
+   body when a node had no `bodyTemplate`, so every custom-model workflow
+   node 400'd against a compliant OpenAI server (Ollama/vLLM). Fixed at the
+   right layer: the runner now builds the canonical chat body from the
+   governed record's own declared capability (`capabilities:
+   "chat-completions"` + `expectedModelTag`), JSON-safe for any prompt,
+   identical across persistence adapters. `bodyTemplate` remains the
+   explicit override.
+2. **Bodyless endpoint test** — `POST /api/workspace/test-api-record` sent
+   no body either, so "Test" against a real model server read as failure;
+   it now sends the canonical identity probe for chat-completions records.
+3. **Duplicate atomic identity rows** — the Training Handoff apply step
+   blind-appended the custom-model api-registry row on every prepare;
+   now an upsert by `integrationId`.
+4. **Real runs could never reach `complete`** — only seeded fixtures carried
+   `outputHash`; the sandbox-run runtime now hashes its own stdout.
+5. **Forgeable run proof** — the /custom-models ladder trusted PATCH-writable
+   row stamps; the runtime sidecar (`sandbox:<objectId>:<row>`, PATCH-blocked)
+   is now authoritative when present: a `lastRunId` with no matching runtime
+   record demotes.
+
+## Full journey — 16-state recapture on this branch (`journey-16-states/`)
+
+`e2e-custom-model-16-states-playwright.mjs` re-run on a fresh boot of THIS
+branch: **14/18 live checks** with every state's screenshot + readback
+captured (states 00–16, including the negative gates: unsafe input blocks
+Prepare, base-tag never verifies, classified `fine_tune_oom` → resume).
+The four missed checks are container-environment, not regressions:
+state-08's REAL preinit ran `pip` and honestly surfaced this container's
+SSL-intercepting proxy as a classified failure (screenshotted — the
+troubleshooting loop working on a real machine constraint), and the failed
+probe's resets cleared the later terminal stamps (states 03/14/16 depend on
+them mid-script). The same states are proven live by the utilization set
+below on the same boot: util-01 (deploy/first-invocation = states 12–14) and
+util-04 (cockpit = state 16, with the model-loop card rendered from live
+evidence).
 
 ## State map
 

@@ -41,7 +41,7 @@ function registryRowsOf(workspaceConfig) {
   return objects.filter((o) => o?.objectType === "api-registry").flatMap((o) => (Array.isArray(o.rows) ? o.rows : []));
 }
 
-function sandboxLinkFor(workspaceConfig, registryId) {
+function sandboxLinkFor(workspaceConfig, registryId, workspaceSourceRecords) {
   if (!registryId) return null;
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
   for (const o of objects) {
@@ -59,6 +59,24 @@ function sandboxLinkFor(workspaceConfig, registryId) {
           runOk = parsed?.ok === true || Number(parsed?.exitCode) === 0;
           outputHash = typeof parsed?.outputHash === "string" ? parsed.outputHash : "";
         } catch { runOk = false; }
+        // Runtime cross-check (mirrors the publish gate): the sandbox-run
+        // route persists every execution into the `sandbox:<objectId>:<row>`
+        // sidecar, which PATCH is policy-blocked from. When that sidecar
+        // exists, it is AUTHORITATIVE — a row stamp whose lastRunId has no
+        // matching runtime record demotes (a forged/edited row stamp can
+        // never mint run proof past a real run history).
+        const sidecar = workspaceSourceRecords?.[`sandbox:${String(o.id || "")}:${String(r?.Name || "")}`];
+        const runRecords = Array.isArray(sidecar?.records) ? sidecar.records : [];
+        if (runRecords.length > 0) {
+          const match = runRecords.find((rec) => String(rec?.runId || "") === String(r?.lastRunId || ""));
+          if (!match) {
+            runOk = false;
+            outputHash = "";
+          } else {
+            runOk = Number(match?.exitCode) === 0 && !match?.error;
+            outputHash = typeof match?.outputHash === "string" ? match.outputHash : "";
+          }
+        }
         return {
           objectId: String(o.id || ""),
           rowName: String(r?.Name || ""),
@@ -128,7 +146,7 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
   const models = modelRows.map((m) => {
     const registryId = m.bondedRegistry?.registryId || "";
     const registryRow = registryRows.find((r) => String(r.integrationId || "") === registryId) || null;
-    const sandbox = sandboxLinkFor(workspaceConfig, registryId);
+    const sandbox = sandboxLinkFor(workspaceConfig, registryId, workspaceSourceRecords);
 
     // Evidence ladder per model — same demotion semantics as /training:
     // a row claim never outranks live proof. The product invariant is strict:
@@ -137,10 +155,18 @@ export function deriveCustomModelsState({ workspaceConfig, workspaceSourceRecord
     // complete.
     let evidenceState = "recorded";
     if (registryRow) evidenceState = "registered";
-    // Deployed: the endpoint is live (a stamped test response or a connected
-    // status exists) but the tuned tag is NOT proven — a base-model response
-    // reaches here and never higher (verifyTunedResponse demotion semantics).
-    if (registryRow && (String(registryRow.status || "") === "connected" || String(registryRow.lastResponse || "").trim())) evidenceState = "deployed";
+    // Deployed: a PARSED chat-completion body was captured from the endpoint
+    // (choices/model present) but the tuned tag is NOT proven — a base-model
+    // response reaches here and never higher (verifyTunedResponse demotion
+    // semantics). A bare `status: "connected"` claim, a malformed body, or an
+    // error envelope stays `registered`: "deployed" names captured output,
+    // not a writable status string.
+    let capturedCompletion = false;
+    try {
+      const parsed = JSON.parse(String(registryRow?.lastResponse || "null"));
+      capturedCompletion = Boolean(parsed && typeof parsed === "object" && !parsed.error && (parsed.model || Array.isArray(parsed.choices)));
+    } catch { capturedCompletion = false; }
+    if (registryRow && capturedCompletion) evidenceState = "deployed";
     if (m.bondedRegistry?.validated) evidenceState = "verified";
     if (m.bondedRegistry?.validated && sandbox) evidenceState = "sandbox-ready";
     if (m.bondedRegistry?.validated && sandbox?.runId && sandbox?.runOk && sandbox?.outputHash) evidenceState = "complete";
@@ -338,7 +364,10 @@ export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}
   const base = String(model?.baseModel || "");
   const call = (id, label, subtitle, extra = {}) => ({
     id, type: "api-registry-call", label, subtitle: subtitle || `${integrationId} · POST /chat/completions`,
-    config: { registryId: integrationId, integrationId, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
+    // No bodyTemplate: the runner builds the canonical chat-completions body
+    // from the record's declared capability + this modelTag (JSON-safe for
+    // any prompt; a bodyTemplate here would break on quoted/multiline input).
+    config: { registryId: integrationId, integrationId, modelTag: tag, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
   });
   const input = (samplePayload, label = "Prompt") => ({ id: "input", type: "input", label, subtitle: "Chat prompt", config: { inputMode: "manual", samplePayload, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } });
   const result = (id, label, cfg = {}) => ({ id, type: "tool-result", label, subtitle: cfg.subtitle || "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested", ...cfg } });
@@ -605,6 +634,10 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
     promptTokens,
     completionTokens,
     toolCallNodes,
+    // Token counts are AS REPORTED by the endpoint's stamped usage blocks —
+    // counted, never invented, but only as trustworthy as the endpoint that
+    // reported them. The UI carries this basis on the usage line.
+    usageBasis: "as reported by the endpoint's stamped responses",
     // Runtime/environment permission surface of the endpoint + bound rows —
     // read-only oversight, authority stays in the Data Model.
     permissions: {

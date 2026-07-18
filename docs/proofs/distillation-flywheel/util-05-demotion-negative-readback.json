@@ -15,6 +15,6 @@
     "activeRoute": "local-base",
     "studentSkipReason": "student not tuned-tag verified yet"
   },
-  "provenance": "live-http",
+  "provenance": "live-http-transport, simulated-model (route fields derived)",
   "nextAllowedAction": "recover_verification"
 }

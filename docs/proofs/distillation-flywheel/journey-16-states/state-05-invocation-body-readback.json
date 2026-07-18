@@ -1,0 +1,19 @@
+{
+  "stateId": "state-05-invocation-body",
+  "visibleTitle": "Training request body / safety",
+  "visibleStatus": "Blocked (unsafe input)",
+  "primaryCta": "Fix highlighted field",
+  "surface": "Training Handoff modal · profile (field-level block)",
+  "proof": {
+    "requestBody": {
+      "model_name": "workspace-local-tuned-v1",
+      "trace_scope": "distillation-traces",
+      "eval_set": "10percent-holdout",
+      "deployment_target": "staging"
+    },
+    "unsafeInputBlocked": true,
+    "cleanBlockedState": true,
+    "rawCommandInAdvancedOnly": true
+  },
+  "nextAllowedAction": "fix_tag"
+}

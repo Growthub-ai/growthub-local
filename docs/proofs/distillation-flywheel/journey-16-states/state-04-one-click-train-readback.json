@@ -1,0 +1,16 @@
+{
+  "stateId": "state-04-one-click-train",
+  "visibleTitle": "Train custom model",
+  "visibleStatus": "Not ready",
+  "primaryCta": "Finalize",
+  "surface": "Training Handoff modal · profile",
+  "governedRows": {
+    "modelTraining": "workspace-local (base gemma3)"
+  },
+  "proof": {
+    "runtime": "",
+    "baseModelSelectable": false,
+    "commandsInAdvancedOnly": false
+  },
+  "nextAllowedAction": "start_training"
+}

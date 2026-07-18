@@ -1,15 +1,17 @@
 /**
- * Distillation Flywheel Loop V1 — end-to-end reality probe on the REAL
- * governed workspace.
+ * Distillation Flywheel Loop V1 — IN-MEMORY deriver suite over the shipped
+ * governed-workspace shapes (no HTTP, no boot — the live-transport
+ * counterpart with real requests, real browser, and screenshot evidence is
+ * `e2e-distillation-utilization-playwright.mjs`).
  *
- * This does NOT invent a parallel journey. It boots the SAME super-admin
+ * It does NOT invent a parallel journey: it builds the SAME super-admin
  * model-QA seed the 16-state live capture uses, then walks the existing
  * custom-model closed loop (eligibility → configure → train → first
  * invocation → deploy → proof loop → cockpit) mutating the governed rows
- * exactly as the cockpits/runner would — real `api-registry` rows with real
- * chat-completions `lastResponse` bodies, real `model-training-run`
- * receipts, the real trace sidecar — and asserts the distillation additions
- * RIDE that loop:
+ * exactly as the cockpits/runner would — `api-registry` rows with
+ * chat-completions-shaped `lastResponse` bodies (constructed in memory),
+ * hand-built `model-training-run` receipts, the trace sidecar — and asserts
+ * the distillation additions RIDE that loop:
  *
  *   - the mothership proxy is an ordinary custom-model registry row, so
  *     /custom-models opens (evidence-gated) on day one, on any machine

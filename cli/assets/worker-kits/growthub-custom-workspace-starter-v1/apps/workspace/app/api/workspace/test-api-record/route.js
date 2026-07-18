@@ -73,6 +73,21 @@ async function POST(request) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
+  // A chat-completions endpoint needs a REAL probe body — a bodyless POST is
+  // a 400 on every OpenAI-compatible server (Ollama, vLLM, …), which made
+  // "Test" read as a server failure instead of testing anything. The probe
+  // asks the served model to identify itself so the stamped response carries
+  // the served tag for tuned-tag verification.
+  const isChatCompletions = method === "POST"
+    && (String(record?.capabilities || "").includes("chat-completions") || /\/chat\/completions\/?$/.test(url));
+  const probeBody = isChatCompletions
+    ? JSON.stringify({
+      model: String(record?.expectedModelTag || record?.modelTag || ""),
+      messages: [{ role: "user", content: "Reply in one short line to confirm you are the tuned workspace model." }],
+      max_tokens: 64,
+    })
+    : undefined;
+
   try {
     const response = await fetch(url, {
       method,
@@ -81,6 +96,7 @@ async function POST(request) {
         ...(method !== "GET" ? { "content-type": "application/json" } : {}),
         ...buildAuthHeaders(record, secret),
       },
+      ...(probeBody ? { body: probeBody } : {}),
       signal: controller.signal,
     });
     const contentType = response.headers.get("content-type") || "";

@@ -34,6 +34,6 @@
     ],
     "everyReplyTunedTag": true
   },
-  "provenance": "live-http",
+  "provenance": "live-http-transport, simulated-model",
   "nextAllowedAction": "harvest_receipt"
 }

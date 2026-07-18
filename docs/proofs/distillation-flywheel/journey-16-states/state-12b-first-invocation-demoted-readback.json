@@ -1,0 +1,21 @@
+{
+  "stateId": "state-12b-first-invocation-demoted",
+  "visibleTitle": "First invocation test",
+  "visibleStatus": "Not your model — base model replied",
+  "primaryCta": "Test again",
+  "surface": "Training Handoff modal · verify (demotion)",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "expectedModel": "workspace-local-tuned-v1",
+    "servedModel": "gemma3",
+    "baseModel": "gemma3",
+    "notBaseModel": false,
+    "verified": false,
+    "demotion": "base-model",
+    "continueCtaShown": false
+  },
+  "nextAllowedAction": "retest_or_reimport"
+}

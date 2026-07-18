@@ -20,6 +20,6 @@
       "model": "workspace-local-tuned-v1"
     }
   },
-  "provenance": "live-http",
+  "provenance": "live-http-transport, simulated-model",
   "nextAllowedAction": "utilize_model"
 }

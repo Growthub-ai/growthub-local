@@ -13,13 +13,13 @@
     "cockpitRendered": true,
     "continuumVisible": true,
     "utilizeVisible": true,
-    "usageLine": "1 proven run · 1 workflow · 198 tokens (43 in / 155 out) · 1 call node",
+    "usageLine": "1 proven run · 1 workflow · 198 tokens (43 in / 155 out) · sandbox-local · network off",
     "evidenceState": "complete",
     "verificationStatus": "verified",
-    "modelOutputHash": "c3055b7d4b494b26",
+    "modelOutputHash": "5efee0e585f04a85",
     "lastResponseModel": "workspace-local-tuned-v1",
     "nextAction": "Run again"
   },
-  "provenance": "live-http",
+  "provenance": "live-http-transport, simulated-model",
   "nextAllowedAction": "operate_model"
 }

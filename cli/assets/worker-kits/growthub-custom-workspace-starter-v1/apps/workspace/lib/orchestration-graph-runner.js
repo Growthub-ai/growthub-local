@@ -21,6 +21,31 @@ import { buildInputPayloadForRunner } from "./orchestration-run-inputs.js";
 import { runAgentSwarmGraphIfPresent } from "./orchestration-agent-swarm.js";
 import { readEnvVar, readServerSecret } from "./server-secrets.js";
 
+/** The governed record (or its resolved URL) declares a chat endpoint. */
+function isChatCompletionsRecord(record, url) {
+  return String(record?.capabilities || "").includes("chat-completions")
+    || /\/chat\/completions\/?$/.test(String(url || "").split("?")[0]);
+}
+
+/**
+ * Canonical OpenAI chat body from the input payload — rooted in the atomic
+ * api-registry record's own fields (expectedModelTag), never runner guesses.
+ * Pass-through when the input already carries `messages`; otherwise the
+ * payload's prompt/text/instruction becomes the user turn. JSON-safe by
+ * construction for any content.
+ */
+function buildChatCompletionsBody(record, nodeConfig, inputPayload) {
+  const input = inputPayload && typeof inputPayload === "object" ? inputPayload : {};
+  const messages = Array.isArray(input.messages) && input.messages.length
+    ? input.messages.map((m) => ({ role: String(m?.role || "user"), content: String(m?.content || "") }))
+    : [{ role: "user", content: String(input.prompt ?? input.text ?? input.instruction ?? "") }];
+  return {
+    model: String(nodeConfig?.modelTag || record?.expectedModelTag || record?.modelTag || ""),
+    messages,
+    max_tokens: Math.max(1, Math.floor(Number(nodeConfig?.maxTokens) || 512)),
+  };
+}
+
 function normalizeMethod(value) {
   const method = String(value || "GET").trim().toUpperCase();
   return ["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method) ? method : "GET";
@@ -208,6 +233,16 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
     } catch {
       body = bodyTemplate;
     }
+  } else if (method !== "GET" && isChatCompletionsRecord(merged, url)) {
+    // The governed api-registry record DECLARES its capability — when it is a
+    // chat-completions endpoint and the node carries no explicit bodyTemplate,
+    // build the canonical OpenAI body from the input payload. This derives
+    // from the persisted record (works identically across every workspace
+    // persistence adapter — filesystem, Supabase/Postgres, or others), is
+    // JSON-safe for any prompt content (no string templating), and fixes the
+    // real defect where a bodyless POST to a compliant server (Ollama, vLLM)
+    // is a 400 — which previously made every custom-model workflow node fail.
+    body = buildChatCompletionsBody(merged, nodeConfig, inputPayload);
   }
 
   const mockResult = executeFeatureSeedMock(url, { registryId, method, startedAt });

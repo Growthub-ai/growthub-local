@@ -1,0 +1,63 @@
+{
+  "stateId": "state-15-customer-proof-loop",
+  "visibleTitle": "Proof loop complete",
+  "visibleStatus": "Verified",
+  "primaryCta": "View proof details",
+  "surface": "Training Handoff modal · done (proof checklist + completion reward)",
+  "governedRows": {
+    "modelTraining": "workspace-local",
+    "modelTrainingRun": "qa_run",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "checklistDone": "9/9",
+    "complete": true,
+    "checklistItems": [
+      {
+        "id": "preflight-pass",
+        "proven": true
+      },
+      {
+        "id": "distilling-counter",
+        "proven": true
+      },
+      {
+        "id": "finetune-step",
+        "proven": true
+      },
+      {
+        "id": "convert-gguf",
+        "proven": true
+      },
+      {
+        "id": "quant-size-proof",
+        "proven": true
+      },
+      {
+        "id": "ollama-create",
+        "proven": true
+      },
+      {
+        "id": "chat-verify-tuned",
+        "proven": true
+      },
+      {
+        "id": "registry-live",
+        "proven": true
+      },
+      {
+        "id": "workflow-smoke-outputhash",
+        "proven": true
+      }
+    ],
+    "headline": "Your custom model is live locally.",
+    "trainedTag": "workspace-local-tuned-v1",
+    "baseModel": "gemma3",
+    "quantDelta": "16.0 GB → 4.4 GB (q4_k_m)",
+    "artifactSha": "deadbeefcafef00d",
+    "outputHash": "oh_qa_1",
+    "verificationTimestamp": "2026-07-06T18:00:00Z"
+  },
+  "nextAllowedAction": "open_workspace"
+}

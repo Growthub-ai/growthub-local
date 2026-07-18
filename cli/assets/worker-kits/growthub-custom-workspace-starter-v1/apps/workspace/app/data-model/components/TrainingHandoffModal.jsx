@@ -905,7 +905,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
             // Genome field visibility: now that a custom-model record is
             // present, reveal its binding fields in this table — without
             // touching the object's generic/nango fields (no leak).
-            const withRow = { ...o, rows: [...(o.rows || []), registryRow] };
+            // UPSERT by integrationId: the atomic custom-model identity row
+            // is one row forever — a re-prepare must refresh it, never
+            // append a duplicate identity.
+            const rows = Array.isArray(o.rows) ? o.rows : [];
+            const existingIdx = rows.findIndex((r) => String(r?.integrationId || "") === integrationId);
+            const nextRows = existingIdx >= 0
+              ? rows.map((r, i) => (i === existingIdx ? { ...r, ...registryRow } : r))
+              : [...rows, registryRow];
+            const withRow = { ...o, rows: nextRows };
             return { ...withRow, fieldSettings: applyGenomeFieldSettings(withRow) };
           }
           return o;

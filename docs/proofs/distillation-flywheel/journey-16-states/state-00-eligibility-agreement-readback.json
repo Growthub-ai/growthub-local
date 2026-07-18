@@ -1,0 +1,15 @@
+{
+  "stateId": "state-00-eligibility-agreement",
+  "visibleTitle": "Eligibility agreement",
+  "visibleStatus": "Agree",
+  "surface": "/training ledger opener vs /api/workspace vs deriveDistillationPipelineState",
+  "proof": {
+    "deriverGraded": 11,
+    "deriverReady": true,
+    "apiTraceRows": 12,
+    "browserOpenable": true,
+    "browserEligibleCount": 11,
+    "agree": true
+  },
+  "nextAllowedAction": "open_runtime"
+}
