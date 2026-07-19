@@ -312,6 +312,8 @@ test("attached model tag rebinds training, direct registry, and mothership ident
   assert.equal(rebound[0].rows[0].status, "imported");
   assert.equal(rebound[1].rows[0].expectedModelTag, "workspace-local-tuned-v1:latest");
   assert.equal(rebound[1].rows[1].metadata.mothershipProxy.modelTag, "workspace-local-tuned-v1:latest");
+  assert.equal(rebound[1].rows[1].name, "workspace-local-tuned-v1:latest", "registry display name stays capability-neutral after rebinding");
+  assert.doesNotMatch(rebound[1].rows[1].name, /mothership proxy|custom model/i);
   assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[0].modelTag, "workspace-local-tuned-v1:latest");
   assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[1].modelTag, "gemma3:4b", "fallback identity is unchanged");
   assert.equal(objects[0].rows[0].localModel, "reserved-tag", "input remains immutable");

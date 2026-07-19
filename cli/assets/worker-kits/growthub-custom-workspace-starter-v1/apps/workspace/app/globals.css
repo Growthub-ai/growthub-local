@@ -5169,6 +5169,17 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-api-action-card-body h3 { margin: 0; font-size: 14px; font-weight: 650; color: #111827; }
 .dm-api-action-card-body p { margin: 0; font-size: 12px; line-height: 1.45; color: #4b5563; }
 .dm-api-action-card-cta { flex-shrink: 0; align-self: center; }
+.dm-node-registry-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.dm-node-registry-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.dm-node-registry-status .dm-cockpit-subtle { min-width: 0; overflow-wrap: anywhere; }
+.dm-node-registry-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; width: 100%; }
+.dm-node-registry-actions .dm-btn-ghost { width: 100%; justify-content: center; text-decoration: none; box-sizing: border-box; }
 
 /* Governed creation cockpit — vertical journey inside the api-registry drawer.
    Overrides the action-card 3-col grid and reuses the workspace's own status

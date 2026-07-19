@@ -51,7 +51,7 @@ export function buildMothershipProxyRow({
   const frag = safeIdFragment(tag) || "custom-model";
   return {
     integrationId: `mothership-proxy-${frag}`,
-    name: `${tag || "Custom model"} (mothership proxy)`,
+    name: tag || `API route ${workspaceSlug}`,
     kind: "custom-model",
     capabilityType: "custom-model-inference",
     baseUrl: String(fallbackBaseUrl || "http://127.0.0.1:11434"),

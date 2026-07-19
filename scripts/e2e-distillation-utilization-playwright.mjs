@@ -517,6 +517,20 @@ async function openCustomModelsCockpit() {
   const modelNode = page.locator(".dm-orchestration-node", { hasText: "api-registry-call" }).first();
   if (await modelNode.count()) { await modelNode.click(); await wait(1200); }
   const configFields = await page.locator(".dm-orchestration-config__field").count();
+  const registryBinding = page.locator("[data-node-registry-binding]").first();
+  const registryBindingText = (await registryBinding.count()) ? await registryBinding.innerText() : "";
+  const registryActions = registryBinding.locator(".dm-node-registry-actions .dm-btn-ghost");
+  const registryActionCount = await registryActions.count();
+  const registryActionLayout = registryActionCount === 1 ? await registryActions.first().evaluate((button) => {
+    const row = button.parentElement;
+    const buttonRect = button.getBoundingClientRect();
+    const rowRect = row?.getBoundingClientRect();
+    return {
+      buttonWidth: Math.round(buttonRect.width),
+      rowWidth: Math.round(rowRect?.width || 0),
+      ownRow: Boolean(rowRect && Math.abs(buttonRect.width - rowRect.width) <= 2),
+    };
+  }) : { buttonWidth: 0, rowWidth: 0, ownRow: false };
   await shot("util-08-workflow-canvas.png");
   // The governed record itself — every claim above parsed from the live row.
   const ws = await getWS();
@@ -530,6 +544,7 @@ async function openCustomModelsCockpit() {
   const boundRecord = await liveRegistryRow();
   const tagBound = String(modelCallNode?.config?.modelTag || "") === TAG || String(boundRecord?.expectedModelTag || "") === TAG;
   rec("util-08 canvas renders the governed graph; the api-registry node binds the atomic record", nodesRendered >= 3 && configFields > 0 && String(modelCallNode?.config?.registryId || "") === REG && tagBound, `nodes=${nodesRendered} fields=${configFields}`);
+  rec("util-08 api-registry sidecar stays generic and keeps one full-width action row", registryActionCount === 1 && registryActionLayout.ownRow && !/mothership proxy|custom model/i.test(registryBindingText), `actions=${registryActionCount} button=${registryActionLayout.buttonWidth}px row=${registryActionLayout.rowWidth}px`);
   write({
     stateId: "util-08-workflow-canvas",
     visibleTitle: "custom-model-chat",
@@ -540,6 +555,11 @@ async function openCustomModelsCockpit() {
     proof: {
       nodesRendered,
       configFieldsRendered: configFields,
+      registryBinding: {
+        actionCount: registryActionCount,
+        actionLayout: registryActionLayout,
+        capabilitySpecificCopyPresent: /mothership proxy|custom model/i.test(registryBindingText),
+      },
       graphNodes: (graph?.nodes || []).map((n) => ({ id: n.id, type: n.type })),
       graphEdges: (graph?.edges || []).length,
       registryNodeBinding: modelCallNode ? { registryId: modelCallNode.config?.registryId, modelTag: modelCallNode.config?.modelTag, endpoint: modelCallNode.config?.endpoint } : null,

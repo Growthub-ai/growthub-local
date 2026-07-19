@@ -388,6 +388,8 @@ test("proxy: the policy row is an ordinary governed registry row — cockpit-com
     modelTag: "my-model-v1", studentRegistryId: "workspace-local-model", fallbackBaseModel: "gemma3:1b",
     teacher: { providerId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1", modelTag: "kimi-k3", authEnvVar: "KIMI_API_KEY" },
   });
+  assert.equal(row.name, "my-model-v1", "registry display name stays capability-neutral");
+  assert.doesNotMatch(row.name, /mothership proxy|custom model/i, "routing implementation labels never leak into the registry name");
   assert.equal(row.kind, "custom-model");
   assert.equal(row.capabilityType, "custom-model-inference", "AI-Agent node + cockpit treat it as any custom model");
   assert.equal(row.metadata.mothershipProxy.routes.length, 3);

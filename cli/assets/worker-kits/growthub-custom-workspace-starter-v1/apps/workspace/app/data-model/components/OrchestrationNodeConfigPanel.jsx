@@ -1567,25 +1567,21 @@ export function OrchestrationNodeConfigPanel({
 
       {activeTab === "configuration" && type === "api-registry-call" && (
         <div className="dm-orchestration-config__pane">
-          <div className="dm-api-action-card" data-node-registry-binding="">
+          <div className="dm-api-action-card dm-node-registry-card" data-node-registry-binding="">
             <div className="dm-api-action-card-body">
               <p className="dm-api-action-card-eyebrow">API Registry binding</p>
-              <strong>{String(registryRow?.name || registryRow?.integrationId || config.registryId || "No governed record selected")}</strong>
-              <span className="dm-cockpit-subtle">
-                {registryRow
-                  ? `${String(registryRow.method || config.method || "POST").toUpperCase()} ${String(registryRow.endpoint || config.endpoint || "—")}`
-                  : "Select and test an API Registry record before this node can run."}
-              </span>
-              {registryRow?.metadata?.mothershipProxy ? (
-                <span className="dm-cockpit-subtle" data-node-mothership-policy="">
-                  Custom model · {registryRow.metadata.mothershipProxy.routes?.length || 0} governed routes · every completed reply writes invocation and trace evidence
+              <strong>{String(registryRow?.integrationId || config.registryId || registryRow?.name || "No governed record selected")}</strong>
+              <div className="dm-node-registry-status">
+                <span className="dm-cockpit-subtle">
+                  {registryRow
+                    ? `${String(registryRow.method || config.method || "POST").toUpperCase()} ${String(registryRow.endpoint || config.endpoint || "—")}`
+                    : "Select and test an API Registry record before this node can run."}
                 </span>
-              ) : null}
+                {registryConnected ? <span className="dm-orchestration-config__badge is-connected">Connected</span> : null}
+              </div>
             </div>
-            <div className="dm-cockpit-settings-actions">
-              {registryConnected ? <span className="dm-orchestration-config__badge is-connected">Connected</span> : null}
+            <div className="dm-node-registry-actions">
               <a className="dm-btn-ghost" href="/data-model" data-open-api-registry="">Open API Registry</a>
-              {registryRow?.metadata?.mothershipProxy ? <a className="dm-btn-ghost" href="/custom-models">Open Custom Models</a> : null}
             </div>
           </div>
           <label className="dm-orchestration-config__field">
