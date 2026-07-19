@@ -1,0 +1,17 @@
+{
+  "stateId": "state-13-deploy",
+  "visibleTitle": "Deploy custom model",
+  "visibleStatus": "connected",
+  "primaryCta": "Deploy custom model",
+  "surface": "/data-model · api-registry",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model"
+  },
+  "proof": {
+    "environment": "Production",
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "authTokenRef": "(env ref)",
+    "secretsExposed": false
+  },
+  "nextAllowedAction": "deploy"
+}

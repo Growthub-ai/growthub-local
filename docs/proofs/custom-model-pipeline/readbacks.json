@@ -1,0 +1,7 @@
+{
+  "note": "Readbacks from the booted model-QA workspace (127.0.0.1:3777). In-container run cannot reach `complete` (no GPU/ollama/llama.cpp); the governed writes + derivations below are real. The 9-milestone real-machine pack is the operator step (see CUSTOM_LOCAL_MODEL_GOLDEN_PATH_V1.md).",
+  "shell": { "route": "/data-model", "governedObjects": ["api-registry (workspace-local-model → http://127.0.0.1:11434/v1/chat/completions)", "model-training (base gemma3)", "training-traces (12)"] },
+  "oneClick": { "wrote": "model-training-run receipt via PATCH /api/workspace", "status": "running", "runnerSandbox": "model-training-runner (1 row, atomic)" },
+  "governedFailedReceipt": { "status": "failed", "progress": { "stageId": "fine-tuning", "stageRank": 2 }, "blockedReason": "Stage failed: Fine-tuning (QLoRA) — python train.py: no such file" },
+  "derivedRemediation": { "stageId": "fine-tuning", "issue": "fine_tune_dependency_failed | retry_finetune", "nextAction": { "label": "Adjust & re-run the fine-tune", "oneClick": true }, "source": "deriveTrainingStageIssue / deriveTrainingRemediation over the real receipt" }
+}

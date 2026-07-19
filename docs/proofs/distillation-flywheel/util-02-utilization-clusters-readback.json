@@ -1,0 +1,39 @@
+{
+  "stateId": "util-02-utilization-clusters",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Utilized · 4 real chat completions · 200 × 4",
+  "primaryCta": "Use model",
+  "surface": "shipped captureChatCompletion() over the live governed api-registry row",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "modelInvocation": "model-invocation:workspace-local-model:live"
+  },
+  "proof": {
+    "results": [
+      {
+        "clusterId": "gtm-funnels",
+        "ok": true,
+        "status": 200,
+        "servedModel": "workspace-local-tuned-v1",
+        "chars": 532
+      },
+      {
+        "clusterId": "creative-narrative",
+        "ok": true,
+        "status": 200,
+        "servedModel": "workspace-local-tuned-v1",
+        "chars": 306
+      },
+      {
+        "clusterId": "long-context-code",
+        "ok": true,
+        "status": 200,
+        "servedModel": "workspace-local-tuned-v1",
+        "chars": 636
+      }
+    ],
+    "everyReplyTunedTag": true
+  },
+  "provenance": "live-http-transport, simulated-model",
+  "nextAllowedAction": "harvest_receipt"
+}

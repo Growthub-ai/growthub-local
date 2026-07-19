@@ -1,0 +1,61 @@
+{
+  "stateId": "state-09-evaluation",
+  "visibleTitle": "Evaluation Results",
+  "visibleStatus": "Complete",
+  "primaryCta": "Approve & continue",
+  "modalHook": "[data-eval-results] (holdout, not in training)",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1",
+    "trainingTraces": "10% holdout (excluded from training)"
+  },
+  "proof": {
+    "evalSetHash": "sha256:abc123def456#holdout",
+    "metrics": [
+      {
+        "metric": "Accuracy (EM)",
+        "base": 71.4,
+        "custom": 78.6,
+        "unit": "%",
+        "uplift": "+10.1%"
+      },
+      {
+        "metric": "Reward score",
+        "base": 0.712,
+        "custom": 0.845,
+        "unit": "",
+        "uplift": "+18.7%"
+      },
+      {
+        "metric": "Cost / 1K tokens",
+        "base": 0.012,
+        "custom": 0.009,
+        "unit": "$",
+        "uplift": "-25.0%"
+      },
+      {
+        "metric": "Latency (p95)",
+        "base": 1.32,
+        "custom": 1.08,
+        "unit": "s",
+        "uplift": "-18.2%"
+      },
+      {
+        "metric": "Hallucination rate",
+        "base": 3.1,
+        "custom": 1.7,
+        "unit": "%",
+        "uplift": "-45.2%"
+      }
+    ],
+    "holdoutExcludedFromTraining": true
+  },
+  "nluExamples": [
+    "Did the custom model improve?",
+    "Compare it to the base model.",
+    "Show eval results."
+  ],
+  "derivedFrom": [
+    "seeded eval evidence (labeled) — real eval is the operator's holdout run"
+  ],
+  "nextAllowedAction": "approve_continue"
+}

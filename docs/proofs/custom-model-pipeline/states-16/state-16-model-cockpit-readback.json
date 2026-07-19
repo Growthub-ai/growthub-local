@@ -1,0 +1,46 @@
+{
+  "stateId": "state-16-model-cockpit",
+  "visibleTitle": "custom-model-v1",
+  "visibleStatus": "Live",
+  "primaryCta": "Run again",
+  "modalHook": "/custom-models cockpit · Overview/Health/Usage/Versions/Settings",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "custom-model-workflow"
+  },
+  "proof": {
+    "evidenceState": "complete",
+    "modelVersion": "custom-model-v1",
+    "servingProfile": {
+      "adapter": "ollama",
+      "mode": "single",
+      "continuousBatching": false,
+      "speculative": null,
+      "flags": {},
+      "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+      "servedModel": "custom-model-v1",
+      "servesTunedTag": true,
+      "verified": true,
+      "reason": "Serving custom-model-v1 via ollama"
+    },
+    "lastResponseModel": "custom-model-v1",
+    "verificationStatus": "verified",
+    "nextAction": "Run again",
+    "actions": [
+      "Rollback",
+      "Run new evaluation",
+      "Adjust rollout"
+    ]
+  },
+  "nluExamples": [
+    "Open my model cockpit.",
+    "Rollback.",
+    "Run a new eval.",
+    "Increase canary."
+  ],
+  "derivedFrom": [
+    "deriveCustomModelsState"
+  ],
+  "nextAllowedAction": "operate_model"
+}

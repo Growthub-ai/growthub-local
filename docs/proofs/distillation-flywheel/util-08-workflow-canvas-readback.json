@@ -1,0 +1,40 @@
+{
+  "stateId": "util-08-workflow-canvas",
+  "visibleTitle": "custom-model-chat",
+  "visibleStatus": "live · v2",
+  "primaryCta": "Run workflow",
+  "surface": "/workflows canvas — the governed sandbox object record (orchestrationConfig) rendered as nodes + the api-registry node config sidecar",
+  "governedRows": {
+    "customModelWorkflows": "custom-model-workflows",
+    "row": "custom-model-chat",
+    "apiRegistry": "workspace-local-model"
+  },
+  "proof": {
+    "nodesRendered": 3,
+    "configFieldsRendered": 10,
+    "graphNodes": [
+      {
+        "id": "input",
+        "type": "input"
+      },
+      {
+        "id": "model-call",
+        "type": "api-registry-call"
+      },
+      {
+        "id": "result",
+        "type": "tool-result"
+      }
+    ],
+    "graphEdges": 2,
+    "registryNodeBinding": {
+      "registryId": "workspace-local-model",
+      "endpoint": "/chat/completions"
+    },
+    "lifecycleStatus": "live",
+    "publishedAt": "2026-07-18T22:02:37.820Z",
+    "lastRunId": "run_mrqx9406_86tbfk"
+  },
+  "provenance": "derived",
+  "nextAllowedAction": "run_workflow"
+}

@@ -60,6 +60,10 @@ import {
   CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE,
   buildCeoBootstrapCompletion,
 } from "@/lib/ceo-bootstrap-console";
+import {
+  CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE,
+  normalizeCustomModelWorkflowProposal,
+} from "@/lib/custom-model-workflow-proposal";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
 
@@ -274,12 +278,27 @@ async function POST(request) {
   const ceoBootstrapProposals = normalizedProposals.filter(
     (p) => p?.type === CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE
   );
+  const customModelWorkflowProposals = normalizedProposals.filter(
+    (p) => p?.type === CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE
+  );
   const configProposals = normalizedProposals.filter(
     (p) =>
       p?.type !== RESOLVER_PROPOSAL_TYPE &&
       !SWARM_PROPOSAL_TYPES.includes(p?.type) &&
-      p?.type !== CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE
+      p?.type !== CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE &&
+      p?.type !== CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE
   );
+
+  // The custom-model workflow lane re-derives from governed evidence, which
+  // needs the full source-records map (invocation proofs, training corpus).
+  let workspaceSourceRecords = {};
+  if (customModelWorkflowProposals.length > 0) {
+    try {
+      workspaceSourceRecords = (await readWorkspaceSourceRecords()) || {};
+    } catch {
+      workspaceSourceRecords = {};
+    }
+  }
 
   for (const proposal of resolverProposals) {
     const validation = validateResolverProposal(proposal);
@@ -339,6 +358,25 @@ async function POST(request) {
     applied.push({
       ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
       summary: "CEO setup marked complete",
+    });
+  }
+
+  // Custom-model workflow lane — the /custom-models cockpit's first-utilization
+  // actions. The server rebuilds the full orchestration graph from governed
+  // evidence (never a client graph) and upserts a governed sandbox-environment
+  // row in the EXISTING dataModel patch field; execution stays behind
+  // POST /api/workspace/sandbox-run. Returns the artifact the cockpit opens.
+  for (const proposal of customModelWorkflowProposals) {
+    const result = normalizeCustomModelWorkflowProposal(proposal, workingConfig, workspaceSourceRecords);
+    if (!result.ok) {
+      skipped.push({ proposal, reason: result.error || "invalid custom-model workflow proposal" });
+      continue;
+    }
+    workingConfig = result.config;
+    applied.push({
+      ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
+      artifact: result.artifact,
+      summary: result.summary,
     });
   }
 

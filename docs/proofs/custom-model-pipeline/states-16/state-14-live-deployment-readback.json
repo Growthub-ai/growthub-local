@@ -1,0 +1,44 @@
+{
+  "stateId": "state-14-live-deployment",
+  "visibleTitle": "custom-model-v1",
+  "visibleStatus": "Deployed",
+  "primaryCta": "Copy request",
+  "modalHook": "cockpit · [data-custom-model-endpoint]",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "modelInvocation": "model-invocation:workspace-local-model"
+  },
+  "proof": {
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "version": "custom-model-v1",
+    "health": "Healthy",
+    "registryConnected": true,
+    "recentReceipts": [
+      {
+        "requestId": "req_013BK5z8YBE",
+        "status": 200,
+        "latency": "1.15s"
+      },
+      {
+        "requestId": "req_013BK5z9V1Q",
+        "status": 200,
+        "latency": "1.23s"
+      },
+      {
+        "requestId": "req_013BK5z6D2R",
+        "status": 200,
+        "latency": "1.17s"
+      }
+    ],
+    "servedModel": "custom-model-v1"
+  },
+  "nluExamples": [
+    "Is it live?",
+    "Copy the endpoint.",
+    "Show recent invocations."
+  ],
+  "derivedFrom": [
+    "deriveServingProfile"
+  ],
+  "nextAllowedAction": "copy_request"
+}

@@ -1,0 +1,18 @@
+{
+  "stateId": "state-06-training-started",
+  "visibleTitle": "",
+  "visibleStatus": "Running",
+  "primaryCta": "View logs",
+  "surface": "Training Handoff modal · train (running)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "trainingRunId": "qa_run",
+    "barPct": 8,
+    "statusLine": "distilling · step 0/12 · dataset snapshot locked",
+    "fabricatedProgress": false
+  },
+  "nextAllowedAction": "view_run"
+}

@@ -66,7 +66,8 @@ import {
   DEFAULT_SANDBOX_RUN_LOCALITY,
   KNOWN_SANDBOX_RUNTIMES,
   SANDBOX_DEFAULT_TIMEOUT_MS,
-  SANDBOX_MAX_TIMEOUT_MS
+  SANDBOX_MAX_TIMEOUT_MS,
+  SANDBOX_MAX_TIMEOUT_MS_LOCAL
 } from "@/lib/workspace-schema";
 import {
   parseSandboxAllowList,
@@ -91,11 +92,95 @@ import {
 // Single canonical secret resolver — shared with the serverless add-on lane so
 // both run lanes resolve stored env tokens identically (no copy-pasted logic).
 import { readServerSecret } from "@/lib/server-secrets";
+import {
+  buildTraceCaptureReceiptFields,
+  distillationTracesSourceKey,
+  TRACE_CAPTURE_RUN_KIND
+} from "@/lib/distillation-gateway";
+import { trainingRunSourceKey } from "@/lib/training-run-receipts";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
   const text = String(value ?? "").trim().toLowerCase();
   return ["true", "1", "on", "yes"].includes(text);
+}
+
+async function persistCustomModelExecutionEvidence(response, ranAt) {
+  const evidence = response?.adapterMeta?.customModel;
+  const invocationsToAppend = Array.isArray(evidence?.invocations) && evidence.invocations.length
+    ? evidence.invocations
+    : evidence?.invocation ? [evidence.invocation] : [];
+  const tracesToAppend = Array.isArray(evidence?.traces) && evidence.traces.length
+    ? evidence.traces
+    : evidence?.trace ? [evidence.trace] : [];
+  const invocation = invocationsToAppend[0];
+  const trace = tracesToAppend[0];
+  if (!invocation || !trace) return null;
+
+  const modelId = String(invocation.modelId || "workspace-local").trim() || "workspace-local";
+  const policyRegistryId = String(invocation.policyRegistryId || modelId).trim() || modelId;
+  const invocationSourceId = `model-invocation:${policyRegistryId}:${modelId}`;
+  const invocationEntry = await readWorkspaceSourceRecords(invocationSourceId);
+  const priorInvocations = Array.isArray(invocationEntry?.records) ? invocationEntry.records : [];
+  const invocations = [...priorInvocations, ...invocationsToAppend].slice(-500);
+  await writeWorkspaceSourceRecords(invocationSourceId, invocations, {
+    integrationId: policyRegistryId,
+    fetchedAt: ranAt,
+  });
+
+  const traceSourceId = distillationTracesSourceKey(modelId);
+  const traceEntry = await readWorkspaceSourceRecords(traceSourceId);
+  const priorTraces = Array.isArray(traceEntry?.records) ? traceEntry.records : [];
+  const traces = [...priorTraces, ...tracesToAppend].slice(-5000);
+  await writeWorkspaceSourceRecords(traceSourceId, traces, {
+    integrationId: policyRegistryId,
+    fetchedAt: ranAt,
+  });
+
+  const receiptSourceId = trainingRunSourceKey(modelId);
+  const receiptEntry = await readWorkspaceSourceRecords(receiptSourceId);
+  const priorReceipts = Array.isArray(receiptEntry?.records) ? receiptEntry.records : [];
+  const distillation = buildTraceCaptureReceiptFields({
+    traces,
+    teacherModel: String(trace.teacherModel || ""),
+    teacherProviderId: String(trace.teacherProviderId || ""),
+    clusterId: String(trace.clusterId || ""),
+  });
+  const captureReceipt = {
+    schema: "growthub-local-model-training-run-v1",
+    trainingRunId: `capture_${String(response.runId || Date.now().toString(36))}`,
+    modelTrainingRowId: modelId,
+    status: "completed",
+    runKind: TRACE_CAPTURE_RUN_KIND,
+    capturedAt: ranAt,
+    invocationSourceId,
+    distillation,
+  };
+  await writeWorkspaceSourceRecords(receiptSourceId, [...priorReceipts, captureReceipt].slice(-500), {
+    integrationId: modelId,
+    fetchedAt: ranAt,
+  });
+
+  let evaluationSourceId = "";
+  if (evidence?.evaluation && typeof evidence.evaluation === "object") {
+    evaluationSourceId = `model-evaluation:${policyRegistryId}:${modelId}`;
+    const evaluationEntry = await readWorkspaceSourceRecords(evaluationSourceId);
+    const priorEvaluations = Array.isArray(evaluationEntry?.records) ? evaluationEntry.records : [];
+    await writeWorkspaceSourceRecords(evaluationSourceId, [
+      ...priorEvaluations,
+      { schema: "growthub-custom-model-evaluation-v1", runId: response.runId, evaluatedAt: ranAt, ...evidence.evaluation },
+    ].slice(-250), { integrationId: policyRegistryId, fetchedAt: ranAt });
+  }
+
+  return {
+    invocationSourceId,
+    traceSourceId,
+    receiptSourceId,
+    invocationCount: invocations.length,
+    traceCount: traces.length,
+    traceRootHash: distillation.traceRootHash,
+    evaluationSourceId: evaluationSourceId || undefined,
+  };
 }
 
 function normalizeRunLocality(row) {
@@ -143,6 +228,42 @@ function findRegistryRecord(workspaceConfig, registryId) {
     if (match) return match;
   }
   return null;
+}
+
+function reconcileModelTrainingRunnerResult({ workspaceConfig, objectId, name, response }) {
+  if (objectId !== "model-training-runner") return null;
+  const trainingRunId = String(name || "").trim();
+  if (!trainingRunId) return null;
+  const runOk = response?.exitCode === 0 && !response?.error;
+  if (runOk) return null;
+  const reason = String(response?.stderr || response?.error || response?.stdout || "Runner failed before writing a progress receipt").trim();
+  if (!reason) return null;
+  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  let changed = false;
+  const nextObjects = objects.map((entry) => {
+    if (entry?.objectType !== "model-training-run") return entry;
+    const rows = Array.isArray(entry.rows) ? entry.rows : [];
+    const nextRows = rows.map((row) => {
+      if (String(row?.trainingRunId || "") !== trainingRunId) return row;
+      changed = true;
+      return {
+        ...row,
+        status: /preflight blocked/i.test(reason) ? "blocked" : "failed",
+        blockedReason: reason,
+        preflight: row.preflight && typeof row.preflight === "object" ? row.preflight : { ok: false },
+        progress: {
+          ...(row.progress && typeof row.progress === "object" ? row.progress : {}),
+          stageId: "preflight",
+          stageRank: 0,
+          pct: 0,
+          detail: reason,
+          index: 0,
+        },
+      };
+    });
+    return { ...entry, rows: nextRows };
+  });
+  return changed ? nextObjects : null;
 }
 
 async function runServerlessScheduler({
@@ -371,6 +492,14 @@ function buildRunResponse({
     stdout: result.stdout,
     stderr: result.stderr,
     error: result.error || undefined,
+    // Output proof: the runtime hashes what the run actually produced, at
+    // run time, server-side. This is the "output-hash" proofKind the custom
+    // -model evidence ladder requires for `complete` — a REAL run now carries
+    // it natively (previously only seeded fixtures could, which meant no real
+    // run could ever finish the proof loop).
+    outputHash: result.exitCode === 0 && !result.error && String(result.stdout || "").length > 0
+      ? createHash("sha256").update(String(result.stdout), "utf8").digest("hex").slice(0, 16)
+      : undefined,
     envRefsResolved,
     envRefsMissing,
     networkAllow,
@@ -526,8 +655,13 @@ async function executeSandboxRun(body, { emit } = {}) {
   const lifecycleStatus = String(rowForRun.lifecycleStatus || "draft").trim().toLowerCase() === "live" ? "live" : "draft";
   const version = rowForRun.version ?? "";
   const requestedTimeout = Number(rowForRun.timeoutMs);
+  // Locality-aware ceiling (mirrors the schema validator): a LOCAL run on the
+  // user's own machine may legitimately hold for hours (dependency ensure,
+  // QLoRA fine-tune, GGUF quantize) — clamping it to the serverless 10-minute
+  // cap SIGKILLs real training/pre-init work mid-flight.
+  const timeoutCap = runLocality === "local" ? SANDBOX_MAX_TIMEOUT_MS_LOCAL : SANDBOX_MAX_TIMEOUT_MS;
   const timeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
-    ? Math.min(requestedTimeout, SANDBOX_MAX_TIMEOUT_MS)
+    ? Math.min(requestedTimeout, timeoutCap)
     : SANDBOX_DEFAULT_TIMEOUT_MS;
 
   if (runLocality === "serverless" && adapterId === "local-intelligence") {
@@ -587,6 +721,8 @@ async function executeSandboxRun(body, { emit } = {}) {
         command,
         timeoutMs,
         sandboxName: rowForRun.Name || name,
+        customModelId: String(rowForRun.customModelId || ""),
+        workflowVariant: String(rowForRun.workflowVariant || "chat"),
         onEvent: emit
       }
     });
@@ -728,10 +864,17 @@ async function executeSandboxRun(body, { emit } = {}) {
     }
 
     try {
+      const customModelEvidence = await persistCustomModelExecutionEvidence(response, ranAt);
+      if (customModelEvidence) response.customModelEvidence = customModelEvidence;
+    } catch (error) {
+      persistError = persistError || error?.message || "failed to persist custom-model execution evidence";
+    }
+
+    try {
       const compactResponse = JSON.stringify(response, null, 2);
       const sourceIdValue = sourceId || "";
       const objects = Array.isArray(workspaceConfig.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-      const nextObjects = objects.map((entry) => {
+      let nextObjects = objects.map((entry) => {
         if (entry.id !== object.id) return entry;
         const rows = Array.isArray(entry.rows) ? entry.rows : [];
         const nextRows = rows.map((existingRow, index) => {
@@ -753,6 +896,16 @@ async function executeSandboxRun(body, { emit } = {}) {
         });
         return { ...entry, rows: nextRows };
       });
+      const reconciledObjects = reconcileModelTrainingRunnerResult({
+        workspaceConfig: {
+          ...(workspaceConfig || {}),
+          dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
+        },
+        objectId,
+        name: rowForRun.Name || name,
+        response
+      });
+      if (reconciledObjects) nextObjects = reconciledObjects;
       await writeWorkspaceConfig({
         dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
       });

@@ -1,0 +1,32 @@
+{
+  "stateId": "util-06-data-model-tables",
+  "visibleTitle": "Data Model — governed custom-model tables",
+  "visibleStatus": "api-registry · model-training-run · training-traces",
+  "primaryCta": "—",
+  "surface": "/data-model object tables (the single source of truth every proof above derives from)",
+  "governedRows": {
+    "apiRegistry": {
+      "integrationId": "workspace-local-model",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "endpoint": "/chat/completions",
+      "status": "connected",
+      "lastResponseModel": "workspace-local-tuned-v1"
+    },
+    "modelTrainingRunRows": [
+      {
+        "trainingRunId": "run_distill_dense_fixture_1",
+        "status": "verified",
+        "profile": "kimi-distill-dense-student",
+        "artifactModelTag": "workspace-local-tuned-v1"
+      }
+    ],
+    "trainingTracesCount": 12
+  },
+  "proof": {
+    "stampedCompletionParses": true,
+    "noSecretsInRows": true,
+    "trainingRunRowsAreLabeledFixtures": true
+  },
+  "provenance": "derived",
+  "nextAllowedAction": "teacher_provenance"
+}

@@ -1,0 +1,27 @@
+{
+  "stateId": "state-01-eligible",
+  "visibleTitle": "Custom Model Training",
+  "visibleStatus": "Ready to train",
+  "primaryCta": "Configure traces",
+  "modalHook": "[data-handoff-journey] / [data-handoff-curate]",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "trainingTraces": "training-traces (11 qualified · 1 redaction-blocked)"
+  },
+  "proof": {
+    "qualifiedTraces": 11,
+    "redactionBlocked": 1,
+    "bindingVerified": false,
+    "runReceiptsAvailable": "empty (first run)"
+  },
+  "nluExamples": [
+    "Can I train a model yet?",
+    "Am I ready?",
+    "Start my first custom model."
+  ],
+  "derivedFrom": [
+    "deriveTrainingHandoffState",
+    "deriveLocalModelChoices"
+  ],
+  "nextAllowedAction": "configure_traces"
+}

@@ -1,0 +1,35 @@
+{
+  "stateId": "state-12-first-invocation",
+  "visibleTitle": "First invocation test",
+  "visibleStatus": "Success",
+  "primaryCta": "Continue to deploy",
+  "secondaryCta": "View receipts",
+  "modalHook": "[data-verify-result=verified] · Response/Trace/Details/Proof tabs",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "modelTrainingRun": "run_2026-07-06_v1",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "expectedModel": "custom-model-v1",
+    "servedModel": "custom-model-v1",
+    "baseModel": "gemma3",
+    "notBaseModel": true,
+    "httpStatus": 200,
+    "servesTunedTag": true,
+    "servingAdapter": "ollama",
+    "responseSavedToRow": true,
+    "baseModelDemotes": true
+  },
+  "nluExamples": [
+    "Test if it is really my model.",
+    "Did it return the base model?",
+    "Show the first response."
+  ],
+  "derivedFrom": [
+    "deriveServingProfile",
+    "verifyTunedResponse"
+  ],
+  "nextAllowedAction": "continue_to_deploy"
+}

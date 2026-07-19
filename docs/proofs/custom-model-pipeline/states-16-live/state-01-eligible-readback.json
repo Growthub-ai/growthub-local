@@ -1,0 +1,12 @@
+{
+  "stateId": "state-01-eligible",
+  "visibleTitle": "Custom Model Training",
+  "visibleStatus": "Ready to train",
+  "primaryCta": "Configure traces",
+  "surface": "Training Handoff modal · checklist",
+  "governedRows": {
+    "trainingTraces": "training-traces (12)",
+    "modelTraining": "workspace-local"
+  },
+  "nextAllowedAction": "configure_traces"
+}

@@ -1,0 +1,25 @@
+{
+  "stateId": "util-03-harvest-receipt",
+  "visibleTitle": "Trace capture",
+  "visibleStatus": "40 live traces · root b73d242fa20dbc28",
+  "primaryCta": "Train next generation",
+  "surface": "endpoint harvest JSONL → governed trace sidecar + trace-capture receipt (CLI lane)",
+  "governedRows": {
+    "traceSidecar": "distillation-traces:model-training:workspace-local",
+    "runSidecar": "training-run:model-training:workspace-local"
+  },
+  "proof": {
+    "traceCount": 40,
+    "traceRootHash": "b73d242fa20dbc28",
+    "clusters": [
+      "workspace-operations",
+      "gtm-funnels",
+      "creative-narrative",
+      "long-context-code"
+    ],
+    "runLifecycleUndisturbed": "imported",
+    "flywheelTraceStep": true
+  },
+  "provenance": "cli-stamped (harvest of live requests)",
+  "nextAllowedAction": "open_cockpit"
+}

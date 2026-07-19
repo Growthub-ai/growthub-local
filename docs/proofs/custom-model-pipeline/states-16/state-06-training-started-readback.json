@@ -1,0 +1,34 @@
+{
+  "stateId": "state-06-training-started",
+  "visibleTitle": "Training custom-model-v1",
+  "visibleStatus": "Running",
+  "primaryCta": "View logs",
+  "secondaryCta": "Open in Runs",
+  "modalHook": "[data-handoff-train=running] [data-train-headline]",
+  "governedRows": {
+    "modelTrainingRun": "run_2026-07-06_v1",
+    "sandboxEnvironment": "model-training-runner"
+  },
+  "proof": {
+    "trainingRunId": "run_2026-07-06_v1",
+    "startedAt": "2026-07-06T18:00:00.000Z",
+    "barPct": 8,
+    "statusLine": "distilling · step 0/11 · dataset snapshot locked",
+    "eventDeltas": [
+      "queued",
+      "dataset_locked",
+      "job_created",
+      "workers_allocated"
+    ],
+    "fabricatedProgress": false
+  },
+  "nluExamples": [
+    "Did training start?",
+    "Where is the run?",
+    "Show the latest event."
+  ],
+  "derivedFrom": [
+    "deriveTrainingWaitState"
+  ],
+  "nextAllowedAction": "view_run"
+}

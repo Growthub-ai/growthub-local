@@ -1,0 +1,25 @@
+{
+  "stateId": "util-01-first-invocation-200",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "First invocation · HTTP 200 · served == tuned tag",
+  "primaryCta": "Continue to deploy",
+  "surface": "app server → POST /api/workspace/test-api-record → live OpenAI-compatible endpoint → governed api-registry row",
+  "governedRows": {
+    "apiRegistry": "workspace-local-model",
+    "modelTrainingRun": "run_distill_dense_1"
+  },
+  "proof": {
+    "httpStatus": 200,
+    "endpointUrl": "http://127.0.0.1:11434/v1/chat/completions",
+    "servedModel": "workspace-local-tuned-v1",
+    "verified": true,
+    "snippet": "workspace-local-tuned-v1 online — tuned on this workspace's governed traces and ready.",
+    "responseShape": {
+      "hasChoices": true,
+      "hasUsage": true,
+      "model": "workspace-local-tuned-v1"
+    }
+  },
+  "provenance": "live-http-transport, simulated-model",
+  "nextAllowedAction": "utilize_model"
+}

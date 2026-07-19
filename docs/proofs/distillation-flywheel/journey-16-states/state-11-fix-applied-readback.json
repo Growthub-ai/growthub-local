@@ -1,0 +1,18 @@
+{
+  "stateId": "state-11-fix-applied",
+  "visibleTitle": "Training workspace-local-tuned-v1",
+  "visibleStatus": "Resumed",
+  "primaryCta": "Resume training",
+  "surface": "Training Handoff modal · train (resumed from checkpoint)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "resumesSameRunId": "qa_run",
+    "resumeFrom": "./artifacts/workspace-local-tuned-v1/checkpoint-3800",
+    "fromStep": 3900,
+    "resumedStatus": "running",
+    "duplicateRun": false
+  },
+  "nextAllowedAction": "resume_training"
+}

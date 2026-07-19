@@ -50,8 +50,11 @@ import {
 import { SwarmRunCockpit, SwarmAgentTranscript } from "./SwarmRunCockpit.jsx";
 import { CeoCockpit } from "./CeoCockpit.jsx";
 import { ScheduleCockpit } from "./ScheduleCockpit.jsx";
+import TrainingLedger from "./TrainingLedger.jsx";
+import CustomModelsLedger from "./CustomModelsLedger.jsx";
+import { deriveCustomModelsState } from "../../../lib/custom-models-ledger.js";
 import { SidecarExpandView } from "./SidecarExpandView.jsx";
-import { parseSlashInput } from "./helper-commands.js";
+import { parseSlashInput, HELPER_COMMANDS, deriveVisibleHelperCommands } from "./helper-commands.js";
 import {
   deriveHelperWidgetCausationState,
   summarizeSwarmRunProposal,
@@ -890,7 +893,13 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
 
   // Slash menu state derives from the live prompt. The menu only engages
   // when "/" is the first character (parseSlashInput), never mid-sentence.
-  const slash = slashDismissed ? { active: false, query: "", matches: [] } : parseSlashInput(prompt);
+  // ONE evidence engine: command visibility comes from the canonical
+  // custom-models deriver — no second inline scan, no drift.
+  const customModelsEvidence = deriveCustomModelsState({ workspaceConfig }).commandVisible;
+  const visibleCommandNames = new Set(
+    deriveVisibleHelperCommands(HELPER_COMMANDS, { "custom-models": customModelsEvidence }).map((c) => c.name),
+  );
+  const slash = slashDismissed ? { active: false, query: "", matches: [] } : parseSlashInput(prompt, visibleCommandNames);
   const slashActive = slash.active && slash.matches.length > 0 && !streaming && activeView === "chat";
 
   // Selecting a command never mutates config: read-only commands switch the
@@ -990,6 +999,11 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
   const inScheduleView = activeView === "schedule";
   // Data cockpit shares the same sidecar shell (read-only operations surface
   // over the existing add-ons /data route). Same precedent as the schedule view.
+  // Training ledger view (/training) and Custom Models cockpit (/custom-models)
+  // — same sidecar shell and back-to-chat grammar as the swarm/CEO cockpits;
+  // read-only by registry contract.
+  const inTrainingView = activeView === "training";
+  const inModelsView = activeView === "custom-models";
   const canOpenSwarmWorkflow = Boolean(
     inSwarmView
     && activeTab === "assistant"
@@ -1024,7 +1038,7 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
         {/* Header — title left; gear toggles Assistant ↔ Setup, then close. */}
         <div className="dm-sidecar-header">
           <div className="dm-sidecar-header-left">
-            {(inSwarmView || inCeoView || inScheduleView) && (
+            {(inSwarmView || inCeoView || inScheduleView || inTrainingView || inModelsView) && (
               <button
                 type="button"
                 className="dm-sidecar-icon-btn"
@@ -1047,6 +1061,10 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
                   ? "CEO Cockpit"
                   : inScheduleView
                     ? "Schedule Cockpit"
+                    : inTrainingView
+                    ? "Training"
+                    : inModelsView
+                    ? "Custom Models"
                     : threadActive
                         ? deriveThreadDisplayTitle(initialThread, "Workspace Helper")
                         : "Workspace Helper"}
@@ -1156,11 +1174,31 @@ export function HelperSidecar({ open, onClose, workspaceConfig, initialIntent, i
           </div>
         )}
 
+        {/* Custom models cockpit — same shell, read-first. */}
+        {activeTab === "assistant" && inModelsView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-custom-models-view="">
+            <CustomModelsLedger workspaceConfig={workspaceConfig} />
+          </div>
+        )}
+
+        {/* Training ledger view — same shell as the swarm cockpit, read-only. */}
+        {activeTab === "assistant" && inTrainingView && (
+          <div className="dm-sidecar-body dm-swarm-body" data-training-view="">
+            <TrainingLedger
+              onOpenHelperPrompt={(seedPrompt) => {
+                setActiveView("chat");
+                onPickIntent("repair");
+                setPrompt(typeof seedPrompt === "string" ? seedPrompt : "");
+              }}
+            />
+          </div>
+        )}
+
         {/* Assistant tab — composer-at-bottom layout (Twenty Ask AI parity):
             conversation/result area on top (flex:1), bottom-anchored composer
             holds chip stack (empty state) → mode row (active thread) →
             textarea with attach + mode + send-arrow action row. */}
-        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inScheduleView && (
+        {activeTab === "assistant" && !inSwarmView && !inCeoView && !inScheduleView && !inTrainingView && !inModelsView && (
           <div className="dm-sidecar-body dm-helper-body">
             <div className="dm-helper-conversation" ref={conversationRef}>
               {/* Conversation — ChatGPT-grade multi-turn. User bubble

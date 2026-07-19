@@ -1,0 +1,36 @@
+{
+  "stateId": "state-09-evaluation",
+  "visibleTitle": "Evaluation Results",
+  "visibleStatus": "Complete",
+  "primaryCta": "Approve & continue",
+  "surface": "/data-model · model-training-run (holdout eval readback)",
+  "governedRows": {
+    "modelTrainingRun": "qa_run"
+  },
+  "proof": {
+    "evalSetHash": "sha256:abc123#holdout",
+    "metrics": [
+      {
+        "metric": "Accuracy (EM)",
+        "base": 71.4,
+        "custom": 78.6,
+        "uplift": "+10.1%"
+      },
+      {
+        "metric": "Reward score",
+        "base": 0.712,
+        "custom": 0.845,
+        "uplift": "+18.7%"
+      },
+      {
+        "metric": "Hallucination rate",
+        "base": 3.1,
+        "custom": 1.7,
+        "uplift": "-45.2%"
+      }
+    ],
+    "holdoutExcludedFromTraining": true,
+    "note": "metric deltas are labeled seed evidence; real holdout eval is the operator run"
+  },
+  "nextAllowedAction": "approve_continue"
+}

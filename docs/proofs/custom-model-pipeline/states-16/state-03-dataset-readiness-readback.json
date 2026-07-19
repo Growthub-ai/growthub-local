@@ -1,0 +1,31 @@
+{
+  "stateId": "state-03-dataset-readiness",
+  "visibleTitle": "Dataset Readiness",
+  "visibleStatus": "Valid",
+  "primaryCta": "Continue",
+  "secondaryCta": "Review sample",
+  "modalHook": "[data-handoff-progress] (prepare readiness checklist)",
+  "governedRows": {
+    "trainingTraces": "training-traces",
+    "modelTrainingRun": "run_2026-07-06_v1 (datasetExportId)"
+  },
+  "proof": {
+    "datasetSha": "sha256:abc123def456",
+    "shardCount": 1,
+    "shardKey": "sha256:abc123def456:0:0-11",
+    "accepted": 11,
+    "rejected": 1,
+    "deduplicated": 1,
+    "holdoutSplit": "1/11",
+    "tokenEstimate": "5632 tok (est)"
+  },
+  "nluExamples": [
+    "Check my dataset.",
+    "Why can’t I continue?",
+    "Show sample records."
+  ],
+  "derivedFrom": [
+    "deriveShardPlan"
+  ],
+  "nextAllowedAction": "confirm_train"
+}

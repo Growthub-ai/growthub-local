@@ -1,0 +1,38 @@
+{
+  "stateId": "state-16-model-cockpit",
+  "visibleTitle": "workspace-local-tuned-v1",
+  "visibleStatus": "Live",
+  "primaryCta": "Create/Open workflow",
+  "surface": "/custom-models cockpit — canonical helper deep-link (?helper=open) + /custom-models slash command",
+  "governedRows": {
+    "modelTraining": "workspace-local-v1",
+    "apiRegistry": "workspace-local-model",
+    "sandboxEnvironment": "workspace-helper-sandbox"
+  },
+  "proof": {
+    "cockpitRendered": true,
+    "cardVisible": true,
+    "evidenceState": "verified",
+    "servingProfile": {
+      "adapter": "ollama",
+      "mode": "single",
+      "continuousBatching": false,
+      "speculative": null,
+      "flags": {},
+      "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+      "servedModel": "workspace-local-tuned-v1",
+      "servesTunedTag": true,
+      "verified": true,
+      "reason": "Serving workspace-local-tuned-v1 via ollama"
+    },
+    "nextAction": "Create/Open workflow",
+    "canonicalEntry": "?helper=open&prompt=/custom-models → slash → setActiveView('custom-models')",
+    "actions": [
+      "Use model",
+      "Improve from gaps",
+      "View proof",
+      "Export developer manifest"
+    ]
+  },
+  "nextAllowedAction": "operate_model"
+}
