@@ -424,8 +424,13 @@ export async function executeCustomModelInference({
       // afford a cloud retry; every route is capped by the remaining budget.
       // The buffer ratio is governed configuration (economics.localBudgetBufferRatio,
       // 0.1–1.0), defaulting to 0.5.
-      const configuredBuffer = Number(control.economics?.localBudgetBufferRatio);
-      const localBufferRatio = Number.isFinite(configuredBuffer)
+      // Only a real, positive number is an explicit operator choice; null,
+      // absent, NaN, or non-positive input falls back to the 0.5 default
+      // (Number(null) is 0 — without the > 0 guard an explicit null would
+      // silently collapse to the tightest 0.1 buffer).
+      const rawBuffer = control.economics?.localBudgetBufferRatio;
+      const configuredBuffer = Number(rawBuffer);
+      const localBufferRatio = rawBuffer != null && Number.isFinite(configuredBuffer) && configuredBuffer > 0
         ? Math.max(0.1, Math.min(1, configuredBuffer))
         : 0.5;
       const remainingBudget = maxCostCents - spentEstimateCents;

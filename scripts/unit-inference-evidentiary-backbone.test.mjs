@@ -725,6 +725,28 @@ test("local budget buffer ratio is governed configuration", async () => {
   assert.match(localSkip.reason, /buffered local budget/);
 });
 
+test("malformed budget-buffer config never tightens the buffer silently", async () => {
+  // Adversarial config inputs: each must fall back to the 0.5 default (or
+  // clamp sanely), never crash, and never collapse to the tightest buffer.
+  for (const malformed of [null, "garbage", Number.NaN, 0, -3, {}]) {
+    const fixture = economicFixture({ teacherCost: { inputCentsPerMTokens: 0, outputCentsPerMTokens: 0 } });
+    fixture.policyRow.metadata.mothershipProxy.routes[0].costModel = { inputCentsPerMTokens: 1_000_000, outputCentsPerMTokens: 0 };
+    fixture.policyRow.metadata.mothershipProxy.inferenceControlPlane.economics = { localBudgetBufferRatio: malformed };
+    // Local estimate ≈ a few cents against max 10¢: admitted under the 0.5
+    // default (cap 5¢), which a silent 0.1 collapse (cap 1¢) would skip.
+    const result = await executeCustomModelInference({
+      workspaceConfig: { dataModel: { objects: [] } },
+      policyRow: fixture.policyRow,
+      inputPayload: { prompt: "buffer probe", inference: { max_cost_cents: 10 } },
+      fetchImpl: fixture.fetchImpl,
+      runId: `run_buffer_malformed_${String(malformed)}`,
+      networkPolicy: fixture.networkPolicy,
+    });
+    assert.equal(result.ok, true, `${String(malformed)} must not crash or over-tighten: ${JSON.stringify(result.error || result.attempts)}`);
+    assert.equal(result.route.target, "local-base", `${String(malformed)} must fall back to the 0.5 default buffer`);
+  }
+});
+
 test("multi-step workflow chains a Merkle receipt DAG across its steps", async () => {
   const fixture = economicFixture({ lowConfidence: false });
   const result = await executeCustomModelWorkflow({
