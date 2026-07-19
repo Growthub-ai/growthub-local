@@ -7,8 +7,9 @@
  */
 
 import { createHash } from "node:crypto";
-import Ajv2020 from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const SECRET_KEY_RE = /(?:authorization|cookie|secret|password|passwd|token|api[-_]?key|client[-_]?secret)/i;
 const SECRET_VALUE_RE = /(?:bearer\s+[a-z0-9._~+\/-]{12,}|sk-[a-z0-9_-]{12,})/ig;
@@ -57,6 +58,12 @@ export function normalizeSchemaContract(raw, { schemaRef = null } = {}) {
 let ajvInstance = null;
 function ajv() {
   if (!ajvInstance) {
+    // Source-only repository checks import workspace modules before the
+    // exported app installs its dependencies. Resolve AJV only at the schema
+    // enforcement boundary; installed/runtime workspaces still use the exact
+    // pinned AJV 2020 + formats packages declared in package.json.
+    const Ajv2020 = require("ajv/dist/2020.js").default;
+    const addFormats = require("ajv-formats").default;
     ajvInstance = new Ajv2020({
       allErrors: true,
       strictSchema: true,
