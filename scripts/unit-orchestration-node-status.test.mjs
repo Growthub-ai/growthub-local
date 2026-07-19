@@ -76,6 +76,24 @@ test("settled: falls back to persisted nodeTrace when no events", () => {
   assert.deepEqual(map, { "n-input": "completed", "n-api": "failed", "n-result": "skipped" });
 });
 
+test("awaiting tool continuation settles the API node as pending and downstream nodes as skipped", () => {
+  const map = deriveOrchestrationNodeStatuses({
+    events: [],
+    record: { nodeTrace: [
+      { id: "n-input", status: "completed" },
+      { id: "n-api", status: "pending", awaiting: "tool_result" },
+      { id: "n-transform", status: "skipped" },
+      { id: "n-result", status: "skipped" },
+    ] },
+  });
+  assert.deepEqual(map, {
+    "n-input": "completed",
+    "n-api": "pending",
+    "n-transform": "skipped",
+    "n-result": "skipped",
+  });
+});
+
 test("live events take precedence over the persisted trace", () => {
   const map = deriveOrchestrationNodeStatuses({
     events: [ev("orchestration.node.running" /* not a real phase */, "n-api")].filter(() => false).concat([ev("orchestration.node.started", "n-api")]),

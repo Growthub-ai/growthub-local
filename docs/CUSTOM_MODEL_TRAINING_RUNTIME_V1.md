@@ -84,6 +84,25 @@ After completion, `/custom-models` becomes a clean read-first cockpit: each mode
 | Canonical edit authority | Data Model |
 | Canonical graph authority | Workflow Canvas (`/workflows`) |
 | Canonical endpoint test authority | API Registry |
+| Per-invocation serving controls | [`INFERENCE_CONTROL_PLANE_V1.md`](./INFERENCE_CONTROL_PLANE_V1.md) |
+
+## Governed Inference Handoff
+
+Training completion and inference identity are separate proofs. A model tag,
+training row, or served endpoint does not prove which local bytes answered a
+request. The governed inference control plane extends the existing
+custom-model sandbox path with verified base/LoRA hashes, safe completion
+caching, schema enforcement, tool-call audit, OTLP correlation, and
+prefill/decode-aware routing. Its receipt is persisted with the existing
+custom-model invocation; it is not a new runtime or mutation lane.
+
+The handoff is artifact-strict: a merged/quantized GGUF may serve as a
+standalone model when its path and SHA are known. Dynamic LoRA serving requires
+both an unmerged base GGUF and a compatible adapter artifact with separately
+recorded paths and SHAs. Missing artifacts are never inferred from the model
+tag or synthesized from a training receipt. See
+[`INFERENCE_CONTROL_PLANE_V1.md`](./INFERENCE_CONTROL_PLANE_V1.md) for the exact
+API Registry configuration and upstream llama.cpp boundary.
 
 ## Required Product Invariants
 

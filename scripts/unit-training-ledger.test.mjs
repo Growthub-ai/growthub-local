@@ -198,9 +198,31 @@ test("summary parsing never throws and rejects non-objects", () => {
 // Distillation pipeline + handoff cockpit + scaffold (continuum add-ons)
 // ---------------------------------------------------------------------------
 
-const { FINE_TUNE_TARGETS, defaultFineTuneTarget, scaffoldHandoffRows, rebindCustomModelServingIdentity } = await import(
+const {
+  FINE_TUNE_TARGETS,
+  LLAMA_CPP_LOCAL_TARGET_ID,
+  buildLlamaCppInferenceControlPlane,
+  defaultFineTuneTarget,
+  normalizeLlamaCppInferenceControlPlane,
+  rebindCustomModelServingIdentity,
+  scaffoldHandoffRows,
+} = await import(
   pathToFileURL(path.join(kitApp, "lib/adapters/fine-tune-targets.js")).href
 );
+
+const BASE_GGUF_SHA = "a".repeat(64);
+const LORA_GGUF_SHA = "b".repeat(64);
+
+function provenLlamaControl(overrides = {}) {
+  return buildLlamaCppInferenceControlPlane({
+    baseModel: { id: "base-model", path: "/models/base.gguf", sha256: BASE_GGUF_SHA },
+    loraAdapters: [{ id: "support-v1", path: "/models/support-v1.gguf", sha256: LORA_GGUF_SHA, scale: 0.75 }],
+    defaultLoraId: "support-v1",
+    cacheTtl: 300,
+    semanticCache: true,
+    ...overrides,
+  });
+}
 
 function tracesConfig(rows, extraObjects = []) {
   return { dataModel: { objects: [{ id: "training-traces", objectType: "training-traces", rows }, ...extraObjects] } };
@@ -272,6 +294,80 @@ test("fine-tune targets: ollama-local is the first-party default; remote needs e
   const remote = FINE_TUNE_TARGETS.find((t) => t.id === "openai-compatible-remote");
   assert.ok(remote.requiredEnv.includes("MODEL_RUNTIME_URL"));
   assert.equal(remote.authRef, "MODEL_RUNTIME_KEY", "credentials resolve via env ref, never inline");
+  const llama = FINE_TUNE_TARGETS.find((t) => t.id === LLAMA_CPP_LOCAL_TARGET_ID);
+  assert.equal(llama.default, false);
+  assert.equal(llama.requiresInferenceControlPlane, true, "llama.cpp target cannot scaffold from a tag alone");
+  assert.equal(llama.endpoint, "/v1/chat/completions");
+});
+
+test("llama.cpp handoff builds a runtime-verifiable base + hot-swappable LoRA policy from GGUF proofs", () => {
+  const control = provenLlamaControl();
+  assert.equal(control.providerKind, "llama.cpp-server");
+  assert.equal(control.base_model_ref.base_model_sha256, BASE_GGUF_SHA);
+  assert.equal(control.runtime.model.path, "/models/base.gguf");
+  assert.equal(control.runtime.model.sha256, BASE_GGUF_SHA);
+  assert.equal(control.runtime.artifactVerification, "sha256-reverified-before-process-start");
+  assert.deepEqual(control.runtime.allowedAdapters[0], {
+    ref: "support-v1",
+    path: "/models/support-v1.gguf",
+    sha256: LORA_GGUF_SHA,
+    defaultScale: 0.75,
+    format: "gguf",
+    compatibility: "llama.cpp-lora-gguf",
+  });
+  assert.equal(control.lora_ref.lora_id, "support-v1");
+  assert.equal(control.lora_ref.adapter_sha256, LORA_GGUF_SHA);
+  assert.equal(control.cache.nativePrefix, true);
+  assert.equal(control.routing.prefillPool, "prefill_pool");
+  assert.equal(control.routing.decodePool, "decode_pool");
+  assert.equal(control.routing.nativeDisaggregationRequired, false);
+  assert.equal(control.otel.protocol, "otlp-http");
+  assert.equal(control.tools.interceptor, "openapi-governed");
+});
+
+test("llama.cpp handoff supports a separately proven base GGUF without inventing a LoRA", () => {
+  const control = buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "file:///models/base.GGUF", sha256: `SHA256:${BASE_GGUF_SHA.toUpperCase()}` },
+    loraAdapters: [],
+  });
+  assert.equal(control.base_model_ref.model_id, `gguf-${BASE_GGUF_SHA.slice(0, 16)}`);
+  assert.equal(control.runtime.model.sha256, BASE_GGUF_SHA);
+  assert.deepEqual(control.runtime.allowedAdapters, []);
+  assert.equal(Object.hasOwn(control, "lora_ref"), false, "base-only serving stays explicit instead of inventing an adapter");
+});
+
+test("llama.cpp handoff fails closed on missing proof, PEFT directories, invalid hashes, and unproven defaults", () => {
+  assert.throws(() => buildLlamaCppInferenceControlPlane(), /baseModel must be a separately proven GGUF artifact/);
+  assert.throws(() => buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "/models/base", sha256: BASE_GGUF_SHA },
+  }), /must identify a GGUF file/);
+  assert.throws(() => buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "/models/base.gguf", sha256: "not-a-sha" },
+  }), /64-character SHA-256/);
+  assert.throws(() => buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "/models/base.gguf", sha256: BASE_GGUF_SHA },
+    loraAdapters: [{ id: "peft", path: "/training/adapter_model", sha256: LORA_GGUF_SHA }],
+  }), /PEFT\/safetensors directories are not llama\.cpp LoRA artifacts/);
+  assert.throws(() => buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "/models/base.gguf", sha256: BASE_GGUF_SHA },
+    loraAdapters: [{ id: "lora", path: "/models/lora.gguf", sha256: LORA_GGUF_SHA }],
+    defaultLoraId: "missing",
+  }), /defaultLoraId is not in loraAdapters/);
+  assert.throws(() => buildLlamaCppInferenceControlPlane({
+    baseModel: { path: "/models/base.gguf", sha256: BASE_GGUF_SHA },
+    nativeDisaggregationRequired: true,
+  }), /cannot be enabled until.*native prefill\/decode state handoff/);
+});
+
+test("serialized llama.cpp control-plane metadata is revalidated instead of trusted", () => {
+  const valid = provenLlamaControl();
+  assert.deepEqual(normalizeLlamaCppInferenceControlPlane(valid), valid);
+  const invalid = structuredClone(valid);
+  invalid.runtime.allowedAdapters[0].path = "/training/adapter_model";
+  assert.throws(() => normalizeLlamaCppInferenceControlPlane(invalid), /must identify a GGUF file/);
+  const invalidSha = structuredClone(valid);
+  invalidSha.runtime.model.sha256 = "c".repeat(63);
+  assert.throws(() => normalizeLlamaCppInferenceControlPlane(invalidSha), /64-character SHA-256/);
 });
 
 test("scaffoldHandoffRows produces registry + version rows in existing column shapes", () => {
@@ -290,6 +386,23 @@ test("scaffoldHandoffRows produces registry + version rows in existing column sh
   assert.equal(summary.recordCount, 14);
   assert.equal(summary.registryId, "workspace-local-model");
   assert.equal(summary.version, 2);
+});
+
+test("llama.cpp scaffold stays unavailable until activation stamps identity-aligned GGUF proof", () => {
+  const target = FINE_TUNE_TARGETS.find((candidate) => candidate.id === LLAMA_CPP_LOCAL_TARGET_ID);
+  const input = {
+    slug: "workspace-local", version: 3, target,
+    modelTag: "workspace-local-lora-v3", datasetRecords: 20, datasetPath: "dataset-v3.jsonl",
+    now: "2026-07-19T12:00:00.000Z",
+  };
+  const pending = scaffoldHandoffRows(input);
+  assert.equal(pending.registryRow.connectorKind, "llama.cpp-server");
+  assert.equal(pending.registryRow.metadata, undefined, "training preparation cannot fabricate a future artifact SHA");
+  const control = provenLlamaControl({ servedAlias: input.modelTag });
+  const { registryRow } = scaffoldHandoffRows({ ...input, inferenceControlPlane: control });
+  assert.deepEqual(registryRow.metadata.inferenceControlPlane, control);
+  assert.equal(registryRow.integrationId, "workspace-local-model");
+  assert.equal(registryRow.executionLane, "sandbox-local", "the existing governed execution lane is preserved");
 });
 
 test("attached model tag rebinds training, direct registry, and mothership identity atomically", () => {
@@ -317,6 +430,32 @@ test("attached model tag rebinds training, direct registry, and mothership ident
   assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[0].modelTag, "workspace-local-tuned-v1:latest");
   assert.equal(rebound[1].rows[1].metadata.mothershipProxy.routes[1].modelTag, "gemma3:4b", "fallback identity is unchanged");
   assert.equal(objects[0].rows[0].localModel, "reserved-tag", "input remains immutable");
+});
+
+test("identity rebind carries explicit llama.cpp proof only onto the direct serving row", () => {
+  const control = provenLlamaControl({ servedAlias: "workspace-local-lora-v1" });
+  const objects = [
+    { objectType: "model-training", rows: [{ Name: "workspace-local-v1", localModel: "reserved", status: "prepared" }] },
+    { objectType: "api-registry", rows: [
+      { integrationId: "workspace-local-model", metadata: { retained: true } },
+      { integrationId: "mothership-proxy-reserved", metadata: { mothershipProxy: { modelTag: "reserved", routes: [
+        { target: "local-student", registryId: "workspace-local-model", modelTag: "reserved" },
+        { target: "local-base", modelTag: "base" },
+      ] } } },
+    ] },
+  ];
+  const rebound = rebindCustomModelServingIdentity(objects, {
+    trainingRowId: "workspace-local-v1",
+    integrationId: "workspace-local-model",
+    modelTag: "workspace-local-lora-v1",
+    inferenceControlPlane: control,
+  });
+  const [direct, proxy] = rebound[1].rows;
+  assert.equal(direct.metadata.retained, true);
+  assert.deepEqual(direct.metadata.inferenceControlPlane, control);
+  assert.equal(proxy.metadata.inferenceControlPlane, undefined, "student process policy must not leak onto base/teacher fallback routes");
+  assert.equal(proxy.metadata.mothershipProxy.routes[0].modelTag, "workspace-local-lora-v1");
+  assert.equal(objects[1].rows[0].metadata.inferenceControlPlane, undefined, "input remains immutable");
 });
 
 test("handoff cockpit mirrors the registry-cockpit contract: milestone score + closure steps", () => {

@@ -20,7 +20,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const { HELPER_COMMANDS, deriveVisibleHelperCommands, parseSlashInput, isGovernedHelperCommand } = await import(
   pathToFileURL(path.join(kitApp, "app/data-model/components/helper-commands.js")).href
 );
-const { deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, deriveCustomModelCockpit, buildSyntheticTraceProvenance, buildCustomModelWorkflowVariants, buildCustomModelSandboxRow } = await import(
+const { CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS, deriveCustomModelsState, buildCapabilityManifest, deriveEndpointMode, deriveCustomModelNodeTemplate, deriveCustomModelSuggestedActions, deriveCustomModelCockpit, buildSyntheticTraceProvenance, buildCustomModelWorkflowVariants, buildCustomModelSandboxRow } = await import(
   pathToFileURL(path.join(kitApp, "lib/custom-models-ledger.js")).href
 );
 const { buildSuperAdminModelQaSeed } = await import(
@@ -282,7 +282,10 @@ function assertClosedLoop(cfg, { modelNodeId }) {
   const modelNodes = cfg.nodes.filter((n) => n.type === "api-registry-call");
   assert.ok(modelNodes.length >= 1, "has a model-call node");
   // every model-call is bound to the model's api-registry row (no fake/hardcoded)
-  for (const mn of modelNodes) assert.equal(mn.config.integrationId, "workspace-local-model", "model-call bound to the registry row");
+  for (const mn of modelNodes) {
+    assert.equal(mn.config.integrationId, "workspace-local-model", "model-call bound to the registry row");
+    assert.equal(mn.config.timeoutMs, CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS, "model-call allows bounded cold model loading");
+  }
   assert.ok(cfg.nodes.some((n) => n.type === "tool-result"), "has a terminal write/result node");
   // edges connect input → … → terminal (a real loop, not orphan nodes)
   const froms = new Set(cfg.edges.map((e) => e.from)); const tos = new Set(cfg.edges.map((e) => e.to));
@@ -332,6 +335,7 @@ test("suggested actions: each carries a real config + canvas deep-link + sandbox
     assert.ok(a.orchestrationConfig && a.orchestrationConfig.nodes.length >= 3, `${a.id} has a real config`);
     assert.match(a.openHref, /^\/workflows\?object=custom-model-.*&row=custom-model-/, `${a.id} opens the canvas on its config`);
     assert.ok(a.sandboxRow && a.sandboxRow.orchestrationConfig, `${a.id} creates a governed sandbox row`);
+    assert.equal(a.sandboxRow.timeoutMs, String(CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS), `${a.id} row shares the model-call timeout invariant`);
     assert.equal(a.applyIntent, "create_sandbox_workflow");
   }
   // synthetic-scaling stays blocked until the model is complete (not just verified)

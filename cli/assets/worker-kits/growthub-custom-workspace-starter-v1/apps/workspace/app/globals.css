@@ -5376,8 +5376,10 @@ body.workspace-rail-collapsed .workspace-builder.dm-workflow-page {
 .dm-marketplace-adapter span,
 .dm-marketplace-adapter code { font-size: 11px; color: #64748b; }
 .dm-marketplace-adapter code { text-align: right; white-space: normal; word-break: break-word; }
-.dm-marketplace-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 16px; border-top: 1px solid #edf0f3; background: #fafafa; }
-.dm-marketplace-console-link { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.dm-marketplace-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 14px 16px; border-top: 1px solid #edf0f3; background: #fafafa; }
+.dm-marketplace-actions > a,
+.dm-marketplace-actions > button { width: 100%; justify-content: center; }
+.dm-marketplace-console-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
 .dm-marketplace-create-new-btn { justify-content: center; }
 .dm-marketplace-primary-link { text-decoration: none; justify-content: center; }
 @media (min-width: 761px) {

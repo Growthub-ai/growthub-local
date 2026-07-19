@@ -58,6 +58,29 @@ curl -s -X PATCH http://localhost:3000/api/workspace \
 
 See [`lib/adapters/integrations/resolvers/README.md`](./lib/adapters/integrations/resolvers/README.md) for the full resolver shape, all CLI commands with JSON response contracts, and the complete data model → source dropdown → refresh flow.
 
+## Governed custom-model inference
+
+Custom-model sandbox/workflow calls pass through the server-side inference
+control plane before reaching llama.cpp or another OpenAI-compatible target.
+The same gateway provides verified model/LoRA identity, bounded exact and
+semantic completion caching, JSON Schema enforcement, OpenAPI tool-call
+validation, OTLP/HTTP traces, and workload-aware llama process selection. Its
+verification receipt is persisted through the existing sandbox-run source
+records; there is no separate model route or audit store.
+
+For local llama.cpp serving, put the exact base GGUF path + SHA and every
+allowed LoRA path + SHA in the target API Registry row's
+`metadata.inferenceControlPlane.runtime`. Requests select a configured
+`lora_id`; request-supplied file paths are ignored. The process pool starts
+`llama-server` itself and restricts it to loopback.
+
+Optional runtime variables are documented in [`.env.example`](./.env.example).
+The shipped configuration shape, training-artifact handoff, security rules,
+and proof checklist live in
+[`../../docs/inference-control-plane.md`](../../docs/inference-control-plane.md).
+Configure through the governed API Registry/Data Model PATCH lane and execute
+through `POST /api/workspace/sandbox-run`.
+
 ## Run
 
 ```bash

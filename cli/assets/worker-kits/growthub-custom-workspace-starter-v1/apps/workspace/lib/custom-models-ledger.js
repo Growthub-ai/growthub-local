@@ -27,6 +27,10 @@ import { buildAdaptiveStudentPlan } from "./distillation-student-plan.js";
 import { deriveTrainingRunState } from "./training-run-receipts.js";
 
 export const CUSTOM_MODEL_CAPABILITY_SCHEMA = "growthub-custom-model-capability-v1";
+// Local model artifacts may live on external storage and require a cold load.
+// Keep the generated row and every model-call node on one invariant because
+// the node-level value is authoritative during orchestration execution.
+export const CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS = 120_000;
 
 // Well-known governed object that hosts the cockpit-created custom-model
 // workflows (a normal sandbox-environment object, same well-known-id pattern as
@@ -405,7 +409,7 @@ export function buildCustomModelWorkflowVariants(model, { workspaceConfig } = {}
     // No bodyTemplate: the runner builds the canonical chat-completions body
     // from the record's declared capability + this modelTag (JSON-safe for
     // any prompt; a bodyTemplate here would break on quoted/multiline input).
-    config: { registryId: integrationId, integrationId, customModelId: String(model?.id || model?.name || ""), servingMode: serving.mode, modelTag: tag, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: 30000, ...extra },
+    config: { registryId: integrationId, integrationId, customModelId: String(model?.id || model?.name || ""), servingMode: serving.mode, modelTag: tag, baseUrl: String(registryRow.baseUrl || ""), endpoint: String(registryRow.endpoint || "/chat/completions"), method: String(registryRow.method || "POST"), authRef: String(registryRow.authRef || ""), queryParams: {}, bodyTemplate: "", requestHeadersMetadata: { authHeaderName: "", authPrefix: "", contentType: "application/json" }, timeoutMs: CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS, ...extra },
   });
   const input = (samplePayload, label = "Prompt") => ({ id: "input", type: "input", label, subtitle: "Chat prompt", config: { inputMode: "manual", samplePayload, sourceType: "", sourceId: "", entityId: "", filterMode: "and", filters: [] } });
   const result = (id, label, cfg = {}) => ({ id, type: "tool-result", label, subtitle: cfg.subtitle || "Save response", config: { successStatusCodes: [200], writeLastResponse: true, writeSourceRecord: true, sourceRecordId: "", outputMode: "normalized-json", previewFields: [], statusField: "status", lastTestedField: "lastTested", ...cfg } });
@@ -456,7 +460,7 @@ export function buildCustomModelSandboxRow(model, variant, orchestrationConfig, 
     customModelId: String(model?.id || model?.name || ""), workflowVariant: String(variant || ""), servingRegistryId: serving.integrationId,
     schedulerRegistryId: serving.integrationId, runtime: "node", adapter: "local-process", agentHost: "", envRefs: "", networkAllow: "false", allowList: "",
     instructions: `Use the custom local model ${model?.localModel || model?.name || ""} in a ${variant} closed loop.`,
-    command: "", timeoutMs: "30000", status: "draft", resolverTemplateId: "custom-http", connectorKind: "http", executionLane: "sandbox-local",
+    command: "", timeoutMs: String(CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS), status: "draft", resolverTemplateId: "custom-http", connectorKind: "http", executionLane: "sandbox-local",
     orchestrationConfig: JSON.stringify(orchestrationConfig, null, 2),
   };
 }
@@ -754,7 +758,7 @@ export function deriveCustomModelCockpit(model, { workspaceConfig, workspaceSour
     { key: "baseUrl", label: "Base URL", kind: "text", value: String(registryRow.baseUrl || "") },
     { key: "endpoint", label: "Endpoint path", kind: "text", value: String(registryRow.endpoint || "") },
     { key: "authRef", label: "Auth reference (name only)", kind: "text", value: String(registryRow.authRef || "") },
-    { key: "timeoutMs", label: "Timeout (ms)", kind: "number", value: Number(registryRow.timeoutMs ?? 30000) },
+    { key: "timeoutMs", label: "Timeout (ms)", kind: "number", value: Number(registryRow.timeoutMs ?? CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS) },
   ];
 
   return {

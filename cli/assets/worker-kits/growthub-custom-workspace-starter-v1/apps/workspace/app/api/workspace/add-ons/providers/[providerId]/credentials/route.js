@@ -377,6 +377,50 @@ async function verifyProviderAccount(provider, email, apiKey) {
   return { ok: false, last };
 }
 
+function normalizeQstashBaseUrl(value) {
+  const raw = clean(value) || "https://qstash.upstash.io";
+  try {
+    const url = new URL(raw);
+    const approvedHost = url.hostname === "qstash.upstash.io"
+      || /^qstash-[a-z0-9-]+\.upstash\.io$/i.test(url.hostname);
+    if (url.protocol !== "https:" || !approvedHost || url.username || url.password) return "";
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
+async function verifyUpstashQstashBinding(provider, token, requestedBaseUrl) {
+  if (provider?.providerId !== "upstash" || !token) return { ok: false, last: null, updates: {} };
+  const baseUrl = normalizeQstashBaseUrl(requestedBaseUrl);
+  if (!baseUrl) return { ok: false, last: { path: "/v2/keys", status: 0 }, updates: {} };
+  try {
+    const response = await fetchWithTimeout(safeUrl(baseUrl, "/v2/keys"), {
+      method: "GET",
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    });
+    if (!response.ok) return { ok: false, last: { path: "/v2/keys", status: response.status }, updates: {} };
+    const payload = await readJsonSafe(response);
+    const updates = { QSTASH_TOKEN: token, QSTASH_URL: baseUrl };
+    if (clean(payload?.current)) updates.QSTASH_CURRENT_SIGNING_KEY = clean(payload.current);
+    if (clean(payload?.next)) updates.QSTASH_NEXT_SIGNING_KEY = clean(payload.next);
+    let host = baseUrl;
+    try { host = new URL(baseUrl).host; } catch { /* normalized above */ }
+    return {
+      ok: true,
+      path: "/v2/keys",
+      status: response.status,
+      options: [{ id: host, label: `QStash · ${host}`, source: "/v2/keys" }],
+      updates,
+    };
+  } catch (error) {
+    return { ok: false, last: { path: "/v2/keys", status: 0, error: error?.message || "network error" }, updates: {} };
+  }
+}
+
 async function deriveUpstashQstashRuntimeEnv(provider, email, apiKey) {
   if (provider?.providerId !== "upstash") return { updates: {}, resolvedEnv: [] };
   const authHeader = `Basic ${Buffer.from(`${email}:${apiKey}`).toString("base64")}`;
@@ -458,25 +502,36 @@ async function POST(request, context) {
   const envUpdates = deriveEnvUpdates(fields, credentials, body);
   const emailEnv = usernameField?.envRef || provider.accountProbe?.emailEnv;
   const keyEnv = passwordField?.envRef || provider.accountProbe?.keyEnv;
+  const productTokenField = fields.find((field) => field.credentialRole === "productBearerToken");
+  const productBaseUrlField = fields.find((field) => field.credentialRole === "productBaseUrl");
+  const productToken = productTokenField ? getCredentialValue(credentials, body, productTokenField) : "";
+  const productBaseUrl = productBaseUrlField ? getCredentialValue(credentials, body, productBaseUrlField) : "";
+  const hasManagementCredentials = Boolean(email && apiKey);
+  const hasDirectProductCredentials = provider.providerId === "upstash" && Boolean(productToken);
   if (!fields.length || !emailEnv || !keyEnv) return jsonError("provider does not support account credential setup", 400);
-  if (missingFields.length || !email || !apiKey) {
-    return jsonError(`${provider.label} account credentials are required`, 400, {
+  if (missingFields.length || (!hasManagementCredentials && !hasDirectProductCredentials)) {
+    return jsonError(`${provider.label} management credentials or a direct QStash product token are required`, 400, {
       providerId: provider.providerId,
       missingFields,
     });
   }
 
-  const verified = await verifyProviderAccount(provider, email, apiKey);
+  const verified = hasManagementCredentials
+    ? await verifyProviderAccount(provider, email, apiKey)
+    : await verifyUpstashQstashBinding(provider, productToken, productBaseUrl);
   if (!verified.ok) {
-    return jsonError(`${provider.label} account API key could not be verified`, 422, {
+    return jsonError(`${provider.label} ${hasManagementCredentials ? "account API key" : "QStash product token"} could not be verified`, 422, {
       providerId: provider.providerId,
       checked: verified.last ? { path: verified.last.path, status: verified.last.status } : null,
     });
   }
 
-  const qstashRuntime = await deriveUpstashQstashRuntimeEnv(provider, email, apiKey);
+  const qstashRuntime = hasManagementCredentials
+    ? await deriveUpstashQstashRuntimeEnv(provider, email, apiKey)
+    : { updates: verified.updates || {}, resolvedEnv: Object.keys(verified.updates || {}) };
   const envToWrite = {
-    ...(Object.keys(envUpdates).length ? envUpdates : { [emailEnv]: email, [keyEnv]: apiKey }),
+    ...envUpdates,
+    ...(hasManagementCredentials && !Object.keys(envUpdates).length ? { [emailEnv]: email, [keyEnv]: apiKey } : {}),
     ...qstashRuntime.updates,
   };
   await writeLocalEnv(envToWrite);
@@ -488,13 +543,17 @@ async function POST(request, context) {
     syncStatus: "verified",
     status: "connected",
     testedAt: now,
-    proof: `${provider.label} Developer API account verified (GET ${verified.path} -> HTTP ${verified.status}).`,
-    summary: `${provider.label} provider account verified and stored as local runtime env refs.`,
-    resolvedEnv: Array.from(new Set([emailEnv, keyEnv, ...(qstashRuntime.resolvedEnv || [])])),
+    proof: hasManagementCredentials
+      ? `${provider.label} Developer API account verified (GET ${verified.path} -> HTTP ${verified.status}).`
+      : `${provider.label} QStash product binding verified (GET ${verified.path} -> HTTP ${verified.status}).`,
+    summary: hasManagementCredentials
+      ? `${provider.label} provider account verified and stored as local runtime env refs.`
+      : `${provider.label} provider connected through a verified QStash product binding; product credentials remain local runtime env refs.`,
+    resolvedEnv: Object.keys(envToWrite),
     providerAccountOptions: verified.options,
     selectedProviderAccountId: selected.id || "",
     selectedProviderAccountLabel: selected.label || "",
-    providerAccountSource: verified.path,
+    providerAccountSource: hasManagementCredentials ? verified.path : "qstash-product-probe",
   };
   const currentConfig = await readWorkspaceConfig();
   const nextConfig = withMarketplaceProviderRegistry(currentConfig, { providerId: provider.providerId, syncResult });
@@ -518,7 +577,7 @@ async function POST(request, context) {
     accountState: "verified",
     workspaceConfig: persisted,
     accountOptions: verified.options,
-    resolvedEnv: Array.from(new Set([emailEnv, keyEnv, ...(qstashRuntime.resolvedEnv || [])])),
+    resolvedEnv: Object.keys(envToWrite),
     receiptId: receipt.receiptId,
   });
 }

@@ -1,5 +1,31 @@
 # @growthub/cli
 
+## 0.14.27
+
+### Patch Changes
+
+- Adds the governed inference control plane to the exported custom-workspace
+  starter and routes it through the existing custom-model `sandbox-run` lane.
+- Adds verified base-GGUF and LoRA-GGUF identities, request-time adapter
+  selection over supervised llama-server process pools, and receipts that bind
+  the served alias and artifact SHA-256 values.
+- Adds bounded exact completion caching, optional embedding-backed semantic
+  caching, and native llama.cpp prompt-prefix reuse with explicit
+  `HIT`/`MISS`/`COLD_START`/`BYPASS` evidence.
+- Adds versioned JSON Schema enforcement and final AJV validation, with the
+  full schema contract hash bound into the model-tag proof.
+- Adds OpenAPI-backed tool-call validation and correlated, redacted tool-result
+  continuation receipts; external execution remains owned by the governed API
+  Registry/executor rather than llama.cpp.
+- Adds W3C trace-context propagation and OTLP/HTTP span export while preserving
+  workspace source-record receipts as the durable governance evidence.
+- Adds prefill-, decode-, and unified-role pools plus phase evidence. Stock
+  llama.cpp still performs both phases on the selected process because this
+  release does not claim a stable native prefill-to-decode KV-state handoff;
+  configurations that require native disaggregation fail closed.
+- Updates `@growthub/api-contract` to `1.6.0` for the public inference request,
+  response, and verification-receipt vocabulary.
+
 ## 0.14.16
 
 ### Patch Changes

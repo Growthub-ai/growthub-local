@@ -30,6 +30,9 @@
  * Response — resolver error:
  *   { ok: false, reason: "fetch-error", error: string }
  *
+ * Response — custom model:
+ *   { ok: true, tunedTagVerified: true, response, verificationReceipt }
+ *
  * Authority contract: tokens never leave the server. The browser sends only
  * non-secret binding metadata. Provider auth is read from env server-side.
  */
@@ -42,8 +45,17 @@ import { readAdapterConfig } from "@/lib/adapters/env";
 import { listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { loadAllResolvers } from "@/lib/adapters/integrations/resolver-loader";
 import { getSourceResolver, listRegisteredResolvers } from "@/lib/adapters/integrations/source-resolver-registry";
+import { executeCustomModelSourceTest } from "@/lib/custom-model-test-source";
+import { readServerSecret } from "@/lib/server-secrets";
 
 const PREVIEW_ROW_LIMIT = 8;
+
+function operatorCsv(name) {
+  return String(process.env[name] || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 
 function inferColumns(records) {
   const cols = new Set();
@@ -64,11 +76,12 @@ async function POST(request) {
   }
 
   const { integrationId, binding } = body || {};
+  const workspaceConfig = await readCfgForScope().catch(() => ({}));
+  let appScope = "";
   // App-scope gate: a scoped agent may only test integrations on its
   // registry-row registryIds (data-plane isolation, Attio-style object scope).
   {
-    const cfgForScope = await readCfgForScope().catch(() => ({}));
-    const scope = requireAppScope(request, cfgForScope);
+    const scope = requireAppScope(request, workspaceConfig);
     if (scope.scoped) {
       const violation = scope.violation || checkScopedRegistryAccess(scope.context, integrationId);
       if (violation) {
@@ -80,10 +93,53 @@ async function POST(request) {
         });
         return NextResponse.json(violation, { status: 422 });
       }
+      appScope = String(scope.appId || "");
     }
   }
   if (typeof integrationId !== "string" || !integrationId.trim()) {
     return NextResponse.json({ ok: false, reason: "bad-request", error: "integrationId must be a non-empty string" }, { status: 400 });
+  }
+
+  // Custom models are explicit governed API Registry capabilities, not data
+  // source resolvers. Recognize only the trait + mothership/student relation,
+  // then run the real first invocation through the inference gateway. The
+  // helper is read-only; durable activation still uses the canonical PATCH or
+  // sandbox-run lanes.
+  const testAuthRefs = operatorCsv("GROWTHUB_INFERENCE_TEST_AUTH_REFS");
+  const testResolvedEnv = {};
+  for (const ref of testAuthRefs) {
+    const secret = readServerSecret(ref);
+    if (secret) testResolvedEnv[ref] = secret.value;
+  }
+  const customModelResult = await executeCustomModelSourceTest({
+    workspaceConfig,
+    integrationId: integrationId.trim(),
+    prompt: String(body?.prompt || ""),
+    runId: `test-source:${globalThis.crypto?.randomUUID?.() || Date.now().toString(36)}`,
+    traceparent: String(request.headers.get("traceparent") || ""),
+    tracestate: String(request.headers.get("tracestate") || ""),
+    appScope,
+    networkPolicy: {
+      networkAllow: operatorCsv("GROWTHUB_INFERENCE_TEST_ALLOWLIST").length > 0,
+      allowList: operatorCsv("GROWTHUB_INFERENCE_TEST_ALLOWLIST"),
+    },
+    resolvedEnv: testResolvedEnv,
+    allowedEnvRefs: testAuthRefs,
+    signal: request.signal,
+    // Artifact verification plus the first GGUF load can legitimately exceed
+    // 30 seconds on external storage. Keep the verification probe bounded by
+    // the inference runtime's existing hard ceiling while allowing a real
+    // cold start to finish.
+    timeoutMs: 120_000,
+  });
+  if (customModelResult.handled) {
+    const policyError = ["ambiguous-mothership-policy", "invalid-mothership-policy", "model-tag-mismatch"]
+      .includes(String(customModelResult.reason || ""));
+    const status = customModelResult.ok ? 200
+      : policyError ? 422
+        : customModelResult.reason === "tool-result-required" ? 409
+          : 502;
+    return NextResponse.json(customModelResult, { status });
   }
 
   // Load any resolver files the operator has dropped in the resolvers directory.

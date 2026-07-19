@@ -24,7 +24,7 @@ workspace root or `apps/workspace` folder containing `growthub.config.json`.
 
 | Component | What it does |
 | --- | --- |
-| MCP server `governed-universe` | Runs `npx -y @growthub/cli@0.14.26 serve --mcp --fork .` from the Codex session cwd. |
+| MCP server `governed-universe` | Runs `npx -y @growthub/cli@0.14.27 serve --mcp --fork .` from the Codex session cwd. |
 | Skill `governed-console` | Drives the read → reason → dry-run → governed hand-off → re-read loop. |
 | Skill `governed-workspace-mutation` | Restates the canonical mutation boundary and PATCH allowlist. |
 | Skill `workspace-causal-cli` | Documents the scriptable CLI twin: `growthub plan / patch / capture / readiness --json`. |
@@ -43,5 +43,5 @@ workspace runtime's governed calls:
 ## Versioning
 
 The plugin version is lockstep with `@growthub/cli`. The bundled MCP server
-pins `@growthub/cli@0.14.26`; `scripts/check-codex-plugin.mjs` enforces that
+pins `@growthub/cli@0.14.27`; `scripts/check-codex-plugin.mjs` enforces that
 the plugin version and MCP pin match `cli/package.json`.

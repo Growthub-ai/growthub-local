@@ -24,6 +24,7 @@
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
+ *   - `@growthub/api-contract/inference`       — governed inference gateway evidence
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary

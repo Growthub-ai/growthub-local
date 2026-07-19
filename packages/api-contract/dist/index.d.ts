@@ -24,6 +24,7 @@
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
+ *   - `@growthub/api-contract/inference`       — governed inference gateway evidence
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
@@ -49,6 +50,7 @@ export type { WorkspaceDependencyKind, WorkspaceSurfaceRef, WorkspaceOutputTopol
 export { WORKSPACE_DEPENDENCY_MANIFEST_VERSION } from "./workspaces.js";
 export type { AdapterKind, AdapterMode, AdapterInputRef, AdapterOutputRef, LocalModelRuntimeRef, LocalModelAdapterOutputRef, NormalizedConnectionRef, AdapterContractRef, } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+export type { InferenceJsonPrimitive, InferenceJsonValue, InferenceJsonObject, InferenceJsonSchema, InferenceArtifactRef, BaseModelRef, InferenceAdapterRef, LoraAdapterRef, ModelIdentityVerificationStatus, ModelIdentityEvidence, InferenceSchemaRef, InferenceResponseSchemaContract, SchemaEnforcementStatus, SchemaOutputValidationStatus, SchemaEnforcementEvidence, InferenceCacheStatus, InferenceCacheKind, InferenceCachePolicy, InferenceCacheEvidence, OpenApiHttpMethod, OpenApiOperationRef, InferenceToolDefinition, OpenApiToolContract, InferenceToolCall, InferenceToolResult, ToolCallValidationEvidence, InferencePayloadEvidence, ExternalToolRequestEvidence, ExternalToolResultEvidence, ToolCallAuditStatus, ToolCallAuditEntry, ToolCallAuditEvidence, OtlpTransport, OTelTraceEvidence, InferencePhase, InferencePhasePool, InferencePoolRef, InferencePhaseEvidence, PhaseRoutingEvidence, InferenceMessage, InferenceRequest, VerificationReceiptStatus, VerificationReceipt, InferenceUsage, InferenceGatewayOutput, InferenceGatewayStatus, InferenceGatewayResult, } from "./inference.js";
 export type { WorkspaceHelperIntent, WorkspaceHelperProposal, WorkspaceProposalType, WorkspaceHelperReceipt, WorkspaceHelperSnapshot, WorkspaceHelperQuery, WorkspaceHelperResponse, WorkspaceHelperApplyRequest, WorkspaceHelperApplyReceipt, WorkspaceHelperApplyResponse, WorkspaceHelperNodeInput, WorkspaceHelperNodeOutput, WorkspaceHelperCapabilityManifest, } from "./helper.js";
 export { WORKSPACE_HELPER_INTENT_VALUES, WORKSPACE_HELPER_PROPOSAL_TYPES, PROPOSAL_TYPE_TO_PATCH_FIELD, isWorkspaceHelperResponse, isWorkspaceProposal, WORKSPACE_HELPER_CONTRACT_VERSION, } from "./helper.js";
 export type { WorkspacePatchAllowedField, WorkspaceLiveWorkflowField, WorkspaceDraftWorkflowField, WorkspacePatchViolationCode, WorkspacePatchViolation, WorkspacePatchLimits, WorkspacePatchPolicyRejection, WorkspacePatchPreflightRequest, WorkspacePatchPreflightResponse, WorkflowPublishRequest, WorkflowPublishFailureCode, WorkflowPublishSuccess, WorkflowPublishFailure, WorkflowPublishResponse, } from "./workspace-patch.js";

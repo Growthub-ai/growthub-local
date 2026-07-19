@@ -1,5 +1,29 @@
 # @growthub/api-contract
 
+## 1.6.0
+
+Additive minor. Introduces a public, type-only contract for evidence-bearing
+custom-model inference without changing the existing workspace mutation or
+execution routes.
+
+### Added
+
+- `./inference` subpath and root re-export for inference requests, responses,
+  streaming events, and verification receipts.
+- Base-model and LoRA artifact references with resolved SHA-256, served-alias,
+  adapter-scale, and model-tag binding evidence.
+- Exact/semantic gateway-cache and native-prefix-cache policy/evidence,
+  including synthetic cache keys, TTL, similarity, and warm-instance status.
+- Versioned JSON Schema contracts and generation-time plus final-output
+  validation evidence, with the complete schema wrapper hash bound to model
+  identity.
+- OpenAPI operation references, raw tool-call capture, correlated external
+  result audit records, executor provenance, redaction, and child-span evidence.
+- W3C/OTel trace correlation and OTLP export status fields.
+- Prefill/decode phase and role-pool routing evidence. The contract can report
+  native disaggregation as unavailable and does not imply that llama.cpp has a
+  stable prefill-to-decode KV-state handoff.
+
 ## 1.5.1
 
 Additive patch. Introduces the Unified API Resolver Registry contract as a
