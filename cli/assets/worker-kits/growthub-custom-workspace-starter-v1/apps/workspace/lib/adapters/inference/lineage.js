@@ -153,6 +153,56 @@ export function buildReceiptLineage({ spanKind = "ROOT", parentReceiptId = "", c
 }
 
 /**
+ * Transitive cycle detection over a recorded edge set. Ingestion-time guards
+ * are necessarily local (a gateway sees one continuation at a time); this
+ * DFS is the global check run wherever a full edge set exists — workflow DAG
+ * assembly and the persistence layer — so a cycle recorded by concurrent
+ * continuations is still caught and flagged before it is trusted.
+ *
+ * @param {Array<{ receipt_id: string, parent_receipt_id?: string|null, children?: Array<{ child_receipt_id?: string }> }>} edges
+ * @returns {{ ok: boolean, cyclePath: string[] }}
+ */
+export function detectLineageCycle(edges) {
+  const adjacency = new Map();
+  const addEdge = (from, to) => {
+    if (!from || !to) return;
+    if (!adjacency.has(from)) adjacency.set(from, new Set());
+    adjacency.get(from).add(to);
+  };
+  for (const edge of Array.isArray(edges) ? edges : []) {
+    const id = String(edge?.receipt_id || "");
+    if (!id) continue;
+    const parent = String(edge?.parent_receipt_id || "");
+    if (parent) addEdge(parent, id);
+    for (const child of Array.isArray(edge?.children) ? edge.children : []) {
+      addEdge(id, String(child?.child_receipt_id || ""));
+    }
+  }
+  const visiting = new Set();
+  const done = new Set();
+  const path = [];
+  const walk = (node) => {
+    if (done.has(node)) return null;
+    if (visiting.has(node)) return [...path.slice(path.indexOf(node)), node];
+    visiting.add(node);
+    path.push(node);
+    for (const next of adjacency.get(node) || []) {
+      const cycle = walk(next);
+      if (cycle) return cycle;
+    }
+    visiting.delete(node);
+    done.add(node);
+    path.pop();
+    return null;
+  };
+  for (const node of adjacency.keys()) {
+    const cycle = walk(node);
+    if (cycle) return { ok: false, cyclePath: cycle };
+  }
+  return { ok: true, cyclePath: [] };
+}
+
+/**
  * Headers the awaiting-tool-result envelope hands to the governed executor
  * for calls that target a child workflow, so the child gateway knows a
  * receipt callback is required and which parent span to bind.

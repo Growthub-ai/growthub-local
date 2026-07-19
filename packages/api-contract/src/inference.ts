@@ -388,6 +388,13 @@ export interface StreamRedactionEvidence {
   patterns_sha256: string | null;
   /** Always false when redaction ran: the raw response is never cached. */
   raw_output_cached: boolean;
+  /** Non-secret fingerprint of the HMAC key that hashed the previews. */
+  preview_key_id?: string;
+  /**
+   * Key tier actually used. Under `process-ephemeral`, preview hashes stop
+   * correlating across process restarts — visible here, never silent.
+   */
+  preview_key_source?: "workspace" | "cache-operator" | "process-ephemeral" | (string & {});
   reason?: string;
 }
 

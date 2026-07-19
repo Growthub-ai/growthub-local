@@ -12,7 +12,7 @@ import {
   estimateRequestCostCents,
   executeInferenceGateway,
 } from "./adapters/inference/gateway.js";
-import { receiptSha256 } from "./adapters/inference/lineage.js";
+import { detectLineageCycle, receiptSha256 } from "./adapters/inference/lineage.js";
 import { compileInferenceManifest, signInferenceManifest } from "./adapters/inference/manifest.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -354,6 +354,7 @@ export async function executeCustomModelInference({
   signal,
   timeoutMs = 120_000,
   inferenceManifests = [],
+  ancestorReceiptIds = [],
 } = {}) {
   const policy = policyRow?.metadata?.mothershipProxy;
   const routes = Array.isArray(policy?.routes) ? policy.routes : [];
@@ -506,6 +507,7 @@ export async function executeCustomModelInference({
         integrationId: String(availability.row?.integrationId || ""),
         maxTokensLimit: Math.max(1, Number(control.maxTokensLimit) || 32_768),
         redaction: control.redaction,
+        ancestorReceiptIds: (Array.isArray(ancestorReceiptIds) ? ancestorReceiptIds : []).map(String).filter(Boolean),
         ...(signedManifest ? { manifest: signedManifest } : {}),
         economics: {
           reason: qualityFallbackActive ? "quality_fallback" : maxCostCents !== null ? "cost_capability" : "default",
@@ -751,11 +753,22 @@ function combineExecutions(executions, response, extra = {}) {
     span_kind: String(receipt.lineage?.span_kind || "ROOT"),
     receipt_sha256: receiptSha256(receipt),
   }));
+  // Global transitive cycle check over the assembled edge set. Ingestion
+  // guards are per-continuation; this is the whole-graph verdict, so even a
+  // cycle recorded by concurrent continuations is flagged before the DAG is
+  // trusted as evidence.
+  const cycleVerdict = detectLineageCycle(receipts.map((receipt) => ({
+    receipt_id: String(receipt.receipt_id || ""),
+    parent_receipt_id: receipt.lineage?.parent_receipt_id || null,
+    children: Array.isArray(receipt.lineage?.children) ? receipt.lineage.children : [],
+  })));
   const receiptDag = receipts.length ? {
     schema: "growthub-receipt-dag-v1",
     root_receipt_id: edges[0].receipt_id,
     edges,
     dag_sha256: receiptSha256(edges),
+    acyclic: cycleVerdict.ok,
+    ...(cycleVerdict.ok ? {} : { cycle_path: cycleVerdict.cyclePath }),
   } : null;
   return {
     ok: successful.length === executions.length,
@@ -821,7 +834,10 @@ export async function executeCustomModelWorkflow({
   };
   const prompt = promptFromInput(inputPayload);
   // Multi-step variants chain the receipt DAG: each step after the first
-  // executes as a CHILD_WORKFLOW span of the preceding step's receipt.
+  // executes as a CHILD_WORKFLOW span of the preceding step's receipt, and
+  // the FULL accumulated ancestry travels with every step so a child receipt
+  // looping back onto any upstream step is refused at ingestion depth.
+  const chainAncestry = [];
   const call = (suffix, nextPrompt, options = {}) => executeCustomModelInference({
     ...baseArgs,
     runId: `${runId}${suffix ? `_${suffix}` : ""}`,
@@ -839,9 +855,14 @@ export async function executeCustomModelWorkflow({
     },
     clusterId: workflowVariant,
     allowedTargets: options.allowedTargets,
+    ancestorReceiptIds: [...chainAncestry],
   });
   const needsToolResult = (execution) => execution?.awaitingToolResult === true;
-  const parentOf = (execution) => String(execution?.verificationReceipt?.receipt_id || "");
+  const parentOf = (execution) => {
+    const receiptId = String(execution?.verificationReceipt?.receipt_id || "");
+    if (receiptId && !chainAncestry.includes(receiptId)) chainAncestry.push(receiptId);
+    return receiptId;
+  };
 
   if (workflowVariant === "chat") return call("", prompt);
 

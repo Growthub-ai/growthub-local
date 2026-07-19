@@ -35,6 +35,7 @@ const {
 } = await import(pathToFileURL(path.join(inferenceRoot, "cache.js")).href);
 const {
   buildReceiptLineage,
+  detectLineageCycle,
   ingestChildReceipt,
   normalizeSpanKind,
   receiptSha256,
@@ -50,7 +51,9 @@ const {
 const {
   createStreamingRedactor,
   redactText,
+  resolveRedactionPreviewKey,
 } = await import(pathToFileURL(path.join(inferenceRoot, "redaction.js")).href);
+const resolveKeyFor = (env) => resolveRedactionPreviewKey(env);
 const {
   executeCustomModelInference,
   executeCustomModelWorkflow,
@@ -723,6 +726,131 @@ test("local budget buffer ratio is governed configuration", async () => {
   const localSkip = skipped.attempts.find((attempt) => attempt.target === "local-base" && attempt.status === "skipped");
   assert.ok(localSkip, "a tight governed buffer skips the local route");
   assert.match(localSkip.reason, /buffered local budget/);
+});
+
+test("invalidation budgets are per reason — a feedback flood cannot starve SECURITY", async () => {
+  let nowMs = 1_721_280_000_000;
+  const cache = new InferenceSemanticCache({ now: () => nowMs, maxInvalidationsPerMinute: 2 });
+  // Exhaust the FEEDBACK_CORRECTION lane completely.
+  for (let index = 0; index < 2; index += 1) {
+    assert.equal((await cache.invalidate({ reason: "FEEDBACK_CORRECTION", scope: { exact_key: `fb-${index}` } })).ok, true);
+  }
+  const floodedFeedback = await cache.invalidate({ reason: "FEEDBACK_CORRECTION", scope: { exact_key: "fb-flood" } });
+  assert.equal(floodedFeedback.rateLimited, true);
+  // SECURITY still lands in the same window: its lane is untouched.
+  const security = await cache.invalidate({ reason: "SECURITY", scope: { exact_key: "sec-urgent" } });
+  assert.equal(security.ok, true, "a feedback flood must never delay a security invalidation");
+  assert.deepEqual(security.poisonedExactKeys, ["sec-urgent"]);
+});
+
+test("transitive cycle detection catches loops the per-continuation guard cannot see", () => {
+  // Mutual edges recorded by two concurrent continuations: A lists B as its
+  // child while B lists A. Each local ingestion check passed; the global DFS
+  // over the recorded edge set still refuses the graph.
+  const mutual = detectLineageCycle([
+    { receipt_id: "infr_A", parent_receipt_id: null, children: [{ child_receipt_id: "infr_B" }] },
+    { receipt_id: "infr_B", parent_receipt_id: null, children: [{ child_receipt_id: "infr_A" }] },
+  ]);
+  assert.equal(mutual.ok, false);
+  assert.ok(mutual.cyclePath.includes("infr_A") && mutual.cyclePath.includes("infr_B"));
+  // Multi-hop loop through undeclared span linkage: A -> B -> C -> A.
+  const deep = detectLineageCycle([
+    { receipt_id: "infr_A", children: [{ child_receipt_id: "infr_B" }] },
+    { receipt_id: "infr_B", children: [{ child_receipt_id: "infr_C" }] },
+    { receipt_id: "infr_C", children: [{ child_receipt_id: "infr_A" }] },
+  ]);
+  assert.equal(deep.ok, false);
+  // A clean chain plus a diamond (two parents, one child) stays acyclic.
+  const clean = detectLineageCycle([
+    { receipt_id: "infr_root", children: [{ child_receipt_id: "infr_L" }, { child_receipt_id: "infr_R" }] },
+    { receipt_id: "infr_L", parent_receipt_id: "infr_root", children: [{ child_receipt_id: "infr_join" }] },
+    { receipt_id: "infr_R", parent_receipt_id: "infr_root", children: [{ child_receipt_id: "infr_join" }] },
+  ]);
+  assert.equal(clean.ok, true);
+});
+
+test("workflow ancestry travels to ingestion depth and the assembled DAG is verified acyclic", async () => {
+  const fixture = economicFixture({ lowConfidence: false });
+  const result = await executeCustomModelWorkflow({
+    workspaceConfig: { dataModel: { objects: [] } },
+    policyRow: fixture.policyRow,
+    inputPayload: { prompt: "Verify the assembled DAG." },
+    fetchImpl: fixture.fetchImpl,
+    runId: "run_dag_acyclic",
+    workflowVariant: "agentic",
+    networkPolicy: fixture.networkPolicy,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error || result.attempts));
+  assert.equal(result.receiptDag.acyclic, true, "the assembled workflow DAG carries a global cycle verdict");
+  // Ingestion-depth ancestry: a grandchild receipt looping onto the chain's
+  // ROOT (not just the immediate parent) is refused.
+  const rootId = result.receiptDag.edges[0].receipt_id;
+  const looping = ingestChildReceipt({
+    toolCallId: "call-loop",
+    childReceipt: { kind: "growthub-inference-verification-receipt-v1", receipt_id: rootId, status: "verified", errors: [] },
+    forbiddenReceiptIds: [rootId, result.receiptDag.edges[1].receipt_id],
+  });
+  assert.equal(looping.ok, false);
+  assert.equal(looping.error.code, "child_receipt_cycle");
+});
+
+test("redaction receipts record the preview key tier, and rotation is visible", async () => {
+  const withWorkspaceKey = redactText("SSN 123-45-6789", { previewKey: resolveKeyFor({ GROWTHUB_WORKSPACE_SIGNING_KEY: "ws-key-1" }) });
+  assert.equal(withWorkspaceKey.keyInfo.source, "workspace");
+  const rotated = redactText("SSN 123-45-6789", { previewKey: resolveKeyFor({ GROWTHUB_WORKSPACE_SIGNING_KEY: "ws-key-2" }) });
+  assert.notEqual(withWorkspaceKey.keyInfo.keyId, rotated.keyInfo.keyId, "rotation changes the recorded fingerprint");
+  assert.notEqual(
+    withWorkspaceKey.events[0].redacted_preview_hash,
+    rotated.events[0].redacted_preview_hash,
+    "old previews stop correlating after rotation — visible via the key id, never silent",
+  );
+  const ephemeral = redactText("SSN 123-45-6789", { previewKey: resolveKeyFor({}) });
+  assert.equal(ephemeral.keyInfo.source, "process-ephemeral");
+
+  // End-to-end: the gateway stamps the tier into the receipt evidence.
+  const cache = new InferenceSemanticCache({ now: () => 1_721_280_000_000 });
+  const result = await executeInferenceGateway({
+    request: baseRequest("redaction-key-evidence", "SSN 123-45-6789 in output."),
+    defaults: { redaction: { enabled: true } },
+    transport: async ({ request }) => unifiedTransportResult(request, "The SSN is 123-45-6789."),
+    cache,
+    env: { GROWTHUB_WORKSPACE_SIGNING_KEY: "ws-key-evidence" },
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(result.receipt.redaction.preview_key_source, "workspace");
+  assert.match(result.receipt.redaction.preview_key_id, /^[0-9a-f]{16}$/);
+  assert.doesNotMatch(JSON.stringify(result.receipt.redaction), /ws-key-evidence/, "the key itself never enters the receipt");
+});
+
+test("feedback poisoning rejects forged receipts and enforces server-side resolution", async () => {
+  const cache = new InferenceSemanticCache({ now: () => 1_721_280_000_000 });
+  const forged = await poisonCacheFromFeedback(cache, {
+    originalReceipt: { kind: "not-a-receipt", cache: { cache_key: "victim-key", semantic_bucket: "free-form-bucket-injection" } },
+    correctionReceiptId: "attacker",
+  });
+  assert.equal(forged.ok, false);
+  assert.match(forged.reason, /server-resolved/);
+  // A resolver-backed call discards the caller-shaped object entirely.
+  const persisted = {
+    kind: "growthub-inference-verification-receipt-v1",
+    receipt_id: "infr_real",
+    cache: { cache_key: "real-key", semantic_bucket: `${"a".repeat(64)}:${"b".repeat(64)}` },
+  };
+  const resolved = await poisonCacheFromFeedback(cache, {
+    originalReceipt: { receipt_id: "infr_real", kind: "growthub-inference-verification-receipt-v1", cache: { cache_key: "attacker-key" } },
+    correctionReceiptId: "corr-1",
+    receiptResolver: async (id) => (id === "infr_real" ? persisted : null),
+  });
+  assert.equal(resolved.ok, true);
+  assert.deepEqual(resolved.poisonedExactKeys, ["real-key"], "the resolver's receipt wins; the caller-shaped key is ignored");
+  // An invalid free-form bucket never becomes a poison marker target.
+  const badBucket = await poisonCacheFromFeedback(cache, {
+    originalReceipt: { ...persisted, cache: { ...persisted.cache, cache_key: "k2", semantic_bucket: "../../other-tenant" } },
+    correctionReceiptId: "corr-2",
+    correctedText: "truth",
+  });
+  assert.equal(badBucket.ok, true);
+  assert.equal(badBucket.poisonMarkersAdded, 0, "a malformed bucket is dropped, not poisoned");
 });
 
 test("malformed budget-buffer config never tightens the buffer silently", async () => {

@@ -21,11 +21,18 @@ import { sha256Hex } from "./contracts.js";
  * per-process ephemeral key (safe default; correlation is then process-local).
  */
 let processPreviewKey = null;
+function keyDescriptor(key, source) {
+  return { key, keyId: sha256Hex(`growthub-redaction-key:${key}`).slice(0, 16), source };
+}
 export function resolveRedactionPreviewKey(env = process.env) {
-  const explicit = String(env?.GROWTHUB_WORKSPACE_SIGNING_KEY || env?.GROWTHUB_INFERENCE_CACHE_HMAC_KEY || "").trim();
-  if (explicit) return `growthub-redaction-preview:${explicit}`;
+  const workspaceKey = String(env?.GROWTHUB_WORKSPACE_SIGNING_KEY || "").trim();
+  if (workspaceKey) return keyDescriptor(`growthub-redaction-preview:${workspaceKey}`, "workspace");
+  const cacheOperatorKey = String(env?.GROWTHUB_INFERENCE_CACHE_HMAC_KEY || "").trim();
+  if (cacheOperatorKey) return keyDescriptor(`growthub-redaction-preview:${cacheOperatorKey}`, "cache-operator");
+  // Process-ephemeral: safe default, but hashes stop correlating across
+  // restarts. The receipt records this tier so the trade-off is visible.
   if (!processPreviewKey) processPreviewKey = randomBytes(32).toString("hex");
-  return processPreviewKey;
+  return keyDescriptor(processPreviewKey, "process-ephemeral");
 }
 
 function previewHash(key, raw) {
@@ -141,7 +148,12 @@ function collectMatches(patterns, text) {
  */
 export function createStreamingRedactor({ patterns: requestedPatterns, holdbackChars = DEFAULT_HOLDBACK_CHARS, previewKey = "" } = {}) {
   const { patterns, patternsSha256 } = compileRedactionPatterns(requestedPatterns);
-  const hashKey = String(previewKey || "") || resolveRedactionPreviewKey();
+  const keyInfo = previewKey && typeof previewKey === "object" && previewKey.key
+    ? { key: String(previewKey.key), keyId: String(previewKey.keyId || sha256Hex(`growthub-redaction-key:${previewKey.key}`).slice(0, 16)), source: String(previewKey.source || "caller") }
+    : String(previewKey || "")
+      ? { key: String(previewKey), keyId: sha256Hex(`growthub-redaction-key:${previewKey}`).slice(0, 16), source: "caller" }
+      : resolveRedactionPreviewKey();
+  const hashKey = keyInfo.key;
   const holdback = Math.max(32, Math.min(1024, Math.floor(Number(holdbackChars) || DEFAULT_HOLDBACK_CHARS)));
   let carry = "";
   let sourceBase = 0;
@@ -191,6 +203,7 @@ export function createStreamingRedactor({ patterns: requestedPatterns, holdbackC
 
   return {
     patternsSha256,
+    keyInfo: { keyId: keyInfo.keyId, source: keyInfo.source },
     process(chunk) {
       const buffer = carry + String(chunk ?? "");
       const cutLimit = Math.max(0, buffer.length - holdback);
@@ -212,7 +225,7 @@ export function createStreamingRedactor({ patterns: requestedPatterns, holdbackC
 export function redactText(text, { patterns, previewKey = "" } = {}) {
   const redactor = createStreamingRedactor({ patterns, holdbackChars: 32, previewKey });
   const released = redactor.process(String(text ?? "")) + redactor.flush();
-  return { text: released, events: redactor.events(), patternsSha256: redactor.patternsSha256 };
+  return { text: released, events: redactor.events(), patternsSha256: redactor.patternsSha256, keyInfo: redactor.keyInfo };
 }
 
 /** Normalize governed redaction config into gateway defaults. */

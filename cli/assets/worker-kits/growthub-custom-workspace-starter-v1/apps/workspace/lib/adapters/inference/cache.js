@@ -301,18 +301,31 @@ export class InferenceSemanticCache {
     this.poisonMarkers = new Map();
     /** invalidation epochs: "model:<sha>"|"schema:<hash>"|"workflow:<id>" -> integer */
     this.epochs = new Map();
-    /** Invalidation flood guard: bounded token window per process. */
+    /**
+     * Invalidation flood guard: one bounded per-minute window PER REASON.
+     * Reasons never share a budget, so a runaway FEEDBACK_CORRECTION loop can
+     * exhaust its own lane while SECURITY invalidations keep landing — the
+     * guard can never delay incident response. (The window is per process;
+     * shared-Redis deployments rate-limit each process independently.)
+     */
     this.maxInvalidationsPerMinute = Math.max(1, Math.min(10_000, Math.floor(Number(maxInvalidationsPerMinute) || 60)));
-    this.invalidationWindow = { startMs: 0, count: 0 };
+    this.invalidationWindows = new Map();
   }
 
-  consumeInvalidationBudget() {
+  consumeInvalidationBudget(reason) {
     const nowMs = this.now();
-    if (nowMs - this.invalidationWindow.startMs >= 60_000) {
-      this.invalidationWindow = { startMs: nowMs, count: 0 };
+    const lane = String(reason || "SECURITY");
+    const window = this.invalidationWindows.get(lane) || { startMs: 0, count: 0 };
+    if (nowMs - window.startMs >= 60_000) {
+      window.startMs = nowMs;
+      window.count = 0;
     }
-    if (this.invalidationWindow.count >= this.maxInvalidationsPerMinute) return false;
-    this.invalidationWindow.count += 1;
+    if (window.count >= this.maxInvalidationsPerMinute) {
+      this.invalidationWindows.set(lane, window);
+      return false;
+    }
+    window.count += 1;
+    this.invalidationWindows.set(lane, window);
     return true;
   }
 
@@ -704,7 +717,8 @@ export class InferenceSemanticCache {
       : "SECURITY";
     // Flood guard: a runaway or hostile invalidation loop cannot stampede the
     // cache. Rejected calls mutate nothing and report the limit explicitly.
-    if (!this.consumeInvalidationBudget()) {
+    // Budgets are per reason, so no reason can starve another.
+    if (!this.consumeInvalidationBudget(normalizedReason)) {
       return {
         ok: false,
         reason: normalizedReason,
@@ -791,21 +805,35 @@ export async function poisonCacheFromFeedback(cache, {
   correctionReceiptId = "",
   correctedText = "",
   reason = "FEEDBACK_CORRECTION",
+  receiptResolver = null,
 } = {}) {
-  const cacheEvidence = originalReceipt?.cache || {};
+  // Trust boundary: the receipt must be resolved server-side, never taken
+  // from a caller's body. When a resolver is supplied (any HTTP-facing
+  // caller MUST supply one), the receipt is re-read from the persisted
+  // stream by id and the caller-shaped object is discarded.
+  let receipt = originalReceipt;
+  if (typeof receiptResolver === "function") {
+    receipt = await receiptResolver(String(originalReceipt?.receipt_id || ""));
+  }
+  if (!receipt || receipt.kind !== "growthub-inference-verification-receipt-v1") {
+    return { ok: false, reason: "feedback poisoning requires a server-resolved growthub inference verification receipt", poisonedExactKeys: [], poisonMarkersAdded: 0, epochsBumped: [] };
+  }
+  const cacheEvidence = receipt.cache || {};
   const exactKey = String(cacheEvidence.cache_key || "").trim();
   if (!exactKey) {
     return { ok: false, reason: "original receipt has no cache key; nothing to poison", poisonedExactKeys: [], poisonMarkersAdded: 0, epochsBumped: [] };
   }
+  // Semantic markers live in the same identity-scoped bucket the entry was
+  // written to. The bucket is a pair of scope hashes; anything else (an
+  // injected free-form bucket string) is rejected rather than poisoned.
+  const bucket = String(cacheEvidence.semantic_bucket || "");
+  const bucketValid = /^[0-9a-f]{64}:[0-9a-f]{64}$/.test(bucket);
   return cache.invalidate({
     reason,
     scope: { exact_key: exactKey },
     correctionReceiptId,
     correctedText,
-    // Semantic markers live in the same identity-scoped bucket the entry was
-    // written to (receipt `cache.semantic_bucket`); a marker never leaks
-    // across model/schema/tenant scope.
-    bucket: String(cacheEvidence.semantic_bucket || ""),
+    bucket: bucketValid ? bucket : "",
   });
 }
 

@@ -861,7 +861,14 @@ export async function executeInferenceGateway({
       workflowRef,
       childReceipt: raw.child_receipt || raw.childReceipt || null,
       childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
-      forbiddenReceiptIds: [normalized.priorReceiptId, normalized.parentReceiptId],
+      // The full known ancestry, not just the immediate parent: the runner
+      // threads every upstream receipt id of this workflow chain through
+      // defaults so a multi-hop loop is refused at ingestion depth too.
+      forbiddenReceiptIds: [
+        normalized.priorReceiptId,
+        normalized.parentReceiptId,
+        ...(Array.isArray(defaults.ancestorReceiptIds) ? defaults.ancestorReceiptIds.map(String) : []),
+      ],
     });
     if (ingestion.ok) {
       childLinks.push(ingestion.link);
@@ -968,7 +975,10 @@ export async function executeInferenceGateway({
   // buffered response is redacted with the same compiled pattern set, so the
   // released body, receipt evidence, and cache entry always agree.
   const redactionPolicy = normalizeRedactionPolicy(defaults.redaction);
-  const redactionPreviewKey = redactionPolicy.enabled ? resolveRedactionPreviewKey(env) : "";
+  const redactionPreviewKey = redactionPolicy.enabled ? resolveRedactionPreviewKey(env) : null;
+  const previewKeyEvidence = redactionPreviewKey
+    ? { preview_key_id: redactionPreviewKey.keyId, preview_key_source: redactionPreviewKey.source }
+    : {};
   let streamRedactor = null;
   let effectiveOnDelta = onDelta;
   if (redactionPolicy.enabled && typeof onDelta === "function") {
@@ -1189,6 +1199,7 @@ export async function executeInferenceGateway({
     events: [],
     patterns_sha256: null,
     raw_output_cached: false,
+    ...previewKeyEvidence,
   };
   if (redactionPolicy.enabled && cacheLookup.hit) {
     const cachedEnvelope = cacheLookup.envelope || cacheLookup.entry?.envelope || null;
@@ -1198,6 +1209,7 @@ export async function executeInferenceGateway({
       events: [],
       patterns_sha256: null,
       raw_output_cached: false,
+      ...previewKeyEvidence,
       reason: "gateway cache replay; the stored entry was redacted before it was cached",
     };
   } else if (redactionPolicy.enabled && transportResult?.ok && body && typeof body === "object") {
@@ -1209,6 +1221,7 @@ export async function executeInferenceGateway({
       events: redacted.events,
       patterns_sha256: redacted.patternsSha256,
       raw_output_cached: false,
+      ...previewKeyEvidence,
     };
     if (redacted.events.length && typeof content === "string") {
       const choice = body.choices[0];

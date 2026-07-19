@@ -34,9 +34,14 @@ A parent workflow's receipt no longer ends at "HTTP 200 from the child".
   ingested rejects the parent continuation with `child_receipt_missing` and
   `lineage.status: "incomplete"`; no transport call is made. A failed child is
   ingested as `child_status: "FAILED"` with its exact first error — recorded,
-  never orphaned. A child receipt that closes a cycle onto the request's own
-  receipt ancestry (directly or through its recorded children) is rejected
-  with `child_receipt_cycle` instead of minting a self-referential edge.
+  never orphaned. Cycles are refused at three depths: ingestion rejects a
+  child receipt that closes onto the request's known ancestry
+  (`child_receipt_cycle`) — and multi-step workflows thread their FULL
+  accumulated receipt chain into that check, not just the immediate parent;
+  DAG assembly runs a transitive DFS (`detectLineageCycle`) over the whole
+  recorded edge set and stamps `acyclic` (with the offending `cycle_path`
+  when violated) onto the `receiptDag`, which also catches loops recorded by
+  concurrent continuations that no single ingestion check could see.
 - Multi-step custom-model workflow variants (`recursive-learning`, `agentic`,
   `eval-vs-base`) chain each step as a `CHILD_WORKFLOW` span of the previous
   step's receipt and return a workflow-level `receiptDag`
@@ -71,9 +76,12 @@ Every completion-cache entry now carries a signed envelope
   `SECURITY` and scopes: `exact_key` (POISONED tombstone with provenance),
   `model_sha256` / `schema_hash` / `workflow_id` (epoch bump — every older
   envelope in scope fails closed), and a semantic bucket for corrections.
-  Invalidation is rate-limited (bounded per-minute window, default 60); a
-  flooded call mutates nothing and reports `rateLimited: true`, so a hostile
-  or runaway loop cannot stampede the cache.
+  Invalidation is rate-limited with one bounded per-minute window **per
+  reason** (default 60 each); a flooded call mutates nothing and reports
+  `rateLimited: true`. Because reasons never share a budget, a runaway
+  `FEEDBACK_CORRECTION` loop can exhaust its own lane while `SECURITY`
+  invalidations keep landing. The window is per process; shared-Redis
+  deployments rate-limit each process independently.
 - Key management: set `GROWTHUB_INFERENCE_CACHE_HMAC_KEY` (operator-owned) in
   production. The credential-derived fallback binds signatures to the Redis
   token — anyone holding that token can already write cache entries, so the
@@ -87,6 +95,14 @@ Every completion-cache entry now carries a signed envelope
   with `bypass_reason: CACHE_BYPASS_POISONED` (and the correction receipt id
   in `poisoned_by`), re-executing the model instead of replaying the
   hallucination. A poisoned bypass also does not re-store over the tombstone.
+  **Trust boundary:** the receipt MUST be resolved server-side — any
+  HTTP-facing caller supplies a `receiptResolver` and the caller-shaped
+  receipt object is discarded; a non-receipt object is rejected outright, and
+  a bucket that is not the canonical scope-hash pair is dropped rather than
+  poisoned, so a forged receipt cannot target another scope's neighborhood.
+  Bucket derivation itself hashes tenant, app, and integration identity, so
+  markers are structurally scope-isolated (mechanical property test tracked
+  in the follow-up e2e issue).
 
 ## 3. Multi-tier economic routing
 
@@ -132,7 +148,11 @@ stream and the client stream:
   preview hash is **always keyed** (HMAC-SHA256 under the workspace signing
   key, else the operator cache HMAC key, else a per-process ephemeral key) —
   an unkeyed hash of low-entropy PII such as a 9-digit SSN would be trivially
-  reversible by enumeration once a receipt is shared.
+  reversible by enumeration once a receipt is shared. The receipt records
+  which tier hashed the previews (`preview_key_source` plus the non-secret
+  `preview_key_id` fingerprint), so an operator can see when hashes are
+  workspace-stable versus process-ephemeral (uncorrelatable across
+  restarts), and key rotation is visible as a fingerprint change.
 - When any redaction fires, the gateway caches **only the redacted
   response**; the envelope records `redacted: true` plus the event count, and
   cache replays report the same redaction evidence.
