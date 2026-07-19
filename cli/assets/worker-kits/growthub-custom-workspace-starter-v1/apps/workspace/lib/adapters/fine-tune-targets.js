@@ -125,7 +125,7 @@ export function rebindCustomModelServingIdentity(objects, { trainingRowId, integ
           || !proxy.routes.some((route) => String(route?.registryId || "") === String(integrationId || ""))) return row;
         return {
           ...row,
-          name: `${tag} (mothership proxy)`,
+          name: tag,
           metadata: {
             ...row.metadata,
             mothershipProxy: {

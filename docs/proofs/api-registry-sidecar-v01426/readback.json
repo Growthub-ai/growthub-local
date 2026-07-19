@@ -1,0 +1,27 @@
+{
+  "schema": "growthub-api-registry-sidecar-proof-v1",
+  "releaseVersion": "0.14.26",
+  "backend": "iab",
+  "workspaceUrl": "http://127.0.0.1:3777",
+  "surface": "Workflow Canvas API Registry node configuration",
+  "record": {
+    "integrationId": "probe-scheduler",
+    "method": "POST",
+    "endpoint": "/run",
+    "connected": true
+  },
+  "layout": {
+    "cardWidth": 446,
+    "actionCount": 1,
+    "actionText": "Open API Registry",
+    "actionHref": "/data-model",
+    "actionWidth": 416,
+    "actionRowWidth": 416,
+    "ownFullWidthRow": true
+  },
+  "copy": {
+    "visibleText": "API REGISTRY BINDING probe-scheduler POST /run Connected Open API Registry",
+    "customModelCopyPresent": false,
+    "mothershipProxyCopyPresent": false
+  }
+}
