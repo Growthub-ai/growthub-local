@@ -39,6 +39,7 @@ export const WORKSPACE_LIVE_WORKFLOW_FIELDS = [
     "orchestrationConfig",
     "orchestrationPublishedAt",
     "orchestrationDeltas",
+    "inferenceManifests",
 ];
 /** Draft workflow fields — direct PATCH may save these freely. */
 export const WORKSPACE_DRAFT_WORKFLOW_FIELDS = [

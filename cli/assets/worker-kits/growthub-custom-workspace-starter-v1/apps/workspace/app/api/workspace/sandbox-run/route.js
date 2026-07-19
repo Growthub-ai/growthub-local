@@ -835,6 +835,9 @@ async function executeSandboxRun(body, {
         appScope: String(appScope || ""),
         inferenceContinuation,
         resolveInferenceContinuation: resolvePersistedInferenceContinuation,
+        // Published manifests bound to the live workflow version; the
+        // gateway rejects a pool serving a different composite SHA.
+        inferenceManifests: Array.isArray(rowForRun.inferenceManifests) ? rowForRun.inferenceManifests : [],
         signal,
         onEvent: emit
       }

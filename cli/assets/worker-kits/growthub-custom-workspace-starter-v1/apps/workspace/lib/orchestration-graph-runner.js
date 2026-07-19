@@ -299,6 +299,7 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
       trustedContinuation,
       signal: executionContext?.signal,
       timeoutMs: Math.min(Math.max(Number(timeoutMs) || 1_000, 1_000), 120_000),
+      inferenceManifests: Array.isArray(executionContext?.inferenceManifests) ? executionContext.inferenceManifests : [],
     });
     if (!inference.ok) {
       return {

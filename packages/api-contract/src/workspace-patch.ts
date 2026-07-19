@@ -45,6 +45,7 @@ export const WORKSPACE_LIVE_WORKFLOW_FIELDS = [
   "orchestrationConfig",
   "orchestrationPublishedAt",
   "orchestrationDeltas",
+  "inferenceManifests",
 ] as const;
 
 export type WorkspaceLiveWorkflowField =

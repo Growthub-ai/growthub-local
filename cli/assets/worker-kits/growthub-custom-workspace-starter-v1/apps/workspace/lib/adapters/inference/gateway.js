@@ -20,7 +20,17 @@ import {
   validateStructuredCompletion,
   validateToolCalls,
 } from "./contracts.js";
-import { getInferenceSemanticCache } from "./cache.js";
+import { CACHE_BYPASS_POISONED, getInferenceSemanticCache } from "./cache.js";
+import {
+  buildReceiptLineage,
+  childExecutionHeaders,
+  ingestChildReceipt,
+  missingChildLink,
+  normalizeSpanKind,
+  workflowOperationIds,
+} from "./lineage.js";
+import { verifyManifestAgainstIdentity } from "./manifest.js";
+import { createStreamingRedactor, normalizeRedactionPolicy, redactText } from "./redaction.js";
 import {
   buildOtlpSpan,
   createChildTraceContext,
@@ -155,6 +165,21 @@ export function normalizeInferenceRequest(raw = {}, defaults = {}) {
   }
   const cacheTtl = Math.max(0, Math.min(86_400, Math.floor(Number(request.cache_ttl ?? request.cacheTtl ?? defaults.cacheTtl) || 0)));
   const cachePolicy = request.cache_policy || request.cachePolicy || {};
+  const lineageInput = normalizeSpanKind(
+    request.span_kind || request.spanKind,
+    request.parent_receipt_id || request.parentReceiptId,
+  );
+  if (!lineageInput.ok) return { error: lineageInput.error };
+  const rawMaxCost = request.max_cost_cents ?? request.maxCostCents ?? defaults.maxCostCents;
+  const maxCostCents = rawMaxCost === undefined || rawMaxCost === null ? null : Number(rawMaxCost);
+  if (maxCostCents !== null && (!Number.isFinite(maxCostCents) || maxCostCents < 0)) {
+    return { error: { code: "max_cost_invalid", message: "max_cost_cents must be a non-negative number" } };
+  }
+  const rawMinQuality = request.min_quality_score ?? request.minQualityScore ?? defaults.minQualityScore;
+  const minQualityScore = rawMinQuality === undefined || rawMinQuality === null ? null : Number(rawMinQuality);
+  if (minQualityScore !== null && (!Number.isFinite(minQualityScore) || minQualityScore < 0 || minQualityScore > 1)) {
+    return { error: { code: "min_quality_invalid", message: "min_quality_score must be a number between 0.0 and 1.0" } };
+  }
   return {
     requestId: String(request.request_id || request.requestId || defaults.requestId || `inf_${Date.now().toString(36)}`),
     modelTag: String(request.model || request.model_tag || request.modelTag || defaults.modelTag || ""),
@@ -189,6 +214,10 @@ export function normalizeInferenceRequest(raw = {}, defaults = {}) {
     toolChoice: request.tool_choice || request.toolChoice || (projectedTools.length ? "auto" : undefined),
     toolResults,
     priorReceiptId: String(request.prior_receipt_id || request.priorReceiptId || ""),
+    spanKind: lineageInput.spanKind,
+    parentReceiptId: lineageInput.parentReceiptId,
+    maxCostCents,
+    minQualityScore,
     metadata: request.metadata && typeof request.metadata === "object" ? request.metadata : {},
   };
 }
@@ -206,11 +235,38 @@ export function buildInferenceRequestBody(request, { llamaCpp = false, nativeLor
     body.tool_choice = request.toolChoice || "auto";
   }
   if (request.schemaContract) Object.assign(body, llamaStructuredResponseFields(request.schemaContract));
+  // Quality gating needs real generation log-probabilities; request them from
+  // the OpenAI-compatible runtime. A runtime that ignores the flag yields an
+  // honest `confidence_basis: "unavailable"`, never an estimated confidence.
+  if (request.minQualityScore !== null && request.minQualityScore !== undefined) body.logprobs = true;
   if (llamaCpp) {
     body.cache_prompt = request.nativePrefixCache;
     if (Array.isArray(nativeLora) && nativeLora.length) body.lora = nativeLora;
   }
   return body;
+}
+
+/**
+ * Confidence from real per-token log-probabilities: exp(mean logprob), the
+ * geometric-mean token probability over the generated sequence (0.0–1.0).
+ */
+export function completionConfidence(body) {
+  const entries = body?.choices?.[0]?.logprobs?.content;
+  if (!Array.isArray(entries) || entries.length === 0) return { confidence: null, basis: "unavailable" };
+  const logprobs = entries.map((entry) => Number(entry?.logprob)).filter((value) => Number.isFinite(value) && value <= 0);
+  if (logprobs.length === 0) return { confidence: null, basis: "unavailable" };
+  const mean = logprobs.reduce((sum, value) => sum + value, 0) / logprobs.length;
+  return { confidence: Math.max(0, Math.min(1, Math.exp(mean))), basis: "avg-token-logprob" };
+}
+
+/** Token-count based cost estimate in cents for one request against a route cost model. */
+export function estimateRequestCostCents(request, costModel = {}) {
+  const inputRate = Math.max(0, Number(costModel.inputCentsPerMTokens) || 0);
+  const outputRate = Math.max(0, Number(costModel.outputCentsPerMTokens) || 0);
+  const contextTokens = Math.max(0, Number(request.contextTokens ?? request.context_tokens) || 0);
+  const maxTokens = Math.max(0, Number(request.maxTokens ?? request.max_tokens) || 0);
+  const cents = (contextTokens / 1_000_000) * inputRate + (maxTokens / 1_000_000) * outputRate;
+  return Math.round(cents * 10_000) / 10_000;
 }
 
 function aggregateChunk(state, payload) {
@@ -707,6 +763,18 @@ async function rejectedNormalizationResult({
       status: "failed", context_tokens: null, split_threshold_tokens: null, phases: [],
       reason: "request rejected before routing",
     },
+    lineage: buildReceiptLineage({
+      spanKind: normalizeSpanKind(request.span_kind || request.spanKind, request.parent_receipt_id || request.parentReceiptId).spanKind || "ROOT",
+      parentReceiptId: String(request.parent_receipt_id || request.parentReceiptId || ""),
+      children: [],
+    }),
+    routing_decision: {
+      status: "not_requested", reason: null, max_cost_cents: null, min_quality_score: null,
+      local_cost_estimate_cents: null, cloud_cost_estimate_cents: null, actual_cost_estimate_cents: null,
+      actual_confidence: null, confidence_basis: null, quality: "NOT_REQUESTED",
+    },
+    redaction: { status: "not_requested", event_count: 0, events: [], patterns_sha256: null, raw_output_cached: false },
+    manifest: { status: "not_requested", manifest_sha256: null, composite_sha256: null, diffs: [] },
     errors: [safeError],
     created_at: at,
     completed_at: nowIso(now),
@@ -769,7 +837,46 @@ export async function executeInferenceGateway({
   const toolResultsAudit = auditToolResults(priorValidation.calls, continuationRequest.toolResults, {
     openapi: continuationRequest.openapi,
   });
-  let continuationValid = continuationTrust.ok && priorValidation.ok && toolResultsAudit.ok;
+  // Receipt DAG ingestion: a tool call that targeted a governed workflow
+  // endpoint must return the child's full verification receipt. The parent
+  // hashes it (Merkle edge); a declared child call without an ingested
+  // receipt fails the parent continuation closed instead of completing with
+  // an orphaned span. A failed child is recorded with its exact error.
+  const workflowOps = workflowOperationIds(normalized.openapi);
+  const childLinks = [];
+  const childViolations = [];
+  const childLinkByCallId = new Map();
+  const rawToolResultById = new Map(
+    (Array.isArray(continuationRequest.toolResults) ? continuationRequest.toolResults : [])
+      .map((result) => [String(result?.tool_call_id || result?.toolCallId || ""), result]),
+  );
+  for (const item of toolResultsAudit.audit) {
+    const raw = rawToolResultById.get(String(item.toolCallId || "")) || {};
+    const workflowRef = String(raw.child_workflow_ref || raw.childWorkflowRef || "");
+    const requiresChildReceipt = workflowOps.has(String(item.operationId || "")) || Boolean(workflowRef);
+    const suppliedChild = raw.child_receipt || raw.childReceipt || raw.child_receipt_sha256 || raw.childReceiptSha256;
+    if (!requiresChildReceipt && !suppliedChild) continue;
+    const ingestion = ingestChildReceipt({
+      toolCallId: String(item.toolCallId || ""),
+      workflowRef,
+      childReceipt: raw.child_receipt || raw.childReceipt || null,
+      childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
+    });
+    if (ingestion.ok) {
+      childLinks.push(ingestion.link);
+      childLinkByCallId.set(String(item.toolCallId || ""), ingestion.link);
+      continue;
+    }
+    const link = missingChildLink({ toolCallId: String(item.toolCallId || ""), workflowRef, error: ingestion.error });
+    childLinks.push(link);
+    childLinkByCallId.set(String(item.toolCallId || ""), link);
+    childViolations.push({
+      code: "child_receipt_missing",
+      message: `tool call ${item.toolCallId} targeted a governed workflow but no child receipt was ingested: ${ingestion.error.message}`,
+    });
+  }
+  const childReceiptsOk = childViolations.length === 0;
+  let continuationValid = continuationTrust.ok && priorValidation.ok && toolResultsAudit.ok && childReceiptsOk;
   // Never expose an unvalidated/unmatched external result to the model. A
   // rejected continuation still receives a receipt below, but no transport
   // call is made.
@@ -790,6 +897,13 @@ export async function executeInferenceGateway({
     errors.push({
       code: "tool_result_rejected",
       message: [...continuationTrust.violations, ...priorValidation.violations, ...toolResultsAudit.violations].map((item) => item.message).join("; "),
+      retryable: false,
+    });
+  }
+  if (!childReceiptsOk) {
+    errors.push({
+      code: "child_receipt_missing",
+      message: childViolations.map((item) => item.message).join("; "),
       retryable: false,
     });
   }
@@ -845,6 +959,34 @@ export async function executeInferenceGateway({
     attributes: { "cache.hit": cacheLookup.hit, "cache.key": cacheKey, "cache.prefix_hash": prefixHash, "cache.kind": cacheLookup.hitType || "miss" },
     ok: !errors.some((error) => error.code === "cache_lookup_failed"),
   }));
+
+  // Deterministic streaming redaction: an incremental FSM/regex middleware
+  // sits between the adapter stream and the client stream. Matched PII is
+  // replaced before a delta leaves the gateway; the boundary carry buffer
+  // guarantees a match can never leak by splitting across chunks. The final
+  // buffered response is redacted with the same compiled pattern set, so the
+  // released body, receipt evidence, and cache entry always agree.
+  const redactionPolicy = normalizeRedactionPolicy(defaults.redaction);
+  let streamRedactor = null;
+  let effectiveOnDelta = onDelta;
+  if (redactionPolicy.enabled && typeof onDelta === "function") {
+    streamRedactor = createStreamingRedactor({ patterns: redactionPolicy.patterns });
+    effectiveOnDelta = (event) => {
+      const payload = event?.payload;
+      const choice = payload?.choices?.[0];
+      const delta = choice?.delta;
+      if (!delta || typeof delta.content !== "string" || !delta.content) {
+        onDelta(event);
+        return;
+      }
+      const released = streamRedactor.process(delta.content);
+      if (!released && choice.finish_reason == null) return;
+      onDelta({
+        ...event,
+        payload: { ...payload, choices: [{ ...choice, delta: { ...delta, content: released } }] },
+      });
+    };
+  }
 
   let body = null;
   let transportResult = null;
@@ -907,7 +1049,7 @@ export async function executeInferenceGateway({
           requestBody,
           traceContext: inferenceSpanContext,
           prefixHash,
-          onDelta,
+          onDelta: effectiveOnDelta,
           signal: transportSignal,
           maxResponseBytes,
         })).catch((error) => ({
@@ -948,6 +1090,21 @@ export async function executeInferenceGateway({
     body = transportResult?.response ?? null;
   }
   clearTimeout(deadlineTimer);
+  if (streamRedactor && typeof onDelta === "function") {
+    const remainder = streamRedactor.flush();
+    if (remainder) {
+      onDelta({
+        type: "inference.delta",
+        synthetic: true,
+        payload: {
+          id: String(body?.id || request.requestId),
+          object: "chat.completion.chunk",
+          model: String(body?.model || request.modelTag),
+          choices: [{ index: 0, delta: { content: remainder }, finish_reason: null }],
+        },
+      });
+    }
+  }
   const inferenceCompletedAt = nowIso(now);
   spans.push(buildOtlpSpan({
     context: inferenceSpanContext,
@@ -998,6 +1155,94 @@ export async function executeInferenceGateway({
     });
   }
 
+  // Manifest binding: when the workflow version carries a signed inference
+  // manifest, the resolved runtime identity must match its composite. A live
+  // pool serving different bytes than the published manifest fails closed.
+  const manifestEvidence = defaults.manifest
+    ? verifyManifestAgainstIdentity(defaults.manifest, {
+        baseModelSha256: actualIdentity.baseModelSha256,
+        adapterSha256: actualIdentity.adapterSha256,
+        schemaHash: grammarHash,
+        env,
+      })
+    : { status: "not_requested", manifest_sha256: null, composite_sha256: null, diffs: [] };
+  const manifestValid = manifestEvidence.status !== "mismatch";
+  if (transportResult?.ok && !manifestValid) {
+    errors.push({
+      code: "manifest_composite_mismatch",
+      message: manifestEvidence.diffs.map((diff) => `${diff.field}: expected ${diff.expected}, got ${diff.actual}`).join("; ")
+        || "live gateway identity does not match the published inference manifest",
+      retryable: false,
+    });
+  }
+
+  // Final-content redaction with the same compiled pattern set the stream
+  // middleware enforced. The released body, the cache entry, and the output
+  // hash are all the redacted response; raw matched values survive only as
+  // hashes inside redaction events.
+  let releasedBody = body;
+  let redactionEvidence = {
+    status: redactionPolicy.enabled ? "clean" : "not_requested",
+    event_count: 0,
+    events: [],
+    patterns_sha256: null,
+    raw_output_cached: false,
+  };
+  if (redactionPolicy.enabled && cacheLookup.hit) {
+    const cachedEnvelope = cacheLookup.envelope || cacheLookup.entry?.envelope || null;
+    redactionEvidence = {
+      status: cachedEnvelope?.redacted === true ? "redacted" : "clean",
+      event_count: Math.max(0, Number(cachedEnvelope?.redaction_event_count) || 0),
+      events: [],
+      patterns_sha256: null,
+      raw_output_cached: false,
+      reason: "gateway cache replay; the stored entry was redacted before it was cached",
+    };
+  } else if (redactionPolicy.enabled && transportResult?.ok && body && typeof body === "object") {
+    const content = body?.choices?.[0]?.message?.content;
+    const redacted = redactText(typeof content === "string" ? content : "", { patterns: redactionPolicy.patterns });
+    redactionEvidence = {
+      status: redacted.events.length ? "redacted" : "clean",
+      event_count: redacted.events.length,
+      events: redacted.events,
+      patterns_sha256: redacted.patternsSha256,
+      raw_output_cached: false,
+    };
+    if (redacted.events.length && typeof content === "string") {
+      const choice = body.choices[0];
+      releasedBody = {
+        ...body,
+        choices: [{ ...choice, message: { ...choice.message, content: redacted.text } }, ...body.choices.slice(1)],
+      };
+    }
+  }
+
+  // Economic routing evidence: real token-count cost estimates plus a
+  // confidence derived from returned log-probabilities. A missing logprob
+  // stream reports `unavailable` — quality is then UNVERIFIED, not invented.
+  const economics = defaults.economics && typeof defaults.economics === "object" ? defaults.economics : {};
+  const economicsRequested = request.maxCostCents !== null || request.minQualityScore !== null || Boolean(economics.reason);
+  const confidenceResult = transportResult?.ok && body ? completionConfidence(body) : { confidence: null, basis: "unavailable" };
+  const actualCostEstimate = estimateRequestCostCents(request, economics.costModel || {});
+  const qualityStatus = request.minQualityScore === null
+    ? "NOT_REQUESTED"
+    : confidenceResult.confidence === null
+      ? "UNVERIFIED"
+      : confidenceResult.confidence >= request.minQualityScore ? "MET" : "QUALITY_UNMET";
+  const routingDecisionEvidence = {
+    status: economicsRequested ? "applied" : "not_requested",
+    reason: economicsRequested ? (economics.reason || "default") : null,
+    max_cost_cents: request.maxCostCents,
+    min_quality_score: request.minQualityScore,
+    local_cost_estimate_cents: Number.isFinite(Number(economics.localCostEstimateCents)) ? Number(economics.localCostEstimateCents) : null,
+    cloud_cost_estimate_cents: Number.isFinite(Number(economics.cloudCostEstimateCents)) ? Number(economics.cloudCostEstimateCents) : null,
+    actual_cost_estimate_cents: economicsRequested ? actualCostEstimate : null,
+    actual_confidence: confidenceResult.confidence,
+    confidence_basis: economicsRequested ? confidenceResult.basis : null,
+    quality: qualityStatus,
+    ...(economics.reasonDetail ? { reason_detail: String(economics.reasonDetail) } : {}),
+  };
+
   const currentToolValidation = transportResult?.ok
     ? validateToolCalls(body, { tools: request.tools, openapi: request.openapi, allowedOperationIds: request.allowedOperationIds })
     : { ok: false, calls: [], violations: [], toolContractHash };
@@ -1035,10 +1280,15 @@ export async function executeInferenceGateway({
     && currentToolValidation.ok
     && continuationTrust.ok
     && priorValidation.ok
-    && toolResultsAudit.ok;
+    && toolResultsAudit.ok
+    && childReceiptsOk
+    && manifestValid;
   const awaitingToolResult = completedSuccessfully && currentToolValidation.calls.length > 0;
+  const receiptId = `infr_${requestSha256.slice(0, 20)}_${rootContext.spanId}`;
   let cacheStoreResult = null;
-  if (completedSuccessfully && !awaitingToolResult && cacheAllowed && !cacheLookup.hit) {
+  // A poisoned neighborhood is bypassed in both directions: the stale entry
+  // is never served, and this rerun is not re-cached over the tombstone.
+  if (completedSuccessfully && !awaitingToolResult && cacheAllowed && !cacheLookup.hit && !cacheLookup.poisoned) {
     try {
       cacheStoreResult = await cacheClient.store({
         cacheKey,
@@ -1046,8 +1296,19 @@ export async function executeInferenceGateway({
         prefixHash,
         semanticText: semanticBody,
         semantic: request.semanticCache && request.temperature === 0,
-        response: body,
+        response: releasedBody,
         ttlSeconds: request.cacheTtl,
+        envelope: {
+          receipt_id: receiptId,
+          request_sha256: requestSha256,
+          model_sha256: actualIdentity.baseModelSha256,
+          adapter_sha256: actualIdentity.adapterSha256,
+          schema_hash: grammarHash,
+          workflow_version: String(defaults.workflowVersion || ""),
+          ...(defaults.workflowId ? { workflow_id: String(defaults.workflowId) } : {}),
+          redacted: redactionEvidence.status === "redacted",
+          redaction_event_count: redactionEvidence.event_count,
+        },
         metadata: {
           providerKind: transportResult.providerKind,
           schemaEngine: transportResult.schemaEngine,
@@ -1085,30 +1346,34 @@ export async function executeInferenceGateway({
     endedAtMs: now(),
     attributes: {
       "inference.request_sha256": requestSha256,
-      "inference.output_sha256": body ? sha256Hex(body) : "",
-      "inference.cache_status": cacheLookup.hit ? "HIT" : transportResult?.coldStart ? "COLD_START" : cacheAllowed ? "MISS" : "BYPASS",
+      "inference.output_sha256": releasedBody ? sha256Hex(releasedBody) : "",
+      "inference.cache_status": cacheLookup.hit ? "HIT" : cacheLookup.poisoned ? "BYPASS" : transportResult?.coldStart ? "COLD_START" : cacheAllowed ? "MISS" : "BYPASS",
       "inference.tool_contract_sha256": currentToolValidation.toolContractHash || toolContractHash,
       "inference.schema_sha256": grammarHash,
+      ...(manifestEvidence.manifest_sha256 ? { "inference.manifest_sha256": manifestEvidence.manifest_sha256, "inference.manifest_verified": manifestEvidence.status === "verified" } : {}),
+      ...(request.parentReceiptId ? { "inference.parent_receipt_id": request.parentReceiptId, "inference.span_kind": request.spanKind } : {}),
+      ...(cacheLookup.poisoned ? { "inference.cache_bypass_reason": CACHE_BYPASS_POISONED } : {}),
+      ...(redactionEvidence.event_count ? { "inference.redaction_events": redactionEvidence.event_count } : {}),
     },
     ok: rootOk,
     error: errors[0]?.message,
   }));
   const otlp = await exportOtlpSpans(spans, { fetchImpl, env, serviceName, serviceVersion });
   const schemaRequested = Boolean(request.schemaContract);
-  const cacheStatus = cacheLookup.hit ? "HIT" : transportResult?.coldStart ? "COLD_START" : cacheAllowed ? "MISS" : "BYPASS";
+  const cacheStatus = cacheLookup.hit ? "HIT" : cacheLookup.poisoned ? "BYPASS" : transportResult?.coldStart ? "COLD_START" : cacheAllowed ? "MISS" : "BYPASS";
   const remoteCacheStatus = cacheLookup.hit && cacheLookup.cacheSource === "remote"
     ? "hit"
     : cacheStoreResult?.remote || (cacheBackend.remoteEnabled ? "ready" : "disabled");
   const receipt = {
     kind: INFERENCE_RECEIPT_KIND,
     version: 1,
-    receipt_id: `infr_${requestSha256.slice(0, 20)}_${rootContext.spanId}`,
+    receipt_id: receiptId,
     request_id: request.requestId,
     status: !completedSuccessfully ? (errors.some((error) => !error.retryable) ? "rejected" : "failed")
       : identityEvidence.status === "verified" && (!schemaRequested || schemaValidation.ok) ? "verified" : "partial",
     request_sha256: requestSha256,
     conversation_sha256: sha256Hex(request.messages),
-    output_sha256: body ? sha256Hex(body) : null,
+    output_sha256: releasedBody ? sha256Hex(releasedBody) : null,
     identity: identityEvidence,
     schema: schemaRequested ? {
       status: schemaValidation.ok && schemaGenerationProven ? "enforced" : "failed",
@@ -1150,7 +1415,18 @@ export async function executeInferenceGateway({
       remote_cache_credential_source: cacheBackend.credentialSource || null,
       cache_scope_sha256: sha256Hex(String(defaults.tenantScope || request.metadata?.workspace_id || "workspace-local")),
       ...(cacheBackend.disabledReason ? { remote_cache_reason: cacheBackend.disabledReason } : {}),
-      ...(!cacheAllowed ? { bypass_reason: request.cacheTtl <= 0 ? "cache_ttl is zero" : request.tools.length ? "tool-bearing requests are not replay cached" : "cache policy bypass" } : {}),
+      ...(cacheLookup.poisoned
+        ? { bypass_reason: CACHE_BYPASS_POISONED, poisoned_by: cacheLookup.poisonedBy || null }
+        : !cacheAllowed ? { bypass_reason: request.cacheTtl <= 0 ? "cache_ttl is zero" : request.tools.length ? "tool-bearing requests are not replay cached" : "cache policy bypass" } : {}),
+      envelope_signature_state: cacheLookup.hit
+        ? "verified"
+        : cacheLookup.integrity === "unsigned" ? "unsigned"
+          : cacheLookup.integrity ? "invalid"
+            : cacheStoreResult?.signatureState === "signed" ? "verified" : "not_checked",
+      cache_version: cacheBackend.cacheVersion || null,
+      // Identity-scoped semantic bucket; feedback poisoning targets exactly
+      // this neighborhood. Both components are hashes, never business data.
+      semantic_bucket: cacheAllowed ? `${scopeKey}:${prefixHash}` : null,
     },
     tool_audit: request.tools.length || currentToolValidation.calls.length || request.toolResults.length ? {
       status: !continuationTrust.ok || !currentToolValidation.ok || !priorValidation.ok || !toolResultsAudit.ok ? "rejected"
@@ -1194,6 +1470,10 @@ export async function executeInferenceGateway({
           },
           span_id: item.spanId || null,
           continuation_request_id: request.requestId,
+          ...(childLinkByCallId.has(item.toolCallId) ? {
+            child_receipt_hash: childLinkByCallId.get(item.toolCallId).child_receipt_sha256,
+            child_status: childLinkByCallId.get(item.toolCallId).child_status,
+          } : {}),
         })),
       ],
       ...(toolResultsAudit.audit.some((item) => item.source !== "governed-api-registry")
@@ -1216,10 +1496,21 @@ export async function executeInferenceGateway({
         : otlp.error ? { reason: otlp.error } : {}),
     },
     routing: routingEvidence(request, transportResult, inferenceSpanContext, inferenceStartedAt, inferenceCompletedAt),
+    lineage: buildReceiptLineage({
+      spanKind: request.spanKind,
+      parentReceiptId: request.parentReceiptId,
+      children: childLinks,
+    }),
+    routing_decision: routingDecisionEvidence,
+    redaction: redactionEvidence,
+    manifest: manifestEvidence,
     errors,
     created_at: startedAt,
     completed_at: completedAt,
   };
+  const workflowCallIds = currentToolValidation.calls
+    .filter((call) => workflowOps.has(String(call.operationId || "")))
+    .map((call) => String(call.toolCallId));
   return {
     ok: completedSuccessfully,
     request_id: request.requestId,
@@ -1228,19 +1519,28 @@ export async function executeInferenceGateway({
     httpStatus: Number(transportResult?.status) || (cacheLookup.hit ? 200 : 0),
     // A rejected schema/tool response is evidence, not releasable output.
     // Its bounded hashes/audit stay in the receipt; callers never receive the
-    // raw invalid tool call or schema-breaking completion.
-    response: completedSuccessfully ? body : null,
+    // raw invalid tool call, schema-breaking completion, or unredacted PII.
+    response: completedSuccessfully ? releasedBody : null,
     output: completedSuccessfully ? {
-      id: String(body?.id || request.requestId),
-      model: String(body?.model || request.modelTag),
-      role: String(body?.choices?.[0]?.message?.role || "assistant"),
-      content: body?.choices?.[0]?.message?.content ?? "",
-      ...(Array.isArray(body?.choices?.[0]?.message?.tool_calls) ? { tool_calls: body.choices[0].message.tool_calls } : {}),
-      finish_reason: body?.choices?.[0]?.finish_reason ?? null,
-      ...(body?.usage ? { usage: body.usage } : {}),
+      id: String(releasedBody?.id || request.requestId),
+      model: String(releasedBody?.model || request.modelTag),
+      role: String(releasedBody?.choices?.[0]?.message?.role || "assistant"),
+      content: releasedBody?.choices?.[0]?.message?.content ?? "",
+      ...(Array.isArray(releasedBody?.choices?.[0]?.message?.tool_calls) ? { tool_calls: releasedBody.choices[0].message.tool_calls } : {}),
+      finish_reason: releasedBody?.choices?.[0]?.finish_reason ?? null,
+      ...(releasedBody?.usage ? { usage: releasedBody.usage } : {}),
       ...(cacheLookup.hit ? { cache_replay: true } : {}),
     } : null,
     receipt,
+    // Awaiting-tool-result turns whose calls target governed workflow
+    // endpoints hand the executor the exact headers the child gateway needs
+    // to bind its receipt back to this parent span.
+    ...(awaitingToolResult && workflowCallIds.length ? {
+      childExecution: {
+        required_call_ids: workflowCallIds,
+        headers: childExecutionHeaders({ parentReceiptId: receiptId, parentSpanId: rootContext.spanId }),
+      },
+    } : {}),
     headers: cacheAllowed ? { "x-cache-key": cacheKey } : {},
     error: completedSuccessfully ? null : errors[0] || { code: "inference_failed", message: "inference failed" },
   };

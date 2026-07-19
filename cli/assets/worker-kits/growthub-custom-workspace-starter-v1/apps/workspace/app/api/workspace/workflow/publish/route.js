@@ -9,6 +9,7 @@ import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readin
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
+import { verifyWorkflowManifestsAtPublish } from "@/lib/adapters/inference/manifest";
 
 /**
  * POST /api/workspace/workflow/publish
@@ -334,6 +335,31 @@ async function POST(request) {
             objectType: "sandbox-environment"
         });
     }
+    // Inference manifest handshake: the verified draft run persisted the
+    // signed manifests its custom-model calls actually enforced. Publish
+    // recompiles each referenced live API Registry identity and blocks with
+    // a field-level diff when the live composite SHA no longer matches the
+    // proven manifest — a workflow cannot go live bound to different bytes
+    // than it was tested against.
+    const testedInvocations = runRecord?.adapterMeta?.customModel?.invocations
+        || (runRecord?.adapterMeta?.customModel?.invocation ? [runRecord.adapterMeta.customModel.invocation] : []);
+    const manifestVerification = verifyWorkflowManifestsAtPublish({
+        workspaceConfig,
+        invocations: testedInvocations,
+        env: process.env
+    });
+    if (!manifestVerification.ok) {
+        return publishBlocked(409, {
+            ok: false,
+            code: "inference_manifest_mismatch",
+            error: "publish blocked — the live API Registry model identity no longer matches the inference manifest proven by the tested draft run; re-test the draft against the current registry state or repair the registry row",
+            manifestMismatches: manifestVerification.mismatches
+        }, {
+            objectId,
+            rowName: name,
+            objectType: "sandbox-environment"
+        });
+    }
     const publishedAt = new Date().toISOString();
     const currentVersion = Number(row.version || 1);
     const nextVersion = Number.isFinite(currentVersion) ? String(currentVersion + 1) : "1";
@@ -366,6 +392,12 @@ async function POST(request) {
     const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
         [liveField]: promotedLive,
         [draftField]: "",
+        // Rollback safety: manifests from earlier versions stay recorded in
+        // orchestrationDeltas; this field always carries the manifests bound
+        // to the CURRENT live version for runtime enforcement.
+        ...(manifestVerification.manifests.length ? {
+            inferenceManifests: manifestVerification.manifests
+        } : {}),
         version: nextVersion,
         lifecycleStatus: "live",
         orchestrationDraftStatus: "published",
@@ -387,7 +419,11 @@ async function POST(request) {
                 deltaTags,
                 nodeDeltas,
                 nodeCount: Array.isArray(parsedDraft?.nodes) ? parsedDraft.nodes.length : 0,
-                edgeCount: Array.isArray(parsedDraft?.edges) ? parsedDraft.edges.length : 0
+                edgeCount: Array.isArray(parsedDraft?.edges) ? parsedDraft.edges.length : 0,
+                ...(manifestVerification.manifests.length ? {
+                    inferenceManifests: manifestVerification.manifests,
+                    inferenceManifestShas: manifestVerification.manifests.map((entry)=>entry.manifest_sha256)
+                } : {})
             }
         ]
     });

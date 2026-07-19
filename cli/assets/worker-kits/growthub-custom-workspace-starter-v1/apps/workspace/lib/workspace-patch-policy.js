@@ -44,7 +44,10 @@ const LIVE_WORKFLOW_ROW_FIELDS = Object.freeze([
   "orchestrationGraph",
   "orchestrationConfig",
   "orchestrationPublishedAt",
-  "orchestrationDeltas"
+  "orchestrationDeltas",
+  // Signed inference manifests are publish-owned evidence: a PATCH-forged
+  // manifest would let a caller bind the live workflow to unproven bytes.
+  "inferenceManifests"
 ]);
 
 /** Draft workflow fields — direct PATCH may save these freely. */
