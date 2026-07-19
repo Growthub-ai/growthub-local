@@ -252,6 +252,21 @@ function deriveApiRegistryCreationState(input = {}) {
       : null,
   });
 
+  step({
+    id: "sandbox-tool",
+    label: "Use as a workflow tool",
+    status: sandboxExists ? "complete" : (tested ? "optional" : "blocked"),
+    description: sandboxExists
+      ? "A workflow canvas calls this API through an api-registry-call node."
+      : "Optional: draft a workflow canvas that calls this API as a governed tool.",
+    action: tested
+      ? {
+          id: sandboxExists ? "open-workflow-canvas" : "create-workflow-canvas",
+          label: sandboxExists ? "Open workflow canvas" : "Create workflow",
+        }
+      : null,
+  });
+
   for (const s of steps) { if (!s.hint) delete s.hint; }
 
   const required = steps.filter((s) => s.status !== "optional");
