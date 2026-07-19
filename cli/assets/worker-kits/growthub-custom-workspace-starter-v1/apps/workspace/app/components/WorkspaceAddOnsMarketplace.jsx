@@ -206,6 +206,7 @@ function AddOnsSurface({
     : [];
   const providerSetupNeedsCredentials = !providerConnected && providerSetupFields.length > 0;
   const providerSetupHasBearerToken = providerSetupFields.some((field) => field.credentialRole === "bearerToken" && String(providerCredentialValues[field.id] || "").trim());
+  const providerSetupHasProductBearerToken = providerSetupFields.some((field) => field.credentialRole === "productBearerToken" && String(providerCredentialValues[field.id] || "").trim());
   const providerSetupHasDirectProject = providerSetupFields.some((field) => field.credentialRole === "baseUrl" && String(providerCredentialValues[field.id] || "").trim())
     && providerSetupFields.some((field) => field.credentialRole === "secret" && String(providerCredentialValues[field.id] || "").trim());
   const providerSetupRequiredFieldsReady = providerSetupFields.every((field) => {
@@ -217,6 +218,7 @@ function AddOnsSurface({
     // still need at least one value before the credentials route can verify.
     && (providerSetupFields.some((field) => field?.required)
       || providerSetupHasBearerToken
+      || providerSetupHasProductBearerToken
       || providerSetupHasDirectProject);
   const allAddOnRows = useMemo(() => findWorkspaceAddOnRows(workspaceConfig), [workspaceConfig]);
   const staticProviderProducts = selectedMarketplaceProvider?.products || [];
@@ -779,6 +781,7 @@ function AddOnsSurface({
                               {product.executionLane === "workspace-data" ? (
                                 <small><a href="/settings/apps">View in workspace apps</a></small>
                               ) : null}
+                              {product.outcome ? <small title={product.outcome}>{product.outcome}</small> : null}
                             </div>
                             <div className="dm-marketplace-card-actions">
                               <button type="button" className="dm-workflow-icon-btn dm-marketplace-gear" aria-label={`Manage ${product.label}`} onClick={() => {
@@ -817,6 +820,7 @@ function AddOnsSurface({
                               <p title={product.subtitle}>{product.subtitle}</p>
                               <small title={product.plans}>{product.plans}</small>
                               <small>{readiness?.configured ? "Product refs ready" : "Set up product refs"}</small>
+                              {product.outcome ? <small title={product.outcome}>{product.outcome}</small> : null}
                             </div>
                             <button
                               type="button"
@@ -1180,6 +1184,7 @@ function AddOnsSurface({
                 </div>
               ) : null}
               <div className="dm-cockpit-step-hint">
+                {activeProduct.outcome ? <><strong>Workspace outcome:</strong> {activeProduct.outcome}<br /></> : null}
                 {providerConnected
                   ? activeProductIsStorage
                     ? `Create bucket calls the governed storage route, creates or binds the file records table, creates the ${selectedMarketplaceProvider?.label || "provider"} bucket, reads it back, and records the storage product.`

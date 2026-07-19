@@ -29,6 +29,7 @@ const {
 } = await import(pathToFileURL(path.join(kitApp, "lib/custom-model-workflow-proposal.js")).href);
 const {
   CUSTOM_MODEL_WORKFLOWS_OBJECT_ID,
+  CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS,
   customModelWorkflowRowName,
   deriveCustomModelsState,
   deriveCustomModelFocusActions,
@@ -105,8 +106,10 @@ test("normalize: creates a governed sandbox row with a REAL graph, artifact open
   const row = obj.rows.find((r) => r.Name === rowName);
   assert.ok(row, "row created");
   const graph = JSON.parse(row.orchestrationConfig);
+  assert.equal(row.timeoutMs, String(CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS), "row allows bounded cold model loading");
   assert.ok(graph.nodes.some((n) => n.type === "input"), "has input node");
   assert.ok(graph.nodes.some((n) => n.type === "api-registry-call" && n.config.registryId === "workspace-local-model"), "model-call bound to registry");
+  assert.ok(graph.nodes.filter((n) => n.type === "api-registry-call").every((n) => n.config.timeoutMs === CUSTOM_MODEL_WORKFLOW_TIMEOUT_MS), "every model-call shares the row timeout invariant");
   assert.ok(graph.nodes.some((n) => n.type === "tool-result"), "has terminal write");
   assert.ok(graph.edges.length >= 2, "wired edges");
   // The created config still validates as a governed workspace (throws on invalid).

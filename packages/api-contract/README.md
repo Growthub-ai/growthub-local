@@ -42,6 +42,7 @@ Narrow imports are also supported:
 import type { CapabilityNode } from "@growthub/api-contract/capabilities";
 import type { ExecutionEvent } from "@growthub/api-contract/events";
 import type { CapabilityManifestEnvelope } from "@growthub/api-contract/manifests";
+import type { InferenceRequest, VerificationReceipt } from "@growthub/api-contract/inference";
 ```
 
 ## Modules
@@ -63,6 +64,7 @@ The package is organised around a clear hierarchy:
 | **Optional specializations** | |
 | `./workspaces` | `WorkspaceDependencyManifest`, `WorkspaceDependencyRef`, `WorkspaceDependencyKind`, `WorkspaceSurfaceRef`. |
 | `./adapters` | `AdapterContractRef`, `AdapterKind`, `AdapterMode`, `NormalizedConnectionRef`. |
+| `./inference` | Evidence-bearing custom-model inference requests, streaming responses, and verification receipts for model/LoRA identity, cache behavior, structured generation, tool-call audit, OTel correlation, and prefill/decode role routing. |
 | **Hosted CMS surfaces** | |
 | `./capabilities` | `CapabilityFamily`, `CapabilityRecord`, `CapabilityNode`, `CapabilityQuery`, `CapabilityRegistryMeta`, `CAPABILITY_FAMILIES`. |
 | `./execution` | `ExecuteWorkflowInput`, `ExecuteWorkflowResult`, `ExecuteNodePayload`, `NodeResult`, `ExecutionArtifactRef`. |

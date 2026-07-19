@@ -17,6 +17,7 @@
  * the no-code Settings/Readiness panel, and the PATCH 409 path all read.
  */
 
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readAdapterConfig } from "@/lib/adapters/env";
@@ -38,6 +39,58 @@ const READ_ONLY_GUIDANCE =
 
 const WORKSPACE_CONFIG_TABLE = "growthub_workspace_configs";
 const DEFAULT_WORKSPACE_OWNER = "local-workspace";
+const sourceRecordAppendQueues = new Map();
+const sourceRecordContainerQueues = new Map();
+
+function enqueueSerialized(queue, key, operation) {
+  const prior = queue.get(key) || Promise.resolve();
+  const run = prior.catch(() => undefined).then(operation);
+  let tracked;
+  tracked = run.finally(() => {
+    if (queue.get(key) === tracked) queue.delete(key);
+  });
+  queue.set(key, tracked);
+  return tracked;
+}
+
+function sourceRecordContainerKey() {
+  if (shouldUseDatabasePersistence()) {
+    return `database:${process.env.GROWTHUB_WORKSPACE_CONFIG_ID || "default"}`;
+  }
+  return `filesystem:${resolveSourceRecordsSidecarPath()}`;
+}
+
+/**
+ * Replace a JSON file from a same-directory temporary file. A same-filesystem
+ * rename is atomic on the local filesystems supported by the workspace; on a
+ * filesystem without atomic rename semantics this still avoids writing the
+ * destination through an open/truncated handle.
+ */
+async function writeJsonFileAtomically(targetPath, value) {
+  const temporaryPath = path.join(
+    path.dirname(targetPath),
+    `.${path.basename(targetPath)}.${process.pid}.${randomUUID()}.tmp`
+  );
+  const payload = `${JSON.stringify(value, null, 2)}\n`;
+  let handle = null;
+  try {
+    let mode = 0o600;
+    try {
+      mode = (await fs.stat(targetPath)).mode & 0o777;
+    } catch {
+      /* New source-record files default to owner-only permissions. */
+    }
+    handle = await fs.open(temporaryPath, "wx", mode);
+    await handle.writeFile(payload, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fs.rename(temporaryPath, targetPath);
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await fs.unlink(temporaryPath).catch(() => {});
+  }
+}
 
 function stripSandboxRowViewMetadata(row) {
   if (!row || typeof row !== "object" || Array.isArray(row)) return row;
@@ -775,7 +828,7 @@ async function writeLiveDataModelRows(sourceId, records, metadata = {}) {
       error.code = "WORKSPACE_PERSISTENCE_PATH_REFUSED";
       throw error;
     }
-    await fs.writeFile(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    await writeJsonFileAtomically(configPath, next);
   }
 
   return { records, integrationId, fetchedAt, recordCount: records.length };
@@ -955,7 +1008,7 @@ async function writeWorkspaceSourceRecords(sourceId, records, metadata = {}) {
     }
 
     all[sid] = entry;
-    await fs.writeFile(recordsPath, `${JSON.stringify(all, null, 2)}\n`, "utf8");
+    await writeJsonFileAtomically(recordsPath, all);
     return entry;
   }
 
@@ -964,6 +1017,48 @@ async function writeWorkspaceSourceRecords(sourceId, records, metadata = {}) {
   error.guidance = persistence.guidance || READ_ONLY_GUIDANCE;
   throw error;
 }
+
+/**
+ * Canonical append operation for keyed source-record streams.
+ *
+ * It stays inside the existing source-record adapter lane: read the current
+ * adapter-backed entry, append, apply the caller's retention bound, then write
+ * through `writeWorkspaceSourceRecords`. Calls through this helper are
+ * serialized by source key and by the shared backing document within this
+ * process, preventing same-stream and cross-stream lost updates among those
+ * calls. Database writers in another process still require an adapter-level
+ * compare-and-swap/transaction to provide distributed serialization.
+ */
+async function appendWorkspaceSourceRecords(sourceId, records, metadata = {}, options = {}) {
+  const sid = typeof sourceId === "string" ? sourceId.trim() : "";
+  if (!sid) {
+    const error = new Error("sourceId must be a non-empty string");
+    error.code = "INVALID_SOURCE_RECORDS_APPEND";
+    throw error;
+  }
+  if (!Array.isArray(records)) {
+    const error = new Error("records must be an array");
+    error.code = "INVALID_SOURCE_RECORDS_APPEND";
+    throw error;
+  }
+
+  const maxRecords = options?.maxRecords;
+  if (maxRecords !== undefined && (!Number.isSafeInteger(maxRecords) || maxRecords < 1)) {
+    const error = new Error("maxRecords must be a positive safe integer when provided");
+    error.code = "INVALID_SOURCE_RECORDS_APPEND";
+    throw error;
+  }
+
+  return enqueueSerialized(sourceRecordAppendQueues, sid, () =>
+    enqueueSerialized(sourceRecordContainerQueues, sourceRecordContainerKey(), async () => {
+      const existing = await readWorkspaceSourceRecords(sid);
+      const prior = Array.isArray(existing?.records) ? existing.records : [];
+      const appended = [...prior, ...records];
+      const nextRecords = maxRecords === undefined ? appended : appended.slice(-maxRecords);
+      return writeWorkspaceSourceRecords(sid, nextRecords, metadata);
+    })
+  );
+}
 export {
   GRID_COLUMNS,
   GRID_ROWS,
@@ -971,6 +1066,7 @@ export {
   PERSISTENCE_ADAPTERS,
   READ_ONLY_GUIDANCE,
   applyWorkspaceConfigPatch,
+  appendWorkspaceSourceRecords,
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,

@@ -108,6 +108,92 @@ test("QStash product resolves a scheduler adapter; non-scheduler does not", () =
   assert.equal(isSchedulerProduct(addOns.getUpstashProduct("upstash-redis")), false);
 });
 
+test("governed Upstash Redis product explicitly activates the custom-model inference cache", () => {
+  const redis = addOns.getUpstashProduct("upstash-redis");
+  assert.equal(redis.executionLane, "workspace-data");
+  assert.match(redis.capabilities, /(?:^|,)inference-cache(?:,|$)/);
+  assert.deepEqual(redis.requiredEnv, ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]);
+  assert.deepEqual(redis.activationEnv, ["GROWTHUB_INFERENCE_CACHE_NAMESPACE"]);
+  assert.match(redis.outcome, /custom-model inference cache/i);
+
+  const credentialsOnly = addOns.listUpstashProductReadiness({
+    UPSTASH_REDIS_REST_URL: "https://redis.example",
+    UPSTASH_REDIS_REST_TOKEN: "token",
+  }).find((item) => item.productId === "upstash-redis");
+  assert.equal(credentialsOnly.configured, true, "provider resource is ready to probe");
+  assert.equal(credentialsOnly.activated, false, "shared inference cache still requires its generated namespace");
+  assert.deepEqual(credentialsOnly.missingActivationEnv, ["GROWTHUB_INFERENCE_CACHE_NAMESPACE"]);
+
+  const activated = addOns.listUpstashProductReadiness({
+    UPSTASH_REDIS_REST_URL: "https://redis.example",
+    UPSTASH_REDIS_REST_TOKEN: "token",
+    GROWTHUB_INFERENCE_CACHE_NAMESPACE: "workspace-unique",
+  }).find((item) => item.productId === "upstash-redis");
+  assert.equal(activated.activated, true);
+  const row = addOns.makeUpstashProductRow({ productId: "upstash-redis", authReady: true });
+  assert.equal(row.activationEnv, "GROWTHUB_INFERENCE_CACHE_NAMESPACE");
+  assert.match(row.capabilities, /inference-cache/);
+  const installed = addOns.withMarketplaceProductRegistry(
+    { dataModel: { objects: [] } },
+    {
+      providerId: "upstash",
+      productId: "upstash-redis",
+      syncResult: {
+        ok: true,
+        resolvedEnv: [
+          "UPSTASH_REDIS_REST_URL",
+          "UPSTASH_REDIS_REST_TOKEN",
+          "GROWTHUB_INFERENCE_CACHE_NAMESPACE",
+        ],
+      },
+    },
+  );
+  const registry = installed.dataModel.objects.find((object) => object.objectType === "api-registry");
+  assert.ok(registry.columns.includes("activationEnv"), "activation contract survives API Registry schema projection");
+  const installedRow = registry.rows.find((item) => item.integrationId === "upstash-redis");
+  assert.equal(installedRow.activationEnv, "GROWTHUB_INFERENCE_CACHE_NAMESPACE");
+  assert.ok(installedRow.resolvedEnv.split(",").includes("GROWTHUB_INFERENCE_CACHE_NAMESPACE"));
+});
+
+test("Upstash provider accepts a verified direct QStash product binding without weakening host safety", () => {
+  const provider = addOns.getMarketplaceProvider("upstash");
+  const fields = Object.fromEntries(provider.accountSetupFields.map((field) => [field.id, field]));
+  assert.equal(fields.email.required, false);
+  assert.equal(fields.apiKey.required, false);
+  assert.equal(fields.qstashToken.envRef, "QSTASH_TOKEN");
+  assert.equal(fields.qstashToken.credentialRole, "productBearerToken");
+  assert.equal(fields.qstashUrl.envRef, "QSTASH_URL");
+
+  const routeSource = readFileSync(
+    path.join(kitApp, "api/workspace/add-ons/providers/[providerId]/credentials/route.js"),
+    "utf8",
+  );
+  assert.match(routeSource, /verifyUpstashQstashBinding/);
+  assert.match(routeSource, /\/v2\/keys/);
+  assert.match(routeSource, /qstash-\[a-z0-9-\]\+\\\.upstash\\\.io/);
+  assert.match(routeSource, /providerAccountSource: hasManagementCredentials \? verified\.path : "qstash-product-probe"/);
+  assert.match(routeSource, /QSTASH_CURRENT_SIGNING_KEY/);
+  assert.match(routeSource, /QSTASH_NEXT_SIGNING_KEY/);
+
+  const marketplaceSource = readFileSync(
+    path.join(kitApp, "components/WorkspaceAddOnsMarketplace.jsx"),
+    "utf8",
+  );
+  assert.match(marketplaceSource, /providerSetupHasProductBearerToken/);
+});
+
+test("generic product install route generates the Redis cache namespace without persisting a secret", () => {
+  const source = readFileSync(
+    path.join(kitApp, "api/workspace/add-ons/providers/[providerId]/products/sync/route.js"),
+    "utf8",
+  );
+  assert.match(source, /activateProductRuntime\(product\)/);
+  assert.match(source, /GROWTHUB_INFERENCE_CACHE_NAMESPACE/);
+  assert.match(source, /growthub-inference-\$\{randomUUID\(\)\}/);
+  assert.match(source, /runtime activation resolved/);
+  assert.ok(!source.includes("UPSTASH_REDIS_REST_TOKEN="), "route never embeds a Redis credential value");
+});
+
 /* ---------- custom plugins stay generic / API-Registry-governed ---------- */
 test("custom (non-marketplace) providers are governed generically — no scheduler-adapter hijack", () => {
   // An owned/custom row with an arbitrary connectorKind has NO adapter, so it is

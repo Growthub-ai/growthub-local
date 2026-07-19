@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { readWorkspaceConfig, writeWorkspaceConfig } from "@/lib/workspace-config";
@@ -93,6 +94,28 @@ async function writeLocalEnv(updates) {
   }
   await fs.writeFile(envPath, `${lines.filter((line, index) => index < lines.length - 1 || line.trim()).join("\n")}\n`, "utf8");
   return keys;
+}
+
+async function activateProductRuntime(product) {
+  const requested = Array.isArray(product?.activationEnv) ? product.activationEnv : [];
+  const updates = {};
+  for (const envRef of requested) {
+    if (envValue(envRef)) continue;
+    if (envRef === "GROWTHUB_INFERENCE_CACHE_NAMESPACE") {
+      // A new opaque namespace is deployment-owned and generated exactly once
+      // when the governed Redis product is installed. It is not derived from
+      // the repeatable starter workspace id, so exported forks cannot collide.
+      updates[envRef] = `growthub-inference-${randomUUID()}`;
+    }
+  }
+  const writtenEnv = await writeLocalEnv(updates);
+  const resolvedEnv = requested.filter((envRef) => Boolean(envValue(envRef)));
+  return {
+    ok: requested.length === resolvedEnv.length,
+    writtenEnv,
+    resolvedEnv,
+    missingEnv: requested.filter((envRef) => !resolvedEnv.includes(envRef)),
+  };
 }
 
 async function readJsonSafe(response) {
@@ -523,6 +546,31 @@ async function POST(request, context) {
     });
   }
 
+
+  const activation = await activateProductRuntime(product);
+  if (!activation.ok) {
+    await appendOutcomeReceipt({
+      kind: "workspace-add-on-sync",
+      lane: "server-authoritative",
+      outcomeStatus: "blocked",
+      actor: "workspace-marketplace",
+      objectRefs: [{ objectId: "api-registry", objectType: "api-registry", rowName: product.label }],
+      summary: `${product.label} runtime activation failed after its provider probe passed.`,
+      policyVerdict: { ok: false, violationCodes: ["provider_product_runtime_activation_failed"] },
+      nextActions: [`Resolve ${activation.missingEnv.join(", ")} in the workspace runtime, then retry product sync.`],
+    });
+    return jsonError(`${product.label} runtime activation failed`, 500, {
+      providerId: provider.providerId,
+      productId: product.productId,
+      missingEnv: activation.missingEnv,
+    });
+  }
+  if (activation.resolvedEnv.length) {
+    syncResult.resolvedEnv = Array.from(new Set([...(syncResult.resolvedEnv || []), ...activation.resolvedEnv]));
+    syncResult.summary = `${syncResult.summary} Custom-model inference cache namespace is active.`;
+    syncResult.proof = `${syncResult.proof}; runtime activation resolved ${activation.resolvedEnv.join(", ")}`;
+  }
+
   const currentConfig = await readWorkspaceConfig();
   let nextConfig = withMarketplaceProductRegistry(currentConfig, {
     providerId: provider.providerId,
@@ -547,6 +595,8 @@ async function POST(request, context) {
     summary: `${product.label} installed after provider sync probe.`,
     nextActions: product.capabilities?.includes("workflow")
       ? [`Workflow Canvas can now bind ${product.shortLabel || product.label} from the installed product card.`]
+      : product.capabilities?.includes("inference-cache")
+        ? ["Run a custom-model workflow; its inference receipt will report the Upstash Redis backend and remote cache write/hit status."]
       : ["Use this workspace add-on from the relevant governed workspace surfaces."],
   });
 

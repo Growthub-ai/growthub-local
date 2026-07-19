@@ -23,12 +23,18 @@
  * Data Sources downstream can normalize either locality.
  *
  * Request body:
- *   { objectId: string, name: string, useDraft?: boolean, draftGraph?: string | object }
+ *   {
+ *     objectId: string,
+ *     name: string,
+ *     useDraft?: boolean,
+ *     draftGraph?: string | object,
+ *     inference?: { prior_receipt_id: string, tool_results: object[] }
+ *   }
  *
  * Response (success):
  *   {
  *     ok:          boolean,
- *     status:      "connected" | "failed",
+ *     status:      "connected" | "pending" | "failed",
  *     runId:       string,
  *     adapter:     string,
  *     runtime:     string,
@@ -38,7 +44,7 @@
  *     sourceId:    string | null,
  *     response: {                               // saved into row.lastResponse
  *       runLocality, schedulerRegistryId?, runtime, adapter, exitCode, durationMs,
- *       stdout, stderr, error?,
+ *       stdout, stderr, error?, executionStatus?: "awaiting_tool_result" | "audit_unpersisted",
  *       envRefsResolved: string[],              // slug names only — never values
  *       envRefsMissing:  string[],
  *       networkAllow:    boolean,
@@ -55,11 +61,11 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  appendWorkspaceSourceRecords,
   describePersistenceMode,
   readWorkspaceConfig,
   readWorkspaceSourceRecords,
-  writeWorkspaceConfig,
-  writeWorkspaceSourceRecords
+  writeWorkspaceConfig
 } from "@/lib/workspace-config";
 import {
   DEFAULT_SANDBOX_ADAPTER,
@@ -78,7 +84,10 @@ import {
   ensureSandboxAdaptersLoaded,
   getSandboxAdapter
 } from "@/lib/adapters/sandboxes";
-import { runOrchestrationGraphIfPresent } from "@/lib/orchestration-graph-runner";
+import {
+  classifySandboxRunResult,
+  runOrchestrationGraphIfPresent
+} from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
@@ -98,11 +107,54 @@ import {
   TRACE_CAPTURE_RUN_KIND
 } from "@/lib/distillation-gateway";
 import { trainingRunSourceKey } from "@/lib/training-run-receipts";
+import { resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
   const text = String(value ?? "").trim().toLowerCase();
   return ["true", "1", "on", "yes"].includes(text);
+}
+
+function normalizeInferenceContinuation(value) {
+  if (value === undefined || value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("inference must be an object containing prior_receipt_id and tool_results");
+  }
+  const unknown = Object.keys(value).filter((key) => !["prior_receipt_id", "tool_results"].includes(key));
+  if (unknown.length) throw new TypeError(`unsupported inference continuation fields: ${unknown.join(", ")}`);
+  const priorReceiptId = String(value.prior_receipt_id || "").trim();
+  const toolResults = value.tool_results;
+  if (!priorReceiptId || priorReceiptId.length > 256) {
+    throw new TypeError("inference.prior_receipt_id is required and must be at most 256 characters");
+  }
+  if (!Array.isArray(toolResults) || toolResults.length === 0 || toolResults.length > 64) {
+    throw new TypeError("inference.tool_results must contain between 1 and 64 results");
+  }
+  if (Buffer.byteLength(stableStringify(toolResults), "utf8") > 1024 * 1024) {
+    throw new TypeError("inference.tool_results exceeds 1 MiB");
+  }
+  return { prior_receipt_id: priorReceiptId, tool_results: toolResults };
+}
+
+async function resolvePersistedInferenceContinuation({
+  receiptId,
+  modelId,
+  policyRegistryId,
+  appScope,
+} = {}) {
+  const safeModelId = String(modelId || "workspace-local").trim() || "workspace-local";
+  const safePolicyRegistryId = String(policyRegistryId || "").trim();
+  if (!safePolicyRegistryId) {
+    return { ok: false, reason: "the governed model policy registry id is required" };
+  }
+  const sourceId = `model-invocation:${safePolicyRegistryId}:${safeModelId}`;
+  const source = await readWorkspaceSourceRecords(sourceId);
+  return resolveTrustedInferenceContinuation(source?.records, {
+    receiptId,
+    modelId: safeModelId,
+    policyRegistryId: safePolicyRegistryId,
+    appScope,
+  });
 }
 
 async function persistCustomModelExecutionEvidence(response, ranAt) {
@@ -115,72 +167,103 @@ async function persistCustomModelExecutionEvidence(response, ranAt) {
     : evidence?.trace ? [evidence.trace] : [];
   const invocation = invocationsToAppend[0];
   const trace = tracesToAppend[0];
-  if (!invocation || !trace) return null;
+  if (!invocation) return null;
 
   const modelId = String(invocation.modelId || "workspace-local").trim() || "workspace-local";
   const policyRegistryId = String(invocation.policyRegistryId || modelId).trim() || modelId;
   const invocationSourceId = `model-invocation:${policyRegistryId}:${modelId}`;
-  const invocationEntry = await readWorkspaceSourceRecords(invocationSourceId);
-  const priorInvocations = Array.isArray(invocationEntry?.records) ? invocationEntry.records : [];
-  const invocations = [...priorInvocations, ...invocationsToAppend].slice(-500);
-  await writeWorkspaceSourceRecords(invocationSourceId, invocations, {
+  const invocationEntry = await appendWorkspaceSourceRecords(invocationSourceId, invocationsToAppend, {
     integrationId: policyRegistryId,
     fetchedAt: ranAt,
-  });
+  }, { maxRecords: 500 });
+  const invocations = invocationEntry.records;
 
-  const traceSourceId = distillationTracesSourceKey(modelId);
-  const traceEntry = await readWorkspaceSourceRecords(traceSourceId);
-  const priorTraces = Array.isArray(traceEntry?.records) ? traceEntry.records : [];
-  const traces = [...priorTraces, ...tracesToAppend].slice(-5000);
-  await writeWorkspaceSourceRecords(traceSourceId, traces, {
-    integrationId: policyRegistryId,
-    fetchedAt: ranAt,
-  });
+  let traceSourceId = "";
+  let receiptSourceId = "";
+  let traces = [];
+  let distillation = null;
+  // Awaiting-tool, rejected, and failed inference receipts are still durable
+  // invocations, but they are not training corpus. Only a completed answer
+  // with a normalized trace enters the distillation/capture lane.
+  if (trace && tracesToAppend.length) {
+    traceSourceId = distillationTracesSourceKey(modelId);
+    const traceEntry = await appendWorkspaceSourceRecords(traceSourceId, tracesToAppend, {
+      integrationId: policyRegistryId,
+      fetchedAt: ranAt,
+    }, { maxRecords: 5000 });
+    traces = traceEntry.records;
 
-  const receiptSourceId = trainingRunSourceKey(modelId);
-  const receiptEntry = await readWorkspaceSourceRecords(receiptSourceId);
-  const priorReceipts = Array.isArray(receiptEntry?.records) ? receiptEntry.records : [];
-  const distillation = buildTraceCaptureReceiptFields({
-    traces,
-    teacherModel: String(trace.teacherModel || ""),
-    teacherProviderId: String(trace.teacherProviderId || ""),
-    clusterId: String(trace.clusterId || ""),
-  });
-  const captureReceipt = {
-    schema: "growthub-local-model-training-run-v1",
-    trainingRunId: `capture_${String(response.runId || Date.now().toString(36))}`,
-    modelTrainingRowId: modelId,
-    status: "completed",
-    runKind: TRACE_CAPTURE_RUN_KIND,
-    capturedAt: ranAt,
-    invocationSourceId,
-    distillation,
-  };
-  await writeWorkspaceSourceRecords(receiptSourceId, [...priorReceipts, captureReceipt].slice(-500), {
-    integrationId: modelId,
-    fetchedAt: ranAt,
-  });
+    receiptSourceId = trainingRunSourceKey(modelId);
+    distillation = buildTraceCaptureReceiptFields({
+      traces,
+      teacherModel: String(trace.teacherModel || ""),
+      teacherProviderId: String(trace.teacherProviderId || ""),
+      clusterId: String(trace.clusterId || ""),
+    });
+    const captureReceipt = {
+      schema: "growthub-local-model-training-run-v1",
+      trainingRunId: `capture_${String(response.runId || Date.now().toString(36))}`,
+      modelTrainingRowId: modelId,
+      status: "completed",
+      runKind: TRACE_CAPTURE_RUN_KIND,
+      capturedAt: ranAt,
+      invocationSourceId,
+      distillation,
+    };
+    await appendWorkspaceSourceRecords(receiptSourceId, [captureReceipt], {
+      integrationId: modelId,
+      fetchedAt: ranAt,
+    }, { maxRecords: 500 });
+  }
 
   let evaluationSourceId = "";
   if (evidence?.evaluation && typeof evidence.evaluation === "object") {
     evaluationSourceId = `model-evaluation:${policyRegistryId}:${modelId}`;
-    const evaluationEntry = await readWorkspaceSourceRecords(evaluationSourceId);
-    const priorEvaluations = Array.isArray(evaluationEntry?.records) ? evaluationEntry.records : [];
-    await writeWorkspaceSourceRecords(evaluationSourceId, [
-      ...priorEvaluations,
+    await appendWorkspaceSourceRecords(evaluationSourceId, [
       { schema: "growthub-custom-model-evaluation-v1", runId: response.runId, evaluatedAt: ranAt, ...evidence.evaluation },
-    ].slice(-250), { integrationId: policyRegistryId, fetchedAt: ranAt });
+    ], { integrationId: policyRegistryId, fetchedAt: ranAt }, { maxRecords: 250 });
   }
 
   return {
     invocationSourceId,
-    traceSourceId,
-    receiptSourceId,
+    traceSourceId: traceSourceId || undefined,
+    receiptSourceId: receiptSourceId || undefined,
     invocationCount: invocations.length,
     traceCount: traces.length,
-    traceRootHash: distillation.traceRootHash,
+    traceRootHash: distillation?.traceRootHash || undefined,
     evaluationSourceId: evaluationSourceId || undefined,
   };
+}
+
+function hasCustomModelInvocationEvidence(response) {
+  const evidence = response?.adapterMeta?.customModel;
+  return Boolean(
+    (Array.isArray(evidence?.invocations) && evidence.invocations.length > 0)
+      || evidence?.invocation,
+  );
+}
+
+function applyRunCompletionTruth(response, completion) {
+  if (!completion.runOk) delete response.outputHash;
+  if (completion.awaitingToolResult) {
+    response.executionStatus = "awaiting_tool_result";
+    response.awaitingToolResult = true;
+    response.pending = true;
+    response.continuation = response?.continuation && typeof response.continuation === "object"
+      ? response.continuation
+      : { kind: "tool_result", status: "pending" };
+  }
+  if (completion.auditUnpersisted) {
+    response.executionStatus = "audit_unpersisted";
+    response.exitCode = null;
+    response.error = "governed custom-model audit trail was not durably completed";
+    response.audit = {
+      required: true,
+      status: "unpersisted",
+      nextAction: "Restore writable workspace persistence, then rerun the inference turn.",
+    };
+  }
+  return response;
 }
 
 function normalizeRunLocality(row) {
@@ -470,6 +553,7 @@ function buildRunResponse({
   row,
   runInputs
 }) {
+  const completion = classifySandboxRunResult(result);
   const base = {
     runId,
     ranAt,
@@ -497,7 +581,7 @@ function buildRunResponse({
     // -model evidence ladder requires for `complete` — a REAL run now carries
     // it natively (previously only seeded fixtures could, which meant no real
     // run could ever finish the proof loop).
-    outputHash: result.exitCode === 0 && !result.error && String(result.stdout || "").length > 0
+    outputHash: completion.runOk && String(result.stdout || "").length > 0
       ? createHash("sha256").update(String(result.stdout), "utf8").digest("hex").slice(0, 16)
       : undefined,
     envRefsResolved,
@@ -507,6 +591,14 @@ function buildRunResponse({
     browserAccess,
     adapterMeta: result.adapterMeta || null
   };
+  if (completion.awaitingToolResult) {
+    base.executionStatus = "awaiting_tool_result";
+    base.awaitingToolResult = true;
+    base.pending = true;
+    base.continuation = result?.continuation && typeof result.continuation === "object"
+      ? result.continuation
+      : { kind: "tool_result", status: "pending" };
+  }
   if (row && (row.resolverTemplateId || row.connectorKind || row.executionLane)) {
     base.templateTrace = {
       resolverTemplateId: row.resolverTemplateId ? String(row.resolverTemplateId) : null,
@@ -571,12 +663,24 @@ async function GET(request) {
   });
 }
 
-async function executeSandboxRun(body, { emit } = {}) {
+async function executeSandboxRun(body, {
+  emit,
+  traceparent = "",
+  tracestate = "",
+  appScope = "",
+  signal,
+} = {}) {
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const useDraft = body?.useDraft === true;
   if (!objectId || !name) {
     return NextResponse.json({ ok: false, error: "objectId and name are required" }, { status: 400 });
+  }
+  let inferenceContinuation = null;
+  try {
+    inferenceContinuation = normalizeInferenceContinuation(body?.inference);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error?.message || "invalid inference continuation" }, { status: 400 });
   }
 
   const workspaceConfig = await readWorkspaceConfig();
@@ -679,12 +783,14 @@ async function executeSandboxRun(body, { emit } = {}) {
   }
 
   const env = {};
+  const resolvedSecretsByRef = {};
   const envRefsResolved = [];
   const envRefsMissing = [];
   for (const slug of envRefSlugs) {
     const resolved = readServerSecret(slug);
     if (resolved) {
       env[resolved.key] = resolved.value;
+      resolvedSecretsByRef[slug] = resolved.value;
       envRefsResolved.push(slug);
     } else {
       envRefsMissing.push(slug);
@@ -711,6 +817,7 @@ async function executeSandboxRun(body, { emit } = {}) {
         agentHost,
         adapterId,
         env,
+        resolvedSecretsByRef,
         envRefSlugs,
         envRefsMissing,
         envRefsResolved,
@@ -723,6 +830,12 @@ async function executeSandboxRun(body, { emit } = {}) {
         sandboxName: rowForRun.Name || name,
         customModelId: String(rowForRun.customModelId || ""),
         workflowVariant: String(rowForRun.workflowVariant || "chat"),
+        traceparent: String(traceparent || body?.otel_traceparent || ""),
+        tracestate: String(tracestate || ""),
+        appScope: String(appScope || ""),
+        inferenceContinuation,
+        resolveInferenceContinuation: resolvePersistedInferenceContinuation,
+        signal,
         onEvent: emit
       }
     });
@@ -844,30 +957,55 @@ async function executeSandboxRun(body, { emit } = {}) {
 
   const sourceId = sandboxRunSourceId(objectId, row.Name || name);
   const persistence = describePersistenceMode();
-  const status = response.exitCode === 0 && !response.error ? "connected" : "failed";
-
   let persisted = false;
   let persistError = null;
+  const auditRequired = hasCustomModelInvocationEvidence(response);
+  let auditPersisted = !auditRequired;
+
+  // A custom-model response is only proof when its verification invocation is
+  // durable. Persist that audit receipt before the sandbox record or row can
+  // be stamped as tested. Read-only/failing persistence demotes the result to
+  // an explicit non-success state while retaining the in-memory receipt for
+  // diagnosis; it can never mint an outputHash or publishable draft proof.
+  if (auditRequired && persistence.canSave) {
+    try {
+      const customModelEvidence = await persistCustomModelExecutionEvidence(response, ranAt);
+      if (customModelEvidence) {
+        response.customModelEvidence = customModelEvidence;
+        auditPersisted = true;
+      } else {
+        persistError = "custom-model invocation evidence was missing at persistence time";
+      }
+    } catch (error) {
+      persistError = error?.message || "failed to persist custom-model execution evidence";
+    }
+  } else if (auditRequired) {
+    persistError = "workspace persistence is read-only; custom-model audit evidence was not persisted";
+  }
+
+  let completion = classifySandboxRunResult(response, { auditRequired, auditPersisted });
+  applyRunCompletionTruth(response, completion);
+  let status = completion.rowStatus;
 
   if (sourceId && persistence.canSave) {
     try {
-      const existing = await readWorkspaceSourceRecords(sourceId);
-      const priorRecords = Array.isArray(existing?.records) ? existing.records : [];
-      const nextRecords = [...priorRecords, response].slice(-50);
-      await writeWorkspaceSourceRecords(sourceId, nextRecords, {
+      await appendWorkspaceSourceRecords(sourceId, [response], {
         integrationId: sourceId,
         fetchedAt: ranAt
-      });
+      }, { maxRecords: 50 });
       persisted = true;
     } catch (error) {
       persistError = error?.message || "failed to persist sandbox run record";
     }
 
-    try {
-      const customModelEvidence = await persistCustomModelExecutionEvidence(response, ranAt);
-      if (customModelEvidence) response.customModelEvidence = customModelEvidence;
-    } catch (error) {
-      persistError = persistError || error?.message || "failed to persist custom-model execution evidence";
+    // The invocation receipt alone is not a complete audit trail: the
+    // canonical sandbox record must also be durable. If its append failed,
+    // demote before stamping the row or emitting the Agent Outcome receipt.
+    if (auditRequired && !persisted) {
+      auditPersisted = false;
+      completion = classifySandboxRunResult(response, { auditRequired, auditPersisted });
+      applyRunCompletionTruth(response, completion);
+      status = completion.rowStatus;
     }
 
     try {
@@ -917,27 +1055,40 @@ async function executeSandboxRun(body, { emit } = {}) {
   // Agent Outcome Loop V1: every execution emits the same canonical receipt
   // (kind "sandbox-run", lane "execution-proof") into workspace:agent-outcomes,
   // linking the run record so publish gates and future agents can cite it.
-  const runOk = response.exitCode === 0 && !response.error;
+  const runOk = completion.runOk;
+  const outcomeLabel = completion.auditUnpersisted
+    ? "failed audit persistence"
+    : completion.awaitingToolResult
+      ? "is awaiting a governed tool result"
+      : runOk ? "passed" : "failed";
+  const nextActions = completion.auditUnpersisted
+    ? ["Restore writable workspace persistence, then rerun so the verification receipt and run record are durable."]
+    : completion.awaitingToolResult
+      ? ["Submit the correlated governed tool result, then resume this inference turn; the draft remains untested and unpublishable."]
+      : runOk && useDraft
+        ? ["Attest the tested draft (orchestrationDraftTestPassed + orchestrationDraftTestedConfig), then POST /api/workspace/workflow/publish"]
+        : [];
   await appendOutcomeReceipt({
     kind: "sandbox-run",
     lane: "execution-proof",
-    outcomeStatus: runOk ? "tested" : "failed",
+    outcomeStatus: completion.outcomeStatus,
     intent: typeof body?.intent === "string" ? body.intent : undefined,
     actor: typeof body?.actor === "string" ? body.actor : undefined,
     objectRefs: [{ objectId, rowName: rowForRun.Name || name, objectType: "sandbox-environment" }],
     runId,
     sourceId: sourceId || undefined,
     ...(useDraft && draftSha256 ? { draftSha256 } : {}),
-    summary: `${useDraft ? "draft " : ""}run ${runOk ? "passed" : "failed"} (exit ${response.exitCode}, ${effectiveAdapterId}/${runtime}) — ${String(response.stdout || response.stderr || response.error || "").slice(0, 160)}`,
-    ...(runOk && useDraft
-      ? { nextActions: ["Attest the tested draft (orchestrationDraftTestPassed + orchestrationDraftTestedConfig), then POST /api/workspace/workflow/publish"] }
-      : {}),
+    summary: `${useDraft ? "draft " : ""}run ${outcomeLabel} (exit ${response.exitCode}, ${effectiveAdapterId}/${runtime}) — ${String(response.stdout || response.stderr || response.error || "").slice(0, 160)}`,
+    ...(nextActions.length ? { nextActions } : {}),
     rollbackRef: sourceId ? { objectId, rowName: rowForRun.Name || name, sourceId } : undefined
   });
 
   return NextResponse.json({
     ok: runOk,
     status,
+    ...(!runOk && (completion.awaitingToolResult || completion.auditUnpersisted)
+      ? { executionStatus: completion.executionStatus }
+      : {}),
     runId,
     adapter: effectiveAdapterId,
     runtime,
@@ -952,6 +1103,8 @@ async function executeSandboxRun(body, { emit } = {}) {
 
 async function POST(request) {
   const accept = request.headers.get("accept") || "";
+  const incomingTraceparent = request.headers.get("traceparent") || "";
+  const incomingTracestate = request.headers.get("tracestate") || "";
   // Unified app-scope gate: with x-growthub-app-scope, this run must target
   // a workflow inside the app's governed scope (route-shopping closed).
   let scopedAppId = null;
@@ -992,7 +1145,12 @@ async function POST(request) {
 
   const wantsStream = body?.stream === true || accept.includes("application/x-ndjson");
   if (!wantsStream) {
-    return executeSandboxRun(body);
+    return executeSandboxRun(body, {
+      traceparent: incomingTraceparent,
+      tracestate: incomingTracestate,
+      appScope: scopedAppId || "",
+      signal: request.signal,
+    });
   }
 
   const encoder = new TextEncoder();
@@ -1008,7 +1166,13 @@ async function POST(request) {
         objectId: typeof body?.objectId === "string" ? body.objectId.trim() : "",
         name: typeof body?.name === "string" ? body.name.trim() : ""
       });
-      executeSandboxRun(body, { emit })
+      executeSandboxRun(body, {
+        emit,
+        traceparent: incomingTraceparent,
+        tracestate: incomingTracestate,
+        appScope: scopedAppId || "",
+        signal: request.signal,
+      })
         .then(async (response) => {
           const finalPayload = await response.json().catch(() => ({ ok: false, error: "stream final payload unreadable" }));
           emit({

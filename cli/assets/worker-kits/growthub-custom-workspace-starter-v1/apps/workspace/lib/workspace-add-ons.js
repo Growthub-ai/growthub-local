@@ -64,14 +64,16 @@ const UPSTASH_PRODUCTS = [
     connectorKind: "upstash-redis",
     endpoint: "/ping",
     method: "GET",
-    description: "Upstash Redis REST database connection registered for governed workspace add-ons.",
+    description: "Upstash Redis REST database connection registered for governed workspace add-ons and used as the shared exact/semantic cache for custom-model inference.",
     subtitle: "Redis Compatible Database",
+    outcome: "Powers the custom-model inference cache across workspace runtime instances.",
     plans: "Free, Pay as You Go, Fixed",
     entityTypes: "cache,kv,redis",
-    capabilities: "kv,cache,rate-limit",
+    capabilities: "kv,cache,rate-limit,inference-cache",
     executionLane: "workspace-data",
     requiredEnv: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
     optionalEnv: [],
+    activationEnv: ["GROWTHUB_INFERENCE_CACHE_NAMESPACE"],
     consoleUrl: "https://console.upstash.com/redis",
     resourceDiscovery: {
       auth: "provider-basic",
@@ -673,7 +675,7 @@ const MARKETPLACE_PROVIDERS = [
         label: "Upstash account email",
         type: "email",
         autocomplete: "email",
-        required: true,
+        required: false,
         envRef: "UPSTASH_EMAIL",
         credentialRole: "basicAuthUsername",
       },
@@ -682,9 +684,28 @@ const MARKETPLACE_PROVIDERS = [
         label: "Management API key",
         type: "password",
         autocomplete: "off",
-        required: true,
+        required: false,
         envRef: "UPSTASH_API_KEY",
         credentialRole: "basicAuthPassword",
+      },
+      {
+        id: "qstashToken",
+        label: "QStash token (direct product binding)",
+        type: "password",
+        autocomplete: "off",
+        required: false,
+        envRef: "QSTASH_TOKEN",
+        credentialRole: "productBearerToken",
+      },
+      {
+        id: "qstashUrl",
+        label: "QStash URL (optional region endpoint)",
+        type: "url",
+        autocomplete: "off",
+        required: false,
+        envRef: "QSTASH_URL",
+        credentialRole: "productBaseUrl",
+        placeholder: "https://qstash-eu-central-1.upstash.io",
       },
     ],
     consoleUrl: "https://console.upstash.com/",
@@ -1161,6 +1182,7 @@ function apiRegistryColumns(existing = []) {
     "authRef",
     "requiredEnv",
     "optionalEnv",
+    "activationEnv",
     "resolvedEnv",
     "selectedResourceId",
     "selectedResourceLabel",
@@ -1948,6 +1970,8 @@ function listProviderProductReadiness(providerId, env = process.env) {
     // resolution share one env-key contract (concrete UPPER_SNAKE keys).
     const missingEnv = product.requiredEnv.filter((key) => !readEnvVar(key, source));
     const configuredOptionalEnv = product.optionalEnv.filter((key) => Boolean(readEnvVar(key, source)));
+    const activationEnv = Array.isArray(product.activationEnv) ? product.activationEnv : [];
+    const missingActivationEnv = activationEnv.filter((key) => !readEnvVar(key, source));
     return {
       productId: product.productId,
       integrationId: product.integrationId,
@@ -1958,6 +1982,9 @@ function listProviderProductReadiness(providerId, env = process.env) {
       configured: missingEnv.length === 0,
       missingEnv,
       configuredOptionalEnv,
+      activationEnv,
+      activated: missingEnv.length === 0 && missingActivationEnv.length === 0,
+      missingActivationEnv,
     };
   });
 }
@@ -1980,6 +2007,7 @@ function makeUpstashProductRow({ productId, region, plan = "free", syncResult = 
     authRef: product.authRef,
     requiredEnv: Array.isArray(product.requiredEnv) ? product.requiredEnv.join(",") : "",
     optionalEnv: Array.isArray(product.optionalEnv) ? product.optionalEnv.join(",") : "",
+    activationEnv: Array.isArray(product.activationEnv) ? product.activationEnv.join(",") : "",
     resolvedEnv: Array.isArray(syncResult?.resolvedEnv) ? syncResult.resolvedEnv.join(",") : "",
     selectedResourceId: syncResult?.selectedResourceId || "",
     selectedResourceLabel: syncResult?.selectedResourceLabel || "",

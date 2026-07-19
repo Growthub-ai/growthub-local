@@ -42,7 +42,14 @@ import {
   deriveProgressStages,
 } from "../../../lib/training-ledger.js";
 import { isCustomModelRegistryRow } from "../../../lib/custom-models-ledger.js";
-import { FINE_TUNE_TARGETS, resolveFineTuneTarget, scaffoldHandoffRows, rebindCustomModelServingIdentity } from "../../../lib/adapters/fine-tune-targets.js";
+import {
+  FINE_TUNE_TARGETS,
+  LLAMA_CPP_LOCAL_TARGET_ID,
+  buildLlamaCppInferenceControlPlane,
+  resolveFineTuneTarget,
+  scaffoldHandoffRows,
+  rebindCustomModelServingIdentity,
+} from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
@@ -523,6 +530,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const pollRef = useRef(null);
   const [artifact, setArtifact] = useState({ type: "gguf", modelTag: "", path: "", sha256: "", quantization: "q4_k_m" });
   const [verifyResult, setVerifyResult] = useState(null);
+  const [verificationEvidence, setVerificationEvidence] = useState(null);
   const [verifying, setVerifying] = useState(false);
   const [httpStatus, setHttpStatus] = useState(null); // real HTTP status from the test lane
   // Test-event mental model (mirrors the API/Webhook test-event flow): an
@@ -1431,6 +1439,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       setBusyPct(55); setBusyMsg("Activating the tuned model in the Data Model + API Registry record…");
       await patchObjects((objects) => {
         let next = upsertRunRow(objects, runReceiptToRow(importedReceipt));
+        const inferenceControlPlane = target.id === LLAMA_CPP_LOCAL_TARGET_ID
+          ? buildLlamaCppInferenceControlPlane({
+              baseModel: { id: a.modelTag, path: a.path, sha256: a.sha256 },
+              servedAlias: a.modelTag,
+            })
+          : null;
         // Activate ONE exact served identity across the whole release chain.
         // Attaching an already-installed model may legitimately choose a tag
         // different from the draft reservation; the training row, direct
@@ -1441,10 +1455,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
           trainingRowId: `${SLUG}-v${result.version}`,
           integrationId: result.integrationId,
           modelTag: a.modelTag,
+          inferenceControlPlane,
         });
       });
       setResult((current) => current ? { ...current, modelTag: a.modelTag } : current);
-      setBusyPct(100); setBusyMsg(`Model record ready — ${a.modelTag} is registered and callable. Verify the endpoint next.`);
+      setBusyPct(100); setBusyMsg(`Model record ready — ${a.modelTag} is registered. A real gateway invocation is still required before it is callable and verified.`);
       setPanel("verify");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1455,39 +1470,70 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
 
   // ---- verify: run the registry test and surface the tuned-tag proof honestly.
   async function runVerify() {
+    let candidateProof = null;
     setError("");
     setVerifying(true);
     setVerifyResult(null);
+    setVerificationEvidence(null);
     setHttpStatus(null);
     setInspectorTab("response");
     try {
-      const reg = (workspaceConfig?.dataModel?.objects || []).filter((o) => o?.objectType === "api-registry").flatMap((o) => o.rows || []).find((r) => r?.integrationId === result.integrationId);
-      // Use the existing governed API Registry test lane if present; otherwise
-      // read the row's last stamped response. Either way verification is the
-      // pure tuned-tag gate — never a fake pass. The edited test prompt rides
-      // the same governed lane (same shape as the API/Webhook test event).
-      let responseBody = reg?.lastResponse ?? null;
-      try {
-        const res = await fetch("/api/workspace/test-source", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ integrationId: result.integrationId, prompt: String(testPrompt || DEFAULT_TEST_PROMPT) }),
+      const res = await fetch("/api/workspace/test-source", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ integrationId: result.integrationId, prompt: String(testPrompt || DEFAULT_TEST_PROMPT) }),
+      });
+      setHttpStatus(res.status); // the REAL HTTP status — never a fabricated 200
+      const data = await res.json().catch(() => ({}));
+      setVerificationEvidence(data);
+      const responseBody = data?.response ?? null;
+      const candidate = verifyTunedResponse({ expectedTag: artifact.modelTag || reservedTag, baseModel, responseBody });
+      candidateProof = candidate;
+      const gatewayVerified = res.ok
+        && data?.ok === true
+        && data?.tunedTagVerified === true
+        && Boolean(data?.verificationReceipt)
+        && candidate.verified;
+      if (!gatewayVerified) {
+        setVerifyResult({
+          ...candidate,
+          verified: false,
+          reason: data?.error || candidate.reason || "the inference gateway did not return tuned-tag verification evidence",
         });
-        setHttpStatus(res.status); // the REAL HTTP status — never a fabricated 200
-        if (res.ok) {
-          const data = await res.json();
-          responseBody = data?.response ?? data?.lastResponse ?? responseBody;
-          // refresh config so the ledger/badges reflect the stamped test
-          const probe = await fetch("/api/workspace", { cache: "no-store" });
-          const fresh = await probe.json();
-          if (fresh?.workspaceConfig) { setLiveConfig(fresh.workspaceConfig); if (typeof onApplied === "function") onApplied(fresh.workspaceConfig); }
-        }
-      } catch { /* fall back to stamped response */ }
-      const v = verifyTunedResponse({ expectedTag: artifact.modelTag || reservedTag, baseModel, responseBody });
-      setVerifyResult(v);
+        setError(data?.error || candidate.reason || `Model verification failed (${res.status})`);
+        return;
+      }
+
+      // The live call is read-only. Persist its response only through the
+      // canonical preflight -> PATCH lane so the training ledger and future
+      // mothership routing can consume the same durable tuned-tag proof.
+      const testedAt = new Date().toISOString();
+      await patchObjects((objects) => objects.map((object) => object?.objectType !== "api-registry"
+        ? object
+        : {
+          ...object,
+          rows: (object.rows || []).map((row) => String(row?.integrationId || "") !== String(result.integrationId || "")
+            ? row
+            : {
+              ...row,
+              status: "connected",
+              lastTested: testedAt,
+              lastResponse: JSON.stringify(responseBody),
+              metadata: {
+                ...(row?.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {}),
+                lastVerificationReceipt: data.verificationReceipt,
+              },
+            }),
+        }));
+      setVerificationEvidence({ ...data, persistedAt: testedAt });
+      setVerifyResult({ ...candidate, verificationReceipt: data.verificationReceipt });
       // Stay on the inspector so the user can read Response/Trace/Details/Proof
       // before advancing — an explicit "use it in a workflow" CTA moves on.
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      if (candidateProof?.verified) {
+        setVerifyResult({ ...candidateProof, verified: false, demotion: "persistence", reason: `live invocation passed, but durable proof was not recorded: ${message}` });
+      }
+      setError(message);
     } finally {
       setVerifying(false);
     }
@@ -2071,7 +2117,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               {/* Verified status — same status language as "Verified 200", tuned
                   to model proof. Honest: verified ONLY when served == tuned tag. */}
               {verifyResult && !verifying ? (() => {
-                const raw = liveRegistryRow?.lastResponse ?? "";
+                const raw = verificationEvidence?.response ?? "";
                 let parsed = null; try { parsed = raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : null; } catch { parsed = null; }
                 const content = (() => {
                   try { return String(parsed?.choices?.[0]?.message?.content || verifyResult.snippet || ""); } catch { return verifyResult.snippet || ""; }
@@ -2108,6 +2154,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                           <div className="dm-run-console__hint">trainingRunId: {result.trainingRunId}</div>
                           <div className="dm-run-console__hint">apiRegistryId: {result.integrationId}</div>
                           <div className="dm-run-console__hint">modelTrainingRowId: {SLUG}-v{result.version}</div>
+                          <div className="dm-run-console__hint">trace_id: {verificationEvidence?.verificationReceipt?.otel?.trace_id || "—"}</div>
+                          <div className="dm-run-console__hint">span_id: {verificationEvidence?.verificationReceipt?.otel?.span_id || "—"}</div>
                         </div>
                       ) : inspectorTab === "details" ? (
                         <div data-verify-details="">
@@ -2119,8 +2167,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                         </div>
                       ) : (
                         <div data-verify-proof="">
-                          <div className="dm-run-console__hint">why proven: the served response model must equal the tuned tag; a base-model or mismatched reply demotes it.</div>
-                          <div className="dm-run-console__hint">row stamped: api-registry ({result.integrationId}) lastResponse + status {servingProfile.servesTunedTag ? "connected" : "registered"}</div>
+                          <div className="dm-run-console__hint">why proven: the gateway receipt and served response model must both bind to the exact tuned tag; a base-model or mismatched reply demotes it.</div>
+                          <div className="dm-run-console__hint">gateway identity: {verificationEvidence?.verificationReceipt?.identity?.status || "not verified"}</div>
+                          <div className="dm-run-console__hint">durable proof: {verificationEvidence?.persistedAt ? `api-registry (${result.integrationId}) stamped through governed PATCH at ${verificationEvidence.persistedAt}` : "not recorded"}</div>
                           <div className="dm-run-console__hint">would demote: reply model = base model, malformed body, or endpoint error.</div>
                           <div className="dm-run-console__hint" data-verify-proof-serving="">{servingProfile.reason}</div>
                         </div>

@@ -24,6 +24,7 @@
  *   - `@growthub/api-contract/worker-kits`     — universal kit.json contract
  *   - `@growthub/api-contract/workspaces`      — external-dep specialization
  *   - `@growthub/api-contract/adapters`        — provider-boundary specialization
+ *   - `@growthub/api-contract/inference`       — governed inference gateway evidence
  *   - `@growthub/api-contract/bridge`          — Growthub bridge resources
  *   - `@growthub/api-contract/helper`          — workspace helper propose/apply
  *   - `@growthub/api-contract/workspace-patch` — governed mutation boundary
@@ -239,6 +240,58 @@ export type {
   AdapterContractRef,
 } from "./adapters.js";
 export { ADAPTER_CONTRACT_VERSION } from "./adapters.js";
+
+// Governed inference gateway (type-only request, six-capability evidence,
+// closed-loop verification receipt, and normalized gateway result).
+export type {
+  InferenceJsonPrimitive,
+  InferenceJsonValue,
+  InferenceJsonObject,
+  InferenceJsonSchema,
+  InferenceArtifactRef,
+  BaseModelRef,
+  InferenceAdapterRef,
+  LoraAdapterRef,
+  ModelIdentityVerificationStatus,
+  ModelIdentityEvidence,
+  InferenceSchemaRef,
+  InferenceResponseSchemaContract,
+  SchemaEnforcementStatus,
+  SchemaOutputValidationStatus,
+  SchemaEnforcementEvidence,
+  InferenceCacheStatus,
+  InferenceCacheKind,
+  InferenceCachePolicy,
+  InferenceCacheEvidence,
+  OpenApiHttpMethod,
+  OpenApiOperationRef,
+  InferenceToolDefinition,
+  OpenApiToolContract,
+  InferenceToolCall,
+  InferenceToolResult,
+  ToolCallValidationEvidence,
+  InferencePayloadEvidence,
+  ExternalToolRequestEvidence,
+  ExternalToolResultEvidence,
+  ToolCallAuditStatus,
+  ToolCallAuditEntry,
+  ToolCallAuditEvidence,
+  OtlpTransport,
+  OTelTraceEvidence,
+  InferencePhase,
+  InferencePhasePool,
+  InferencePoolRef,
+  InferencePhaseEvidence,
+  PhaseRoutingEvidence,
+  InferenceMessage,
+  InferenceRequest,
+  VerificationReceiptStatus,
+  VerificationReceipt,
+  InferenceUsage,
+  InferenceGatewayOutput,
+  InferenceGatewayStatus,
+  InferenceGatewayResult,
+} from "./inference.js";
 
 // Workspace Helper (governed, workspace-grammar-aware planning engine —
 // propose + apply loop for dashboards, widgets, API registry rows, and

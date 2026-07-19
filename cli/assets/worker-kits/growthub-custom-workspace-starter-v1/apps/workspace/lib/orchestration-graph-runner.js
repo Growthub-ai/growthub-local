@@ -130,6 +130,35 @@ function parseInputPayload(inputNode) {
   return {};
 }
 
+/**
+ * A model can finish one inference turn without finishing the workflow: a
+ * governed tool call has been generated and now needs a correlated external
+ * result. Keep that state distinct from both success and failure so callers
+ * cannot accidentally convert a resumable turn into publishable run proof.
+ */
+function isAwaitingToolResult(result) {
+  const customModel = result?.adapterMeta?.customModel;
+  return result?.awaitingToolResult === true
+    || String(result?.executionStatus || "") === "awaiting_tool_result"
+    || customModel?.awaitingToolResult === true
+    || String(customModel?.gatewayStatus || "") === "awaiting_tool_result";
+}
+
+/** Pure terminal classifier shared by the runner and sandbox route. */
+function classifySandboxRunResult(result, { auditRequired = false, auditPersisted = true } = {}) {
+  const awaitingToolResult = isAwaitingToolResult(result);
+  const auditUnpersisted = auditRequired && !auditPersisted;
+  const runOk = !awaitingToolResult && !auditUnpersisted && result?.exitCode === 0 && !result?.error;
+  return {
+    awaitingToolResult,
+    auditUnpersisted,
+    runOk,
+    executionStatus: auditUnpersisted ? "audit_unpersisted" : awaitingToolResult ? "awaiting_tool_result" : runOk ? "completed" : "failed",
+    rowStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "pending" : runOk ? "connected" : "failed",
+    outcomeStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "drafted" : runOk ? "tested" : "failed",
+  };
+}
+
 function transformProviderPayload(rawPayload, transformConfig) {
   const config = transformConfig || {};
   const rootPath = String(config.rootPath || "").trim();
@@ -201,14 +230,75 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
 
   if (merged?.metadata?.mothershipProxy) {
     const startedAt = Date.now();
+    const effectiveInputPayload = executionContext?.inferenceContinuation
+      ? {
+          ...(inputPayload && typeof inputPayload === "object" ? inputPayload : {}),
+          inference: {
+            ...(inputPayload?.inference && typeof inputPayload.inference === "object" ? inputPayload.inference : {}),
+            ...executionContext.inferenceContinuation,
+          },
+        }
+      : inputPayload;
+    const priorReceiptId = String(
+      effectiveInputPayload?.inference?.prior_receipt_id
+        || effectiveInputPayload?.inference?.priorReceiptId
+        || effectiveInputPayload?.prior_receipt_id
+        || effectiveInputPayload?.priorReceiptId
+        || "",
+    ).trim();
+    let trustedContinuation = null;
+    if (priorReceiptId) {
+      if (typeof executionContext?.resolveInferenceContinuation !== "function") {
+        return {
+          ok: false,
+          exitCode: 1,
+          durationMs: Date.now() - startedAt,
+          stdout: "",
+          stderr: "",
+          error: "tool continuation is unavailable because governed receipt resolution is not configured",
+          adapterMeta: { mode: "orchestration-graph", registryId },
+        };
+      }
+      const continuationResolution = await executionContext.resolveInferenceContinuation({
+        receiptId: priorReceiptId,
+        modelId: String(merged.metadata.mothershipProxy.workspaceSlug || "workspace-local"),
+        policyRegistryId: String(merged.integrationId || registryId),
+        appScope: String(executionContext?.appScope || "workspace-wide"),
+      });
+      if (!continuationResolution?.ok || !continuationResolution?.continuation) {
+        return {
+          ok: false,
+          exitCode: 1,
+          durationMs: Date.now() - startedAt,
+          stdout: "",
+          stderr: "",
+          error: continuationResolution?.reason || "prior inference receipt could not be authorized",
+          adapterMeta: { mode: "orchestration-graph", registryId },
+        };
+      }
+      trustedContinuation = continuationResolution.continuation;
+    }
     const inference = await executeCustomModelWorkflow({
       workspaceConfig,
       policyRow: merged,
-      inputPayload,
+      inputPayload: effectiveInputPayload,
       runId: executionContext?.runId,
       clusterId: String(nodeConfig?.clusterId || nodeConfig?.workflowVariant || "workflow"),
       maxTokens: Number(nodeConfig?.maxTokens) || 512,
       workflowVariant: String(executionContext?.workflowVariant || nodeConfig?.workflowVariant || "chat"),
+      traceparent: String(executionContext?.traceparent || ""),
+      tracestate: String(executionContext?.tracestate || ""),
+      appScope: String(executionContext?.appScope || ""),
+      onEvent: executionContext?.onEvent,
+      networkPolicy: {
+        networkAllow: executionContext?.networkAllow === true,
+        allowList: Array.isArray(executionContext?.allowList) ? executionContext.allowList : [],
+      },
+      resolvedEnv: executionContext?.resolvedSecretsByRef || {},
+      allowedEnvRefs: Array.isArray(executionContext?.envRefSlugs) ? executionContext.envRefSlugs : [],
+      trustedContinuation,
+      signal: executionContext?.signal,
+      timeoutMs: Math.min(Math.max(Number(timeoutMs) || 1_000, 1_000), 120_000),
     });
     if (!inference.ok) {
       return {
@@ -221,7 +311,11 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
         adapterMeta: {
           mode: "orchestration-graph",
           registryId,
-          customModel: { attempts: inference.attempts || [] },
+          customModel: {
+            attempts: inference.attempts || [],
+            invocations: inference.invocations || [],
+            traces: [],
+          },
         },
       };
     }
@@ -233,6 +327,7 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
       stderr: "",
       rawPayload: inference.response,
       httpStatus: inference.status,
+      ...(inference.continuation ? { continuation: inference.continuation } : {}),
       adapterMeta: {
         mode: "orchestration-graph",
         registryId,
@@ -240,6 +335,8 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
         transport: "mothership-policy",
         customModel: {
           route: String(inference.route?.target || ""),
+          gatewayStatus: String(inference.gatewayStatus || "completed"),
+          awaitingToolResult: inference.awaitingToolResult === true,
           attempts: inference.attempts,
           invocation: inference.invocation,
           trace: inference.trace,
@@ -916,11 +1013,13 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   const onEvent = typeof executionContext?.onEvent === "function" ? executionContext.onEvent : null;
   const runId = String(executionContext?.runId || "").trim();
   const nodeTrace = [];
-  const emitNode = (nodeId, status, error) => {
+  const emitNode = (nodeId, status, error, details = null) => {
     const id = String(nodeId || "").trim();
     if (!id) return;
-    if (status === "completed" || status === "failed" || status === "skipped") {
-      nodeTrace.push(error ? { id, status, error: String(error) } : { id, status });
+    const terminal = status === "completed" || status === "failed" || status === "skipped" || status === "pending";
+    const safeDetails = details && typeof details === "object" ? details : {};
+    if (terminal) {
+      nodeTrace.push({ id, status, ...safeDetails, ...(error ? { error: String(error) } : {}) });
     }
     if (onEvent) {
       onEvent({
@@ -929,6 +1028,7 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
         nodeId: id,
         runId,
         emittedAt: new Date().toISOString(),
+        ...safeDetails,
         ...(error ? { error: String(error) } : {})
       });
     }
@@ -956,8 +1056,11 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     }
   }
 
+  const awaitingToolResult = raw.ok && isAwaitingToolResult(raw);
+
   if (apiNode?.id) {
-    if (raw.ok) emitNode(apiNode.id, "completed");
+    if (awaitingToolResult) emitNode(apiNode.id, "pending", null, { awaiting: "tool_result", generation: "completed" });
+    else if (raw.ok) emitNode(apiNode.id, "completed");
     else emitNode(apiNode.id, "failed", raw.error);
   }
 
@@ -972,7 +1075,7 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     ? raw.adapterMeta.customModel.invocations
     : [];
   additionalApiNodes.forEach((candidate, index) => {
-    if (raw.ok && customInvocations[index + 1]) {
+    if (!awaitingToolResult && raw.ok && customInvocations[index + 1]) {
       emitNode(candidate.id, "started");
       emitNode(candidate.id, "completed");
     } else {
@@ -980,7 +1083,25 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
     }
   });
 
-  if (raw.ok && raw.rawPayload !== undefined) {
+  if (awaitingToolResult) {
+    // The inference receipt/tool call remains in adapterMeta for the governed
+    // continuation, but no provider payload is promoted as a final workflow
+    // result and no downstream transform/result node is claimed to have run.
+    raw.ok = false;
+    raw.exitCode = null;
+    raw.stdout = "";
+    raw.stderr = "";
+    raw.awaitingToolResult = true;
+    raw.pending = true;
+    raw.executionStatus = "awaiting_tool_result";
+    raw.continuation = raw.continuation && typeof raw.continuation === "object"
+      ? raw.continuation
+      : { kind: "tool_result", status: "pending" };
+    delete raw.rawPayload;
+    delete raw.httpStatus;
+    if (transformNode?.id) emitNode(transformNode.id, "skipped");
+    if (resultNode?.id) emitNode(resultNode.id, "skipped");
+  } else if (raw.ok && raw.rawPayload !== undefined) {
     if (transformNode?.id) emitNode(transformNode.id, "started");
     const transformed = transformProviderPayload(raw.rawPayload, transformConfig);
     raw.stdout = typeof transformed === "string"
@@ -1016,4 +1137,11 @@ async function runOrchestrationGraphIfPresent({ workspaceConfig, row, timeoutMs,
   };
 }
 
-export { executeResendEmail, executeStripeCommerce, executeSupabaseData, runOrchestrationGraphIfPresent };
+export {
+  classifySandboxRunResult,
+  executeResendEmail,
+  executeStripeCommerce,
+  executeSupabaseData,
+  isAwaitingToolResult,
+  runOrchestrationGraphIfPresent,
+};

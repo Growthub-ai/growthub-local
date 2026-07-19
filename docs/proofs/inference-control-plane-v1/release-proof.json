@@ -1,0 +1,41 @@
+{
+  "schema": "growthub-inference-control-plane-release-proof-v1",
+  "release": {
+    "cli": "0.14.27",
+    "create_growthub_local": "0.14.27",
+    "api_contract": "1.6.0",
+    "origin_main_baseline": "de065081fd424c0fa1b6beeae8ae7f873e8136ef"
+  },
+  "artifacts": {
+    "base_gguf_sha256": "7c7347bb32399fba6bc056e24bb742777d6b91d425e0c7d5e245eaffa9807a36",
+    "lora_gguf_sha256": "fd63a8543b5b096722fe0dfef7afb57dd79768a154ed071f34c684a2ffc4fd91",
+    "ollama_manifest_digest": "9f9bee6dacfee3ab5d899351cdb5b09d2f715374ba264966f5a1db9a2f8c4a50",
+    "ollama_blob_sha256": "aeda25e63ebd698fab8638ffb778e68bed908b960d39d0becc650fa981609d25"
+  },
+  "contracts": {
+    "schema_sha256": "157e0a9272a9255354dc836fbed2264e2613a5ce19389cf3e7f0134205251188",
+    "grammar_contract_sha256": "6e4e99f261e56ed0ca253dc6c5f9c3fe855dc6afdd98d20dc3ef5423d2b4f709"
+  },
+  "redis_restart_proof": {
+    "transport": "upstash-redis-rest-protocol-fixture",
+    "store_run_id": "run_mrs7iuog_o3jh7z",
+    "store_receipt_id": "infr_fdc6ce65e405eebbc996_1e2f48b0bbcfdd78",
+    "store_status": "stored",
+    "restart_performed": true,
+    "hit_run_id": "run_mrs7k18n_cxgbaa",
+    "hit_receipt_id": "infr_fdc6ce65e405eebbc996_3ab5a54611349e9d",
+    "hit_status": "hit",
+    "hit_duration_ms": 53
+  },
+  "trace": {
+    "trace_id": "422fe8158ce6d60ac5ae6bd797abc820",
+    "traceparent": "00-422fe8158ce6d60ac5ae6bd797abc820-13c2eabfc64f388f-01"
+  },
+  "validation": {
+    "focused_tests_passed": 174,
+    "focused_tests_failed": 0,
+    "workspace_build_pages": 62,
+    "npm_audit_vulnerabilities": 0
+  },
+  "secrets_included": false
+}
