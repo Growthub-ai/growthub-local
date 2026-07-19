@@ -420,10 +420,16 @@ export async function executeCustomModelInference({
     const cloudRoute = target === "teacher";
     const thisRouteEstimate = routeEstimate(route, control);
     if (maxCostCents !== null) {
-      // Local routes keep a 50% budget buffer so a quality fallback can still
+      // Local routes keep a budget buffer so a quality fallback can still
       // afford a cloud retry; every route is capped by the remaining budget.
+      // The buffer ratio is governed configuration (economics.localBudgetBufferRatio,
+      // 0.1–1.0), defaulting to 0.5.
+      const configuredBuffer = Number(control.economics?.localBudgetBufferRatio);
+      const localBufferRatio = Number.isFinite(configuredBuffer)
+        ? Math.max(0.1, Math.min(1, configuredBuffer))
+        : 0.5;
       const remainingBudget = maxCostCents - spentEstimateCents;
-      const routeCap = cloudRoute ? remainingBudget : Math.min(remainingBudget, maxCostCents * 0.5);
+      const routeCap = cloudRoute ? remainingBudget : Math.min(remainingBudget, maxCostCents * localBufferRatio);
       if (thisRouteEstimate > routeCap) {
         attempts.push({
           target,

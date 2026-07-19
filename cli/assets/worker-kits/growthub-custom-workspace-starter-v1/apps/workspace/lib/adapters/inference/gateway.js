@@ -30,7 +30,7 @@ import {
   workflowOperationIds,
 } from "./lineage.js";
 import { verifyManifestAgainstIdentity } from "./manifest.js";
-import { createStreamingRedactor, normalizeRedactionPolicy, redactText } from "./redaction.js";
+import { createStreamingRedactor, normalizeRedactionPolicy, redactText, resolveRedactionPreviewKey } from "./redaction.js";
 import {
   buildOtlpSpan,
   createChildTraceContext,
@@ -861,6 +861,7 @@ export async function executeInferenceGateway({
       workflowRef,
       childReceipt: raw.child_receipt || raw.childReceipt || null,
       childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
+      forbiddenReceiptIds: [normalized.priorReceiptId, normalized.parentReceiptId],
     });
     if (ingestion.ok) {
       childLinks.push(ingestion.link);
@@ -967,10 +968,11 @@ export async function executeInferenceGateway({
   // buffered response is redacted with the same compiled pattern set, so the
   // released body, receipt evidence, and cache entry always agree.
   const redactionPolicy = normalizeRedactionPolicy(defaults.redaction);
+  const redactionPreviewKey = redactionPolicy.enabled ? resolveRedactionPreviewKey(env) : "";
   let streamRedactor = null;
   let effectiveOnDelta = onDelta;
   if (redactionPolicy.enabled && typeof onDelta === "function") {
-    streamRedactor = createStreamingRedactor({ patterns: redactionPolicy.patterns });
+    streamRedactor = createStreamingRedactor({ patterns: redactionPolicy.patterns, previewKey: redactionPreviewKey });
     effectiveOnDelta = (event) => {
       const payload = event?.payload;
       const choice = payload?.choices?.[0];
@@ -1200,7 +1202,7 @@ export async function executeInferenceGateway({
     };
   } else if (redactionPolicy.enabled && transportResult?.ok && body && typeof body === "object") {
     const content = body?.choices?.[0]?.message?.content;
-    const redacted = redactText(typeof content === "string" ? content : "", { patterns: redactionPolicy.patterns });
+    const redacted = redactText(typeof content === "string" ? content : "", { patterns: redactionPolicy.patterns, previewKey: redactionPreviewKey });
     redactionEvidence = {
       status: redacted.events.length ? "redacted" : "clean",
       event_count: redacted.events.length,

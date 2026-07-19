@@ -275,6 +275,7 @@ export class InferenceSemanticCache {
     signingKey = null,
     cacheVersion = "",
     poisonRadius = DEFAULT_POISON_RADIUS,
+    maxInvalidationsPerMinute = 60,
   } = {}) {
     this.maxEntries = Math.max(1, Math.min(4096, Math.floor(Number(maxEntries) || DEFAULT_MAX_ENTRIES)));
     this.candidateLimit = Math.max(1, Math.min(128, Math.floor(Number(candidateLimit) || DEFAULT_CANDIDATES)));
@@ -300,6 +301,19 @@ export class InferenceSemanticCache {
     this.poisonMarkers = new Map();
     /** invalidation epochs: "model:<sha>"|"schema:<hash>"|"workflow:<id>" -> integer */
     this.epochs = new Map();
+    /** Invalidation flood guard: bounded token window per process. */
+    this.maxInvalidationsPerMinute = Math.max(1, Math.min(10_000, Math.floor(Number(maxInvalidationsPerMinute) || 60)));
+    this.invalidationWindow = { startMs: 0, count: 0 };
+  }
+
+  consumeInvalidationBudget() {
+    const nowMs = this.now();
+    if (nowMs - this.invalidationWindow.startMs >= 60_000) {
+      this.invalidationWindow = { startMs: nowMs, count: 0 };
+    }
+    if (this.invalidationWindow.count >= this.maxInvalidationsPerMinute) return false;
+    this.invalidationWindow.count += 1;
+    return true;
   }
 
   signEntry(entry) {
@@ -688,6 +702,19 @@ export class InferenceSemanticCache {
     const normalizedReason = ["MODEL_UPDATE", "SCHEMA_CHANGE", "FEEDBACK_CORRECTION", "SECURITY"].includes(String(reason))
       ? String(reason)
       : "SECURITY";
+    // Flood guard: a runaway or hostile invalidation loop cannot stampede the
+    // cache. Rejected calls mutate nothing and report the limit explicitly.
+    if (!this.consumeInvalidationBudget()) {
+      return {
+        ok: false,
+        reason: normalizedReason,
+        rateLimited: true,
+        error: `invalidation rate limit exceeded (${this.maxInvalidationsPerMinute}/minute)`,
+        poisonedExactKeys: [],
+        poisonMarkersAdded: 0,
+        epochsBumped: [],
+      };
+    }
     const nowMs = this.now();
     const ttl = Math.max(60, Math.min(7 * 86_400, Math.floor(Number(ttlSeconds) || DEFAULT_POISON_TTL_SECONDS)));
     const poisonedExactKeys = [];

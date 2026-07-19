@@ -34,7 +34,9 @@ A parent workflow's receipt no longer ends at "HTTP 200 from the child".
   ingested rejects the parent continuation with `child_receipt_missing` and
   `lineage.status: "incomplete"`; no transport call is made. A failed child is
   ingested as `child_status: "FAILED"` with its exact first error — recorded,
-  never orphaned.
+  never orphaned. A child receipt that closes a cycle onto the request's own
+  receipt ancestry (directly or through its recorded children) is rejected
+  with `child_receipt_cycle` instead of minting a self-referential edge.
 - Multi-step custom-model workflow variants (`recursive-learning`, `agentic`,
   `eval-vs-base`) chain each step as a `CHILD_WORKFLOW` span of the previous
   step's receipt and return a workflow-level `receiptDag`
@@ -69,6 +71,14 @@ Every completion-cache entry now carries a signed envelope
   `SECURITY` and scopes: `exact_key` (POISONED tombstone with provenance),
   `model_sha256` / `schema_hash` / `workflow_id` (epoch bump — every older
   envelope in scope fails closed), and a semantic bucket for corrections.
+  Invalidation is rate-limited (bounded per-minute window, default 60); a
+  flooded call mutates nothing and reports `rateLimited: true`, so a hostile
+  or runaway loop cannot stampede the cache.
+- Key management: set `GROWTHUB_INFERENCE_CACHE_HMAC_KEY` (operator-owned) in
+  production. The credential-derived fallback binds signatures to the Redis
+  token — anyone holding that token can already write cache entries, so the
+  derived key adds tamper evidence but not a second trust domain; the
+  operator key does.
 - **Feedback-driven poisoning** (`poisonCacheFromFeedback`): a thumbs-down
   with corrected ground truth resolves the original receipt's exact cache key
   and identity-scoped `semantic_bucket`, tombstones the key
@@ -85,8 +95,9 @@ The mothership router (`lib/custom-model-inference.js`) applies them across
 its governed route tiers:
 
 1. Cache first, as before — a replay spends nothing.
-2. A local route may run only when its token-count estimate fits within a 50%
-   budget buffer, reserving headroom for a quality fallback. Cost estimates
+2. A local route may run only when its token-count estimate fits within a
+   governed budget buffer (`economics.localBudgetBufferRatio`, 0.1–1.0,
+   default 0.5), reserving headroom for a quality fallback. Cost estimates
    come from each route's declared `costModel`
    (`inputCentsPerMTokens`/`outputCentsPerMTokens`); a route without a cost
    model estimates zero and cannot be budget-gated, which stays visible in
@@ -117,8 +128,11 @@ stream and the client stream:
   across chunks, and streaming output is byte-identical to one-shot redaction
   of the full text.
 - Matches are replaced with `[REDACTED]`. Each redaction appends a receipt
-  event `{ type, start_char_offset, length, redacted_preview_hash }` — the
-  raw match survives only as a SHA-256 hash.
+  event `{ type, start_char_offset, length, redacted_preview_hash }`. The
+  preview hash is **always keyed** (HMAC-SHA256 under the workspace signing
+  key, else the operator cache HMAC key, else a per-process ephemeral key) —
+  an unkeyed hash of low-entropy PII such as a 9-digit SSN would be trivially
+  reversible by enumeration once a receipt is shared.
 - When any redaction fires, the gateway caches **only the redacted
   response**; the envelope records `redacted: true` plus the event count, and
   cache replays report the same redaction evidence.

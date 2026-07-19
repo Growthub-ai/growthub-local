@@ -639,6 +639,92 @@ test("publish gate blocks when the live registry drifts from the tested manifest
   assert.equal(driftedVerdict.mismatches[0].diffs.some((diff) => diff.field === "composite_sha256"), true);
 });
 
+test("redaction preview hashes are keyed — no brute-forceable plain hash of low-entropy PII", () => {
+  const ssn = "123-45-6789";
+  const keyedA = redactText(`SSN ${ssn}`, { previewKey: "workspace-key-a" });
+  const keyedB = redactText(`SSN ${ssn}`, { previewKey: "workspace-key-b" });
+  assert.equal(keyedA.events.length, 1);
+  assert.notEqual(keyedA.events[0].redacted_preview_hash, sha256Hex(ssn), "an unkeyed sha256 of a 9-digit SSN is enumerable and must never be emitted");
+  assert.notEqual(keyedA.events[0].redacted_preview_hash, keyedB.events[0].redacted_preview_hash, "different workspace keys yield uncorrelatable hashes");
+  assert.equal(
+    keyedA.events[0].redacted_preview_hash,
+    redactText(`card? no: ${ssn}`, { previewKey: "workspace-key-a" }).events[0].redacted_preview_hash,
+    "the same key correlates the same value within a workspace",
+  );
+});
+
+test("a child receipt that closes a cycle onto its own lineage is rejected", () => {
+  const selfReferential = {
+    kind: "growthub-inference-verification-receipt-v1",
+    receipt_id: "infr_parent_awaiting_1",
+    status: "verified",
+    errors: [],
+  };
+  const direct = ingestChildReceipt({ toolCallId: "call-1", childReceipt: selfReferential, forbiddenReceiptIds: ["infr_parent_awaiting_1"] });
+  assert.equal(direct.ok, false);
+  assert.equal(direct.error.code, "child_receipt_cycle");
+  const indirect = ingestChildReceipt({
+    toolCallId: "call-1",
+    childReceipt: {
+      kind: "growthub-inference-verification-receipt-v1",
+      receipt_id: "infr_grandchild",
+      status: "verified",
+      errors: [],
+      lineage: { span_kind: "CHILD_WORKFLOW", parent_receipt_id: "x", children: [{ child_receipt_id: "infr_parent_awaiting_1", child_receipt_sha256: "a".repeat(64), child_status: "COMPLETED" }], lineage_sha256: null, status: "complete" },
+    },
+    forbiddenReceiptIds: ["infr_parent_awaiting_1"],
+  });
+  assert.equal(indirect.ok, false);
+  assert.equal(indirect.error.code, "child_receipt_cycle");
+});
+
+test("cache invalidation is rate-limited against stampedes", async () => {
+  let nowMs = 1_721_280_000_000;
+  const cache = new InferenceSemanticCache({ now: () => nowMs, maxInvalidationsPerMinute: 3 });
+  for (let index = 0; index < 3; index += 1) {
+    const verdict = await cache.invalidate({ reason: "SECURITY", scope: { exact_key: `key-${index}` } });
+    assert.equal(verdict.ok, true);
+  }
+  const flooded = await cache.invalidate({ reason: "SECURITY", scope: { exact_key: "key-flood" } });
+  assert.equal(flooded.ok, false);
+  assert.equal(flooded.rateLimited, true);
+  assert.deepEqual(flooded.poisonedExactKeys, [], "a rate-limited call mutates nothing");
+  nowMs += 61_000;
+  const recovered = await cache.invalidate({ reason: "SECURITY", scope: { exact_key: "key-later" } });
+  assert.equal(recovered.ok, true, "the window resets after a minute");
+});
+
+test("local budget buffer ratio is governed configuration", async () => {
+  const fixture = economicFixture({ teacherCost: { inputCentsPerMTokens: 0, outputCentsPerMTokens: 0 } });
+  // Give the LOCAL route a real cost model and a buffer ratio that admits it
+  // at 90% of budget; the default 50% buffer would have skipped it.
+  fixture.policyRow.metadata.mothershipProxy.routes[0].costModel = { inputCentsPerMTokens: 1_000_000, outputCentsPerMTokens: 0 };
+  fixture.policyRow.metadata.mothershipProxy.inferenceControlPlane.economics = { localBudgetBufferRatio: 0.9 };
+  const admitted = await executeCustomModelInference({
+    workspaceConfig: { dataModel: { objects: [] } },
+    policyRow: fixture.policyRow,
+    inputPayload: { prompt: "Cheap enough under a wide buffer.", inference: { max_cost_cents: 10 } },
+    fetchImpl: fixture.fetchImpl,
+    runId: "run_buffer_admit",
+    networkPolicy: fixture.networkPolicy,
+  });
+  assert.equal(admitted.ok, true, JSON.stringify(admitted.error));
+  assert.equal(admitted.route.target, "local-base");
+
+  fixture.policyRow.metadata.mothershipProxy.inferenceControlPlane.economics = { localBudgetBufferRatio: 0.1 };
+  const skipped = await executeCustomModelInference({
+    workspaceConfig: { dataModel: { objects: [] } },
+    policyRow: fixture.policyRow,
+    inputPayload: { prompt: "Too costly under a tight buffer.", inference: { max_cost_cents: 10 } },
+    fetchImpl: fixture.fetchImpl,
+    runId: "run_buffer_skip",
+    networkPolicy: fixture.networkPolicy,
+  });
+  const localSkip = skipped.attempts.find((attempt) => attempt.target === "local-base" && attempt.status === "skipped");
+  assert.ok(localSkip, "a tight governed buffer skips the local route");
+  assert.match(localSkip.reason, /buffered local budget/);
+});
+
 test("multi-step workflow chains a Merkle receipt DAG across its steps", async () => {
   const fixture = economicFixture({ lowConfidence: false });
   const result = await executeCustomModelWorkflow({

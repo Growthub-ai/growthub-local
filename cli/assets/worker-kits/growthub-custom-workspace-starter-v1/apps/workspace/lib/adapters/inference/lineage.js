@@ -72,10 +72,20 @@ export function workflowOperationIds(rawSpec) {
  * to the DAG edge status; a rejected/failed child is COMPLETED evidence of a
  * FAILED child, carrying the child's exact first error.
  */
-export function ingestChildReceipt({ toolCallId = "", workflowRef = "", childReceipt = null, childReceiptSha256 = "" } = {}) {
+export function ingestChildReceipt({ toolCallId = "", workflowRef = "", childReceipt = null, childReceiptSha256 = "", forbiddenReceiptIds = [] } = {}) {
   if (childReceipt && typeof childReceipt === "object") {
     if (childReceipt.kind !== "growthub-inference-verification-receipt-v1" || !childReceipt.receipt_id) {
       return { ok: false, error: { code: "child_receipt_invalid", message: "child_receipt is not a growthub inference verification receipt" } };
+    }
+    // Cycle guard: a child receipt may not BE this parent's own receipt, nor
+    // any receipt already on this continuation's ancestry (parent/prior).
+    // A workflow that loops back onto its own lineage is rejected instead of
+    // minting a self-referential DAG edge.
+    const forbidden = new Set((Array.isArray(forbiddenReceiptIds) ? forbiddenReceiptIds : []).map(String).filter(Boolean));
+    const childId = String(childReceipt.receipt_id);
+    const childAncestors = [childId, ...(Array.isArray(childReceipt.lineage?.children) ? childReceipt.lineage.children.map((link) => String(link?.child_receipt_id || "")) : [])];
+    if (childAncestors.some((id) => id && forbidden.has(id))) {
+      return { ok: false, error: { code: "child_receipt_cycle", message: `child receipt ${childId} closes a cycle onto this request's own receipt lineage` } };
     }
     const failed = childReceipt.status === "rejected" || childReceipt.status === "failed";
     const firstError = Array.isArray(childReceipt.errors) && childReceipt.errors.length

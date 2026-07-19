@@ -10,7 +10,27 @@
  * gateway caches only the redacted response.
  */
 
+import { createHmac, randomBytes } from "node:crypto";
 import { sha256Hex } from "./contracts.js";
+
+/**
+ * Redaction preview hashes are ALWAYS keyed (HMAC-SHA256). An unkeyed hash of
+ * low-entropy PII (a 9-digit SSN, a 10-digit phone number) is trivially
+ * reversible by enumeration once a receipt is shared. Key precedence:
+ * operator workspace signing key, then the operator cache HMAC key, then a
+ * per-process ephemeral key (safe default; correlation is then process-local).
+ */
+let processPreviewKey = null;
+export function resolveRedactionPreviewKey(env = process.env) {
+  const explicit = String(env?.GROWTHUB_WORKSPACE_SIGNING_KEY || env?.GROWTHUB_INFERENCE_CACHE_HMAC_KEY || "").trim();
+  if (explicit) return `growthub-redaction-preview:${explicit}`;
+  if (!processPreviewKey) processPreviewKey = randomBytes(32).toString("hex");
+  return processPreviewKey;
+}
+
+function previewHash(key, raw) {
+  return createHmac("sha256", key).update(String(raw)).digest("hex");
+}
 
 /**
  * Hold-back window in characters. Must be at least as long as the longest
@@ -119,8 +139,9 @@ function collectMatches(patterns, text) {
  * redacted text; `flush()` drains the remaining carry. Offsets in events are
  * absolute character offsets in the unredacted source stream.
  */
-export function createStreamingRedactor({ patterns: requestedPatterns, holdbackChars = DEFAULT_HOLDBACK_CHARS } = {}) {
+export function createStreamingRedactor({ patterns: requestedPatterns, holdbackChars = DEFAULT_HOLDBACK_CHARS, previewKey = "" } = {}) {
   const { patterns, patternsSha256 } = compileRedactionPatterns(requestedPatterns);
+  const hashKey = String(previewKey || "") || resolveRedactionPreviewKey();
   const holdback = Math.max(32, Math.min(1024, Math.floor(Number(holdbackChars) || DEFAULT_HOLDBACK_CHARS)));
   let carry = "";
   let sourceBase = 0;
@@ -158,7 +179,7 @@ export function createStreamingRedactor({ patterns: requestedPatterns, holdbackC
         type: match.type,
         start_char_offset: sourceBase + match.start,
         length: match.raw.length,
-        redacted_preview_hash: sha256Hex(match.raw),
+        redacted_preview_hash: previewHash(hashKey, match.raw),
       });
       cursor = match.end;
     }
@@ -188,8 +209,8 @@ export function createStreamingRedactor({ patterns: requestedPatterns, holdbackC
 }
 
 /** One-shot redaction over a complete string with the same pattern set. */
-export function redactText(text, { patterns } = {}) {
-  const redactor = createStreamingRedactor({ patterns, holdbackChars: 32 });
+export function redactText(text, { patterns, previewKey = "" } = {}) {
+  const redactor = createStreamingRedactor({ patterns, holdbackChars: 32, previewKey });
   const released = redactor.process(String(text ?? "")) + redactor.flush();
   return { text: released, events: redactor.events(), patternsSha256: redactor.patternsSha256 };
 }
