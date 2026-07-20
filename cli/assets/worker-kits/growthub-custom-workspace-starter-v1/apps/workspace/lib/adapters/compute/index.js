@@ -15,6 +15,7 @@
 import "./default-local-machine.js";
 import "./runpod-compute.js";
 import "./modal-compute.js";
+import "./ray-cluster-compute.js";
 
 async function ensureComputeAdaptersLoaded() {
   // Static imports above registered everything; the async shape mirrors the
