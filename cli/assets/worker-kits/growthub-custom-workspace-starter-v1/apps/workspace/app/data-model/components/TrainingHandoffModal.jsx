@@ -51,6 +51,11 @@ import {
   rebindCustomModelServingIdentity,
 } from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
+import { deriveComputeCustomerState, computeAskForPolicy } from "../../../lib/compute-customer-state.js";
+import { deriveCapacityPlan } from "../../../lib/compute-capacity-profiles.js";
+import { buildAdaptiveStudentPlan } from "../../../lib/distillation-student-plan.js";
+import { parseReceiptComputeBlock } from "../../../lib/compute-execution.js";
+import ComputeRealizationPanel from "./ComputeRealizationPanel.jsx";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
@@ -515,6 +520,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [excluded, setExcluded] = useState(() => new Set());
   const [targetId, setTargetId] = useState(FINE_TUNE_TARGETS[0].id);
   const [profileId, setProfileId] = useState(TRAINING_RUNTIME_PROFILES[0].id);
+  // Governed compute policy (Sprint 10). "local" preserves the existing
+  // local pipeline byte-for-byte; other policies stamp a compute ask on the
+  // receipt so the run resolves through the deterministic compute resolver.
+  const [computePolicy, setComputePolicy] = useState("local");
   const [tunedTag, setTunedTag] = useState("");
   const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [trainPhase, setTrainPhase] = useState("idle"); // idle|starting|running
@@ -707,7 +716,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Artifact root = the user's chosen training folder (workspace fallback when
   // none picked yet) + the tuned tag — the runner mkdir -p's it on preflight.
   const artifactRootPath = chosenFolder?.path ? String(chosenFolder.path).replace(/\/+$/, "") : "./artifacts";
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
+  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}`, compute: computeAskForPolicy(computePolicy) });
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -764,6 +773,28 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Wait-state for the control plane: stage/status + BAR all come from ONE
   // deriver over the governed receipt. barPct is the single progress truth.
   const liveWaitState = deriveTrainingWaitState(liveRunRow, Date.now());
+  // Governed compute customer state (Sprint 10): the capacity plan from the
+  // SAME preflight evidence the probes stamp + the live receipt's compute
+  // block — one deriver feeds this modal AND the /custom-models cockpit, so
+  // no surface can invent a compute state the receipts don't prove.
+  const computePreflight = (liveRunRow?.preflight && typeof liveRunRow.preflight === "object" ? liveRunRow.preflight : null)
+    || (readinessProbe?.preflight && typeof readinessProbe.preflight === "object" ? readinessProbe.preflight : null);
+  const computeCustomerState = deriveComputeCustomerState({
+    capacityPlan: deriveCapacityPlan({
+      plan: buildAdaptiveStudentPlan({ preflight: computePreflight, requestedBaseModel: baseModel }),
+      preflight: computePreflight,
+      workloadKind: "fine-tune",
+    }),
+    computeBlock: parseReceiptComputeBlock(liveRunRow),
+    providers: [],
+    benchmarkWins: (() => {
+      let d = liveRunRow?.distillation;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch { d = null; } }
+      return d?.benchmarkWins || null;
+    })(),
+    runtimeStage: liveRuntime.runState?.stage || "",
+    policy: computePolicy,
+  });
   const runnerWaiting = trainPhase === "running"
     && Number(liveWaitState.barPct || 0) === 0
     && !liveRunRow?.progress?.stageId
@@ -909,6 +940,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       const preparedReceipt = buildTrainingRunReceipt({
         modelTrainingRowId: SLUG, datasetExportId: exportId, baseModel,
         trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared",
+        // The governed compute ask (null for the pure-local policy): the
+        // sandbox-run seam resolves it deterministically at execution time.
+        compute: runConfig.compute,
       });
       // Atomic proof-chain links on the API Registry row (§7/§11): the row
       // references the model-training row, the training run, and the tuned tag
@@ -1209,6 +1243,9 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       const runningReceipt = buildTrainingRunReceipt({
         trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
+        // Carry the governed compute ask onto the RUNNING receipt so the
+        // sandbox-run seam resolves placement for THIS run id.
+        compute: runConfig.compute,
       });
       const activeResult = { ...result, trainingRunId, exportId };
       setResult(activeResult);
@@ -1866,6 +1903,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 );
               })()}
 
+              {/* Governed compute realization (Sprint 10): where this run may
+                  execute — policy, required capacity, selected realization,
+                  budget/checkpoint/release state. Rendered ONLY from the
+                  shared deriver over receipts + machine evidence. */}
+              <ComputeRealizationPanel
+                state={computeCustomerState}
+                policy={computePolicy}
+                onPolicyChange={setComputePolicy}
+                showPolicyPicker
+              />
+
               <details className="training-advanced" data-handoff-runconfig="">
                 <summary>Advanced · exact command preview</summary>
                 {runConfig.commands.length ? runConfig.commands.map((c, i) => (
@@ -1989,6 +2037,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <span className="dm-cockpit-field"><b>connection</b>{result.integrationId}</span>
                 <span className="dm-cockpit-field"><b>expects</b>{result.modelTag}</span>
               </div>
+
+              {/* Compute realization state — read-only here; every visible
+                  value derives from the SAME receipts the runtime writes. */}
+              {computePolicy !== "local" || computeCustomerState.stateId !== "local-eligible" ? (
+                <ComputeRealizationPanel state={computeCustomerState} policy={computePolicy} />
+              ) : null}
 
               {runConfig.commands.length ? (
                 <details className="training-advanced" data-train-command="">
