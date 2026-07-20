@@ -108,6 +108,7 @@ import {
 } from "@/lib/distillation-gateway";
 import { trainingRunSourceKey } from "@/lib/training-run-receipts";
 import { resolveTrustedChildReceipt, resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
+import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
@@ -857,20 +858,17 @@ async function executeSandboxRun(body, {
         tracestate: String(tracestate || ""),
         appScope: String(appScope || ""),
         inferenceContinuation,
-        resolveInferenceContinuation: resolvePersistedInferenceContinuation,
-        // Published manifests bound to the live workflow version; the
-        // gateway rejects a pool serving a different composite SHA. On a
-        // LIVE (non-draft) run, a control-plane integration without its
-        // published signed manifest is refused outright.
-        inferenceManifests: Array.isArray(rowForRun.inferenceManifests) ? rowForRun.inferenceManifests : [],
-        inferenceManifestsRequired: !useDraft && String(rowForRun.lifecycleStatus || "").trim() === "live",
-        // Server-owned child receipt resolution: continuations carry only an
-        // opaque child receipt id; the canonical receipt is read from the
-        // persisted invocation stream and the caller-shaped body discarded.
-        // The runner injects the per-node policy/model identity.
-        resolveChildReceipt: (args) => resolvePersistedChildReceipt({
-          ...args,
-          appScope: String(appScope || "workspace-wide")
+        // Live-evidence enforcement (manifests required, liveExecution,
+        // server-owned continuation + child-receipt resolvers with the
+        // server-derived app scope) comes from ONE seam shared with the
+        // certification suite, so the wiring this route activates is
+        // executable test surface: lib/sandbox-execution-context.js.
+        ...buildInferenceTrustContext({
+          row: rowForRun,
+          useDraft,
+          appScope,
+          resolveContinuation: resolvePersistedInferenceContinuation,
+          resolveChildReceipt: resolvePersistedChildReceipt,
         }),
         signal,
         onEvent: emit

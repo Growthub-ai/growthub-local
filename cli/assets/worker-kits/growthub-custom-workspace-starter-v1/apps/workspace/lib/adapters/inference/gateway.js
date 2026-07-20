@@ -850,12 +850,27 @@ export async function executeInferenceGateway({
   // Bare hashes are never accepted. Each child receipt must declare THIS
   // continuation's prior receipt as its parent and share its tenant scope,
   // and one child receipt cannot satisfy two tool calls.
+  //
+  // Live execution (`defaults.liveExecution`, a server-owned mode flag that
+  // never derives from request input) hardens this from convention to
+  // requirement: the resolver is MANDATORY for every governed child call
+  // (`child_receipt_resolver_required`), and the tenant scope must be a
+  // concrete server-owned value — the "workspace-local" placeholder and
+  // caller-supplied request metadata are not tenant isolation
+  // (`child_receipt_scope_unbound`). Without the resolver, ingestion in a
+  // draft/development lane records `evidence_basis: "caller-draft"` on the
+  // link so a caller-shaped body is never mistaken for canonical evidence.
   const workflowOps = workflowOperationIds(normalized.openapi);
   const childLinks = [];
   const childViolations = [];
   const childLinkByCallId = new Map();
   const seenChildReceiptIds = new Set();
-  const parentScopeSha256 = sha256Hex(String(defaults.tenantScope || normalized.metadata?.workspace_id || "workspace-local"));
+  const liveEvidence = defaults.liveExecution === true;
+  const serverTenantScope = String(defaults.tenantScope || "").trim();
+  const tenantScopeBound = Boolean(serverTenantScope) && serverTenantScope !== "workspace-local";
+  const parentScopeSha256 = liveEvidence
+    ? (tenantScopeBound ? sha256Hex(serverTenantScope) : "")
+    : sha256Hex(String(defaults.tenantScope || normalized.metadata?.workspace_id || "workspace-local"));
   const childReceiptResolver = typeof defaults.childReceiptResolver === "function" ? defaults.childReceiptResolver : null;
   const rawToolResultById = new Map(
     (Array.isArray(continuationRequest.toolResults) ? continuationRequest.toolResults : [])
@@ -869,8 +884,21 @@ export async function executeInferenceGateway({
     const suppliedChild = callerReceipt || raw.child_receipt_sha256 || raw.childReceiptSha256 || raw.child_receipt_id || raw.childReceiptId;
     if (!requiresChildReceipt && !suppliedChild) continue;
     let childReceipt = callerReceipt;
-    let resolverFailure = "";
-    if (childReceiptResolver) {
+    let trustFailure = null;
+    if (liveEvidence && !childReceiptResolver) {
+      // Fail closed BEFORE any ingestion: without the server-owned resolver
+      // there is no canonical evidence source, and a caller-shaped body or
+      // hash must never stand in for one on a live workflow.
+      trustFailure = {
+        code: "child_receipt_resolver_required",
+        message: "live execution requires the server-owned child receipt resolver; caller-supplied receipt bodies and hashes are not evidence",
+      };
+    } else if (liveEvidence && !tenantScopeBound) {
+      trustFailure = {
+        code: "child_receipt_scope_unbound",
+        message: "live execution requires a concrete server-owned tenant scope; the workspace-local default is not tenant isolation",
+      };
+    } else if (childReceiptResolver) {
       const childReceiptId = String(raw.child_receipt_id || raw.childReceiptId || callerReceipt?.receipt_id || "");
       childReceipt = null;
       if (childReceiptId) {
@@ -880,16 +908,16 @@ export async function executeInferenceGateway({
             expectedParentReceiptId: normalized.priorReceiptId,
           });
           if (resolution?.ok && resolution.receipt) childReceipt = resolution.receipt;
-          else resolverFailure = String(resolution?.reason || "child receipt could not be resolved from server-owned records");
+          else trustFailure = { code: "child_receipt_missing", message: String(resolution?.reason || "child receipt could not be resolved from server-owned records") };
         } catch (error) {
-          resolverFailure = String(error?.message || "child receipt resolution failed");
+          trustFailure = { code: "child_receipt_missing", message: String(error?.message || "child receipt resolution failed") };
         }
       } else {
-        resolverFailure = "a child workflow tool result requires child_receipt_id for server-side resolution";
+        trustFailure = { code: "child_receipt_missing", message: "a child workflow tool result requires child_receipt_id for server-side resolution" };
       }
     }
-    const ingestion = resolverFailure
-      ? { ok: false, error: { code: "child_receipt_missing", message: resolverFailure } }
+    const ingestion = trustFailure
+      ? { ok: false, error: trustFailure }
       : ingestChildReceipt({
           toolCallId: String(item.toolCallId || ""),
           workflowRef,
@@ -897,6 +925,8 @@ export async function executeInferenceGateway({
           childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
           expectedParentReceiptId: normalized.priorReceiptId,
           expectedScopeSha256: parentScopeSha256,
+          requireScopeBinding: liveEvidence,
+          evidenceBasis: childReceiptResolver ? "server-resolved" : "caller-draft",
           // The full known ancestry, not just the immediate parent: the
           // runner threads every upstream receipt id of this workflow chain
           // through defaults so a multi-hop loop is refused at depth too.
@@ -919,8 +949,11 @@ export async function executeInferenceGateway({
     const link = missingChildLink({ toolCallId: String(item.toolCallId || ""), workflowRef, error: ingestion.error });
     childLinks.push(link);
     childLinkByCallId.set(String(item.toolCallId || ""), link);
+    // Each trust-boundary failure keeps its own stable code — an operator
+    // must be able to distinguish "resolver not wired" from "scope unbound"
+    // from "receipt genuinely missing" without parsing prose.
     childViolations.push({
-      code: "child_receipt_missing",
+      code: String(ingestion.error?.code || "child_receipt_missing"),
       message: `tool call ${item.toolCallId} targeted a governed workflow but no verified child receipt was ingested: ${ingestion.error.message}`,
     });
   }
@@ -951,7 +984,7 @@ export async function executeInferenceGateway({
   }
   if (!childReceiptsOk) {
     errors.push({
-      code: "child_receipt_missing",
+      code: String(childViolations[0]?.code || "child_receipt_missing"),
       message: childViolations.map((item) => item.message).join("; "),
       retryable: false,
     });
@@ -1503,8 +1536,19 @@ export async function executeInferenceGateway({
       envelope_signature_state: cacheLookup.hit
         ? "verified"
         : cacheLookup.integrity === "unsigned" ? "unsigned"
-          : cacheLookup.integrity ? "invalid"
-            : cacheStoreResult?.signatureState === "signed" ? "verified" : "not_checked",
+          // remote_unverified means the signature itself passed but shared
+          // invalidation state was unreachable — the entry was refused on
+          // uncertainty, not because its envelope was invalid.
+          : cacheLookup.integrity === "remote_unverified" ? "not_checked"
+            : cacheLookup.integrity ? "invalid"
+              : cacheStoreResult?.signatureState === "signed" ? "verified" : "not_checked",
+      // Operator-facing integrity verdict for a refused entry (tampered,
+      // rotated, epoch-invalidated, or remote-unverifiable), with its
+      // bounded reason. Absent when nothing was refused.
+      ...(cacheLookup.integrity ? {
+        integrity_state: cacheLookup.integrity,
+        ...(cacheLookup.integrityReason ? { integrity_reason: String(cacheLookup.integrityReason).slice(0, 512) } : {}),
+      } : {}),
       cache_version: cacheBackend.cacheVersion || null,
       // Identity-scoped semantic bucket; feedback poisoning targets exactly
       // this neighborhood. Both components are hashes, never business data.

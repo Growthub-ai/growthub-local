@@ -8,7 +8,10 @@
  * Pure functions; the only dependency is the orchestration-graph parser.
  */
 
-import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
+// Relative import (not the "@/lib" alias) so this module — and the publish
+// promotion seam built on it — stays importable by the node --test
+// certification lane, which has no Next.js alias resolution.
+import { parseOrchestrationGraph } from "./orchestration-graph.js";
 
 function nodeSandboxRecordRef(objectId, rowName, nodeId) {
   return {

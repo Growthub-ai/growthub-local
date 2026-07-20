@@ -355,6 +355,7 @@ export async function executeCustomModelInference({
   timeoutMs = 120_000,
   inferenceManifests = [],
   inferenceManifestsRequired = false,
+  liveExecution = false,
   ancestorReceiptIds = [],
   childReceiptResolver = null,
 } = {}) {
@@ -455,9 +456,8 @@ export async function executeCustomModelInference({
       });
       continue;
     }
-    const thisRouteEstimate = maxCostCents !== null && cloudRoute && pricing.status !== "priced"
-      ? assumedCeiling
-      : routeEstimate(route, control);
+    const usedAssumedCeiling = maxCostCents !== null && cloudRoute && pricing.status !== "priced";
+    const thisRouteEstimate = usedAssumedCeiling ? assumedCeiling : routeEstimate(route, control);
     if (maxCostCents !== null) {
       // Local routes keep a budget buffer so a quality fallback can still
       // afford a cloud retry; every route is capped by the remaining budget.
@@ -559,6 +559,10 @@ export async function executeCustomModelInference({
         redaction: control.redaction,
         ancestorReceiptIds: (Array.isArray(ancestorReceiptIds) ? ancestorReceiptIds : []).map(String).filter(Boolean),
         ...(typeof childReceiptResolver === "function" ? { childReceiptResolver } : {}),
+        // Server-owned live-mode flag: on a live published run the gateway
+        // requires the child receipt resolver and a concrete tenant scope
+        // for every governed child call. Never derived from request input.
+        ...(liveExecution ? { liveExecution: true } : {}),
         ...(inferenceManifestsRequired && rowDeclaresControlPlane ? { manifestRequired: true } : {}),
         ...(signedManifest ? { manifest: signedManifest } : {}),
         economics: {
@@ -566,6 +570,12 @@ export async function executeCustomModelInference({
           costModel: routeCostModel(route, control) || {},
           localCostEstimateCents: localRoutes.length ? routeEstimate(localRoutes[0], control) : null,
           cloudCostEstimateCents: cloudRoutes.length ? routeEstimate(cloudRoutes[0], control) : null,
+          // Honest pricing basis: when an operator ceiling stood in for
+          // unknown route pricing, the receipt says so — an assumed
+          // conservative cost is never presented as a computed estimate.
+          ...(usedAssumedCeiling ? {
+            reasonDetail: `route pricing is ${pricing.status}; governed assumedRouteCostCents ${assumedCeiling} stands in as a conservative ceiling`,
+          } : {}),
         },
       },
       fetchImpl,
@@ -792,7 +802,13 @@ function numericScore(body) {
   return 0;
 }
 
-function combineExecutions(executions, response, extra = {}) {
+/**
+ * Workflow assembly boundary: fold step executions into one envelope with the
+ * global receipt-DAG verdict. Exported because it IS the trust decision the
+ * multi-step variants ship on — the certification suite drives it directly
+ * with adversarial (cyclic / oversized) receipt graphs.
+ */
+export function combineExecutions(executions, response, extra = {}) {
   const successful = executions.filter((entry) => entry?.ok);
   // Workflow-level receipt DAG: every step receipt is hashed and its
   // parent linkage recorded, so the multi-step workflow's evidence is a
@@ -825,10 +841,15 @@ function combineExecutions(executions, response, extra = {}) {
   // A cyclic receipt graph is a terminal verification failure, not a flag:
   // "detected" must mean "refused before trust". The envelope fails even
   // when every individual execution succeeded, and the cycle is the error.
+  // A graph too large to verify is refused the same way — an unverifiable
+  // DAG is not trusted evidence either.
   const dagValid = cycleVerdict.ok;
   return {
     ok: successful.length === executions.length && dagValid,
-    ...(dagValid ? {} : {
+    ...(dagValid ? {} : cycleVerdict.boundsExceeded ? {
+      error: `receipt_graph_unverifiable: ${cycleVerdict.reason}; this run is not trustable evidence`,
+      errorCode: "receipt_graph_unverifiable",
+    } : {
       error: `receipt_lineage_cycle: the workflow receipt graph contains a cycle (${cycleVerdict.cyclePath.join(" -> ")}); this run is not trustable evidence`,
       errorCode: "receipt_lineage_cycle",
     }),
@@ -873,6 +894,7 @@ export async function executeCustomModelWorkflow({
   timeoutMs = 120_000,
   inferenceManifests = [],
   inferenceManifestsRequired = false,
+  liveExecution = false,
   childReceiptResolver = null,
 } = {}) {
   const baseArgs = {
@@ -894,6 +916,7 @@ export async function executeCustomModelWorkflow({
     timeoutMs,
     inferenceManifests,
     inferenceManifestsRequired,
+    liveExecution,
     childReceiptResolver,
   };
   const prompt = promptFromInput(inputPayload);

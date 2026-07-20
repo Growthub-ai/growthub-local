@@ -88,6 +88,8 @@ export function ingestChildReceipt({
   forbiddenReceiptIds = [],
   expectedParentReceiptId = "",
   expectedScopeSha256 = "",
+  requireScopeBinding = false,
+  evidenceBasis = "",
 } = {}) {
   if (!childReceipt || typeof childReceipt !== "object") {
     const sha = String(childReceiptSha256 || "").toLowerCase();
@@ -121,8 +123,23 @@ export function ingestChildReceipt({
   }
   // Tenant/scope binding: both receipts hash the same server-owned tenant
   // scope into their cache evidence; a cross-tenant receipt cannot bind.
+  // Under `requireScopeBinding` (live execution) the binding must be
+  // PROVABLE: a continuation without a concrete server-owned scope, or a
+  // child receipt that carries no scope hash, fails closed — an absent
+  // scope is not isolation.
   const wantedScope = String(expectedScopeSha256 || "").trim();
   const childScope = String(childReceipt.cache?.cache_scope_sha256 || "").trim();
+  if (requireScopeBinding && (!wantedScope || !childScope)) {
+    return {
+      ok: false,
+      error: {
+        code: "child_receipt_scope_unbound",
+        message: !wantedScope
+          ? `child receipt ${childId} cannot be scope-verified: this continuation has no concrete server-owned tenant scope`
+          : `child receipt ${childId} carries no cache_scope_sha256; live execution cannot prove tenant-scope binding`,
+      },
+    };
+  }
   if (wantedScope && childScope && wantedScope !== childScope) {
     return { ok: false, error: { code: "child_receipt_scope_mismatch", message: `child receipt ${childId} was produced under a different tenant/workspace scope` } };
   }
@@ -145,6 +162,12 @@ export function ingestChildReceipt({
       child_status: failed ? "FAILED" : "COMPLETED",
       ...(toolCallId ? { tool_call_id: toolCallId } : {}),
       ...(workflowRef ? { workflow_ref: workflowRef } : {}),
+      // Honest provenance of the receipt body itself: "server-resolved"
+      // means the canonical receipt came from server-owned persisted records
+      // (the only basis live execution accepts); "caller-draft" means a
+      // caller-supplied body was ingested by a development/draft lane and is
+      // NOT trusted production evidence.
+      ...(evidenceBasis ? { evidence_basis: String(evidenceBasis) } : {}),
       ...(failed ? { error: firstError } : {}),
     },
   };
@@ -183,52 +206,99 @@ export function buildReceiptLineage({ spanKind = "ROOT", parentReceiptId = "", c
   };
 }
 
+/** Explicit input bounds for the transitive cycle check. A graph outside
+ * these bounds is refused (fail closed), never partially verified: silently
+ * truncating ids or edges could merge two distinct receipts and produce a
+ * false verdict in either direction. */
+export const LINEAGE_GRAPH_MAX_NODES = 5_000;
+export const LINEAGE_GRAPH_MAX_EDGES = 20_000;
+export const LINEAGE_RECEIPT_ID_MAX_CHARS = 256;
+const LINEAGE_CYCLE_PATH_MAX = 32;
+
 /**
  * Transitive cycle detection over a recorded edge set. Ingestion-time guards
  * are necessarily local (a gateway sees one continuation at a time); this
- * DFS is the global check run wherever a full edge set exists — workflow DAG
- * assembly and the persistence layer — so a cycle recorded by concurrent
- * continuations is still caught and flagged before it is trusted.
+ * check is the global verdict run wherever a full edge set exists — workflow
+ * DAG assembly and the persistence layer — so a cycle recorded by concurrent
+ * continuations is still refused before it is trusted.
+ *
+ * Iterative O(V+E) DFS (an explicit stack, so an adversarially deep chain
+ * cannot exhaust the call stack), with hard bounds on node count, edge
+ * count, and receipt-id size. Exceeding a bound is a fail-closed verdict
+ * (`boundsExceeded: true`), and a reported cycle path is bounded.
  *
  * @param {Array<{ receipt_id: string, parent_receipt_id?: string|null, children?: Array<{ child_receipt_id?: string }> }>} edges
- * @returns {{ ok: boolean, cyclePath: string[] }}
+ * @returns {{ ok: boolean, cyclePath: string[], boundsExceeded?: boolean, reason?: string }}
  */
 export function detectLineageCycle(edges) {
   const adjacency = new Map();
+  let edgeCount = 0;
+  let overflow = "";
+  const boundId = (raw) => {
+    const id = String(raw || "");
+    if (id.length > LINEAGE_RECEIPT_ID_MAX_CHARS) {
+      overflow = `receipt id exceeds ${LINEAGE_RECEIPT_ID_MAX_CHARS} characters`;
+      return "";
+    }
+    return id;
+  };
   const addEdge = (from, to) => {
-    if (!from || !to) return;
+    if (!from || !to || overflow) return;
+    edgeCount += 1;
+    if (edgeCount > LINEAGE_GRAPH_MAX_EDGES) {
+      overflow = `receipt graph exceeds ${LINEAGE_GRAPH_MAX_EDGES} edges`;
+      return;
+    }
     if (!adjacency.has(from)) adjacency.set(from, new Set());
     adjacency.get(from).add(to);
+    if (!adjacency.has(to)) adjacency.set(to, new Set());
+    if (adjacency.size > LINEAGE_GRAPH_MAX_NODES) {
+      overflow = `receipt graph exceeds ${LINEAGE_GRAPH_MAX_NODES} nodes`;
+    }
   };
   for (const edge of Array.isArray(edges) ? edges : []) {
-    const id = String(edge?.receipt_id || "");
+    if (overflow) break;
+    const id = boundId(edge?.receipt_id);
     if (!id) continue;
-    const parent = String(edge?.parent_receipt_id || "");
+    const parent = boundId(edge?.parent_receipt_id);
     if (parent) addEdge(parent, id);
     for (const child of Array.isArray(edge?.children) ? edge.children : []) {
-      addEdge(id, String(child?.child_receipt_id || ""));
+      addEdge(id, boundId(child?.child_receipt_id));
     }
+  }
+  if (overflow) {
+    return { ok: false, cyclePath: [], boundsExceeded: true, reason: overflow };
   }
   const visiting = new Set();
   const done = new Set();
-  const path = [];
-  const walk = (node) => {
-    if (done.has(node)) return null;
-    if (visiting.has(node)) return [...path.slice(path.indexOf(node)), node];
-    visiting.add(node);
-    path.push(node);
-    for (const next of adjacency.get(node) || []) {
-      const cycle = walk(next);
-      if (cycle) return cycle;
+  for (const start of adjacency.keys()) {
+    if (done.has(start)) continue;
+    // Each frame keeps its own child iterator so the walk is a true
+    // iterative DFS: one push per discovered node, one pop per finished node.
+    const path = [start];
+    const stack = [{ node: start, iterator: (adjacency.get(start) || new Set()).values() }];
+    visiting.add(start);
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const step = frame.iterator.next();
+      if (step.done) {
+        visiting.delete(frame.node);
+        done.add(frame.node);
+        stack.pop();
+        path.pop();
+        continue;
+      }
+      const next = step.value;
+      if (done.has(next)) continue;
+      if (visiting.has(next)) {
+        const cycleStart = path.indexOf(next);
+        const cycle = [...path.slice(cycleStart >= 0 ? cycleStart : 0), next];
+        return { ok: false, cyclePath: cycle.slice(0, LINEAGE_CYCLE_PATH_MAX) };
+      }
+      visiting.add(next);
+      path.push(next);
+      stack.push({ node: next, iterator: (adjacency.get(next) || new Set()).values() });
     }
-    visiting.delete(node);
-    done.add(node);
-    path.pop();
-    return null;
-  };
-  for (const node of adjacency.keys()) {
-    const cycle = walk(node);
-    if (cycle) return { ok: false, cyclePath: cycle };
   }
   return { ok: true, cyclePath: [] };
 }
