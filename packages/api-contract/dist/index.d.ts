@@ -31,6 +31,7 @@
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  *   - `@growthub/api-contract/resolver-registry` — Unified API Resolver Registry (1.5.1)
+ *   - `@growthub/api-contract/compute`          — Governed Compute Realization (1.8)
  */
 export type { CapabilityFamily, CapabilityExecutionKind, CapabilityNodeType, CapabilityVisibility, CapabilityExecutionStrategy, CapabilityExecutionBinding, CapabilityExecutionTokens, CapabilityRecord, CapabilityNode, CapabilityQuery, CapabilityRegistrySource, CapabilityRegistryMeta, } from "./capabilities.js";
 export { CAPABILITY_FAMILIES } from "./capabilities.js";
@@ -61,5 +62,7 @@ export type { AppSurfaceRow, AppHealthStatus, AppLinkRollup, AppNextAction, AppA
 export { APP_REGISTRY_OBJECT_ID, APP_SURFACE_OBJECT_TYPE, isAppAssignmentPacket, WORKSPACE_APPS_CONTRACT_VERSION, } from "./workspace-apps.js";
 export type { ResolverConnectorKind, ResolverProvenance, ResolverRecordRef, ResolverShapeProfile, ResolverNextAction, ResolverRegistryEntry, ResolverRegistrySummary, ResolverRegistryIndex, UnifiedResolverRegistryResponse, ResolverEndpointManifest, } from "./resolver-registry.js";
 export { RESOLVER_CONNECTOR_KINDS, RESOLVER_PROVENANCE_VALUES, RESOLVER_REGISTRY_INDEX_KIND, RESOLVER_ENDPOINT_MANIFEST_KIND, RESOLVER_REGISTRY_DIR, RESOLVER_REGISTRY_INDEX_FILE, RESOLVER_ENDPOINT_MANIFEST_FILE, RESOLVER_ENDPOINT_BASE, RESOLVER_GENERATED_BANNER, isResolverRegistryIndex, WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION, } from "./resolver-registry.js";
+export type { ComputeWorkloadKind, ComputeAvailabilityMode, ComputeCapacityProfileId, ComputeAcceleratorClass, ComputeDistributedRequirements, ComputeLocalityRequirements, ComputeRequirements, ComputeBudgetPolicy, ComputeProviderCapabilities, ComputeCostBasis, ComputeProviderQuote, ComputeRunRef, ComputeAllocationStatus, ComputeAllocation, ComputeEventType, ComputeEvent, ComputeCheckpointRef, ComputeArtifactRef, ComputeCandidateVerdict, ComputeDecision, ComputeEvidence, ComputeProviderAdapter, ComputeAdapterContext, ComputeProviderRowMetadata, } from "./compute.js";
+export { COMPUTE_WORKLOAD_KINDS, COMPUTE_AVAILABILITY_MODES, COMPUTE_CAPACITY_PROFILE_IDS, COMPUTE_ACCELERATOR_CLASSES, COMPUTE_ALLOCATION_STATUSES, COMPUTE_EVENT_TYPES, COMPUTE_PROVIDER_ROW_SCHEMA, COMPUTE_DECISION_SCHEMA, COMPUTE_EVIDENCE_SCHEMA, isComputeProviderRowMetadata, isComputeDecision, isComputeEvent, WORKSPACE_COMPUTE_CONTRACT_VERSION, } from "./compute.js";
 export declare const API_CONTRACT_VERSION: 1;
 //# sourceMappingURL=index.d.ts.map

@@ -1,5 +1,45 @@
 # @growthub/api-contract
 
+## 1.8.0
+
+Additive minor. Adds the **Governed Compute Realization** surface
+(`@growthub/api-contract/compute`): the provider-neutral vocabulary that lets
+a governed workspace describe where a custom-model workload may execute —
+local machine, serverless/burst GPU, warm capacity, or a distributed cluster —
+without naming a mandatory vendor. Compute is a replaceable realization of the
+existing custom-model lifecycle: provider identity stays an ordinary API
+Registry row, execution evidence stays `model-training-run` receipts, and
+promotion stays evaluation-gated.
+
+### Added
+
+- `ComputeWorkloadKind`, `ComputeAvailabilityMode`, `ComputeCapacityProfileId`,
+  `ComputeAcceleratorClass` open unions + their closed `as const` vocabularies.
+- `ComputeRequirements` (accelerator class, per-GPU VRAM floor, GPU count,
+  CPU/memory/storage floors, checkpoint requirement, distributed workers with
+  gang-scheduling/high-bandwidth flags, locality, known duration).
+- `ComputeBudgetPolicy` — `hard-cap` | `advisory` | `unlimited`; unknown cost
+  is never zero and is ineligible under a hard cap unless
+  `allowUnknownCost: true`.
+- `ComputeProviderCapabilities`, `ComputeCostBasis`,
+  `ComputeProviderQuote` (with `quoteObservedAt` / `quoteExpiresAt`),
+  `ComputeAllocation` (with `idempotencyKeyHash` + `releaseConfirmed`),
+  `ComputeRunRef`, `ComputeEvent` (with `evidenceObservedAt`),
+  `ComputeCheckpointRef`, `ComputeArtifactRef`, `ComputeCandidateVerdict`,
+  `ComputeDecision`, `ComputeEvidence`.
+- `ComputeProviderAdapter` + `ComputeAdapterContext` — the only
+  provider-specific layer; adapters map Capacity Profiles internally and never
+  leak provider fields into portable plans.
+- `ComputeProviderRowMetadata` + `COMPUTE_PROVIDER_ROW_SCHEMA`
+  (`growthub-compute-provider-v1`): an ordinary API Registry row becomes a
+  compute provider by carrying `metadata.computeProvider`; env-var NAMES only,
+  no credential values.
+- `COMPUTE_EVENT_TYPES` (the 12 normalized lifecycle events),
+  `COMPUTE_ALLOCATION_STATUSES`, `COMPUTE_DECISION_SCHEMA`,
+  `COMPUTE_EVIDENCE_SCHEMA`.
+- Runtime guards `isComputeProviderRowMetadata`, `isComputeDecision`,
+  `isComputeEvent`, and `WORKSPACE_COMPUTE_CONTRACT_VERSION = 1`.
+
 ## 1.7.0
 
 Additive minor. Extends the inference contract into the **evidentiary

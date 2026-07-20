@@ -31,6 +31,7 @@
  *   - `@growthub/api-contract/workspace-outcome` — Agent Outcome Loop V1
  *   - `@growthub/api-contract/workspace-apps`  — Application Control Plane V1
  *   - `@growthub/api-contract/resolver-registry` — Unified API Resolver Registry (1.5.1)
+ *   - `@growthub/api-contract/compute`          — Governed Compute Realization (1.8)
  */
 
 // Capabilities
@@ -450,6 +451,56 @@ export {
   isResolverRegistryIndex,
   WORKSPACE_RESOLVER_REGISTRY_CONTRACT_VERSION,
 } from "./resolver-registry.js";
+
+// Governed Compute Realization (CMS SDK v1.8 — the additive compute contract
+// that makes WHERE a custom-model workload executes a replaceable governed
+// realization: Capacity Profiles, provider-neutral requirements, deterministic
+// resolver decisions, normalized compute events, and the evidence block the
+// existing model-training-run receipt carries. Runtime truth: workspace app
+// lib/compute-capacity-profiles.js + lib/compute-provider-registry.js +
+// lib/compute-resolver.js + lib/compute-evidence.js + lib/adapters/compute/*
+// + the read-only GET /api/workspace/compute.)
+export type {
+  ComputeWorkloadKind,
+  ComputeAvailabilityMode,
+  ComputeCapacityProfileId,
+  ComputeAcceleratorClass,
+  ComputeDistributedRequirements,
+  ComputeLocalityRequirements,
+  ComputeRequirements,
+  ComputeBudgetPolicy,
+  ComputeProviderCapabilities,
+  ComputeCostBasis,
+  ComputeProviderQuote,
+  ComputeRunRef,
+  ComputeAllocationStatus,
+  ComputeAllocation,
+  ComputeEventType,
+  ComputeEvent,
+  ComputeCheckpointRef,
+  ComputeArtifactRef,
+  ComputeCandidateVerdict,
+  ComputeDecision,
+  ComputeEvidence,
+  ComputeProviderAdapter,
+  ComputeAdapterContext,
+  ComputeProviderRowMetadata,
+} from "./compute.js";
+export {
+  COMPUTE_WORKLOAD_KINDS,
+  COMPUTE_AVAILABILITY_MODES,
+  COMPUTE_CAPACITY_PROFILE_IDS,
+  COMPUTE_ACCELERATOR_CLASSES,
+  COMPUTE_ALLOCATION_STATUSES,
+  COMPUTE_EVENT_TYPES,
+  COMPUTE_PROVIDER_ROW_SCHEMA,
+  COMPUTE_DECISION_SCHEMA,
+  COMPUTE_EVIDENCE_SCHEMA,
+  isComputeProviderRowMetadata,
+  isComputeDecision,
+  isComputeEvent,
+  WORKSPACE_COMPUTE_CONTRACT_VERSION,
+} from "./compute.js";
 
 // Version sentinel — surfaces may read this to confirm they are talking
 // to the v1 contract surface. Additive changes keep this literal `1`.
