@@ -202,7 +202,317 @@ export interface InferenceCacheEvidence {
   /** Hash of the server-owned deployment/tenant cache namespace. */
   cache_scope_sha256?: string | null;
   remote_cache_reason?: string;
+  /** `CACHE_BYPASS_POISONED` marks a poisoned-neighborhood bypass. */
   bypass_reason?: string;
+  /** Signed-envelope verification state for the entry actually consulted. */
+  envelope_signature_state?: "verified" | "invalid" | "unsigned" | "not_checked";
+  /**
+   * Integrity verdict for a REFUSED entry. `remote_unverified` means the
+   * signature passed but shared invalidation state (epoch / tombstone /
+   * poison marker) was unreachable, so the entry was withheld on uncertainty
+   * — efficiency is sacrificed, never integrity. Absent when nothing was
+   * refused.
+   */
+  integrity_state?: "invalid" | "invalidated" | "unsigned" | "remote_unverified" | (string & {});
+  /** Bounded operator reason for the integrity verdict; never a secret. */
+  integrity_reason?: string;
+  /** Credential-binding cache version active for this lookup/store. */
+  cache_version?: string | null;
+  /** Correction receipt that poisoned the bypassed entry, when applicable. */
+  poisoned_by?: string | null;
+  /** Identity-scoped semantic bucket (hash pair) for feedback poisoning. */
+  semantic_bucket?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Receipt lineage — the agent-to-agent receipt DAG
+// ---------------------------------------------------------------------------
+
+/** Position of this receipt in the workflow receipt DAG. */
+export type InferenceSpanKind = "ROOT" | "CHILD_TOOL" | "CHILD_WORKFLOW";
+
+export type ChildReceiptStatus = "COMPLETED" | "FAILED" | "MISSING";
+
+/**
+ * One Merkle edge from a parent receipt to a child receipt. The parent stores
+ * the SHA-256 of the child's full canonical receipt JSON, so the parent's own
+ * receipt hash transitively covers every descendant
+ * (`parent_hash -> child_hash -> grandchild_hash`).
+ */
+export interface ChildReceiptLink {
+  child_receipt_id: string;
+  /** SHA-256 of the child's canonical receipt JSON; null when MISSING. */
+  child_receipt_sha256: string | null;
+  child_status: ChildReceiptStatus;
+  /** Tool call that produced the child invocation, when applicable. */
+  tool_call_id?: string;
+  /** Governed workflow reference the child executed, when applicable. */
+  workflow_ref?: string;
+  /**
+   * Provenance of the ingested receipt body. `server-resolved` means the
+   * canonical receipt came from server-owned persisted records (the only
+   * basis live execution accepts); `caller-draft` means a caller-supplied
+   * body was ingested by a development/draft lane and is NOT trusted
+   * production evidence.
+   */
+  evidence_basis?: "server-resolved" | "caller-draft" | (string & {});
+  /** Exact child failure; a failed child is recorded, never orphaned. */
+  error?: { code: string; message: string };
+}
+
+/**
+ * Stable, machine-readable outcome codes for the governed inference gateway
+ * and workflow assembly. Every trust-boundary failure keeps a distinct code
+ * so an operator can act (wire the resolver, bind the tenant scope, price the
+ * route) without parsing prose. This union is additive and not exhaustive.
+ */
+export type InferenceGovernanceCode =
+  // Manifest authentication (pre-transport gate).
+  | "manifest_missing"
+  | "manifest_unsigned"
+  | "manifest_signature_invalid"
+  | "manifest_composite_mismatch"
+  | "inference_manifest_mismatch"
+  // Child-receipt trust boundary.
+  | "child_receipt_missing"
+  | "child_receipt_hash_only"
+  | "child_receipt_invalid"
+  | "child_receipt_parent_mismatch"
+  | "child_receipt_scope_mismatch"
+  | "child_receipt_scope_unbound"
+  | "child_receipt_resolver_required"
+  | "child_receipt_replayed"
+  | "child_receipt_cycle"
+  // Receipt-DAG assembly.
+  | "receipt_lineage_cycle"
+  | "receipt_graph_unverifiable"
+  // Economic routing.
+  | "cost_unknown"
+  | (string & {});
+
+export interface ReceiptLineageEvidence {
+  span_kind: InferenceSpanKind;
+  parent_receipt_id: string | null;
+  children: ChildReceiptLink[];
+  /**
+   * Merkle aggregation over the ordered child receipt hashes and statuses.
+   * Null for a leaf receipt with no declared children.
+   */
+  lineage_sha256: string | null;
+  /** `incomplete` means a declared child never ingested a receipt. */
+  status: "leaf" | "complete" | "incomplete";
+  reason?: string;
+}
+
+/**
+ * The assembled multi-step workflow receipt DAG. A cyclic or unverifiable
+ * graph is a TERMINAL failure at workflow assembly (the envelope's `ok`
+ * becomes false with `receipt_lineage_cycle` / `receipt_graph_unverifiable`)
+ * — `acyclic: false` is never a flagged success.
+ */
+export interface ReceiptDagEvidence {
+  schema: "growthub-receipt-dag-v1";
+  root_receipt_id: string;
+  edges: Array<{
+    receipt_id: string;
+    parent_receipt_id: string | null;
+    span_kind: InferenceSpanKind;
+    receipt_sha256: string;
+  }>;
+  dag_sha256: string;
+  acyclic: boolean;
+  /** Bounded cycle path; present only when `acyclic` is false. */
+  cycle_path?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Signed cache envelopes and governed invalidation
+// ---------------------------------------------------------------------------
+
+export type CacheInvalidationReason =
+  | "MODEL_UPDATE"
+  | "SCHEMA_CHANGE"
+  | "FEEDBACK_CORRECTION"
+  | "SECURITY";
+
+/**
+ * Identity metadata bound to every cache entry. The runtime signs the entry
+ * body plus this envelope with a workspace-scoped HMAC key; a signature or
+ * `cache_version` mismatch on lookup is treated as a MISS, never served.
+ */
+export interface CacheEnvelope {
+  receipt_id: string;
+  request_sha256: string;
+  model_sha256: string;
+  adapter_sha256: string;
+  schema_hash: string;
+  workflow_version: string;
+  /**
+   * Derived from the workspace's cache credential binding (Redis add-on URL,
+   * token hash, namespace). Credential rotation changes this value, so stale
+   * signatures fail closed and the cache rebuilds safely.
+   */
+  cache_version: string;
+  /** True when the stored value is the redacted response; raw is never cached. */
+  redacted: boolean;
+  redaction_event_count: number;
+  created_at: string;
+  ttl_seconds: number;
+}
+
+export interface SignedCacheEnvelope {
+  envelope: CacheEnvelope;
+  /** HMAC-SHA256 over the canonical entry + envelope JSON. */
+  signature: string;
+  /** Non-secret key fingerprint; never the key itself. */
+  key_id: string;
+  algorithm: "hmac-sha256";
+}
+
+export interface CacheInvalidationScope {
+  exact_key?: string;
+  semantic_cluster_id?: string;
+  model_sha256?: string;
+  schema_hash?: string;
+  workflow_id?: string;
+}
+
+export interface CacheInvalidationRequest {
+  reason: CacheInvalidationReason;
+  scope: CacheInvalidationScope;
+  /** Receipt of the correction that poisoned the entry, closing the loop. */
+  correction_receipt_id?: string;
+  /** Hash of the corrected ground truth; raw corrections stay out of receipts. */
+  corrected_text_sha256?: string;
+}
+
+export interface CacheInvalidationResult {
+  ok: boolean;
+  reason: CacheInvalidationReason;
+  poisoned_exact_keys: string[];
+  poison_markers_added: number;
+  epochs_bumped: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tier economic routing
+// ---------------------------------------------------------------------------
+
+export type RoutingDecisionReason =
+  | "cost_capability"
+  | "quality_fallback"
+  | "budget_exhausted"
+  | "default";
+
+export type RoutingQualityStatus =
+  | "MET"
+  | "QUALITY_UNMET"
+  | "UNVERIFIED"
+  | "NOT_REQUESTED";
+
+/**
+ * Economic evidence for one routed completion. Confidence is derived from
+ * real generation log-probabilities when the runtime returns them; a runtime
+ * that does not return log-probs is reported `unavailable`, never estimated.
+ */
+export interface RoutingDecisionEvidence {
+  status: "applied" | "not_requested";
+  reason: RoutingDecisionReason | null;
+  max_cost_cents: number | null;
+  min_quality_score: number | null;
+  local_cost_estimate_cents: number | null;
+  cloud_cost_estimate_cents: number | null;
+  actual_cost_estimate_cents: number | null;
+  /** Mean per-token probability over generated tokens, 0.0–1.0. */
+  actual_confidence: number | null;
+  confidence_basis: "avg-token-logprob" | "unavailable" | null;
+  quality: RoutingQualityStatus;
+  reason_detail?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic streaming redaction
+// ---------------------------------------------------------------------------
+
+export type RedactionEventType =
+  | "PII_SSN"
+  | "PII_EMAIL"
+  | "PII_PHONE"
+  | "PII_CREDIT_CARD"
+  | (string & {});
+
+/** One redaction; the raw match is hashed, never persisted. */
+export interface RedactionEvent {
+  type: RedactionEventType;
+  start_char_offset: number;
+  length: number;
+  redacted_preview_hash: string;
+}
+
+export interface StreamRedactionEvidence {
+  status: "not_requested" | "clean" | "redacted" | "failed";
+  event_count: number;
+  events: RedactionEvent[];
+  /** Hash of the compiled pattern set actually enforced. */
+  patterns_sha256: string | null;
+  /** Always false when redaction ran: the raw response is never cached. */
+  raw_output_cached: boolean;
+  /** Non-secret fingerprint of the HMAC key that hashed the previews. */
+  preview_key_id?: string;
+  /**
+   * Key tier actually used. Under `process-ephemeral`, preview hashes stop
+   * correlating across process restarts — visible here, never silent.
+   */
+  preview_key_source?: "workspace" | "cache-operator" | "process-ephemeral" | (string & {});
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Inference manifest — the draft -> publish -> runtime binding
+// ---------------------------------------------------------------------------
+
+export interface InferenceManifestCostPolicy {
+  max_cents?: number;
+}
+
+/**
+ * Cryptographic binding between a saved workflow configuration and the live
+ * gateway state. Compiled at draft save/publish, signed with the workspace
+ * signing key, and re-verified on every runtime invocation.
+ */
+export interface InferenceManifest {
+  manifest_version: "1.0";
+  workflow_id: string;
+  workflow_version?: string;
+  integration_id?: string;
+  /** sha256 over base model SHA + ordered adapter SHAs + schema hash. */
+  composite_sha256: string;
+  base_model_sha256: string;
+  adapter_sha256s: string[];
+  schema_hash: string;
+  tool_openapi_hash: string;
+  cache_ttl_seconds: number;
+  allowed_adapters: string[];
+  max_tokens: number;
+  cost_policy?: InferenceManifestCostPolicy;
+  created_at: string;
+}
+
+export interface SignedInferenceManifest {
+  manifest: InferenceManifest;
+  manifest_sha256: string;
+  /** Null when the workspace signing key is not configured (reported, not faked). */
+  signature: string | null;
+  key_id: string | null;
+  algorithm: "hmac-sha256" | "unsigned";
+}
+
+export interface ManifestVerificationEvidence {
+  status: "verified" | "mismatch" | "unsigned" | "not_requested" | "unavailable";
+  manifest_sha256: string | null;
+  composite_sha256: string | null;
+  diffs: Array<{ field: string; expected: string; actual: string }>;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +580,16 @@ export interface InferenceToolResult {
    * caller-returned evidence to server-governed authority.
    */
   executor_receipt_ref?: InferenceArtifactRef;
+  /**
+   * Full verification receipt produced by a governed child workflow that
+   * serviced this tool call. Required when the call targeted a Growthub
+   * workflow endpoint; the parent gateway hashes it into its receipt DAG.
+   */
+  child_receipt?: VerificationReceipt;
+  /** Pre-computed child receipt hash when the full receipt is stored elsewhere. */
+  child_receipt_sha256?: string;
+  /** Marks this result as produced by a governed child workflow invocation. */
+  child_workflow_ref?: string;
   request?: {
     method?: OpenApiHttpMethod;
     endpoint_ref?: string;
@@ -350,6 +670,9 @@ export interface ToolCallAuditEntry {
   validation: ToolCallValidationEvidence;
   external_request: ExternalToolRequestEvidence | null;
   external_result: ExternalToolResultEvidence | null;
+  /** SHA-256 of the child workflow's full receipt when one serviced this call. */
+  child_receipt_hash?: string | null;
+  child_status?: ChildReceiptStatus;
   /** OTel child span that joins call validation and external execution. */
   span_id: string | null;
   /** Request that consumed the result to produce the final answer. */
@@ -448,6 +771,14 @@ export interface InferenceRequest {
    * caller-supplied prior tool calls are not trusted as continuation proof.
    */
   prior_receipt_id?: string;
+  /** Receipt of the parent span when this request executes inside a DAG. */
+  parent_receipt_id?: string;
+  /** Defaults to ROOT; CHILD_* requires a parent_receipt_id. */
+  span_kind?: InferenceSpanKind;
+  /** Hard spend ceiling for this request across local + fallback routes. */
+  max_cost_cents?: number;
+  /** Minimum acceptable confidence (0.0–1.0) before quality fallback. */
+  min_quality_score?: number;
   model?: string;
   messages: InferenceMessage[];
   stream?: boolean;
@@ -510,6 +841,15 @@ export interface VerificationReceipt {
   tool_audit: ToolCallAuditEvidence;
   otel: OTelTraceEvidence;
   routing: PhaseRoutingEvidence;
+  /**
+   * Evidentiary-backbone blocks (contract 1.7.0). Optional on the wire so
+   * pre-1.7.0 receipts stay valid; a 1.7.0 runtime always emits all four
+   * with explicit `not_requested`/`leaf` states.
+   */
+  lineage?: ReceiptLineageEvidence;
+  routing_decision?: RoutingDecisionEvidence;
+  redaction?: StreamRedactionEvidence;
+  manifest?: ManifestVerificationEvidence;
   /** Durable receipt/trace location in governed source-record storage. */
   evidence_ref?: InferenceArtifactRef;
   errors: Array<{ code: string; message: string; retryable?: boolean }>;

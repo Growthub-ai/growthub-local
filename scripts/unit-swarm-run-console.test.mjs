@@ -434,12 +434,19 @@ test("cockpit DUI/UX conformance — layout-only CSS, inherited icon grammar onl
   // dm-run-console primitives composed in the JSX.
   const css = await fs.readFile(path.join(appRoot, "globals.css"), "utf8");
   const marker = "Governed Swarm Cockpit (SWARM_RUN_CONTRACT_V1)";
-  const start = css.indexOf(marker);
-  assert.ok(start > -1, "swarm CSS block present");
-  const block = css.slice(start);
-  assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(block), "no hard-coded colors in swarm CSS");
-  assert.ok(!/rgba?\(|hsla?\(/.test(block), "no color functions in swarm CSS");
-  assert.ok(!/@keyframes|gradient|animation|box-shadow/.test(block), "no motion/decoration in swarm CSS");
+  assert.ok(css.includes(marker), "swarm CSS block present");
+  // The layout-only contract is scoped to the dm-swarm classes themselves:
+  // unrelated sections (facelift tokens, later cockpits) are legitimately
+  // appended after the marker block, so a marker-to-EOF slice over-claims.
+  // Shared :root tokens (var(--dm-*)) are the sanctioned way for a swarm rule
+  // to reference the design system's existing palette.
+  const swarmRules = [...css.matchAll(/^[^\n{}]*\.dm-swarm-[^{}]*\{[^}]*\}/gm)].map((m) => m[0]);
+  assert.ok(swarmRules.length > 0, "dm-swarm rules present");
+  for (const rule of swarmRules) {
+    assert.ok(!/#[0-9a-fA-F]{3,8}\b/.test(rule), `no hard-coded colors in swarm CSS: ${rule.slice(0, 100)}`);
+    assert.ok(!/rgba?\(|hsla?\(/.test(rule), `no color functions in swarm CSS: ${rule.slice(0, 100)}`);
+    assert.ok(!/@keyframes|gradient|animation|box-shadow/.test(rule), `no motion/decoration in swarm CSS: ${rule.slice(0, 100)}`);
+  }
 
   // The ONE sanctioned grammar addition: a hollow "pending" variant on the
   // EXISTING run-console dot primitive, reusing the same grey token the

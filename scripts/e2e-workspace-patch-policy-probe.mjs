@@ -207,6 +207,29 @@ registerSandboxAdapter({
     assert(Array.isArray(body5.violations) && body5.violations.some((v) => v.code === "live_workflow_field"), "422 body must carry live_workflow_field violation");
     ok("direct live orchestrationGraph patch fails (422)");
 
+    // The signed manifest set is publish-owned live authority too. A caller
+    // cannot mint or replace it through the otherwise allowlisted dataModel
+    // PATCH lane, even while the row itself is still a draft.
+    const cfg5Manifest = await getConfig();
+    res = await patch({
+      dataModel: mergeRow(cfg5Manifest, "wf", {
+        inferenceManifests: [{
+          manifest: { integration_id: "forged", base_model_sha256: "a".repeat(64) },
+          manifest_sha256: "b".repeat(64),
+          signature: "c".repeat(64),
+          algorithm: "hmac-sha256",
+        }],
+      }),
+    });
+    assert(res.status === 422, `direct inferenceManifests patch expected 422, got ${res.status}`);
+    const body5Manifest = await res.json();
+    assert(
+      Array.isArray(body5Manifest.violations)
+        && body5Manifest.violations.some((v) => v.code === "live_workflow_field" && String(v.path || "").includes("inferenceManifests")),
+      "422 body must identify inferenceManifests as a publish-owned live_workflow_field",
+    );
+    ok("direct inferenceManifests PATCH fails (422)");
+
     // 6. direct version bump and lifecycleStatus→live fail
     const cfg6 = await getConfig();
     res = await patch({ dataModel: mergeRow(cfg6, "wf", { version: "9" }) });

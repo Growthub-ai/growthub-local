@@ -299,6 +299,16 @@ async function executeApiRegistryCall(workspaceConfig, nodeConfig, inputPayload,
       trustedContinuation,
       signal: executionContext?.signal,
       timeoutMs: Math.min(Math.max(Number(timeoutMs) || 1_000, 1_000), 120_000),
+      inferenceManifests: Array.isArray(executionContext?.inferenceManifests) ? executionContext.inferenceManifests : [],
+      inferenceManifestsRequired: executionContext?.inferenceManifestsRequired === true,
+      liveExecution: executionContext?.liveExecution === true,
+      childReceiptResolver: typeof executionContext?.resolveChildReceipt === "function"
+        ? (args) => executionContext.resolveChildReceipt({
+            ...args,
+            modelId: String(merged.metadata.mothershipProxy.workspaceSlug || "workspace-local"),
+            policyRegistryId: String(merged.integrationId || registryId),
+          })
+        : null,
     });
     if (!inference.ok) {
       return {

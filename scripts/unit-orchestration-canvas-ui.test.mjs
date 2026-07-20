@@ -8,11 +8,14 @@ const swarmPanelPath = "cli/assets/worker-kits/growthub-custom-workspace-starter
 const nodePanelPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/components/OrchestrationNodeConfigPanel.jsx";
 const cssPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/globals.css";
 
+const publishLibPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/orchestration-publish.js";
+
 const canvasSource = readFileSync(canvasPath, "utf8");
 const workflowSurfaceSource = readFileSync(workflowSurfacePath, "utf8");
 const swarmPanelSource = readFileSync(swarmPanelPath, "utf8");
 const nodePanelSource = readFileSync(nodePanelPath, "utf8");
 const cssSource = readFileSync(cssPath, "utf8");
+const publishLibSource = readFileSync(publishLibPath, "utf8");
 
 test("workflow canvas supports mouse pan, wheel zoom, and fit view without graph data writes", () => {
   assert.match(canvasSource, /const \[pan, setPan\] = useState\(\{ x: 0, y: 0 \}\)/);
@@ -33,18 +36,21 @@ test("workflow canvas keeps tall vertical graphs padded and draggable", () => {
 });
 
 test("workflow node edits carry deterministic sandbox record references", () => {
-  assert.match(workflowSurfaceSource, /function nodeSandboxRecordRef\(objectId, rowName, nodeId\)/);
-  assert.match(workflowSurfaceSource, /function withGraphSandboxRecordRefs\(graph, objectId, rowName\)/);
+  // The deterministic-ref helpers live in the shared publish lib (used by the
+  // workflow publish route and the UI alike); the surface imports them.
+  assert.match(publishLibSource, /function nodeSandboxRecordRef\(objectId, rowName, nodeId\)/);
+  assert.match(publishLibSource, /function withGraphSandboxRecordRefs\(graph, objectId, rowName\)/);
+  assert.match(publishLibSource, /sandboxRecordRef: config\.sandboxRecordRef \|\| null/);
+  assert.match(workflowSurfaceSource, /import \{[\s\S]{0,200}?nodeSandboxRecordRef,[\s\S]{0,200}?withGraphSandboxRecordRefs[\s\S]{0,40}?\} from "@\/lib\/orchestration-publish"/);
   assert.match(workflowSurfaceSource, /sandboxRecordRef: recordRef/);
   assert.match(workflowSurfaceSource, /serializeOrchestrationGraph\(withGraphSandboxRecordRefs\(orchestrationGraph, objectId, rowId\)\)/);
-  assert.match(workflowSurfaceSource, /sandboxRecordRef: config\.sandboxRecordRef \|\| null/);
   assert.match(workflowSurfaceSource, /<AgentSwarmPanel[\s\S]*objectId=\{objectId\}[\s\S]*rowName=\{rowId\}/);
   assert.match(swarmPanelSource, /sandboxRecordRef: nodeSandboxRecordRef\(objectId, rowName, nodeId\)/);
 });
 
 test("workflow config controls use lucide checkboxes and suppress native number spinners", () => {
   assert.match(swarmPanelSource, /import \{ Check, Plus, Trash2 \} from "lucide-react"/);
-  assert.match(nodePanelSource, /import \{ Check \} from "lucide-react"/);
+  assert.match(nodePanelSource, /import \{[^}]*\bCheck\b[^}]*\} from "lucide-react"/);
   assert.match(cssSource, /input\[type="number"\]::-webkit-inner-spin-button/);
   assert.match(cssSource, /\.dm-workflow-check__box/);
 });

@@ -1,5 +1,45 @@
 # @growthub/cli
 
+## 0.14.28
+
+### Patch Changes
+
+- Adds the inference evidentiary backbone to the exported custom-workspace
+  starter's governed control plane
+  (`docs/INFERENCE_EVIDENTIARY_BACKBONE_V1.md`):
+- Receipt DAG lineage: `parent_receipt_id`/`span_kind` on inference requests,
+  Merkle child-receipt hashes on parent receipts, fail-closed
+  `child_receipt_missing` when a declared child workflow call never ingests a
+  receipt, executor binding headers on awaiting-tool-result turns, and a
+  chained `receiptDag` across multi-step custom-model workflow variants.
+- Signed cache envelopes: every completion-cache entry is HMAC-signed with a
+  workspace/credential-derived key and carries model/adapter/schema/workflow
+  identity plus a credential-bound `cache_version`; tampered, rotated, or
+  epoch-invalidated entries are a MISS, never served. Governed invalidation
+  supports exact-key tombstones, model/schema/workflow epoch bumps, and
+  feedback-driven poisoning that marks the semantic neighborhood UNRELIABLE
+  (`CACHE_BYPASS_POISONED`) with the correction receipt linked back.
+- Multi-tier economic routing: `max_cost_cents` budget gating with a 50%
+  local buffer, log-prob-derived confidence against `min_quality_score`,
+  cloud quality-fallback capped by the remaining budget, honest
+  `QUALITY_UNMET` flagging when fallback is unaffordable, and a
+  `routing_decision` receipt block. Confidence is never fabricated: a runtime
+  without log-probs reports `unavailable`/`UNVERIFIED`.
+- Deterministic streaming redaction: an incremental FSM/regex middleware
+  (SSN, email, phone, Luhn-validated cards) between the adapter stream and
+  the client stream, with a boundary carry buffer so a match can never split
+  across chunks; receipts carry offset+hash redaction events only, and the
+  cache stores the redacted response exclusively.
+- Inference manifest handshake: the tested draft run persists signed
+  manifests (composite SHA over base model + allowed adapters + schema);
+  `POST /api/workspace/workflow/publish` blocks with a field-level diff when
+  the live API Registry identity drifted from the proven manifest, stores the
+  manifests on the published row (publish-owned; PATCH-forgery is
+  policy-blocked), and the gateway rejects a pool serving a different
+  composite SHA at invocation time (`manifest_verified` in the receipt).
+- Updates `@growthub/api-contract` to `1.7.0` for the lineage, cache
+  envelope, routing decision, redaction, and manifest vocabulary.
+
 ## 0.14.27
 
 ### Patch Changes

@@ -17,6 +17,11 @@ Disposable **temp export** of `growthub-custom-workspace-starter-v1`, pre-seeded
 
 Use this script when you need a lived-in workspace: onboarding checklist complete, API registry cockpit spine wired, dashboard + widgets, baseline sandbox run evidence, and a linked data source with hydrated sidecar records.
 
+For a governed GGUF base + adapter, Apple consumer-hardware pre-warm, signed
+manifest proof, and optional Upstash cache setup, continue with
+`docs/CUSTOM_MODEL_QA_FAST_PATH_V1.md`. Reuse an already healthy temp export
+instead of invoking this script again.
+
 Do **not** use the removed `smoke-export-swarm-workspace.mjs` path — it was swarm-specific and has been deleted.
 
 ---
@@ -165,5 +170,6 @@ curl -s http://127.0.0.1:3777/api/workspace/env-status
 - `scripts/export-worker-kit.mjs` — canonical kit export (this script calls it with `--qa`)
 - `scripts/e2e-workspace-sandbox-api-probe.mjs` — API probe lane (sandbox-run)
 - `scripts/awac-workspace-api-probe.mjs` — AWaC workspace API probe
+- `docs/CUSTOM_MODEL_QA_FAST_PATH_V1.md` — agent-assisted custom-model + Upstash fast path
 
 **Repo runtime (maintainer lane, separate):** `scripts/runtime-control.sh` — not used for exported workspace smoke.

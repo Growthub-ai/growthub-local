@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { readWorkspaceConfig, readWorkspaceSourceRecords, writeWorkspaceConfig } from "@/lib/workspace-config";
 import { sandboxRunSourceId } from "@/lib/workspace-data-model";
-import { parseOrchestrationGraph, validateOrchestrationGraph } from "@/lib/orchestration-graph";
-import { stableStringify } from "@/lib/workspace-patch-policy";
-import { rowHasSuccessfulServerlessBindingProof, syncTriggerNodeForSchedule } from "@/lib/workspace-add-ons";
+import { rowHasSuccessfulServerlessBindingProof } from "@/lib/workspace-add-ons";
 import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readiness";
-import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
+import { resolveWorkflowFieldNames } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
+import { evaluateDraftPromotion } from "@/lib/workflow-publish-promotion";
 
 /**
  * POST /api/workspace/workflow/publish
@@ -305,92 +304,38 @@ async function POST(request) {
             });
         }
     }
-    // The record's draftSha256 is stamped by sandbox-run from the exact graph
-    // it executed, before execution. It must match this saved draft.
-    const draftGraphParsed = parseOrchestrationGraph(draft);
-    const expectedSha256 = createHash("sha256").update(stableStringify(draftGraphParsed), "utf8").digest("hex");
-    if (!serverlessSchedulerProofPassed && (runRecord.useDraft !== true || runRecord.draftSha256 !== expectedSha256)) {
-        return publishBlocked(409, {
-            ok: false,
-            code: "draft_run_not_verified",
-            error: `publish blocked — draft run ${draftRunId} executed a different graph than the saved draft ` + "(or was not a draft run); re-test this exact draft with sandbox-run useDraft:true"
-        }, {
-            objectId,
-            rowName: name,
-            objectType: "sandbox-environment"
-        });
-    }
-    const parsedDraft = draftGraphParsed;
-    const validation = validateOrchestrationGraph(parsedDraft);
-    if (!validation?.ok) {
-        return publishBlocked(400, {
-            ok: false,
-            code: "invalid_graph",
-            error: "publish blocked — the draft does not parse as a valid orchestration graph",
-            details: validation?.errors ?? []
-        }, {
-            objectId,
-            rowName: name,
-            objectType: "sandbox-environment"
-        });
-    }
-    const publishedAt = new Date().toISOString();
-    const currentVersion = Number(row.version || 1);
-    const nextVersion = Number.isFinite(currentVersion) ? String(currentVersion + 1) : "1";
-    const previousDeltas = Array.isArray(row.orchestrationDeltas) ? row.orchestrationDeltas : [];
-    const previousPublishedGraph = parseOrchestrationGraph(row[liveField]);
-    const nodeDeltas = getNodeDeltaRecords(previousPublishedGraph, parsedDraft);
-    const deltaTags = normalizeDeltaTags(nodeDeltas.flatMap((delta)=>delta.deltaTags));
-    const changeReason = nodeDeltas.map((delta)=>delta.changeReason).filter(Boolean).join("\n");
-    // One canonical draft/graph hash everywhere: sha256(stableStringify(parsedGraph)).
-    // This is the same value sandbox-run stamped as the record's draftSha256,
-    // so the lineage record and the publish delta are directly comparable.
-    const publishedSha256 = expectedSha256;
-    // A serverless-bound row's trigger binding is ROW authority — promoting
-    // draft bytes must not sever it. Re-sync the trigger node into the
-    // promoted live graph from the row's own binding fields (the exact writer
-    // the bind uses); drafts themselves are never mutated by binds.
-    const promotedLive = String(row.runLocality || "").trim() === "serverless" && String(row.scheduleId || "").trim()
-        ? syncTriggerNodeForSchedule(draft, {
-            triggerKind: row.schedulerTriggerKind,
-            schedulerRegistryId: row.schedulerRegistryId,
-            scheduleId: row.scheduleId,
-            cron: row.schedulerCron,
-            schedulerProviderId: row.schedulerProviderId,
-            schedulerProductId: row.schedulerProductId,
-            destinationUrl: row.schedulerDestination,
-            callbackUrl: row.schedulerCallbackUrl,
-            triggerInput: row.schedulerTriggerInput
-        }).value
-        : draft;
-    const next = patchSandboxRowInConfig(workspaceConfig, objectId, rowIndex, {
-        [liveField]: promotedLive,
-        [draftField]: "",
-        version: nextVersion,
-        lifecycleStatus: "live",
-        orchestrationDraftStatus: "published",
-        orchestrationDraftTestPassed: false,
-        orchestrationDraftTestedConfig: "",
-        orchestrationPublishedAt: publishedAt,
-        orchestrationDeltas: [
-            ...previousDeltas,
-            {
-                at: publishedAt,
-                version: nextVersion,
-                field: liveField,
-                action: "publish",
-                previousVersion: String(row.version || "1"),
-                draftTestedAt: row.orchestrationDraftLastTested || "",
-                draftRunId: row.orchestrationDraftLastRunId || "",
-                publishedSha256,
-                changeReason,
-                deltaTags,
-                nodeDeltas,
-                nodeCount: Array.isArray(parsedDraft?.nodes) ? parsedDraft.nodes.length : 0,
-                edgeCount: Array.isArray(parsedDraft?.edges) ? parsedDraft.edges.length : 0
-            }
-        ]
+    // Promotion decision + assembly live in ONE pure seam shared with the
+    // certification suite (lib/workflow-publish-promotion.js): graph-identity
+    // lineage, structural validation, and the inference manifest SET contract
+    // all gate there, and the mutated config exists ONLY on ok — a blocked
+    // publish structurally cannot mutate the workflow row.
+    const promotion = evaluateDraftPromotion({
+        workspaceConfig,
+        objectId,
+        rowIndex,
+        row,
+        draft,
+        liveField,
+        draftField,
+        runRecord,
+        serverlessSchedulerProofPassed,
+        env: process.env
     });
+    if (!promotion.ok) {
+        return publishBlocked(promotion.httpStatus, {
+            ok: false,
+            code: promotion.code,
+            error: promotion.error,
+            ...(promotion.details ? { details: promotion.details } : {}),
+            ...(promotion.manifestMismatches ? { manifestMismatches: promotion.manifestMismatches } : {})
+        }, {
+            objectId,
+            rowName: name,
+            objectType: "sandbox-environment"
+        });
+    }
+    const { next, publishedAt, nextVersion, publishedSha256, previousDeltas, nodeDeltas } = promotion;
+    const expectedSha256 = publishedSha256;
     try {
         const persisted = await writeWorkspaceConfig({
             dataModel: next.dataModel

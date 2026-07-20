@@ -62,6 +62,15 @@ jobs:
           node --test scripts/unit-distillation-flywheel.test.mjs
           node scripts/e2e-distillation-flywheel-loop.mjs
 
+      - name: Validate governed inference control plane and evidentiary backbone
+        # Canonical certification command (same entrypoint as local runs).
+        # Provisions the exact pinned AJV validator set from the committed
+        # scripts/certification-deps manifest + lockfile (npm ci, lifecycle
+        # scripts disabled), then runs the inference control-plane,
+        # evidentiary-backbone, and route-wiring suites. Any provisioning or
+        # suite failure fails this job — there is no skip lane.
+        run: npm run test:inference-certification
+
       - name: Validate workspace add-ons scheduler loop
         run: |
           node --test scripts/unit-workspace-add-ons-scheduler.test.mjs

@@ -178,10 +178,13 @@ function deriveSandboxServerlessState(input = {}) {
   const completedCount = required.filter((s) => s.status === "complete").length;
   const totalCount = required.length;
   const complete = completedCount >= totalCount;
-  const nextStep = steps.find((s) => s.status === "active")
-    || steps.find((s) => s.status === "pending")
-    || steps.find((s) => s.status === "blocked")
-    || null;
+  // Prefer a step the operator can actually act on: an "active" step whose
+  // action is null (e.g. the serverless adapter step waiting on a scheduler)
+  // must not shadow the actionable step behind it and leave the cockpit with
+  // no next action.
+  const pickNextStep = (status) => steps.find((s) => s.status === status && s.action)
+    || steps.find((s) => s.status === status);
+  const nextStep = pickNextStep("active") || pickNextStep("pending") || pickNextStep("blocked") || null;
 
   // Milestone score tied to evidence.
   let score = isServerless ? 10 : 40;

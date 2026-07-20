@@ -9,8 +9,11 @@
 
 import {
   createOpenAiChatTransport,
+  estimateRequestCostCents,
   executeInferenceGateway,
 } from "./adapters/inference/gateway.js";
+import { detectLineageCycle, receiptSha256 } from "./adapters/inference/lineage.js";
+import { compileInferenceManifest, signInferenceManifest } from "./adapters/inference/manifest.js";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { createLlamaCppTransport } from "./adapters/inference/llama-transport.js";
@@ -110,6 +113,14 @@ function inferenceRequest({ inputPayload, expectedModel, prompt, maxTokens, runI
   return {
     request_id: String(dynamic.request_id || `${runId || "run"}:${registryRow?.integrationId || expectedModel}`),
     prior_receipt_id: String(dynamic.prior_receipt_id || dynamic.priorReceiptId || ""),
+    parent_receipt_id: String(dynamic.parent_receipt_id || dynamic.parentReceiptId || ""),
+    ...(dynamic.span_kind || dynamic.spanKind ? { span_kind: dynamic.span_kind || dynamic.spanKind } : {}),
+    ...((dynamic.max_cost_cents ?? dynamic.maxCostCents) != null
+      ? { max_cost_cents: Number(dynamic.max_cost_cents ?? dynamic.maxCostCents) }
+      : {}),
+    ...((dynamic.min_quality_score ?? dynamic.minQualityScore) != null
+      ? { min_quality_score: Number(dynamic.min_quality_score ?? dynamic.minQualityScore) }
+      : {}),
     model: expectedModel,
     messages,
     stream: dynamic.stream === true,
@@ -342,6 +353,11 @@ export async function executeCustomModelInference({
   trustedContinuation = null,
   signal,
   timeoutMs = 120_000,
+  inferenceManifests = [],
+  inferenceManifestsRequired = false,
+  liveExecution = false,
+  ancestorReceiptIds = [],
+  childReceiptResolver = null,
 } = {}) {
   const policy = policyRow?.metadata?.mothershipProxy;
   const routes = Array.isArray(policy?.routes) ? policy.routes : [];
@@ -353,6 +369,43 @@ export async function executeCustomModelInference({
   if (!prompt && !Array.isArray(inputPayload?.messages)) {
     return { ok: false, error: "custom-model inference requires a prompt or messages", attempts: [] };
   }
+
+  // Multi-tier economic routing controls. Cost is a token-count estimate
+  // against each route's declared cost model (cents per million tokens);
+  // routes without a declared cost model estimate zero and cannot be
+  // budget-gated, which stays visible in the receipt rather than guessed at.
+  const economicInput = inputPayload?.inference && typeof inputPayload.inference === "object" ? inputPayload.inference : {};
+  const rawMaxCost = economicInput.max_cost_cents ?? economicInput.maxCostCents ?? inputPayload?.max_cost_cents;
+  const maxCostCents = rawMaxCost != null && Number.isFinite(Number(rawMaxCost)) ? Math.max(0, Number(rawMaxCost)) : null;
+  const rawMinQuality = economicInput.min_quality_score ?? economicInput.minQualityScore ?? inputPayload?.min_quality_score;
+  const minQualityScore = rawMinQuality != null && Number.isFinite(Number(rawMinQuality)) ? Number(rawMinQuality) : null;
+  const roughContextTokens = Math.max(1, Math.ceil(String(prompt || "").length / 4));
+  const routeCostModel = (route, control) => route?.costModel || control?.economics?.costModel || null;
+  // Route pricing status for budget enforcement. Malformed pricing is never
+  // coerced to zero — a caller budget must be BINDING, not advisory: under
+  // an explicit budget an unpriced/invalid cloud route is ineligible unless
+  // the governed policy supplies an explicit conservative ceiling
+  // (economics.assumedRouteCostCents).
+  const routePricing = (route, control) => {
+    const model = routeCostModel(route, control);
+    if (!model || typeof model !== "object") return { status: "unpriced", model: null };
+    const declared = [model.inputCentsPerMTokens, model.outputCentsPerMTokens].some((value) => value !== undefined && value !== null);
+    if (!declared) return { status: "unpriced", model: null };
+    const invalid = [model.inputCentsPerMTokens, model.outputCentsPerMTokens].some((value) => {
+      if (value === undefined || value === null) return false;
+      const parsed = Number(value);
+      return !Number.isFinite(parsed) || parsed < 0;
+    });
+    return invalid ? { status: "invalid", model: null } : { status: "priced", model };
+  };
+  const routeEstimate = (route, control) => estimateRequestCostCents(
+    { contextTokens: roughContextTokens, maxTokens },
+    routeCostModel(route, control) || {},
+  );
+  let spentEstimateCents = 0;
+  let qualityFallbackActive = false;
+  let stashedQualityEnvelope = null;
+  let stashedQualityEstimate = 0;
 
   const attempts = [];
   const failedInvocations = [];
@@ -385,6 +438,52 @@ export async function executeCustomModelInference({
 
     const expectedModel = String(route?.modelTag || availability.row?.expectedModelTag || "").trim();
     const control = inferenceControlPlane(policyRow, route, availability.row);
+    const cloudRoute = target === "teacher";
+    const pricing = routePricing(route, control);
+    // Under an explicit caller budget, a metered (cloud) route with unknown
+    // or invalid pricing is INELIGIBLE — its real cost cannot be bounded, so
+    // "estimate zero" would make max_cost_cents advisory. A governed
+    // operator ceiling (economics.assumedRouteCostCents) may stand in as a
+    // conservative estimate. Local routes without a cost model estimate
+    // zero honestly: they consume operator compute, not metered spend.
+    const assumedCeiling = Number(control.economics?.assumedRouteCostCents);
+    if (maxCostCents !== null && cloudRoute && pricing.status !== "priced" && !(Number.isFinite(assumedCeiling) && assumedCeiling >= 0)) {
+      attempts.push({
+        target,
+        status: "skipped",
+        reason: `cost_unknown: route pricing is ${pricing.status} and no governed assumedRouteCostCents ceiling is set; a metered route cannot run under max_cost_cents ${maxCostCents}`,
+        costStatus: "cost_unknown",
+      });
+      continue;
+    }
+    const usedAssumedCeiling = maxCostCents !== null && cloudRoute && pricing.status !== "priced";
+    const thisRouteEstimate = usedAssumedCeiling ? assumedCeiling : routeEstimate(route, control);
+    if (maxCostCents !== null) {
+      // Local routes keep a budget buffer so a quality fallback can still
+      // afford a cloud retry; every route is capped by the remaining budget.
+      // The buffer ratio is governed configuration (economics.localBudgetBufferRatio,
+      // 0.1–1.0), defaulting to 0.5.
+      // Only a real, positive number is an explicit operator choice; null,
+      // absent, NaN, or non-positive input falls back to the 0.5 default
+      // (Number(null) is 0 — without the > 0 guard an explicit null would
+      // silently collapse to the tightest 0.1 buffer).
+      const rawBuffer = control.economics?.localBudgetBufferRatio;
+      const configuredBuffer = Number(rawBuffer);
+      const localBufferRatio = rawBuffer != null && Number.isFinite(configuredBuffer) && configuredBuffer > 0
+        ? Math.max(0.1, Math.min(1, configuredBuffer))
+        : 0.5;
+      const remainingBudget = maxCostCents - spentEstimateCents;
+      const routeCap = cloudRoute ? remainingBudget : Math.min(remainingBudget, maxCostCents * localBufferRatio);
+      if (thisRouteEstimate > routeCap) {
+        attempts.push({
+          target,
+          status: "skipped",
+          reason: `estimated cost ${thisRouteEstimate}¢ exceeds the ${cloudRoute ? "remaining" : "buffered local"} budget ${Math.max(0, routeCap)}¢ of max_cost_cents ${maxCostCents}`,
+          costEstimateCents: thisRouteEstimate,
+        });
+        continue;
+      }
+    }
     const request = inferenceRequest({
       inputPayload,
       expectedModel,
@@ -423,6 +522,25 @@ export async function executeCustomModelInference({
             servedAlias: String(control.servedAlias || ""),
           },
         });
+    // Runtime manifest binding: the published workflow row supplies signed
+    // manifests keyed by integration; the gateway rejects a pool serving a
+    // different composite SHA than the manifest that was proven at publish.
+    const signedManifest = (Array.isArray(inferenceManifests) ? inferenceManifests : [])
+      .find((entry) => String(entry?.manifest?.integration_id || "") === String(availability.row?.integrationId || "")) || null;
+    // Live enforcement: a published workflow invoking a control-plane row
+    // must run under its published manifest. `not_requested` is not a valid
+    // state for a live inference call — no manifest, no transport.
+    const rowDeclaresControlPlane = Boolean(availability.row?.metadata?.inferenceControlPlane);
+    if (inferenceManifestsRequired && rowDeclaresControlPlane && !signedManifest) {
+      attempts.push({
+        target,
+        status: "failed",
+        reason: `manifest_missing: published workflow has no signed inference manifest for integration ${availability.row?.integrationId}; live execution is refused`,
+      });
+      continue;
+    }
+    const localRoutes = routes.filter((entry) => String(entry?.target || "") !== "teacher");
+    const cloudRoutes = routes.filter((entry) => String(entry?.target || "") === "teacher");
     const result = await executeInferenceGateway({
       request,
       transport,
@@ -438,6 +556,27 @@ export async function executeCustomModelInference({
         appScope: String(appScope || "workspace-wide"),
         integrationId: String(availability.row?.integrationId || ""),
         maxTokensLimit: Math.max(1, Number(control.maxTokensLimit) || 32_768),
+        redaction: control.redaction,
+        ancestorReceiptIds: (Array.isArray(ancestorReceiptIds) ? ancestorReceiptIds : []).map(String).filter(Boolean),
+        ...(typeof childReceiptResolver === "function" ? { childReceiptResolver } : {}),
+        // Server-owned live-mode flag: on a live published run the gateway
+        // requires the child receipt resolver and a concrete tenant scope
+        // for every governed child call. Never derived from request input.
+        ...(liveExecution ? { liveExecution: true } : {}),
+        ...(inferenceManifestsRequired && rowDeclaresControlPlane ? { manifestRequired: true } : {}),
+        ...(signedManifest ? { manifest: signedManifest } : {}),
+        economics: {
+          reason: qualityFallbackActive ? "quality_fallback" : maxCostCents !== null ? "cost_capability" : "default",
+          costModel: routeCostModel(route, control) || {},
+          localCostEstimateCents: localRoutes.length ? routeEstimate(localRoutes[0], control) : null,
+          cloudCostEstimateCents: cloudRoutes.length ? routeEstimate(cloudRoutes[0], control) : null,
+          // Honest pricing basis: when an operator ceiling stood in for
+          // unknown route pricing, the receipt says so — an assumed
+          // conservative cost is never presented as a computed estimate.
+          ...(usedAssumedCeiling ? {
+            reasonDetail: `route pricing is ${pricing.status}; governed assumedRouteCostCents ${assumedCeiling} stands in as a conservative ceiling`,
+          } : {}),
+        },
       },
       fetchImpl,
       onDelta: typeof onEvent === "function" ? (event) => onEvent({
@@ -451,6 +590,11 @@ export async function executeCustomModelInference({
       signal,
       timeoutMs,
     });
+    // Budget accounting tracks estimates of executed inference only; a cache
+    // replay consumed no model compute.
+    if (Number(result.httpStatus) > 0 && String(result.receipt?.cache?.cache_status || "") !== "HIT") {
+      spentEstimateCents += thisRouteEstimate;
+    }
     const body = result.response;
     const servedModel = String(body?.model || "").trim();
     const validBody = result.ok && isChatCompletion(body);
@@ -499,6 +643,18 @@ export async function executeCustomModelInference({
     const usage = body?.usage && typeof body.usage === "object" ? body.usage : {};
     const completedAt = new Date().toISOString();
     const verificationReceipt = result.receipt;
+    // Execution-time manifest: compiled and signed from the governed control
+    // config this call actually enforced. The draft test run persists it, and
+    // the publish gate later verifies live registry state against it.
+    const compiledManifest = compileInferenceManifest({
+      workflowId: String(runId || ""),
+      integrationId: String(availability.row?.integrationId || ""),
+      control,
+      maxTokens,
+    });
+    const executionManifest = compiledManifest.available
+      ? signInferenceManifest(compiledManifest.manifest)
+      : null;
     const invocation = {
       schema: "growthub-custom-model-invocation-v2",
       runId: String(runId || ""),
@@ -528,6 +684,13 @@ export async function executeCustomModelInference({
       spanId: String(verificationReceipt?.otel?.span_id || ""),
       phasePools: verificationReceipt?.routing?.phases || [],
       toolAudit: verificationReceipt?.tool_audit || { status: "not_requested", calls: [] },
+      receiptSha256: receiptSha256(verificationReceipt),
+      parentReceiptId: String(verificationReceipt?.lineage?.parent_receipt_id || ""),
+      spanKind: String(verificationReceipt?.lineage?.span_kind || "ROOT"),
+      routingDecision: verificationReceipt?.routing_decision || null,
+      redactionEventCount: Number(verificationReceipt?.redaction?.event_count) || 0,
+      ...(executionManifest ? { inferenceManifest: executionManifest } : {}),
+      ...(compiledManifest.available ? {} : { inferenceManifestUnavailable: compiledManifest.reason }),
       verificationReceipt,
       outcomeStatus: result.status,
     };
@@ -549,15 +712,24 @@ export async function executeCustomModelInference({
         reusable: ["HIT", "MISS"].includes(String(verificationReceipt?.cache?.cache_status || "")),
       },
     });
+    const qualityUnmet = String(verificationReceipt?.routing_decision?.quality || "") === "QUALITY_UNMET";
+    const laterRoutes = routes.slice(routes.indexOf(route) + 1)
+      .filter((entry) => !targetAllow || targetAllow.has(String(entry?.target || "")));
+    const stashForQualityFallback = qualityUnmet
+      && !awaitingToolResult
+      && !trustedContinuation
+      && !stashedQualityEnvelope
+      && laterRoutes.length > 0;
     attempts.push({
       target,
-      status: awaitingToolResult ? "awaiting_tool_result" : "completed",
+      status: awaitingToolResult ? "awaiting_tool_result" : stashForQualityFallback ? "quality_unmet" : "completed",
       httpStatus: invocation.status,
       servedModel,
       cacheStatus: invocation.cacheStatus,
+      ...(qualityUnmet ? { quality: "QUALITY_UNMET", confidence: verificationReceipt?.routing_decision?.actual_confidence ?? null } : {}),
       verificationReceipt,
     });
-    return {
+    const successEnvelope = {
       ok: true,
       status: invocation.status,
       gatewayStatus: result.status,
@@ -568,6 +740,7 @@ export async function executeCustomModelInference({
           status: "pending",
           prior_receipt_id: String(verificationReceipt?.receipt_id || ""),
           tool_calls: (verificationReceipt?.tool_audit?.calls || []).map((entry) => entry?.tool_call).filter(Boolean),
+          ...(result.childExecution ? { child_execution: result.childExecution } : {}),
         },
       } : {}),
       response: body,
@@ -575,9 +748,35 @@ export async function executeCustomModelInference({
       attempts,
       invocation,
       trace,
-      invocations: [...failedInvocations, invocation],
+      invocations: [
+        ...failedInvocations,
+        ...(stashedQualityEnvelope ? [stashedQualityEnvelope.invocation] : []),
+        invocation,
+      ],
       traces: trace ? [trace] : [],
       verificationReceipt,
+    };
+    if (stashForQualityFallback) {
+      // The local answer is below min_quality_score and a governed fallback
+      // route remains. Keep this result as honest evidence, mark the router
+      // state, and try the next tier within the remaining budget. If nothing
+      // affordable improves on it, this local result is returned flagged
+      // QUALITY_UNMET rather than silently discarded.
+      qualityFallbackActive = true;
+      stashedQualityEnvelope = successEnvelope;
+      stashedQualityEstimate = thisRouteEstimate;
+      continue;
+    }
+    return successEnvelope;
+  }
+
+  if (stashedQualityEnvelope) {
+    return {
+      ...stashedQualityEnvelope,
+      qualityUnmet: true,
+      qualityUnmetReason: maxCostCents !== null && spentEstimateCents + stashedQualityEstimate >= maxCostCents
+        ? "cloud fallback exceeded max_cost_cents; the local result is returned flagged QUALITY_UNMET"
+        : "no governed fallback route produced a better-confidence result; the local result is returned flagged QUALITY_UNMET",
     };
   }
 
@@ -603,13 +802,61 @@ function numericScore(body) {
   return 0;
 }
 
-function combineExecutions(executions, response, extra = {}) {
+/**
+ * Workflow assembly boundary: fold step executions into one envelope with the
+ * global receipt-DAG verdict. Exported because it IS the trust decision the
+ * multi-step variants ship on — the certification suite drives it directly
+ * with adversarial (cyclic / oversized) receipt graphs.
+ */
+export function combineExecutions(executions, response, extra = {}) {
   const successful = executions.filter((entry) => entry?.ok);
+  // Workflow-level receipt DAG: every step receipt is hashed and its
+  // parent linkage recorded, so the multi-step workflow's evidence is a
+  // Merkle chain (root_hash -> child_hash -> grandchild_hash), not a list
+  // of disconnected spans.
+  const receipts = executions.map((entry) => entry?.verificationReceipt).filter(Boolean);
+  const edges = receipts.map((receipt) => ({
+    receipt_id: String(receipt.receipt_id || ""),
+    parent_receipt_id: receipt.lineage?.parent_receipt_id || null,
+    span_kind: String(receipt.lineage?.span_kind || "ROOT"),
+    receipt_sha256: receiptSha256(receipt),
+  }));
+  // Global transitive cycle check over the assembled edge set. Ingestion
+  // guards are per-continuation; this is the whole-graph verdict, so even a
+  // cycle recorded by concurrent continuations is flagged before the DAG is
+  // trusted as evidence.
+  const cycleVerdict = detectLineageCycle(receipts.map((receipt) => ({
+    receipt_id: String(receipt.receipt_id || ""),
+    parent_receipt_id: receipt.lineage?.parent_receipt_id || null,
+    children: Array.isArray(receipt.lineage?.children) ? receipt.lineage.children : [],
+  })));
+  const receiptDag = receipts.length ? {
+    schema: "growthub-receipt-dag-v1",
+    root_receipt_id: edges[0].receipt_id,
+    edges,
+    dag_sha256: receiptSha256(edges),
+    acyclic: cycleVerdict.ok,
+    ...(cycleVerdict.ok ? {} : { cycle_path: cycleVerdict.cyclePath }),
+  } : null;
+  // A cyclic receipt graph is a terminal verification failure, not a flag:
+  // "detected" must mean "refused before trust". The envelope fails even
+  // when every individual execution succeeded, and the cycle is the error.
+  // A graph too large to verify is refused the same way — an unverifiable
+  // DAG is not trusted evidence either.
+  const dagValid = cycleVerdict.ok;
   return {
-    ok: successful.length === executions.length,
+    ok: successful.length === executions.length && dagValid,
+    ...(dagValid ? {} : cycleVerdict.boundsExceeded ? {
+      error: `receipt_graph_unverifiable: ${cycleVerdict.reason}; this run is not trustable evidence`,
+      errorCode: "receipt_graph_unverifiable",
+    } : {
+      error: `receipt_lineage_cycle: the workflow receipt graph contains a cycle (${cycleVerdict.cyclePath.join(" -> ")}); this run is not trustable evidence`,
+      errorCode: "receipt_lineage_cycle",
+    }),
     status: Number(response?.status) || 200,
     response: response?.response,
     route: response?.route,
+    ...(receiptDag ? { receiptDag } : {}),
     attempts: executions.flatMap((entry) => entry?.attempts || []),
     invocations: executions.flatMap((entry) => Array.isArray(entry?.invocations)
       ? entry.invocations
@@ -645,6 +892,10 @@ export async function executeCustomModelWorkflow({
   trustedContinuation = null,
   signal,
   timeoutMs = 120_000,
+  inferenceManifests = [],
+  inferenceManifestsRequired = false,
+  liveExecution = false,
+  childReceiptResolver = null,
 } = {}) {
   const baseArgs = {
     workspaceConfig,
@@ -663,16 +914,42 @@ export async function executeCustomModelWorkflow({
     trustedContinuation,
     signal,
     timeoutMs,
+    inferenceManifests,
+    inferenceManifestsRequired,
+    liveExecution,
+    childReceiptResolver,
   };
   const prompt = promptFromInput(inputPayload);
+  // Multi-step variants chain the receipt DAG: each step after the first
+  // executes as a CHILD_WORKFLOW span of the preceding step's receipt, and
+  // the FULL accumulated ancestry travels with every step so a child receipt
+  // looping back onto any upstream step is refused at ingestion depth.
+  const chainAncestry = [];
   const call = (suffix, nextPrompt, options = {}) => executeCustomModelInference({
     ...baseArgs,
     runId: `${runId}${suffix ? `_${suffix}` : ""}`,
-    inputPayload: { ...inputPayload, prompt: nextPrompt, messages: undefined },
+    inputPayload: {
+      ...inputPayload,
+      prompt: nextPrompt,
+      messages: undefined,
+      ...(options.parentReceiptId ? {
+        inference: {
+          ...(inputPayload?.inference && typeof inputPayload.inference === "object" ? inputPayload.inference : {}),
+          parent_receipt_id: options.parentReceiptId,
+          span_kind: "CHILD_WORKFLOW",
+        },
+      } : {}),
+    },
     clusterId: workflowVariant,
     allowedTargets: options.allowedTargets,
+    ancestorReceiptIds: [...chainAncestry],
   });
   const needsToolResult = (execution) => execution?.awaitingToolResult === true;
+  const parentOf = (execution) => {
+    const receiptId = String(execution?.verificationReceipt?.receipt_id || "");
+    if (receiptId && !chainAncestry.includes(receiptId)) chainAncestry.push(receiptId);
+    return receiptId;
+  };
 
   if (workflowVariant === "chat") return call("", prompt);
 
@@ -688,10 +965,10 @@ export async function executeCustomModelWorkflow({
     const answer = await call("answer", prompt);
     if (!answer.ok || needsToolResult(answer)) return answer;
     const answerText = responseContent(answer.response);
-    const grade = await call("grade", `Score the following answer from 0 to 5 for correctness, usefulness, and safety. Return JSON only: {"score": number, "feedback": string}.\n\nTask: ${prompt}\n\nAnswer: ${answerText}`);
+    const grade = await call("grade", `Score the following answer from 0 to 5 for correctness, usefulness, and safety. Return JSON only: {"score": number, "feedback": string}.\n\nTask: ${prompt}\n\nAnswer: ${answerText}`, { parentReceiptId: parentOf(answer) });
     if (!grade.ok || needsToolResult(grade)) return grade;
     const score = numericScore(grade.response);
-    const improved = await call("improve", `Improve the answer using this grader feedback. Return only the improved answer.\n\nTask: ${prompt}\n\nOriginal answer: ${answerText}\n\nFeedback: ${responseContent(grade.response)}`);
+    const improved = await call("improve", `Improve the answer using this grader feedback. Return only the improved answer.\n\nTask: ${prompt}\n\nOriginal answer: ${answerText}\n\nFeedback: ${responseContent(grade.response)}`, { parentReceiptId: parentOf(grade) });
     if (!improved.ok || needsToolResult(improved)) return improved;
     improved.trace = { ...improved.trace, score, recursiveLearning: true, accepted: score >= 4, qualityStatus: score >= 4 ? "qualified" : "needs-review" };
     return combineExecutions([answer, grade, improved], improved, { score, feedback: responseContent(grade.response) });
@@ -700,9 +977,9 @@ export async function executeCustomModelWorkflow({
   if (workflowVariant === "agentic") {
     const plan = await call("plan", `Create a concise multi-step plan for this goal. Identify assumptions and success criteria.\n\nGoal: ${prompt}`);
     if (!plan.ok || needsToolResult(plan)) return plan;
-    const critique = await call("critique", `Critique this plan for missing steps, unsafe assumptions, and verification gaps.\n\nGoal: ${prompt}\n\nPlan: ${responseContent(plan.response)}`);
+    const critique = await call("critique", `Critique this plan for missing steps, unsafe assumptions, and verification gaps.\n\nGoal: ${prompt}\n\nPlan: ${responseContent(plan.response)}`, { parentReceiptId: parentOf(plan) });
     if (!critique.ok || needsToolResult(critique)) return critique;
-    const result = await call("result", `Produce the final answer for the goal using the plan and critique. State the completed result and remaining external dependencies honestly.\n\nGoal: ${prompt}\n\nPlan: ${responseContent(plan.response)}\n\nCritique: ${responseContent(critique.response)}`);
+    const result = await call("result", `Produce the final answer for the goal using the plan and critique. State the completed result and remaining external dependencies honestly.\n\nGoal: ${prompt}\n\nPlan: ${responseContent(plan.response)}\n\nCritique: ${responseContent(critique.response)}`, { parentReceiptId: parentOf(critique) });
     if (!result.ok || needsToolResult(result)) return result;
     return combineExecutions([plan, critique, result], result, { agenticSteps: 3 });
   }
@@ -710,10 +987,10 @@ export async function executeCustomModelWorkflow({
   if (workflowVariant === "eval-vs-base") {
     const tuned = await call("tuned", prompt, { allowedTargets: ["local-student"] });
     if (!tuned.ok || needsToolResult(tuned)) return { ...tuned, error: tuned.error || (needsToolResult(tuned) ? "trained student requested a tool result before evaluation can continue" : "the trained student is not available for evaluation") };
-    const base = await call("base", prompt, { allowedTargets: ["local-base"] });
+    const base = await call("base", prompt, { allowedTargets: ["local-base"], parentReceiptId: parentOf(tuned) });
     if (!base.ok || needsToolResult(base)) return { ...base, error: base.error || (needsToolResult(base) ? "base route requested a tool result before evaluation can continue" : "the governed base route is not available for evaluation") };
     const judgePrompt = `Evaluate two answers to the same holdout prompt. Return JSON only: {"winner":"tuned"|"base"|"tie","score":0-5,"reason":string}.\n\nPrompt: ${prompt}\n\nTuned answer: ${responseContent(tuned.response)}\n\nBase answer: ${responseContent(base.response)}`;
-    const judge = await call("judge", judgePrompt, { allowedTargets: ["teacher"] });
+    const judge = await call("judge", judgePrompt, { allowedTargets: ["teacher"], parentReceiptId: parentOf(base) });
     if (!judge.ok || needsToolResult(judge)) return { ...judge, error: judge.error || (needsToolResult(judge) ? "judge requested a tool result before evaluation can continue" : "a configured teacher route is required to judge the holdout evaluation") };
     let verdict = { winner: "", score: numericScore(judge.response), reason: responseContent(judge.response) };
     try { verdict = { ...verdict, ...JSON.parse(responseContent(judge.response)) }; } catch { /* retain evidence text */ }

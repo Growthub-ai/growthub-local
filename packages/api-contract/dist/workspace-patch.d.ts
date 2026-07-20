@@ -27,7 +27,7 @@ export type WorkspacePatchAllowedField = (typeof WORKSPACE_PATCH_ALLOWED_FIELDS)
  * only echo persisted values. `version` increments and the
  * `lifecycleStatus: "live"` transition are equally publish-owned.
  */
-export declare const WORKSPACE_LIVE_WORKFLOW_FIELDS: readonly ["orchestrationGraph", "orchestrationConfig", "orchestrationPublishedAt", "orchestrationDeltas"];
+export declare const WORKSPACE_LIVE_WORKFLOW_FIELDS: readonly ["orchestrationGraph", "orchestrationConfig", "orchestrationPublishedAt", "orchestrationDeltas", "inferenceManifests"];
 export type WorkspaceLiveWorkflowField = (typeof WORKSPACE_LIVE_WORKFLOW_FIELDS)[number];
 /** Draft workflow fields — direct PATCH may save these freely. */
 export declare const WORKSPACE_DRAFT_WORKFLOW_FIELDS: readonly ["orchestrationDraftGraph", "orchestrationDraftConfig", "orchestrationDraftStatus", "orchestrationDraftUpdatedAt", "orchestrationDraftBaseVersion", "orchestrationDraftTestPassed", "orchestrationDraftTestedConfig", "orchestrationDraftLastRunId", "orchestrationDraftLastTested", "orchestrationDraftLastResponse"];

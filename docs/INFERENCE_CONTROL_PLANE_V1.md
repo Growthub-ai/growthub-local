@@ -562,17 +562,25 @@ Relevant upstream contracts:
 | Cache | `apps/workspace/lib/adapters/inference/cache.js` |
 | Schema and tools | `apps/workspace/lib/adapters/inference/contracts.js` |
 | Persisted tool-continuation trust | `apps/workspace/lib/adapters/inference/continuation.js` |
+| Receipt DAG lineage | `apps/workspace/lib/adapters/inference/lineage.js` |
+| Streaming redaction | `apps/workspace/lib/adapters/inference/redaction.js` |
+| Inference manifests | `apps/workspace/lib/adapters/inference/manifest.js` |
 | Trace context and OTLP | `apps/workspace/lib/adapters/inference/otel.js` |
 | llama.cpp supervisor | `apps/workspace/lib/adapters/inference/llama-cpp.js` |
 | Gateway-to-pool transport | `apps/workspace/lib/adapters/inference/llama-transport.js` |
 | Existing custom-model integration | `apps/workspace/lib/custom-model-inference.js` |
 | Existing persistence boundary | `apps/workspace/app/api/workspace/sandbox-run/route.js` |
 
+The evidentiary backbone (receipt DAG, signed/revocable cache, economic
+routing, streaming redaction, and the signed manifest handshake) layers on
+top of these six controls: [`INFERENCE_EVIDENTIARY_BACKBONE_V1.md`](./INFERENCE_EVIDENTIARY_BACKBONE_V1.md).
+
 Run focused proof from the repository root:
 
 ```bash
 node --test \
   scripts/unit-inference-control-plane.test.mjs \
+  scripts/unit-inference-evidentiary-backbone.test.mjs \
   scripts/unit-llama-cpp-adapter.test.mjs \
   scripts/unit-custom-model-inference.test.mjs
 

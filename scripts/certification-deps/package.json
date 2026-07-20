@@ -1,0 +1,10 @@
+{
+  "name": "growthub-inference-certification-deps",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Deterministic, scoped dependency set for the governed inference certification suites. The workspace kit's schema boundary (apps/workspace/lib/adapters/inference/contracts.js) resolves the real AJV validator lazily; exported workspaces install it from apps/workspace/package.json, and this manifest provisions the exact same validator for repo-level certification runs (local + CI) without installing the full workspace application graph or touching pnpm-lock.yaml. Provisioned exclusively via `npm ci --ignore-scripts` by scripts/run-inference-certification.mjs.",
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

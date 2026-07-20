@@ -85,7 +85,7 @@ test("completion cache isolates exact full-request keys and confines semantic re
     response,
     ttlSeconds: 5,
     metadata: { instanceId: "llama-1" },
-  }), { stored: true, remote: "disabled" });
+  }), { stored: true, remote: "disabled", signatureState: "signed", cacheVersion: cache.cacheVersion });
 
   const exact = await cache.lookup({ cacheKey: "full-request:one" });
   assert.equal(exact.hit, true);
@@ -251,7 +251,7 @@ test("Vercel Marketplace Upstash credentials perform a Redis REST SETEX with bea
     response: { choices: [{ message: { content: "cached" } }] },
     ttlSeconds: 60,
   });
-  assert.deepEqual(stored, { stored: true, remote: "stored" });
+  assert.deepEqual(stored, { stored: true, remote: "stored", signatureState: "signed", cacheVersion: cache.cacheVersion });
   assert.equal(cache.describeBackend().credentialSource, "vercel-marketplace-upstash");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://marketplace.redis.example");
@@ -282,6 +282,9 @@ test("governed cache namespace activates Redis immediately and reconfigures the 
     remoteEnabled: true,
     credentialSource: "upstash",
     disabledReason: "",
+    cacheVersion: activated.cacheVersion,
+    signingKeyId: activated.signingKey.keyId,
+    signingKeySource: "credential-derived",
   });
   const result = await activated.store({
     cacheKey: "activated-cache-key",

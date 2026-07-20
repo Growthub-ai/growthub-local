@@ -107,7 +107,8 @@ import {
   TRACE_CAPTURE_RUN_KIND
 } from "@/lib/distillation-gateway";
 import { trainingRunSourceKey } from "@/lib/training-run-receipts";
-import { resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
+import { resolveTrustedChildReceipt, resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
+import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
@@ -151,6 +152,29 @@ async function resolvePersistedInferenceContinuation({
   const source = await readWorkspaceSourceRecords(sourceId);
   return resolveTrustedInferenceContinuation(source?.records, {
     receiptId,
+    modelId: safeModelId,
+    policyRegistryId: safePolicyRegistryId,
+    appScope,
+  });
+}
+
+async function resolvePersistedChildReceipt({
+  childReceiptId,
+  expectedParentReceiptId,
+  modelId,
+  policyRegistryId,
+  appScope,
+} = {}) {
+  const safeModelId = String(modelId || "workspace-local").trim() || "workspace-local";
+  const safePolicyRegistryId = String(policyRegistryId || "").trim();
+  if (!safePolicyRegistryId) {
+    return { ok: false, reason: "the governed model policy registry id is required for child receipt resolution" };
+  }
+  const sourceId = `model-invocation:${safePolicyRegistryId}:${safeModelId}`;
+  const source = await readWorkspaceSourceRecords(sourceId);
+  return resolveTrustedChildReceipt(source?.records, {
+    childReceiptId,
+    expectedParentReceiptId,
     modelId: safeModelId,
     policyRegistryId: safePolicyRegistryId,
     appScope,
@@ -834,7 +858,18 @@ async function executeSandboxRun(body, {
         tracestate: String(tracestate || ""),
         appScope: String(appScope || ""),
         inferenceContinuation,
-        resolveInferenceContinuation: resolvePersistedInferenceContinuation,
+        // Live-evidence enforcement (manifests required, liveExecution,
+        // server-owned continuation + child-receipt resolvers with the
+        // server-derived app scope) comes from ONE seam shared with the
+        // certification suite, so the wiring this route activates is
+        // executable test surface: lib/sandbox-execution-context.js.
+        ...buildInferenceTrustContext({
+          row: rowForRun,
+          useDraft,
+          appScope,
+          resolveContinuation: resolvePersistedInferenceContinuation,
+          resolveChildReceipt: resolvePersistedChildReceipt,
+        }),
         signal,
         onEvent: emit
       }

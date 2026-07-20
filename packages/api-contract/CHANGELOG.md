@@ -1,5 +1,53 @@
 # @growthub/api-contract
 
+## 1.7.0
+
+Additive minor. Extends the inference contract into the **evidentiary
+backbone**: receipt lineage as a Merkle DAG, signed cache envelopes with
+governed invalidation, multi-tier economic routing evidence, deterministic
+streaming redaction evidence, and the signed inference manifest that binds a
+published workflow version to the live gateway identity.
+
+### Added
+
+- `InferenceRequest.parent_receipt_id` / `span_kind`
+  (`ROOT`/`CHILD_TOOL`/`CHILD_WORKFLOW`), plus `max_cost_cents` and
+  `min_quality_score` economic controls.
+- `ReceiptLineageEvidence` + `ChildReceiptLink`: parent receipts store the
+  SHA-256 of each child's full receipt, so the DAG chains
+  `parent_hash -> child_hash -> grandchild_hash`; a declared child that never
+  ingests a receipt is an explicit `MISSING`/`incomplete` state, and a failed
+  child is recorded with its exact error. `InferenceToolResult.child_receipt`
+  carries the ingested child receipt; `ToolCallAuditEntry.child_receipt_hash`
+  + `child_status` record the Merkle edge.
+- `CacheEnvelope` / `SignedCacheEnvelope`: HMAC-signed entry identity
+  (receipt id, model/adapter SHA, schema hash, workflow version, credential-
+  derived `cache_version`, redaction flags). `CacheInvalidationRequest` /
+  `CacheInvalidationResult` with `MODEL_UPDATE`/`SCHEMA_CHANGE`/
+  `FEEDBACK_CORRECTION`/`SECURITY` reasons and exact-key/semantic-cluster/
+  model/schema/workflow scopes. Cache evidence gains
+  `envelope_signature_state`, `cache_version`, `poisoned_by`, and
+  `semantic_bucket`; a poisoned bypass reports `CACHE_BYPASS_POISONED`.
+- `RoutingDecisionEvidence`: cost-capability/quality-fallback/budget
+  evidence with real token-count cost estimates and a log-prob-derived
+  confidence; a runtime without log-probs reports
+  `confidence_basis: "unavailable"` and quality `UNVERIFIED`, never an
+  estimated score. `QUALITY_UNMET` marks a kept-local result whose fallback
+  exceeded budget.
+- `StreamRedactionEvidence` + `RedactionEvent`: deterministic streaming
+  PII redaction events carrying source offsets and match hashes only;
+  `raw_output_cached` is always false when redaction ran.
+- `InferenceManifest` / `SignedInferenceManifest` /
+  `ManifestVerificationEvidence`: the draft -> publish -> runtime binding
+  (composite SHA over base model + allowed adapters + schema, tool OpenAPI
+  hash, cache TTL, cost policy) signed with the workspace signing key.
+- `VerificationReceipt` gains optional `lineage`, `routing_decision`,
+  `redaction`, and `manifest` blocks — optional on the wire so pre-1.7.0
+  receipts stay valid; a 1.7.0 runtime always emits all four with explicit
+  `not_requested`/`leaf` states.
+- `WORKSPACE_LIVE_WORKFLOW_FIELDS` gains `inferenceManifests`: signed
+  manifests are publish-owned and PATCH-forgery is policy-blocked.
+
 ## 1.6.0
 
 Additive minor. Introduces a public, type-only contract for evidence-bearing
