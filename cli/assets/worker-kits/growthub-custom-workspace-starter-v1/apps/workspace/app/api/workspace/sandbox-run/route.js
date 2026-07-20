@@ -85,6 +85,15 @@ import {
   getSandboxAdapter
 } from "@/lib/adapters/sandboxes";
 import {
+  ensureComputeAdaptersLoaded,
+  getComputeProviderAdapter,
+  listComputeProviderAdapters
+} from "@/lib/adapters/compute/index.js";
+import {
+  applyComputeBlockToReceiptRows,
+  maybeExecuteProviderComputeForSandboxRun
+} from "@/lib/compute-execution";
+import {
   classifySandboxRunResult,
   runOrchestrationGraphIfPresent
 } from "@/lib/orchestration-graph-runner";
@@ -903,7 +912,67 @@ async function executeSandboxRun(body, {
       envRefsResolved,
       envRefsMissing
     });
-  } else if (!result) {
+  }
+
+  // Governed provider-compute lane (additive, Sprint 5): a model-training-
+  // runner run whose governed receipt carries a compute ask executes through
+  // the compute orchestrator on the SAME seam — this route, this receipt,
+  // this outcome lane. Every other run, and every resolver decision of
+  // "local", falls through to the existing local path byte-for-byte. There
+  // is no /api/compute/run.
+  let providerComputeBlock = null;
+  if (!result && runLocality !== "serverless") {
+    await ensureComputeAdaptersLoaded();
+    try {
+      const providerCompute = await maybeExecuteProviderComputeForSandboxRun({
+        workspaceConfig,
+        objectId,
+        name: rowForRun.Name || name,
+        io: {
+          getAdapter: getComputeProviderAdapter,
+          listAdapterIds: listComputeProviderAdapters,
+          envPresent: (envName) => Boolean(process.env[String(envName)]),
+          resolveEnv: (envName) => process.env[String(envName)] || "",
+          fetchJson: async (url, init) => {
+            const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
+            const text = await res.text();
+            let parsed = null;
+            try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+            if (!res.ok) {
+              const detail = parsed?.message || parsed?.error || text.slice(0, 200);
+              const err = new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+              err.status = res.status;
+              throw err;
+            }
+            return parsed;
+          },
+          now: () => Date.now(),
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          // Bound remote observation to the row's own timeout budget.
+          maxPolls: Math.max(1, Math.floor(timeoutMs / 5000)),
+          pollIntervalMs: 5000
+        }
+      });
+      if (providerCompute) {
+        result = providerCompute.result;
+        providerComputeBlock = providerCompute.computeBlock || null;
+        effectiveAdapterId = "provider-compute";
+      }
+    } catch (error) {
+      result = {
+        ok: false,
+        exitCode: null,
+        durationMs: 0,
+        stdout: "",
+        stderr: "",
+        error: error?.message || "provider-compute orchestration failed",
+        adapterMeta: { adapter: "provider-compute" }
+      };
+      effectiveAdapterId = "provider-compute";
+    }
+  }
+
+  if (!result) {
     await ensureSandboxAdaptersLoaded();
     const adapter = getSandboxAdapter(adapterId);
     if (!adapter) {
@@ -1079,6 +1148,14 @@ async function executeSandboxRun(body, {
         response
       });
       if (reconciledObjects) nextObjects = reconciledObjects;
+      // Provider-compute evidence rides the SAME governed receipt row: the
+      // normalized compute block (decision, allocation, events, checkpoints,
+      // artifact ref) is stamped onto the model-training-run receipt so
+      // reload derives identical state — no separate compute store.
+      if (providerComputeBlock) {
+        const computeStamped = applyComputeBlockToReceiptRows(nextObjects, rowForRun.Name || name, providerComputeBlock);
+        if (computeStamped) nextObjects = computeStamped;
+      }
       await writeWorkspaceConfig({
         dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
       });
