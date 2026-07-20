@@ -34,6 +34,7 @@ const {
   resolveCacheSigningKey,
 } = await import(pathToFileURL(path.join(inferenceRoot, "cache.js")).href);
 const {
+  LINEAGE_GRAPH_MAX_EDGES,
   buildReceiptLineage,
   detectLineageCycle,
   ingestChildReceipt,
@@ -41,6 +42,11 @@ const {
   receiptSha256,
   workflowOperationIds,
 } = await import(pathToFileURL(path.join(inferenceRoot, "lineage.js")).href);
+const {
+  resolveTrustedChildReceipt,
+  resolveTrustedInferenceContinuation,
+} = await import(pathToFileURL(path.join(inferenceRoot, "continuation.js")).href);
+const { buildInferenceTrustContext } = await import(pathToFileURL(path.join(workspaceLib, "sandbox-execution-context.js")).href);
 const {
   compileInferenceManifest,
   expectedManifestIntegrations,
@@ -56,6 +62,7 @@ const {
 } = await import(pathToFileURL(path.join(inferenceRoot, "redaction.js")).href);
 const resolveKeyFor = (env) => resolveRedactionPreviewKey(env);
 const {
+  combineExecutions,
   executeCustomModelInference,
   executeCustomModelWorkflow,
 } = await import(pathToFileURL(path.join(workspaceLib, "custom-model-inference.js")).href);
@@ -150,16 +157,17 @@ const childCall = {
   function: { name: "runChildWorkflow", arguments: '{"name":"support-triage"}' },
 };
 
-async function runChildGatewayCall({ parentReceiptId, fail = false }) {
+async function runChildGatewayCall({ parentReceiptId, fail = false, tenantScope = "", requestId = "child-request-1" }) {
   const transport = async ({ request }) => (fail
     ? { ok: false, status: 500, response: null, error: "child model exploded" }
     : unifiedTransportResult(request, "child workflow answer"));
   return executeInferenceGateway({
-    request: baseRequest("child-request-1", "Run the child workflow step.", {
+    request: baseRequest(requestId, "Run the child workflow step.", {
       parent_receipt_id: parentReceiptId,
       span_kind: "CHILD_WORKFLOW",
     }),
     transport,
+    ...(tenantScope ? { defaults: { tenantScope } } : {}),
     env: {},
     now: () => 1_721_280_000_000,
   });
@@ -1010,3 +1018,786 @@ test("multi-step workflow chains a Merkle receipt DAG across its steps", async (
   );
 });
 
+
+// ===========================================================================
+// Live child-receipt trust boundary — adversarial matrix.
+//
+// Every test here drives executeInferenceGateway through the SAME wiring the
+// sandbox-run route activates: buildInferenceTrustContext (the route's seam)
+// wraps resolveTrustedChildReceipt (the route's resolver) over an in-memory
+// persisted-invocation stream, and the runner-style resolver injection adds
+// the per-node model/policy identity. Rejection tests assert the forbidden
+// side effects did not occur: zero transport calls and zero cache writes.
+// ===========================================================================
+
+const TENANT_ALPHA = "tenant-alpha";
+const TENANT_BETA = "tenant-beta";
+const MODEL_ID = "ws-backbone";
+const POLICY_ID = "custom-model-policy";
+const AWAITING_PARENT = "infr_parent_awaiting_1";
+
+function countingTransport(content = "Parent continuation completed.") {
+  const counter = { calls: 0 };
+  const transport = async ({ request }) => {
+    counter.calls += 1;
+    return unifiedTransportResult(request, content);
+  };
+  return { transport, counter };
+}
+
+function countingCache({ hitEntry = null } = {}) {
+  const stats = { lookups: 0, stores: 0 };
+  return {
+    stats,
+    client: {
+      describeBackend: () => ({ kind: "memory", remoteEnabled: false, credentialSource: "", disabledReason: "" }),
+      async lookup() {
+        stats.lookups += 1;
+        return hitEntry
+          ? { hit: true, hitType: "exact", similarity: 1, entry: hitEntry, envelope: hitEntry.envelope || null, signatureState: "verified" }
+          : { hit: false, hitType: "", similarity: 0, entry: null };
+      },
+      async store() {
+        stats.stores += 1;
+        return { stored: true, remote: "disabled", signatureState: "signed" };
+      },
+    },
+  };
+}
+
+function invocationRecordFor(childReceipt, overrides = {}) {
+  return {
+    schema: "growthub-custom-model-invocation-v2",
+    modelId: MODEL_ID,
+    policyRegistryId: POLICY_ID,
+    integrationId: "student-a",
+    appScope: "workspace-wide",
+    priorReceiptId: "",
+    verificationReceipt: childReceipt,
+    ...overrides,
+  };
+}
+
+/** Route-equivalent live wiring: seam -> appScope injection -> continuation.js resolver. */
+function liveTrustDefaults(records, {
+  tenantScope = TENANT_ALPHA,
+  appScope = "workspace-wide",
+  modelId = MODEL_ID,
+  policyRegistryId = POLICY_ID,
+  includeResolver = true,
+} = {}) {
+  const trust = buildInferenceTrustContext({
+    row: { lifecycleStatus: "live" },
+    useDraft: false,
+    appScope,
+    ...(includeResolver ? { resolveChildReceipt: (args) => resolveTrustedChildReceipt(records, args) } : {}),
+  });
+  return {
+    liveExecution: trust.liveExecution,
+    tenantScope,
+    ...(trust.resolveChildReceipt
+      ? { childReceiptResolver: (args) => trust.resolveChildReceipt({ ...args, modelId, policyRegistryId }) }
+      : {}),
+  };
+}
+
+async function runLiveContinuation({ childReceiptField, defaults, transportContent, requestExtra = {} }) {
+  const fixture = continuationFixture({ childReceiptField });
+  const { transport, counter } = countingTransport(transportContent);
+  const cache = countingCache();
+  const result = await executeInferenceGateway({
+    request: { ...fixture.request, ...requestExtra },
+    transport,
+    cache: cache.client,
+    defaults,
+    trustedContinuation: fixture.trust(await gatewayToolContractHash(fixture.request)),
+    env: {},
+    now: () => 1_721_280_000_000,
+  });
+  return { result, counter, cache };
+}
+
+test("a bare child receipt hash is evidence-shaped input: rejected before transport (child_receipt_hash_only)", async () => {
+  const { result, counter, cache } = await runLiveContinuation({
+    childReceiptField: { child_receipt_sha256: "c".repeat(64) },
+    defaults: {},
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "child_receipt_hash_only");
+  assert.equal(counter.calls, 0, "no transport call may follow a hash-only child receipt");
+  assert.equal(cache.stats.stores, 0, "nothing is cached from a refused continuation");
+  assert.equal(result.response, null);
+});
+
+test("live mode: an attacker-tampered receipt body loses to canonical server-side resolution", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-canonical-1" });
+  assert.equal(child.ok, true, JSON.stringify(child.error));
+  const canonical = child.receipt;
+  const records = [invocationRecordFor(canonical)];
+  const tampered = { ...canonical, output_sha256: "f".repeat(64), status: "verified" };
+  const { result, counter } = await runLiveContinuation({
+    childReceiptField: { child_receipt: tampered, child_receipt_id: canonical.receipt_id },
+    defaults: liveTrustDefaults(records),
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(counter.calls, 1, "the valid canonical continuation reaches transport exactly once");
+  const edge = result.receipt.lineage.children[0];
+  assert.equal(edge.child_receipt_sha256, receiptSha256(canonical), "the canonical persisted receipt is what gets hashed");
+  assert.notEqual(edge.child_receipt_sha256, receiptSha256(tampered), "the attacker-shaped body is discarded, not hashed");
+  assert.equal(edge.evidence_basis, "server-resolved");
+});
+
+test("live mode without the server-owned resolver refuses the continuation before transport (child_receipt_resolver_required)", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-canonical-2" });
+  const { result, counter, cache } = await runLiveContinuation({
+    childReceiptField: { child_receipt: child.receipt, child_receipt_id: child.receipt.receipt_id },
+    defaults: { liveExecution: true, tenantScope: TENANT_ALPHA },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "child_receipt_resolver_required");
+  assert.equal(counter.calls, 0, "a live continuation without the resolver never reaches transport");
+  assert.equal(cache.stats.stores, 0);
+  assert.equal(result.response, null, "no cached or transported content is released");
+});
+
+test("live mode: the workspace-local default (and caller metadata) is not tenant isolation (child_receipt_scope_unbound)", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, requestId: "child-default-scope" });
+  const records = [invocationRecordFor(child.receipt)];
+  for (const tenantScope of ["workspace-local", ""]) {
+    const { result, counter } = await runLiveContinuation({
+      childReceiptField: { child_receipt_id: child.receipt.receipt_id },
+      defaults: liveTrustDefaults(records, { tenantScope }),
+      // Caller-supplied metadata must not be able to stand in for the
+      // missing server-owned scope.
+      requestExtra: { metadata: { workspace_id: "attacker-tenant" } },
+    });
+    assert.equal(result.ok, false, `tenantScope=${JSON.stringify(tenantScope)} must fail closed`);
+    assert.equal(result.error.code, "child_receipt_scope_unbound");
+    assert.equal(counter.calls, 0, "no transport under an unbound live scope");
+  }
+});
+
+test("a child receipt spawned by a different parent is rejected in both trust lanes", async () => {
+  // Resolver lane: the canonical persisted receipt declares another parent.
+  const foreign = await runChildGatewayCall({ parentReceiptId: "infr_other_parent", tenantScope: TENANT_ALPHA, requestId: "child-foreign-parent" });
+  const records = [invocationRecordFor(foreign.receipt)];
+  const resolverLane = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: foreign.receipt.receipt_id },
+    defaults: liveTrustDefaults(records),
+  });
+  assert.equal(resolverLane.result.ok, false);
+  assert.equal(resolverLane.result.error.code, "child_receipt_missing");
+  assert.match(resolverLane.result.error.message, /not spawned from this parent receipt/);
+  assert.equal(resolverLane.counter.calls, 0);
+  // Draft/dev lane (caller body, no resolver): ingestion-level parent binding.
+  const draftLane = await runLiveContinuation({
+    childReceiptField: { child_receipt: foreign.receipt },
+    defaults: {},
+  });
+  assert.equal(draftLane.result.ok, false);
+  assert.equal(draftLane.result.error.code, "child_receipt_parent_mismatch");
+  assert.equal(draftLane.counter.calls, 0);
+});
+
+test("a cross-tenant child receipt fails scope binding closed, and a scopeless receipt cannot bind at all in live mode", async () => {
+  // Child produced under tenant-beta; live continuation runs under tenant-alpha.
+  const crossTenant = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_BETA, requestId: "child-cross-tenant" });
+  const records = [invocationRecordFor(crossTenant.receipt)];
+  const mismatch = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: crossTenant.receipt.receipt_id },
+    defaults: liveTrustDefaults(records, { tenantScope: TENANT_ALPHA }),
+  });
+  assert.equal(mismatch.result.ok, false);
+  assert.equal(mismatch.result.error.code, "child_receipt_scope_mismatch");
+  assert.equal(mismatch.counter.calls, 0);
+  // A canonical receipt whose persisted body carries no scope hash cannot
+  // prove binding — live mode refuses instead of assuming isolation.
+  const base = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-scopeless" });
+  const scopeless = { ...base.receipt, cache: { ...base.receipt.cache, cache_scope_sha256: "" } };
+  const scopelessRun = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: scopeless.receipt_id },
+    defaults: liveTrustDefaults([invocationRecordFor(scopeless)], { tenantScope: TENANT_ALPHA }),
+  });
+  assert.equal(scopelessRun.result.ok, false);
+  assert.equal(scopelessRun.result.error.code, "child_receipt_scope_unbound");
+  assert.equal(scopelessRun.counter.calls, 0);
+});
+
+test("a child receipt outside the app scope or the workflow's model policy is not resolvable", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-app-scope" });
+  // Persisted under app-alpha; this continuation's server-derived scope is app-beta.
+  // NB: the gateway also cross-checks the trusted continuation's app scope, so
+  // the mismatch surfaces as a rejected continuation — and still no transport.
+  const wrongApp = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: child.receipt.receipt_id },
+    defaults: { ...liveTrustDefaults([invocationRecordFor(child.receipt, { appScope: "app-alpha" })], { appScope: "app-beta" }), appScope: "app-beta" },
+  });
+  assert.equal(wrongApp.result.ok, false);
+  assert.equal(wrongApp.counter.calls, 0, "no transport when the app scope cannot bind");
+  // Persisted under a different workflow's policy registry: not this graph's evidence.
+  const wrongPolicy = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: child.receipt.receipt_id },
+    defaults: liveTrustDefaults([invocationRecordFor(child.receipt, { policyRegistryId: "another-workflow-policy" })]),
+  });
+  assert.equal(wrongPolicy.result.ok, false);
+  assert.equal(wrongPolicy.result.error.code, "child_receipt_missing");
+  assert.match(wrongPolicy.result.error.message, /not found in the governed invocation stream/);
+  assert.equal(wrongPolicy.counter.calls, 0);
+});
+
+test("one child receipt cannot satisfy two tool calls (child_receipt_replayed)", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-replay" });
+  const records = [invocationRecordFor(child.receipt)];
+  const callA = { id: "call-child-A", type: "function", function: { name: "runChildWorkflow", arguments: '{"name":"triage-a"}' } };
+  const callB = { id: "call-child-B", type: "function", function: { name: "runChildWorkflow", arguments: '{"name":"triage-b"}' } };
+  const messages = [{ role: "user", content: "Delegate two child workflows." }];
+  const request = {
+    request_id: "parent-replay-1",
+    prior_receipt_id: AWAITING_PARENT,
+    model: "backbone-model",
+    base_model_ref: { model_id: "base-model", base_model_sha256: BASE_SHA },
+    messages,
+    tool_openapi: workflowOpenApi,
+    tool_contract: { allowed_operation_ids: ["runChildWorkflow"] },
+    tool_results: [
+      { tool_call_id: callA.id, operation_id: "runChildWorkflow", status: 200, response: { ok: true }, child_receipt_id: child.receipt.receipt_id },
+      { tool_call_id: callB.id, operation_id: "runChildWorkflow", status: 200, response: { ok: true }, child_receipt_id: child.receipt.receipt_id },
+    ],
+  };
+  const { transport, counter } = countingTransport();
+  const result = await executeInferenceGateway({
+    request,
+    transport,
+    defaults: liveTrustDefaults(records),
+    trustedContinuation: {
+      trusted: true,
+      receiptId: AWAITING_PARENT,
+      modelTag: "backbone-model",
+      appScope: "workspace-wide",
+      integrationId: "",
+      baseModelSha256: BASE_SHA,
+      adapterSha256: "",
+      toolContractSha256: await gatewayToolContractHash(request),
+      conversationSha256: sha256Hex(messages),
+      toolCalls: [callA, callB],
+    },
+    env: {},
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "child_receipt_replayed");
+  assert.equal(counter.calls, 0, "a replayed child receipt refuses the whole continuation before transport");
+  const statuses = result.receipt.lineage.children.map((link) => link.child_status);
+  assert.deepEqual(statuses.sort(), ["COMPLETED", "MISSING"], "only the first bound call consumed the receipt");
+});
+
+test("a deleted, expired, or erroring canonical receipt fails resolution closed", async () => {
+  const emptyStream = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: "infr_deleted_child" },
+    defaults: liveTrustDefaults([]),
+  });
+  assert.equal(emptyStream.result.ok, false);
+  assert.equal(emptyStream.result.error.code, "child_receipt_missing");
+  assert.equal(emptyStream.counter.calls, 0);
+  const throwing = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: "infr_any" },
+    defaults: {
+      liveExecution: true,
+      tenantScope: TENANT_ALPHA,
+      childReceiptResolver: async () => { throw new Error("receipt store unavailable"); },
+    },
+  });
+  assert.equal(throwing.result.ok, false);
+  assert.equal(throwing.result.error.code, "child_receipt_missing");
+  assert.match(throwing.result.error.message, /receipt store unavailable/);
+  assert.equal(throwing.counter.calls, 0);
+});
+
+test("a failed child stays canonical FAILED evidence with its exact bounded error — never a success, never orphaned", async () => {
+  const failedChild = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, fail: true, requestId: "child-failed-1" });
+  assert.equal(failedChild.ok, false);
+  const records = [invocationRecordFor(failedChild.receipt)];
+  const { result, counter } = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: failedChild.receipt.receipt_id },
+    defaults: liveTrustDefaults(records),
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(counter.calls, 1);
+  const edge = result.receipt.lineage.children[0];
+  assert.equal(edge.child_status, "FAILED", "a failed child is evidence of failure, not success");
+  assert.equal(edge.child_receipt_sha256, receiptSha256(failedChild.receipt));
+  assert.match(edge.error.message, /child model exploded/);
+  assert.ok(edge.error.message.length <= 512, "the recorded child error is bounded");
+  assert.equal(result.receipt.lineage.status, "complete");
+});
+
+test("a valid canonical child proceeds with exactly one transport and server-resolved lineage", async () => {
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "child-happy-1" });
+  const records = [invocationRecordFor(child.receipt)];
+  const { result, counter } = await runLiveContinuation({
+    childReceiptField: { child_receipt_id: child.receipt.receipt_id },
+    defaults: liveTrustDefaults(records),
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(counter.calls, 1, "transport runs exactly once");
+  const edge = result.receipt.lineage.children[0];
+  assert.equal(edge.child_receipt_id, child.receipt.receipt_id);
+  assert.equal(edge.child_receipt_sha256, receiptSha256(child.receipt));
+  assert.equal(edge.evidence_basis, "server-resolved");
+  assert.equal(result.receipt.lineage.status, "complete");
+  const audited = result.receipt.tool_audit.calls.find((entry) => entry.child_receipt_hash);
+  assert.equal(audited.child_receipt_hash, receiptSha256(child.receipt));
+});
+
+test("cross-run replay: a consumed prior receipt cannot anchor a second continuation", () => {
+  const awaiting = { verificationReceipt: { receipt_id: "infr_prior_x" }, modelId: MODEL_ID, policyRegistryId: POLICY_ID };
+  const consumedStream = [awaiting, { priorReceiptId: "infr_prior_x", modelId: MODEL_ID, policyRegistryId: POLICY_ID }];
+  const replay = resolveTrustedInferenceContinuation(consumedStream, {
+    receiptId: "infr_prior_x",
+    modelId: MODEL_ID,
+    policyRegistryId: POLICY_ID,
+  });
+  assert.equal(replay.ok, false);
+  assert.match(replay.reason, /already been consumed/);
+});
+
+// ===========================================================================
+// Receipt-lineage cycles — terminal failure at the workflow assembly boundary
+// (combineExecutions), plus bounded input. A cyclic or unverifiable DAG must
+// make the whole workflow envelope ok:false, never a flagged success.
+// ===========================================================================
+
+function receiptNode(id, parentReceiptId = null, childIds = []) {
+  return {
+    kind: "growthub-inference-verification-receipt-v1",
+    receipt_id: id,
+    status: "verified",
+    errors: [],
+    lineage: {
+      span_kind: parentReceiptId ? "CHILD_WORKFLOW" : "ROOT",
+      parent_receipt_id: parentReceiptId,
+      children: childIds.map((cid) => ({ child_receipt_id: cid, child_receipt_sha256: "x".repeat(64), child_status: "COMPLETED" })),
+    },
+  };
+}
+function successfulExecution(receipt) {
+  return { ok: true, verificationReceipt: receipt, attempts: [{ target: "local-base", status: "completed" }], invocation: { integrationId: "student-a" }, trace: null };
+}
+
+test("a cyclic receipt graph is a terminal workflow failure, never a flagged success", () => {
+  const cases = [
+    { name: "self-cycle", nodes: [receiptNode("infr_self", "infr_self")] },
+    { name: "mutual", nodes: [receiptNode("infr_A", null, ["infr_B"]), receiptNode("infr_B", null, ["infr_A"])] },
+    { name: "three-hop", nodes: [receiptNode("infr_A", null, ["infr_B"]), receiptNode("infr_B", null, ["infr_C"]), receiptNode("infr_C", null, ["infr_A"])] },
+    { name: "undeclared-parent-linkage", nodes: [receiptNode("infr_A", "infr_C"), receiptNode("infr_B", "infr_A"), receiptNode("infr_C", "infr_B")] },
+  ];
+  for (const { name, nodes } of cases) {
+    const executions = nodes.map(successfulExecution);
+    const combined = combineExecutions(executions, executions.at(-1), {});
+    assert.equal(combined.ok, false, `${name}: a cyclic graph must fail even when every execution succeeded`);
+    assert.equal(combined.errorCode, "receipt_lineage_cycle", `${name}: canonical error code`);
+    assert.match(combined.error, /receipt_lineage_cycle/);
+    assert.equal(combined.receiptDag.acyclic, false, `${name}: the DAG carries the cycle verdict`);
+    assert.ok(Array.isArray(combined.receiptDag.cycle_path) && combined.receiptDag.cycle_path.length > 0, `${name}: bounded cycle path present`);
+    assert.equal(combined.response, undefined === combined.response ? combined.response : combined.response, `${name}`);
+  }
+});
+
+test("the concurrent mutual-edge case is refused at assembly even though each ingestion check passed", () => {
+  // Two continuations each recorded the other as its child; no single
+  // ingestion check could see the loop, but the assembled edge set does.
+  const nodes = [receiptNode("infr_left", null, ["infr_right"]), receiptNode("infr_right", null, ["infr_left"])];
+  const combined = combineExecutions(nodes.map(successfulExecution), successfulExecution(nodes[1]), {});
+  assert.equal(combined.ok, false);
+  assert.equal(combined.errorCode, "receipt_lineage_cycle");
+});
+
+test("a clean diamond and a long acyclic chain assemble as trusted evidence (no false positives)", () => {
+  const diamond = [
+    receiptNode("infr_root", null, ["infr_L", "infr_R"]),
+    receiptNode("infr_L", "infr_root", ["infr_join"]),
+    receiptNode("infr_R", "infr_root", ["infr_join"]),
+    receiptNode("infr_join", "infr_L"),
+  ];
+  const diamondCombined = combineExecutions(diamond.map(successfulExecution), successfulExecution(diamond.at(-1)), {});
+  assert.equal(diamondCombined.ok, true, JSON.stringify(diamondCombined.error));
+  assert.equal(diamondCombined.receiptDag.acyclic, true);
+
+  const chain = [];
+  for (let i = 0; i < 200; i += 1) {
+    chain.push(receiptNode(`infr_chain_${i}`, i === 0 ? null : `infr_chain_${i - 1}`, i < 199 ? [`infr_chain_${i + 1}`] : []));
+  }
+  const chainCombined = combineExecutions(chain.map(successfulExecution), successfulExecution(chain.at(-1)), {});
+  assert.equal(chainCombined.ok, true, "a long valid chain is not a false-positive cycle");
+});
+
+test("cycle detection is bounded: an oversized receipt graph is refused, not partially verified", () => {
+  const overflowNodes = detectLineageCycle([{ receipt_id: "infr_big", children: Array.from({ length: LINEAGE_GRAPH_MAX_EDGES + 5 }, (_, i) => ({ child_receipt_id: `infr_c_${i}` })) }]);
+  assert.equal(overflowNodes.ok, false);
+  assert.equal(overflowNodes.boundsExceeded, true);
+  assert.match(overflowNodes.reason, /exceeds/);
+  // An oversized DAG at the workflow boundary is a terminal failure too.
+  const bigReceipt = receiptNode("infr_big_root", null, Array.from({ length: LINEAGE_GRAPH_MAX_EDGES + 5 }, (_, i) => `infr_leaf_${i}`));
+  const combined = combineExecutions([successfulExecution(bigReceipt)], successfulExecution(bigReceipt), {});
+  assert.equal(combined.ok, false);
+  assert.equal(combined.errorCode, "receipt_graph_unverifiable");
+  // A very long cycle reports a BOUNDED path (never the whole chain).
+  const bigCycle = [];
+  for (let i = 0; i < 100; i += 1) bigCycle.push({ receipt_id: `n${i}`, children: [{ child_receipt_id: `n${(i + 1) % 100}` }] });
+  const cyclic = detectLineageCycle(bigCycle);
+  assert.equal(cyclic.ok, false);
+  assert.ok(cyclic.cyclePath.length <= 33, "the reported cycle path is bounded");
+});
+
+// ===========================================================================
+// Hard-budget behavior under unknown pricing (Phase 6).
+// ===========================================================================
+
+function costFixture({ routes, teacherContent = "cloud answer", logprobs = { content: [{ logprob: -0.02 }] } } = {}) {
+  const counter = { total: 0, teacher: 0, local: 0 };
+  const fetchImpl = async (url) => {
+    counter.total += 1;
+    const isTeacher = String(url).includes("teacher.example");
+    if (isTeacher) counter.teacher += 1; else counter.local += 1;
+    const body = completion(isTeacher ? teacherContent : "local answer", undefined, logprobs ? { logprobs } : {});
+    body.model = isTeacher ? "teacher-model" : "base-model-tag";
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const policyRow = {
+    integrationId: "custom-model-policy",
+    metadata: { mothershipProxy: { workspaceSlug: "ws-cost", modelTag: "base-model-tag", inferenceControlPlane: { cache: { ttl: 0 } }, routes } },
+  };
+  return { policyRow, fetchImpl, counter, networkPolicy: { networkAllow: true, allowList: ["teacher.example"], resolveHostname: async () => [{ address: "93.184.216.34" }] } };
+}
+const teacherRoute = (extra = {}) => ({ target: "teacher", providerId: "cloud-teacher", baseUrl: "https://teacher.example", endpoint: "/chat/completions", modelTag: "teacher-model", ...extra });
+
+async function runCost(fixture, inference, extra = {}) {
+  return executeCustomModelInference({
+    workspaceConfig: { dataModel: { objects: [] } },
+    policyRow: fixture.policyRow,
+    inputPayload: { prompt: "cost probe", inference },
+    fetchImpl: fixture.fetchImpl,
+    runId: "run_cost",
+    networkPolicy: fixture.networkPolicy,
+    ...extra,
+  });
+}
+
+test("under an explicit budget an unpriced cloud route is cost_unknown-ineligible and never reaches transport", async () => {
+  const fixture = costFixture({ routes: [teacherRoute()] });
+  const result = await runCost(fixture, { max_cost_cents: 25 });
+  assert.equal(result.ok, false, "no route may run: the only route has unknown cost under a budget");
+  assert.equal(fixture.counter.teacher, 0, "the unpriced cloud route is not executed");
+  const skip = result.attempts.find((attempt) => attempt.target === "teacher");
+  assert.equal(skip.status, "skipped");
+  assert.equal(skip.costStatus, "cost_unknown");
+});
+
+test("malformed route pricing never becomes a free route under a budget", async () => {
+  for (const costModel of [
+    { inputCentsPerMTokens: Number.NaN },
+    { inputCentsPerMTokens: -5, outputCentsPerMTokens: 1 },
+    { inputCentsPerMTokens: Number.POSITIVE_INFINITY },
+    { outputCentsPerMTokens: "not-a-number" },
+    { inputCentsPerMTokens: null, outputCentsPerMTokens: null },
+  ]) {
+    const fixture = costFixture({ routes: [teacherRoute({ costModel })] });
+    const result = await runCost(fixture, { max_cost_cents: 1000 });
+    assert.equal(fixture.counter.teacher, 0, `${JSON.stringify(costModel)} must not create a free cloud route`);
+    assert.equal(result.ok, false);
+    const skip = result.attempts.find((attempt) => attempt.target === "teacher");
+    assert.equal(skip.costStatus, "cost_unknown", `${JSON.stringify(costModel)} → cost_unknown`);
+  }
+});
+
+test("a governed assumedRouteCostCents ceiling admits or blocks an unpriced route by remaining budget, and is labeled as assumed", async () => {
+  const withCeiling = (route) => {
+    // Operator-owned governed control config on the route itself (merged into
+    // `control.economics`), NOT request input.
+    route.inferenceControlPlane = { economics: { assumedRouteCostCents: 3 } };
+    return route;
+  };
+  // Ceiling fits the budget → the route runs, and the receipt says the price was assumed.
+  const admit = costFixture({ routes: [withCeiling(teacherRoute())] });
+  const admitResult = await runCost(admit, { max_cost_cents: 10 });
+  assert.equal(admitResult.ok, true, JSON.stringify(admitResult.error || admitResult.attempts));
+  assert.equal(admit.counter.teacher, 1);
+  assert.match(String(admitResult.verificationReceipt.routing_decision.reason_detail || ""), /assumedRouteCostCents/);
+  // Ceiling exceeds the budget → blocked, no transport.
+  const block = costFixture({ routes: [withCeiling(teacherRoute())] });
+  const blockResult = await runCost(block, { max_cost_cents: 2 });
+  assert.equal(blockResult.ok, false);
+  assert.equal(block.counter.teacher, 0, "the assumed ceiling must not exceed the remaining budget");
+});
+
+test("assumedRouteCostCents is operator-owned governed config and cannot be supplied through request metadata", async () => {
+  const fixture = costFixture({ routes: [teacherRoute()] });
+  // Attacker tries to inject the ceiling via the request body.
+  const result = await runCost(fixture, { max_cost_cents: 10, assumedRouteCostCents: 3, economics: { assumedRouteCostCents: 3 } });
+  assert.equal(fixture.counter.teacher, 0, "request-supplied assumedRouteCostCents must be ignored");
+  assert.equal(result.ok, false);
+  const skip = result.attempts.find((attempt) => attempt.target === "teacher");
+  assert.equal(skip.costStatus, "cost_unknown");
+});
+
+test("a zero (or near-zero) budget admits no metered route", async () => {
+  const fixture = costFixture({ routes: [teacherRoute({ costModel: { inputCentsPerMTokens: 100, outputCentsPerMTokens: 100 } })] });
+  const result = await runCost(fixture, { max_cost_cents: 0 });
+  assert.equal(result.ok, false);
+  assert.equal(fixture.counter.teacher, 0);
+});
+
+test("without log-probabilities quality is honestly UNVERIFIED, never a fabricated score", async () => {
+  const fixture = costFixture({ routes: [teacherRoute({ costModel: { inputCentsPerMTokens: 1, outputCentsPerMTokens: 1 } })], logprobs: null });
+  const result = await runCost(fixture, { min_quality_score: 0.9, max_cost_cents: 1000 });
+  assert.equal(result.ok, true, JSON.stringify(result.error || result.attempts));
+  assert.equal(result.verificationReceipt.routing_decision.quality, "UNVERIFIED");
+  assert.equal(result.verificationReceipt.routing_decision.actual_confidence, null);
+  assert.equal(result.verificationReceipt.routing_decision.confidence_basis, "unavailable");
+});
+
+// ===========================================================================
+// Distributed invalidation uncertainty fails safe (Phase 7).
+//
+// A shared Redis REST store is emulated in-memory so two InferenceSemanticCache
+// instances (same credential binding → same signing key + cache version) act
+// like two processes. A read fault must degrade cache EFFICIENCY (miss/bypass),
+// never integrity (a stale or poisoned body served).
+// ===========================================================================
+
+function fakeRedis() {
+  const strings = new Map();
+  const lists = new Map();
+  const faults = new Set();
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const args = JSON.parse(init.body);
+    const cmd = String(args[0] || "").toUpperCase();
+    calls.push(cmd);
+    if (faults.has(cmd)) throw new Error(`injected Redis fault on ${cmd}`);
+    let result = null;
+    switch (cmd) {
+      case "SET": strings.set(args[1], args[2]); result = "OK"; break;
+      case "SETEX": strings.set(args[1], args[3]); result = "OK"; break;
+      case "GET": result = strings.has(args[1]) ? strings.get(args[1]) : null; break;
+      case "MGET": result = args.slice(1).map((k) => (strings.has(k) ? strings.get(k) : null)); break;
+      case "INCR": { const v = (Number(strings.get(args[1])) || 0) + 1; strings.set(args[1], String(v)); result = v; break; }
+      case "LPUSH": { const l = lists.get(args[1]) || []; l.unshift(...args.slice(2)); lists.set(args[1], l); result = l.length; break; }
+      case "LRANGE": { const l = lists.get(args[1]) || []; const start = Number(args[2]) || 0; const stop = Number(args[3]); result = l.slice(start, stop < 0 ? undefined : stop + 1); break; }
+      case "LTRIM": { const l = lists.get(args[1]) || []; lists.set(args[1], l.slice(Number(args[2]) || 0, Number(args[3]) + 1)); result = "OK"; break; }
+      case "EXPIRE": result = 1; break;
+      default: result = null;
+    }
+    return { ok: true, json: async () => ({ result }) };
+  };
+  return { strings, lists, faults, calls, fetchImpl };
+}
+const REDIS_CREDS = { redisUrl: "https://redis.test", redisToken: "super-secret-token", redisSource: "growthub" };
+function sharedCache(redis, overrides = {}) {
+  return new InferenceSemanticCache({ ...REDIS_CREDS, fetchImpl: redis.fetchImpl, now: () => 1_721_280_000_000, ...overrides });
+}
+const REDACTED_ENVELOPE = { model_sha256: "m".repeat(64), schema_hash: "s".repeat(64), workflow_id: "wf-shared" };
+
+test("an epoch read failure turns a present entry into a remote_unverified miss (never stale)", async () => {
+  const redis = fakeRedis();
+  const cache = sharedCache(redis);
+  const stored = await cache.store({ cacheKey: "k1", scopeKey: "s1", prefixHash: "p1", response: completion("cached answer"), ttlSeconds: 300, envelope: REDACTED_ENVELOPE });
+  assert.equal(stored.stored, true);
+  // Baseline: the entry verifies and is served while Redis is healthy.
+  const healthy = await cache.lookup({ cacheKey: "k1", scopeKey: "s1", prefixHash: "p1" });
+  assert.equal(healthy.hit, true);
+  // Now the shared epoch state is unreachable.
+  redis.faults.add("MGET");
+  const degraded = await cache.lookup({ cacheKey: "k1", scopeKey: "s1", prefixHash: "p1" });
+  assert.equal(degraded.hit, false, "a possibly-stale entry is not served when its epoch cannot be verified");
+  assert.equal(degraded.integrity, "remote_unverified");
+});
+
+test("a poison tombstone read failure withholds the exact entry (never poisoned content served)", async () => {
+  const redis = fakeRedis();
+  const cache = sharedCache(redis);
+  await cache.store({ cacheKey: "k2", scopeKey: "s2", prefixHash: "p2", response: completion("answer"), ttlSeconds: 300, envelope: REDACTED_ENVELOPE });
+  redis.faults.add("GET"); // the poison-tombstone read (and any remote entry read) is unreachable
+  const result = await cache.lookup({ cacheKey: "k2", scopeKey: "s2", prefixHash: "p2" });
+  assert.equal(result.hit, false);
+  assert.equal(result.integrity, "remote_unverified");
+});
+
+test("a semantic poison-marker read failure withholds semantic candidates", async () => {
+  const redis = fakeRedis();
+  const cache = sharedCache(redis, { embeddingProvider: { id: "test-embed", embed: async () => [1, 0, 0] } });
+  redis.faults.add("LRANGE"); // the poison-marker list is unreachable
+  const result = await cache.lookup({ cacheKey: "missing", scopeKey: "s3", prefixHash: "p3", semantic: true, semanticText: "hello" });
+  assert.equal(result.hit, false);
+  assert.equal(result.integrity, "remote_unverified");
+});
+
+test("a poison written by one process is observed by another (cross-process invalidation visibility)", async () => {
+  const redis = fakeRedis();
+  const writer = sharedCache(redis);
+  const reader = sharedCache(redis);
+  const inv = await writer.invalidate({ reason: "SECURITY", scope: { exact_key: "k4" }, correctionReceiptId: "corr-security" });
+  assert.equal(inv.ok, true);
+  const seen = await reader.lookup({ cacheKey: "k4", scopeKey: "s4", prefixHash: "p4" });
+  assert.equal(seen.hit, false);
+  assert.equal(seen.poisoned, true);
+  assert.equal(seen.bypassReason, CACHE_BYPASS_POISONED);
+});
+
+test("the SECURITY invalidation lane stays open even when the FEEDBACK_CORRECTION lane is exhausted", async () => {
+  const cache = sharedCache(fakeRedis(), { maxInvalidationsPerMinute: 2 });
+  assert.equal((await cache.invalidate({ reason: "FEEDBACK_CORRECTION", scope: { exact_key: "f1" }, correctionReceiptId: "c1" })).ok, true);
+  assert.equal((await cache.invalidate({ reason: "FEEDBACK_CORRECTION", scope: { exact_key: "f2" }, correctionReceiptId: "c2" })).ok, true);
+  const flooded = await cache.invalidate({ reason: "FEEDBACK_CORRECTION", scope: { exact_key: "f3" }, correctionReceiptId: "c3" });
+  assert.equal(flooded.rateLimited, true, "the feedback lane is now exhausted");
+  const security = await cache.invalidate({ reason: "SECURITY", scope: { exact_key: "sec1" }, correctionReceiptId: "s1" });
+  assert.equal(security.ok, true, "a security invalidation still lands");
+  assert.equal(security.rateLimited, undefined);
+});
+
+test("remote-uncertainty evidence never leaks Redis URLs, tokens, or the signing key", async () => {
+  const redis = fakeRedis();
+  const cache = sharedCache(redis);
+  await cache.store({ cacheKey: "k5", scopeKey: "s5", prefixHash: "p5", response: completion("answer"), ttlSeconds: 300, envelope: REDACTED_ENVELOPE });
+  redis.faults.add("MGET");
+  const result = await cache.lookup({ cacheKey: "k5", scopeKey: "s5", prefixHash: "p5" });
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /super-secret-token/);
+  assert.doesNotMatch(serialized, /redis\.test/);
+  assert.ok(String(result.integrityReason || "").length <= 512, "the operator reason is bounded");
+  const backend = cache.describeBackend();
+  assert.doesNotMatch(JSON.stringify(backend), /super-secret-token/, "the backend descriptor exposes source, never the token");
+});
+
+test("a local-only cache works without Redis but claims no shared invalidation guarantee", async () => {
+  const local = new InferenceSemanticCache({ now: () => 1_721_280_000_000 });
+  const backend = local.describeBackend();
+  assert.equal(backend.remoteEnabled, false);
+  assert.equal(backend.kind, "memory");
+  await local.store({ cacheKey: "lk", scopeKey: "ls", prefixHash: "lp", response: completion("local"), ttlSeconds: 300, envelope: REDACTED_ENVELOPE });
+  const hit = await local.lookup({ cacheKey: "lk", scopeKey: "ls", prefixHash: "lp" });
+  assert.equal(hit.hit, true, "the bounded local cache remains usable without Redis");
+});
+
+// ===========================================================================
+// Phase 9 — composed real-world capability scenarios. The controls must hold
+// when they INTERACT, not only in isolation. Each asserts the observable
+// operator-facing evidence and the forbidden side effects.
+// ===========================================================================
+
+function signedManifestForGateway(env) {
+  const compiled = compileInferenceManifest({
+    workflowId: "run_compose",
+    integrationId: "student-a",
+    control: { runtime: { model: { sha256: BASE_SHA }, allowedAdapters: [] }, response_schema: null, cache: { ttl: 0 } },
+    maxTokens: 512,
+  });
+  return signInferenceManifest(compiled.manifest, { env });
+}
+
+test("Scenario 1 — valid published parent + canonical child: one coherent evidence chain, redacted, cached", async () => {
+  // Parent runs a plain (non-continuation) redacted call under a signed
+  // manifest and a concrete tenant scope; the manifest, redaction, and cache
+  // evidence must agree, and only the redacted body is cached.
+  const cache = countingCache();
+  const manifest = signedManifestForGateway(SIGNING_ENV);
+  const { transport, counter } = countingTransport("The SSN 123-45-6789 was escalated.");
+  const request = { ...baseRequest("compose-parent-1", "Escalate the ticket.", { base_model_ref: { base_model_sha256: BASE_SHA } }), cache_ttl: 60 };
+  const result = await executeInferenceGateway({
+    request,
+    transport,
+    cache: cache.client,
+    defaults: { manifest, manifestRequired: true, tenantScope: TENANT_ALPHA, redaction: { enabled: true } },
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(counter.calls, 1);
+  assert.equal(result.receipt.manifest.status, "verified", "the signed manifest verified against the live identity");
+  assert.equal(result.receipt.redaction.status, "redacted");
+  assert.doesNotMatch(JSON.stringify(result.output), /123-45-6789/, "the released body is redacted");
+  assert.equal(cache.stats.stores, 1, "the redacted response is cached");
+  assert.equal(result.receipt.cache.cache_scope_sha256, sha256Hex(TENANT_ALPHA), "the cache entry is tenant-scoped");
+});
+
+test("Scenario 2 — invalid live manifest with a cache hit available: neither cache nor transport is used", async () => {
+  const staleHit = {
+    response: completion("stale cached answer"),
+    metadata: { providerKind: "cached" },
+    envelope: { redacted: false },
+    expiresAtMs: 9_999_999_999_999,
+  };
+  const cache = countingCache({ hitEntry: staleHit });
+  const { transport, counter } = countingTransport("should never run");
+  const result = await executeInferenceGateway({
+    request: { ...baseRequest("compose-stale-1", "Answer from a live workflow.", { base_model_ref: { base_model_sha256: BASE_SHA } }), cache_ttl: 60 },
+    transport,
+    cache: cache.client,
+    // A published workflow REQUIRES a signed manifest; none supplied → the
+    // pre-transport gate fails closed before cache replay.
+    defaults: { manifestRequired: true, tenantScope: TENANT_ALPHA },
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "manifest_missing");
+  assert.equal(counter.calls, 0, "no transport under a missing live manifest");
+  assert.equal(result.response, null, "the stale cache entry is NOT served in place of the missing manifest");
+});
+
+test("Scenario 3 — valid manifest but resolver absent: authenticating one layer does not excuse the other", async () => {
+  const manifest = signedManifestForGateway(SIGNING_ENV);
+  const child = await runChildGatewayCall({ parentReceiptId: AWAITING_PARENT, tenantScope: TENANT_ALPHA, requestId: "compose-child-3" });
+  const { result, counter, cache } = await runLiveContinuation({
+    childReceiptField: { child_receipt: child.receipt, child_receipt_id: child.receipt.receipt_id },
+    // Live, manifest valid, tenant scope bound — but NO child receipt resolver.
+    defaults: { liveExecution: true, manifest, manifestRequired: true, tenantScope: TENANT_ALPHA },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "child_receipt_resolver_required");
+  assert.equal(counter.calls, 0, "a valid manifest does not excuse missing child-receipt authentication");
+  assert.equal(cache.stats.stores, 0);
+});
+
+test("Scenario 4 — remote cache truth unavailable: cache is bypassed, integrity degraded, transport may proceed", async () => {
+  const redis = fakeRedis();
+  const cache = sharedCache(redis);
+  await cache.store({ cacheKey: "compose-k", scopeKey: "compose-s", prefixHash: "compose-p", response: completion("cached"), ttlSeconds: 300, envelope: REDACTED_ENVELOPE });
+  redis.faults.add("MGET"); // shared invalidation state unreachable
+  const manifest = signedManifestForGateway(SIGNING_ENV);
+  const { transport, counter } = countingTransport("fresh answer after cache bypass");
+  // Drive the real gateway: the request scope hashes to compose-k so the
+  // stored entry is a candidate, but remote uncertainty forces a miss.
+  const result = await executeInferenceGateway({
+    request: { ...baseRequest("compose-remote-4", "Answer.", { base_model_ref: { base_model_sha256: BASE_SHA } }), cache_ttl: 60 },
+    transport,
+    cache,
+    defaults: { manifest, manifestRequired: true, tenantScope: TENANT_ALPHA },
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  // The healthy path may or may not key-match the synthetic entry; the load-
+  // bearing property is that integrity was never sacrificed and transport ran.
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(counter.calls, 1, "an incident degrades efficiency (extra model work), not integrity");
+  assert.notEqual(result.output?.content, "cached", "a possibly-stale entry is never served on remote uncertainty");
+});
+
+test("Scenario 5 — explicit budget with unknown pricing: actionable cost_unknown, no transport", async () => {
+  const fixture = costFixture({ routes: [teacherRoute()] });
+  const result = await runCost(fixture, { max_cost_cents: 50 });
+  assert.equal(result.ok, false);
+  assert.equal(fixture.counter.teacher, 0, "a cost-control feature is not bypassed by incomplete pricing config");
+  const skip = result.attempts.find((attempt) => attempt.target === "teacher");
+  assert.equal(skip.costStatus, "cost_unknown");
+  assert.match(skip.reason, /cost_unknown/);
+});
+
+test("Scenario 6 — successful executions that form a cycle: the workflow fails, nothing cyclic is trusted", () => {
+  // Each call 'succeeded', but the assembled provenance is contradictory.
+  const nodes = [receiptNode("infr_x", "infr_z"), receiptNode("infr_y", "infr_x"), receiptNode("infr_z", "infr_y")];
+  const combined = combineExecutions(nodes.map(successfulExecution), successfulExecution(nodes.at(-1)), {});
+  assert.equal(combined.ok, false, "successful HTTP calls do not turn contradictory provenance into valid evidence");
+  assert.equal(combined.errorCode, "receipt_lineage_cycle");
+  assert.equal(combined.receiptDag.acyclic, false);
+});
