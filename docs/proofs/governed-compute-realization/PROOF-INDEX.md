@@ -15,33 +15,45 @@ Classification is strict:
 Reproduce everything locally:
 
 ```bash
-node --test scripts/unit-compute-contract.test.mjs \
-  scripts/unit-compute-capacity-profiles.test.mjs \
-  scripts/unit-compute-provider-registry.test.mjs \
-  scripts/unit-compute-resolver.test.mjs \
-  scripts/unit-compute-execution.test.mjs \
-  scripts/unit-compute-runpod.test.mjs \
-  scripts/unit-compute-modal.test.mjs \
-  scripts/unit-compute-ray.test.mjs \
-  scripts/unit-compute-customer-state.test.mjs \
-  scripts/unit-compute-adversarial.test.mjs
-node scripts/e2e-compute-realization-loop.mjs --write-evidence
+npm run test:compute-certification
 ```
+
+This is the canonical unconditional command used by CI on pull requests to
+`main` and pushes to `main`. It fails if any required suite, dependency, or
+either composed proof is missing.
 
 ## The proof set
 
 | Proof | What it proves | Status | Where |
 | --- | --- | --- | --- |
-| A. Local-fit path | real preflight → sized plan → profile → the deterministic resolver selects LOCAL → owned-hardware allocation evidence | **Passed** (real machine evidence: this container, 16 GB RAM / no GPU → `gemma3` cpu-standard plan) | `evidence/proof-a-local-fit.json`, `evidence/machine-evidence.json`, e2e §A |
+| A. Local-fit path | real preflight → sized plan → honest CPU-local profile → deterministic resolver selects LOCAL → owned-hardware evidence | **Passed** (real certification machine: 8 GB RAM / no GPU → `gemma3:1b`) | `e2e-compute-realization-loop.mjs` §A |
 | B. Local-insufficient path | 70 B ask (80 GB VRAM/GPU) → exact machine-readable reasons → remote profile derived | **Passed** | `evidence/proof-b-local-insufficient.json`, e2e §B |
 | C. Deterministic placement | shuffled candidates → identical decision; ranking; every skipped candidate explained | **Passed** | `evidence/proof-c-deterministic-placement.json`, `unit-compute-resolver` |
 | D. Budget | unknown cost + excess cost under a hard cap → fail closed, reasons named | **Passed** | `evidence/proof-d-budget.json`, `unit-compute-resolver` |
-| E. Allocation lifecycle | quote → allocate → running → checkpoint → complete → release, all normalized evidence | **Passed** (faked transport; see live cells below) | `evidence/proof-e-lifecycle.json`, `unit-compute-execution` |
-| F. Idempotency | same governed request replayed → duplicate expensive allocation refused, fail closed; explicit new attempt allowed | **Passed** | `evidence/proof-f-idempotency.json`, `unit-compute-execution` |
-| G. Artifact honesty | provider complete + artifact absent → non-promotable; wrong sha256 → non-promotable | **Passed** | `evidence/proof-g-artifact-honesty.json`, `unit-compute-adversarial` |
-| H. Evaluation boundary | losing candidate → `promoted:false`, Mothership route unchanged; winning candidate → existing promotion boundary → router prefers the verified student | **Passed** (over the SAME `deriveBenchmarkWins`/`deriveActiveRoute` the flywheel ships) | `evidence/proof-h-evaluation-boundary.json` |
-| I. Recovery | proven checkpoint → interruption → new governed attempt resumes → completion; foreign-run checkpoints never satisfy resume | **Passed** | `evidence/proof-i-recovery.json`, `unit-compute-adversarial` |
-| J. Release failure | cancel → provider release failure → `capacityMayStillExist` / `costMayAccrue` durable and visible | **Passed** | `evidence/proof-j-release-failure.json`, `unit-compute-adversarial` |
+| E. Allocation lifecycle | real `POST /api/workspace/sandbox-run` → durable decision/quote → allocation persisted before polling → queued/running/checkpoint/terminal evidence persisted progressively | **Passed** (booted temp workspace; fake provider HTTP boundary only) | `e2e-compute-route-realization-loop.mjs` |
+| F. Crash-safe idempotency | injected failure after allocation → reload durable Workspace state → same request adopts the known resource; provider create count remains exactly one | **Passed** | `e2e-compute-route-realization-loop.mjs` |
+| G. Artifact honesty | provider SHA claim alone remains non-promotable; route materializes bytes, verifies SHA-256, and binds the artifact to the existing training receipt | **Passed** | `e2e-compute-route-realization-loop.mjs`, `unit-compute-adversarial` |
+| H. Evaluation boundary | verified remote artifact traverses the real route/receipt import and existing evaluation lineage; loss retains and a proven win promotes through Mothership authority | **Passed** | `e2e-compute-route-realization-loop.mjs` |
+| I. Recovery | governed resume uses a proven same-run/work-spec checkpoint and writes `compute-resuming`; foreign/wrong-work-spec checkpoints fail closed | **Passed** | `e2e-compute-route-realization-loop.mjs`, `unit-compute-adversarial` |
+| J. Lifecycle controls | governed cancel → provider cancel → release → durable reload truth; failed release retains capacity/cost risk | **Passed** | `e2e-compute-route-realization-loop.mjs`, `unit-compute-adversarial` |
+
+## End-to-end causation proof
+
+The booted temporary-workspace harness proves the shipped route rather than
+independent library calls:
+
+`durable customer policy → exact adaptive plan → immutable intent/work spec →
+deterministic resolver → durable decision/quote → durable allocation → adapter
+execute → progressive events/checkpoint → crash/reload adoption → resume/cancel/
+release → byte/SHA verification → existing training receipt import → existing
+evaluation → retain/promote → Mothership → reload truth`.
+
+Its large-model fixture requires multi-GPU/high-VRAM capacity and asserts one
+unchanged requirements/profile lineage across intent, receipt, resolver
+decision, provider submission, artifact, and evaluation evidence. The
+canonical packet also covers the portable cloud/local/reserved policy,
+hard-budget/locality gates, profile floors, UI route wiring, and remote-aware
+customer progress semantics across 12 focused suites.
 
 ## Live external evidence cells
 
@@ -51,7 +63,7 @@ node scripts/e2e-compute-realization-loop.mjs --write-evidence
 | Live Modal function proof | **Unexecuted** | `MODAL_KEY`/`MODAL_SECRET` proxy tokens and a pre-deployed execution function do not exist here. Adapter + 9-test conformance suite complete; the deployed-function contract is documented in the adapter header. |
 | Live Ray Jobs endpoint proof | **Unexecuted** | No reachable Ray cluster head (port 8265) exists in this environment. The Jobs API contract (trailing slash, at-most-once submission_id, 5-state map) is pinned by 11 conformance tests. |
 | Live HyperPod / CoreWeave cluster proof | **Unexecuted** | Enterprise AWS/CoreWeave clusters genuinely unavailable. Both realizations are physical bindings of the SAME tested Ray seam; portability is proven by the identical-submission test. |
-| Live local training execution (QLoRA pipeline) | **Inherited** | The local runner execution path is unchanged (byte-for-byte fallthrough proven); its live proof remains `docs/proofs/distillation-flywheel/` + `e2e-distillation-flywheel-loop.mjs` (re-run green at this SHA: 17/17). |
+| Live local training execution (QLoRA pipeline) | **Inherited** | The local runner remains the existing authority; its live proof remains `docs/proofs/distillation-flywheel/` + `e2e-distillation-flywheel-loop.mjs`. |
 | Regression: training/distillation/inference/resolver/sandbox suites | **Inherited** | Re-run green at the release SHA — see EVIDENCE.md. |
 
 A unit test is not a live-provider proof. A fixture is not a real GPU
