@@ -71,52 +71,83 @@ export function workflowOperationIds(rawSpec) {
  * Validate and hash one ingested child receipt. The child's own status maps
  * to the DAG edge status; a rejected/failed child is COMPLETED evidence of a
  * FAILED child, carrying the child's exact first error.
+ *
+ * Trust boundary: a bare hash is NEVER accepted here — evidence-shaped input
+ * is not evidence. The full receipt must be present (HTTP-facing callers
+ * must have resolved it server-side and discarded the caller-shaped body),
+ * and when the parent's identity is supplied it must bind: the child must
+ * declare THIS parent as its spawning receipt, and its tenant scope hash
+ * must match. A valid child receipt therefore cannot be replayed under a
+ * different parent, tool call, tenant, or run.
  */
-export function ingestChildReceipt({ toolCallId = "", workflowRef = "", childReceipt = null, childReceiptSha256 = "", forbiddenReceiptIds = [] } = {}) {
-  if (childReceipt && typeof childReceipt === "object") {
-    if (childReceipt.kind !== "growthub-inference-verification-receipt-v1" || !childReceipt.receipt_id) {
-      return { ok: false, error: { code: "child_receipt_invalid", message: "child_receipt is not a growthub inference verification receipt" } };
-    }
-    // Cycle guard: a child receipt may not BE this parent's own receipt, nor
-    // any receipt already on this continuation's ancestry (parent/prior).
-    // A workflow that loops back onto its own lineage is rejected instead of
-    // minting a self-referential DAG edge.
-    const forbidden = new Set((Array.isArray(forbiddenReceiptIds) ? forbiddenReceiptIds : []).map(String).filter(Boolean));
-    const childId = String(childReceipt.receipt_id);
-    const childAncestors = [childId, ...(Array.isArray(childReceipt.lineage?.children) ? childReceipt.lineage.children.map((link) => String(link?.child_receipt_id || "")) : [])];
-    if (childAncestors.some((id) => id && forbidden.has(id))) {
-      return { ok: false, error: { code: "child_receipt_cycle", message: `child receipt ${childId} closes a cycle onto this request's own receipt lineage` } };
-    }
-    const failed = childReceipt.status === "rejected" || childReceipt.status === "failed";
-    const firstError = Array.isArray(childReceipt.errors) && childReceipt.errors.length
-      ? { code: String(childReceipt.errors[0].code || "child_failed"), message: String(childReceipt.errors[0].message || "").slice(0, 512) }
-      : { code: "child_failed", message: `child receipt status ${childReceipt.status}` };
+export function ingestChildReceipt({
+  toolCallId = "",
+  workflowRef = "",
+  childReceipt = null,
+  childReceiptSha256 = "",
+  forbiddenReceiptIds = [],
+  expectedParentReceiptId = "",
+  expectedScopeSha256 = "",
+} = {}) {
+  if (!childReceipt || typeof childReceipt !== "object") {
+    const sha = String(childReceiptSha256 || "").toLowerCase();
     return {
-      ok: true,
-      link: {
-        child_receipt_id: String(childReceipt.receipt_id),
-        child_receipt_sha256: receiptSha256(childReceipt),
-        child_status: failed ? "FAILED" : "COMPLETED",
-        ...(toolCallId ? { tool_call_id: toolCallId } : {}),
-        ...(workflowRef ? { workflow_ref: workflowRef } : {}),
-        ...(failed ? { error: firstError } : {}),
-      },
+      ok: false,
+      error: /^[0-9a-f]{64}$/.test(sha)
+        ? { code: "child_receipt_hash_only", message: "a bare child_receipt_sha256 is evidence-shaped input, not evidence; the full child receipt must be resolved server-side" }
+        : { code: "child_receipt_missing", message: "a child workflow tool result requires the child's full verification receipt" },
     };
   }
-  const sha = String(childReceiptSha256 || "").toLowerCase();
-  if (/^[0-9a-f]{64}$/.test(sha)) {
-    return {
-      ok: true,
-      link: {
-        child_receipt_id: "",
-        child_receipt_sha256: sha,
-        child_status: "COMPLETED",
-        ...(toolCallId ? { tool_call_id: toolCallId } : {}),
-        ...(workflowRef ? { workflow_ref: workflowRef } : {}),
-      },
-    };
+  if (childReceipt.kind !== "growthub-inference-verification-receipt-v1" || !childReceipt.receipt_id) {
+    return { ok: false, error: { code: "child_receipt_invalid", message: "child_receipt is not a growthub inference verification receipt" } };
   }
-  return { ok: false, error: { code: "child_receipt_missing", message: "a child workflow tool result requires child_receipt or child_receipt_sha256" } };
+  const childId = String(childReceipt.receipt_id);
+  // Parent binding: the child must have been spawned FROM this awaiting
+  // receipt (the binding headers hand the executor exactly this id). A
+  // receipt minted under any other parent — or with no parent — is a replay
+  // or a forgery, not this call's child.
+  const wantedParent = String(expectedParentReceiptId || "").trim();
+  if (wantedParent) {
+    const declaredParent = String(childReceipt.lineage?.parent_receipt_id || "").trim();
+    if (declaredParent !== wantedParent) {
+      return {
+        ok: false,
+        error: {
+          code: "child_receipt_parent_mismatch",
+          message: `child receipt ${childId} declares parent ${declaredParent || "(none)"}; this continuation requires ${wantedParent}`,
+        },
+      };
+    }
+  }
+  // Tenant/scope binding: both receipts hash the same server-owned tenant
+  // scope into their cache evidence; a cross-tenant receipt cannot bind.
+  const wantedScope = String(expectedScopeSha256 || "").trim();
+  const childScope = String(childReceipt.cache?.cache_scope_sha256 || "").trim();
+  if (wantedScope && childScope && wantedScope !== childScope) {
+    return { ok: false, error: { code: "child_receipt_scope_mismatch", message: `child receipt ${childId} was produced under a different tenant/workspace scope` } };
+  }
+  // Cycle guard: a child receipt may not BE this parent's own receipt, nor
+  // any receipt already on this continuation's ancestry (parent/prior).
+  const forbidden = new Set((Array.isArray(forbiddenReceiptIds) ? forbiddenReceiptIds : []).map(String).filter(Boolean));
+  const childAncestors = [childId, ...(Array.isArray(childReceipt.lineage?.children) ? childReceipt.lineage.children.map((link) => String(link?.child_receipt_id || "")) : [])];
+  if (childAncestors.some((id) => id && forbidden.has(id))) {
+    return { ok: false, error: { code: "child_receipt_cycle", message: `child receipt ${childId} closes a cycle onto this request's own receipt lineage` } };
+  }
+  const failed = childReceipt.status === "rejected" || childReceipt.status === "failed";
+  const firstError = Array.isArray(childReceipt.errors) && childReceipt.errors.length
+    ? { code: String(childReceipt.errors[0].code || "child_failed"), message: String(childReceipt.errors[0].message || "").slice(0, 512) }
+    : { code: "child_failed", message: `child receipt status ${childReceipt.status}` };
+  return {
+    ok: true,
+    link: {
+      child_receipt_id: childId,
+      child_receipt_sha256: receiptSha256(childReceipt),
+      child_status: failed ? "FAILED" : "COMPLETED",
+      ...(toolCallId ? { tool_call_id: toolCallId } : {}),
+      ...(workflowRef ? { workflow_ref: workflowRef } : {}),
+      ...(failed ? { error: firstError } : {}),
+    },
+  };
 }
 
 /** A MISSING edge — a declared child that never ingested a receipt. */

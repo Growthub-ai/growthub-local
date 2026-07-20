@@ -4,6 +4,44 @@ function clean(value) {
   return String(value || "").trim();
 }
 
+/**
+ * Resolve a CHILD workflow receipt only from the persisted invocation
+ * stream. Mirrors the continuation trust anchor: the caller supplies an
+ * opaque id; the canonical receipt comes from server-owned records, bound to
+ * the same model policy and app scope, and must declare the expected parent.
+ * The caller-shaped receipt body is never the trust source.
+ */
+export function resolveTrustedChildReceipt(records, {
+  childReceiptId,
+  expectedParentReceiptId,
+  modelId,
+  policyRegistryId,
+  appScope,
+} = {}) {
+  const wantedId = clean(childReceiptId);
+  if (!wantedId || wantedId.length > 256) {
+    return { ok: false, reason: "child receipt id is required and must be at most 256 characters" };
+  }
+  const sourceRecords = Array.isArray(records) ? records : [];
+  const matching = sourceRecords.filter((candidate) => (
+    clean(candidate?.verificationReceipt?.receipt_id) === wantedId
+    && clean(candidate?.modelId) === clean(modelId)
+    && clean(candidate?.policyRegistryId) === clean(policyRegistryId)
+  ));
+  if (matching.length === 0) return { ok: false, reason: "child receipt was not found in the governed invocation stream" };
+  if (matching.length !== 1) return { ok: false, reason: "child receipt id is not unique in the governed invocation stream" };
+  const invocation = matching[0];
+  if (clean(invocation.appScope || "workspace-wide") !== clean(appScope || "workspace-wide")) {
+    return { ok: false, reason: "child receipt is outside this app scope" };
+  }
+  const receipt = invocation.verificationReceipt;
+  const declaredParent = clean(receipt?.lineage?.parent_receipt_id);
+  if (clean(expectedParentReceiptId) && declaredParent !== clean(expectedParentReceiptId)) {
+    return { ok: false, reason: "child receipt was not spawned from this parent receipt" };
+  }
+  return { ok: true, receipt };
+}
+
 export function resolveTrustedInferenceContinuation(records, {
   receiptId,
   modelId,

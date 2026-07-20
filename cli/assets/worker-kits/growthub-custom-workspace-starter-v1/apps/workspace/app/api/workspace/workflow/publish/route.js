@@ -9,7 +9,7 @@ import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readin
 import { resolveWorkflowFieldNames, getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
-import { verifyWorkflowManifestsAtPublish } from "@/lib/adapters/inference/manifest";
+import { expectedManifestIntegrations, verifyWorkflowManifestsAtPublish } from "@/lib/adapters/inference/manifest";
 
 /**
  * POST /api/workspace/workflow/publish
@@ -343,9 +343,14 @@ async function POST(request) {
     // than it was tested against.
     const testedInvocations = runRecord?.adapterMeta?.customModel?.invocations
         || (runRecord?.adapterMeta?.customModel?.invocation ? [runRecord.adapterMeta.customModel.invocation] : []);
+    // Expected set comes from the DRAFT GRAPH being promoted — every
+    // referenced control-plane integration must have produced exactly one
+    // valid SIGNED manifest during the verified draft run. Missing, unsigned,
+    // unavailable, duplicate-conflicting, and unexpected manifests all block.
     const manifestVerification = verifyWorkflowManifestsAtPublish({
         workspaceConfig,
         invocations: testedInvocations,
+        expectedIntegrationIds: expectedManifestIntegrations({ workspaceConfig, graph: parsedDraft }),
         env: process.env
     });
     if (!manifestVerification.ok) {

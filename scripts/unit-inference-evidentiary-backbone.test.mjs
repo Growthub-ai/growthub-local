@@ -43,6 +43,7 @@ const {
 } = await import(pathToFileURL(path.join(inferenceRoot, "lineage.js")).href);
 const {
   compileInferenceManifest,
+  expectedManifestIntegrations,
   signInferenceManifest,
   verifyManifestAgainstIdentity,
   verifySignedInferenceManifest,
@@ -628,18 +629,122 @@ test("publish gate blocks when the live registry drifts from the tested manifest
     { env: SIGNING_ENV },
   );
   const invocations = [{ integrationId: "workspace-local-model", inferenceManifest: testedManifest }];
+  const expectedIntegrationIds = ["workspace-local-model"];
   const cleanConfig = { dataModel: { objects: [{ objectType: "api-registry", rows: [registryRow] }] } };
-  const cleanVerdict = verifyWorkflowManifestsAtPublish({ workspaceConfig: cleanConfig, invocations, env: SIGNING_ENV });
+  const cleanVerdict = verifyWorkflowManifestsAtPublish({ workspaceConfig: cleanConfig, invocations, expectedIntegrationIds, env: SIGNING_ENV });
   assert.equal(cleanVerdict.ok, true, JSON.stringify(cleanVerdict.mismatches));
   assert.equal(cleanVerdict.manifests.length, 1);
 
   const driftedRow = JSON.parse(JSON.stringify(registryRow));
   driftedRow.metadata.inferenceControlPlane.runtime.model.sha256 = "9".repeat(64);
   const driftedConfig = { dataModel: { objects: [{ objectType: "api-registry", rows: [driftedRow] }] } };
-  const driftedVerdict = verifyWorkflowManifestsAtPublish({ workspaceConfig: driftedConfig, invocations, env: SIGNING_ENV });
+  const driftedVerdict = verifyWorkflowManifestsAtPublish({ workspaceConfig: driftedConfig, invocations, expectedIntegrationIds, env: SIGNING_ENV });
   assert.equal(driftedVerdict.ok, false);
   assert.equal(driftedVerdict.mismatches[0].integrationId, "workspace-local-model");
   assert.equal(driftedVerdict.mismatches[0].diffs.some((diff) => diff.field === "composite_sha256"), true);
+});
+
+test("publish enforces the manifest SET: unsigned, missing, unavailable, and unexpected manifests all block", () => {
+  const rowControl = {
+    runtime: { model: { path: "/models/base.gguf", sha256: BASE_SHA }, allowedAdapters: [] },
+    cache: { ttl: 900 },
+  };
+  const registryRow = { integrationId: "workspace-local-model", metadata: { inferenceControlPlane: rowControl } };
+  const workspaceConfig = { dataModel: { objects: [{ objectType: "api-registry", rows: [registryRow] }] } };
+  const expectedIntegrationIds = ["workspace-local-model"];
+  const compiled = compileInferenceManifest({ workflowId: "wf", integrationId: "workspace-local-model", control: rowControl, maxTokens: 512 }).manifest;
+
+  // Unsigned manifest (no signing key at compile time) blocks publish.
+  const unsignedVerdict = verifyWorkflowManifestsAtPublish({
+    workspaceConfig,
+    invocations: [{ integrationId: "workspace-local-model", inferenceManifest: signInferenceManifest(compiled, { env: {} }) }],
+    expectedIntegrationIds,
+    env: SIGNING_ENV,
+  });
+  assert.equal(unsignedVerdict.ok, false);
+  assert.equal(unsignedVerdict.mismatches[0].diffs[0].field, "signature");
+
+  // Zero manifests for an expected integration blocks publish.
+  const emptyVerdict = verifyWorkflowManifestsAtPublish({ workspaceConfig, invocations: [], expectedIntegrationIds, env: SIGNING_ENV });
+  assert.equal(emptyVerdict.ok, false);
+  assert.match(JSON.stringify(emptyVerdict.mismatches), /none produced/);
+
+  // An invocation that could not bind a manifest blocks publish.
+  const unavailableVerdict = verifyWorkflowManifestsAtPublish({
+    workspaceConfig,
+    invocations: [{ integrationId: "workspace-local-model", inferenceManifestUnavailable: "governed runtime does not declare a resolvable base-model SHA-256" }],
+    expectedIntegrationIds,
+    env: SIGNING_ENV,
+  });
+  assert.equal(unavailableVerdict.ok, false);
+  assert.match(JSON.stringify(unavailableVerdict.mismatches), /bindable signed manifest/);
+
+  // A manifest for an integration the graph never references blocks publish.
+  const unexpectedVerdict = verifyWorkflowManifestsAtPublish({
+    workspaceConfig,
+    invocations: [{ integrationId: "rogue-model", inferenceManifest: signInferenceManifest({ ...compiled, integration_id: "rogue-model" }, { env: SIGNING_ENV }) }],
+    expectedIntegrationIds,
+    env: SIGNING_ENV,
+  });
+  assert.equal(unexpectedVerdict.ok, false);
+  assert.match(JSON.stringify(unexpectedVerdict.mismatches), /unexpected manifest/);
+
+  // Wrong signing key fails closed.
+  const wrongKeyVerdict = verifyWorkflowManifestsAtPublish({
+    workspaceConfig,
+    invocations: [{ integrationId: "workspace-local-model", inferenceManifest: signInferenceManifest(compiled, { env: { GROWTHUB_WORKSPACE_SIGNING_KEY: "some-other-key" } }) }],
+    expectedIntegrationIds,
+    env: SIGNING_ENV,
+  });
+  assert.equal(wrongKeyVerdict.ok, false);
+
+  // Expected-set derivation walks the graph, not the invocation records.
+  const graph = { nodes: [{ type: "api-registry-call", config: { registryId: "workspace-local-model" } }], edges: [] };
+  assert.deepEqual([...expectedManifestIntegrations({ workspaceConfig, graph })], ["workspace-local-model"]);
+  assert.deepEqual([...expectedManifestIntegrations({ workspaceConfig, graph: { nodes: [], edges: [] } })], [], "an un-referenced integration is not expected");
+});
+
+test("an unsigned or unauthenticated manifest never reaches transport or serves cache", async () => {
+  const control = { runtime: { model: { sha256: BASE_SHA }, allowedAdapters: [] } };
+  const compiled = compileInferenceManifest({ workflowId: "wf_live", integrationId: "int-1", control, maxTokens: 512 }).manifest;
+  let transportCalls = 0;
+  const transport = async ({ request }) => { transportCalls += 1; return unifiedTransportResult(request, "must not run"); };
+
+  // Unsigned manifest: rejected pre-transport.
+  const unsigned = await executeInferenceGateway({
+    request: baseRequest("manifest-unsigned-live", "run under unsigned manifest"),
+    defaults: { manifest: signInferenceManifest(compiled, { env: {} }) },
+    transport,
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(unsigned.ok, false);
+  assert.equal(transportCalls, 0, "an unsigned manifest never reaches the model");
+  assert.equal(unsigned.receipt.errors.some((error) => error.code === "manifest_unsigned"), true);
+
+  // Signed under a rotated/unknown key: rejected pre-transport.
+  const wrongKey = await executeInferenceGateway({
+    request: baseRequest("manifest-wrong-key", "run under foreign-key manifest"),
+    defaults: { manifest: signInferenceManifest(compiled, { env: { GROWTHUB_WORKSPACE_SIGNING_KEY: "foreign-key" } }) },
+    transport,
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(wrongKey.ok, false);
+  assert.equal(transportCalls, 0);
+  assert.equal(wrongKey.receipt.errors.some((error) => error.code === "manifest_signature_invalid"), true);
+
+  // manifestRequired without any manifest: rejected pre-transport.
+  const missing = await executeInferenceGateway({
+    request: baseRequest("manifest-required-missing", "live run without manifest"),
+    defaults: { manifestRequired: true },
+    transport,
+    env: SIGNING_ENV,
+    now: () => 1_721_280_000_000,
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(transportCalls, 0);
+  assert.equal(missing.receipt.errors.some((error) => error.code === "manifest_missing"), true);
 });
 
 test("redaction preview hashes are keyed — no brute-forceable plain hash of low-entropy PII", () => {

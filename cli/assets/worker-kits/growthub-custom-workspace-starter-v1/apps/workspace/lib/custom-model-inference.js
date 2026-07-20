@@ -354,7 +354,9 @@ export async function executeCustomModelInference({
   signal,
   timeoutMs = 120_000,
   inferenceManifests = [],
+  inferenceManifestsRequired = false,
   ancestorReceiptIds = [],
+  childReceiptResolver = null,
 } = {}) {
   const policy = policyRow?.metadata?.mothershipProxy;
   const routes = Array.isArray(policy?.routes) ? policy.routes : [];
@@ -378,6 +380,23 @@ export async function executeCustomModelInference({
   const minQualityScore = rawMinQuality != null && Number.isFinite(Number(rawMinQuality)) ? Number(rawMinQuality) : null;
   const roughContextTokens = Math.max(1, Math.ceil(String(prompt || "").length / 4));
   const routeCostModel = (route, control) => route?.costModel || control?.economics?.costModel || null;
+  // Route pricing status for budget enforcement. Malformed pricing is never
+  // coerced to zero — a caller budget must be BINDING, not advisory: under
+  // an explicit budget an unpriced/invalid cloud route is ineligible unless
+  // the governed policy supplies an explicit conservative ceiling
+  // (economics.assumedRouteCostCents).
+  const routePricing = (route, control) => {
+    const model = routeCostModel(route, control);
+    if (!model || typeof model !== "object") return { status: "unpriced", model: null };
+    const declared = [model.inputCentsPerMTokens, model.outputCentsPerMTokens].some((value) => value !== undefined && value !== null);
+    if (!declared) return { status: "unpriced", model: null };
+    const invalid = [model.inputCentsPerMTokens, model.outputCentsPerMTokens].some((value) => {
+      if (value === undefined || value === null) return false;
+      const parsed = Number(value);
+      return !Number.isFinite(parsed) || parsed < 0;
+    });
+    return invalid ? { status: "invalid", model: null } : { status: "priced", model };
+  };
   const routeEstimate = (route, control) => estimateRequestCostCents(
     { contextTokens: roughContextTokens, maxTokens },
     routeCostModel(route, control) || {},
@@ -419,7 +438,26 @@ export async function executeCustomModelInference({
     const expectedModel = String(route?.modelTag || availability.row?.expectedModelTag || "").trim();
     const control = inferenceControlPlane(policyRow, route, availability.row);
     const cloudRoute = target === "teacher";
-    const thisRouteEstimate = routeEstimate(route, control);
+    const pricing = routePricing(route, control);
+    // Under an explicit caller budget, a metered (cloud) route with unknown
+    // or invalid pricing is INELIGIBLE — its real cost cannot be bounded, so
+    // "estimate zero" would make max_cost_cents advisory. A governed
+    // operator ceiling (economics.assumedRouteCostCents) may stand in as a
+    // conservative estimate. Local routes without a cost model estimate
+    // zero honestly: they consume operator compute, not metered spend.
+    const assumedCeiling = Number(control.economics?.assumedRouteCostCents);
+    if (maxCostCents !== null && cloudRoute && pricing.status !== "priced" && !(Number.isFinite(assumedCeiling) && assumedCeiling >= 0)) {
+      attempts.push({
+        target,
+        status: "skipped",
+        reason: `cost_unknown: route pricing is ${pricing.status} and no governed assumedRouteCostCents ceiling is set; a metered route cannot run under max_cost_cents ${maxCostCents}`,
+        costStatus: "cost_unknown",
+      });
+      continue;
+    }
+    const thisRouteEstimate = maxCostCents !== null && cloudRoute && pricing.status !== "priced"
+      ? assumedCeiling
+      : routeEstimate(route, control);
     if (maxCostCents !== null) {
       // Local routes keep a budget buffer so a quality fallback can still
       // afford a cloud retry; every route is capped by the remaining budget.
@@ -489,6 +527,18 @@ export async function executeCustomModelInference({
     // different composite SHA than the manifest that was proven at publish.
     const signedManifest = (Array.isArray(inferenceManifests) ? inferenceManifests : [])
       .find((entry) => String(entry?.manifest?.integration_id || "") === String(availability.row?.integrationId || "")) || null;
+    // Live enforcement: a published workflow invoking a control-plane row
+    // must run under its published manifest. `not_requested` is not a valid
+    // state for a live inference call — no manifest, no transport.
+    const rowDeclaresControlPlane = Boolean(availability.row?.metadata?.inferenceControlPlane);
+    if (inferenceManifestsRequired && rowDeclaresControlPlane && !signedManifest) {
+      attempts.push({
+        target,
+        status: "failed",
+        reason: `manifest_missing: published workflow has no signed inference manifest for integration ${availability.row?.integrationId}; live execution is refused`,
+      });
+      continue;
+    }
     const localRoutes = routes.filter((entry) => String(entry?.target || "") !== "teacher");
     const cloudRoutes = routes.filter((entry) => String(entry?.target || "") === "teacher");
     const result = await executeInferenceGateway({
@@ -508,6 +558,8 @@ export async function executeCustomModelInference({
         maxTokensLimit: Math.max(1, Number(control.maxTokensLimit) || 32_768),
         redaction: control.redaction,
         ancestorReceiptIds: (Array.isArray(ancestorReceiptIds) ? ancestorReceiptIds : []).map(String).filter(Boolean),
+        ...(typeof childReceiptResolver === "function" ? { childReceiptResolver } : {}),
+        ...(inferenceManifestsRequired && rowDeclaresControlPlane ? { manifestRequired: true } : {}),
         ...(signedManifest ? { manifest: signedManifest } : {}),
         economics: {
           reason: qualityFallbackActive ? "quality_fallback" : maxCostCents !== null ? "cost_capability" : "default",
@@ -770,8 +822,16 @@ function combineExecutions(executions, response, extra = {}) {
     acyclic: cycleVerdict.ok,
     ...(cycleVerdict.ok ? {} : { cycle_path: cycleVerdict.cyclePath }),
   } : null;
+  // A cyclic receipt graph is a terminal verification failure, not a flag:
+  // "detected" must mean "refused before trust". The envelope fails even
+  // when every individual execution succeeded, and the cycle is the error.
+  const dagValid = cycleVerdict.ok;
   return {
-    ok: successful.length === executions.length,
+    ok: successful.length === executions.length && dagValid,
+    ...(dagValid ? {} : {
+      error: `receipt_lineage_cycle: the workflow receipt graph contains a cycle (${cycleVerdict.cyclePath.join(" -> ")}); this run is not trustable evidence`,
+      errorCode: "receipt_lineage_cycle",
+    }),
     status: Number(response?.status) || 200,
     response: response?.response,
     route: response?.route,
@@ -812,6 +872,8 @@ export async function executeCustomModelWorkflow({
   signal,
   timeoutMs = 120_000,
   inferenceManifests = [],
+  inferenceManifestsRequired = false,
+  childReceiptResolver = null,
 } = {}) {
   const baseArgs = {
     workspaceConfig,
@@ -831,6 +893,8 @@ export async function executeCustomModelWorkflow({
     signal,
     timeoutMs,
     inferenceManifests,
+    inferenceManifestsRequired,
+    childReceiptResolver,
   };
   const prompt = promptFromInput(inputPayload);
   // Multi-step variants chain the receipt DAG: each step after the first

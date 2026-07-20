@@ -13,8 +13,16 @@
  * mirrored there; no cache body is ever written into governed config.
  */
 
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { stableStringify } from "./contracts.js";
+
+/** Constant-time hex comparison; length mismatch is an immediate (safe) fail. */
+function safeEqualHex(left, right) {
+  const a = Buffer.from(String(left || ""), "utf8");
+  const b = Buffer.from(String(right || ""), "utf8");
+  if (a.length !== b.length || a.length === 0) return false;
+  return timingSafeEqual(a, b);
+}
 
 const DEFAULT_MAX_ENTRIES = 256;
 const DEFAULT_CANDIDATES = 32;
@@ -351,6 +359,7 @@ export class InferenceSemanticCache {
   async currentEpochs(scopes) {
     const current = {};
     for (const scope of scopes) current[scope] = Number(this.epochs.get(scope)) || 0;
+    let remoteUncertain = false;
     if (this.remote.enabled && scopes.length) {
       try {
         const remoteValues = await this.remote.numbers(scopes.map((scope) => `growthub:inference:epoch:${scope}`));
@@ -359,9 +368,14 @@ export class InferenceSemanticCache {
           if (remoteValue > current[scope]) current[scope] = remoteValue;
           if (remoteValue > (Number(this.epochs.get(scope)) || 0)) this.epochs.set(scope, remoteValue);
         });
-      } catch { /* local epochs remain authoritative for this process */ }
+      } catch {
+        // Shared-cache verification cannot silently fall back to local
+        // truth: another process may have invalidated this scope. The
+        // caller fails closed (MISS) on uncertainty.
+        remoteUncertain = true;
+      }
     }
-    return current;
+    return { epochs: current, remoteUncertain };
   }
 
   /**
@@ -374,11 +388,17 @@ export class InferenceSemanticCache {
     if (String(entry.envelope.cache_version || "") !== this.cacheVersion) {
       return { ok: false, state: "invalid", reason: "cache_version mismatch; credentials or namespace rotated since this entry was written" };
     }
-    if (entry.signature !== this.signEntry(entry)) {
+    if (!safeEqualHex(entry.signature, this.signEntry(entry))) {
       return { ok: false, state: "invalid", reason: "cache envelope signature verification failed" };
     }
     const scopes = this.epochScopes(entry.envelope);
-    const current = await this.currentEpochs(scopes);
+    const { epochs: current, remoteUncertain } = await this.currentEpochs(scopes);
+    if (remoteUncertain) {
+      // Fail closed: with Redis unreachable, this process cannot prove the
+      // entry was not invalidated elsewhere. Availability of the cache is
+      // sacrificed, never correctness.
+      return { ok: false, state: "remote_unverified", reason: "shared invalidation state is unreachable; the entry cannot be proven current and is not served" };
+    }
     const stored = entry.envelope.epochs && typeof entry.envelope.epochs === "object" ? entry.envelope.epochs : {};
     for (const scope of scopes) {
       if ((Number(current[scope]) || 0) > (Number(stored[scope]) || 0)) {
@@ -403,7 +423,11 @@ export class InferenceSemanticCache {
           });
           return { poisoned: true, poisonedBy: String(remoteTombstone.poisonedBy || ""), reason: String(remoteTombstone.reason || "") };
         }
-      } catch { /* local tombstones remain usable */ }
+      } catch {
+        // Fail closed: a tombstone written by another process may exist but
+        // be unreadable right now. Nothing is served on uncertainty.
+        return { poisoned: false, remoteUncertain: true };
+      }
     }
     return { poisoned: false };
   }
@@ -412,7 +436,7 @@ export class InferenceSemanticCache {
     const nowMs = this.now();
     const local = (this.poisonMarkers.get(bucket) || []).filter((marker) => Number(marker.expiresAtMs) > nowMs);
     this.poisonMarkers.set(bucket, local);
-    if (!this.remote.enabled) return local;
+    if (!this.remote.enabled) return { markers: local, remoteUncertain: false };
     try {
       const remoteMarkers = await this.remote.listJson(`growthub:inference:poison:${bucket}`, MAX_POISON_MARKERS);
       const seen = new Set(local.map((marker) => marker.markerId));
@@ -423,8 +447,12 @@ export class InferenceSemanticCache {
         seen.add(marker.markerId);
       }
       this.poisonMarkers.set(bucket, local.slice(0, MAX_POISON_MARKERS));
-    } catch { /* local markers remain usable */ }
-    return this.poisonMarkers.get(bucket) || [];
+      return { markers: this.poisonMarkers.get(bucket) || [], remoteUncertain: false };
+    } catch {
+      // Fail closed: a marker written by another process may be unreadable
+      // right now; semantic candidates are not served on uncertainty.
+      return { markers: local, remoteUncertain: true };
+    }
   }
 
   get semanticEnabled() {
@@ -500,6 +528,16 @@ export class InferenceSemanticCache {
         bypassReason: CACHE_BYPASS_POISONED,
       };
     }
+    if (poisonState.remoteUncertain) {
+      return {
+        hit: false,
+        hitType: "",
+        similarity: 0,
+        entry: null,
+        integrity: "remote_unverified",
+        integrityReason: "shared poison-state is unreachable; nothing is served on uncertainty",
+      };
+    }
     let integrity = "";
     let integrityReason = "";
     let exact = this.entries.get(wantedKey) || null;
@@ -564,7 +602,10 @@ export class InferenceSemanticCache {
         candidates = [...this.entries.values()].filter(eligible);
       } catch { /* local candidates remain usable */ }
     }
-    const markers = await this.bucketPoisonMarkers(bucket);
+    const { markers, remoteUncertain: markersUncertain } = await this.bucketPoisonMarkers(bucket);
+    if (markersUncertain) {
+      return { ...missBase, integrity: "remote_unverified", integrityReason: "shared poison-marker state is unreachable; semantic candidates are not served on uncertainty" };
+    }
     if (candidates.length === 0 && markers.length === 0) return missBase;
 
     const embedded = await this.embed(semanticText);
@@ -602,6 +643,9 @@ export class InferenceSemanticCache {
     }
     if (!best) return missBase;
     const bestPoison = await this.exactPoisonState(String(best.cacheKey || ""));
+    if (bestPoison.remoteUncertain) {
+      return { ...missBase, integrity: "remote_unverified", integrityReason: "shared poison-state is unreachable; nothing is served on uncertainty" };
+    }
     if (bestPoison.poisoned) {
       return {
         hit: false,
@@ -659,7 +703,7 @@ export class InferenceSemanticCache {
       cache_version: this.cacheVersion,
       redacted: envelopeInput.redacted === true,
       redaction_event_count: Math.max(0, Math.floor(Number(envelopeInput.redaction_event_count) || 0)),
-      epochs: await this.currentEpochs(scopes),
+      epochs: (await this.currentEpochs(scopes)).epochs,
       created_at: new Date(createdAtMs).toISOString(),
       ttl_seconds: ttl,
     };

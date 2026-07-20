@@ -15,8 +15,16 @@
  * exact reason, never a fabricated composite.
  */
 
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeSchemaContract, sha256Hex, stableStringify } from "./contracts.js";
+
+/** Constant-time hex comparison; length mismatch is an immediate (safe) fail. */
+function safeEqualHex(left, right) {
+  const a = Buffer.from(String(left || ""), "utf8");
+  const b = Buffer.from(String(right || ""), "utf8");
+  if (a.length !== b.length || a.length === 0) return false;
+  return timingSafeEqual(a, b);
+}
 
 export const INFERENCE_MANIFEST_VERSION = "1.0";
 const SIGNING_KEY_ENV = "GROWTHUB_WORKSPACE_SIGNING_KEY";
@@ -139,7 +147,7 @@ export function verifySignedInferenceManifest(signed, { env = process.env, signi
     return { ok: false, reason: "manifest is signed but no workspace signing key is configured to verify it" };
   }
   const expected = createHmac("sha256", resolved.key).update(digest).digest("hex");
-  return expected === String(signed.signature)
+  return safeEqualHex(expected, signed.signature)
     ? { ok: true, unsigned: false }
     : { ok: false, reason: "manifest signature does not verify with the workspace signing key" };
 }
@@ -193,28 +201,94 @@ export function verifyManifestAgainstIdentity(signed, {
 }
 
 /**
- * Publish-gate verification. The tested draft run persisted the signed
- * manifests its inference calls actually enforced; publish recompiles a
- * manifest from each referenced live API Registry row and blocks the
- * promotion when the live composite no longer matches what was proven —
- * with a field-level diff instead of a silent drift.
+ * Derive the manifest-bindable integrations a workflow graph references:
+ * every api-registry row reachable from the graph's api-registry-call nodes
+ * (directly or as a mothership-policy route target) that declares
+ * `metadata.inferenceControlPlane`. Declaring the control plane is the
+ * operator's opt-in to the evidentiary handshake — from that point a
+ * manifest is REQUIRED, not best-effort.
  */
-export function verifyWorkflowManifestsAtPublish({ workspaceConfig, invocations = [], env = process.env } = {}) {
+export function expectedManifestIntegrations({ workspaceConfig, graph } = {}) {
   const rows = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
     .filter((object) => object?.objectType === "api-registry")
     .flatMap((object) => Array.isArray(object.rows) ? object.rows : []);
+  const referenced = new Set();
+  for (const node of Array.isArray(graph?.nodes) ? graph.nodes : []) {
+    if (String(node?.type || "") !== "api-registry-call") continue;
+    const registryId = clean(node?.config?.registryId || node?.config?.integrationId);
+    if (registryId) referenced.add(registryId);
+  }
+  const expected = new Set();
+  for (const row of rows) {
+    const rowId = clean(row?.integrationId);
+    if (!rowId) continue;
+    const declaresControlPlane = row?.metadata?.inferenceControlPlane && typeof row.metadata.inferenceControlPlane === "object";
+    if (referenced.has(rowId) && declaresControlPlane) expected.add(rowId);
+    // A referenced mothership policy also binds each of its governed local
+    // routes that declare artifact identity through its own registry rows.
+    const routes = Array.isArray(row?.metadata?.mothershipProxy?.routes) ? row.metadata.mothershipProxy.routes : [];
+    if (referenced.has(rowId)) {
+      for (const route of routes) {
+        const routeRegistryId = clean(route?.registryId);
+        if (!routeRegistryId) continue;
+        const routeRow = rows.find((candidate) => clean(candidate?.integrationId) === routeRegistryId);
+        if (routeRow?.metadata?.inferenceControlPlane && typeof routeRow.metadata.inferenceControlPlane === "object") {
+          expected.add(routeRegistryId);
+        }
+      }
+    }
+  }
+  return expected;
+}
+
+/**
+ * Publish-gate verification with SET semantics: every expected integration
+ * (derived from the tested workflow graph, NOT from whichever invocation
+ * records happen to carry a manifest) must present exactly one valid,
+ * SIGNED manifest whose composite still matches the live registry identity.
+ * Missing, unsigned, unavailable, conflicting-duplicate, and unexpected
+ * manifests all block the promotion — a workflow that needs the handshake
+ * cannot publish without handshake evidence.
+ */
+export function verifyWorkflowManifestsAtPublish({ workspaceConfig, invocations = [], expectedIntegrationIds = null, env = process.env } = {}) {
+  const rows = (Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [])
+    .filter((object) => object?.objectType === "api-registry")
+    .flatMap((object) => Array.isArray(object.rows) ? object.rows : []);
+  const expected = new Set([...(expectedIntegrationIds instanceof Set ? expectedIntegrationIds : Array.isArray(expectedIntegrationIds) ? expectedIntegrationIds : [])].map(clean).filter(Boolean));
   const mismatches = [];
-  const verifiedManifests = [];
-  const seenIntegrations = new Set();
+  const manifestsByIntegration = new Map();
+
   for (const invocation of Array.isArray(invocations) ? invocations : []) {
+    // An invocation that opted into the control plane but could not bind a
+    // manifest is a hard publish failure, never a silent skip.
+    const unavailableReason = clean(invocation?.inferenceManifestUnavailable);
+    const invocationIntegration = clean(invocation?.integrationId);
+    if (unavailableReason && (expected.size === 0 || expected.has(invocationIntegration))) {
+      mismatches.push({ integrationId: invocationIntegration || "(unknown)", diffs: [{ field: "manifest", expected: "a bindable signed manifest from the tested run", actual: unavailableReason }] });
+      continue;
+    }
     const signed = invocation?.inferenceManifest;
     if (!signed?.manifest) continue;
     const integrationId = clean(signed.manifest.integration_id);
-    if (!integrationId || seenIntegrations.has(integrationId)) continue;
-    seenIntegrations.add(integrationId);
+    if (!integrationId) {
+      mismatches.push({ integrationId: "(unknown)", diffs: [{ field: "integration_id", expected: "a governed integration id", actual: "(missing)" }] });
+      continue;
+    }
+    if (!expected.has(integrationId)) {
+      mismatches.push({ integrationId, diffs: [{ field: "expected_set", expected: `one of [${[...expected].join(", ")}]`, actual: `unexpected manifest for ${integrationId}` }] });
+      continue;
+    }
+    const previous = manifestsByIntegration.get(integrationId);
+    if (previous && previous.manifest_sha256 !== signed.manifest_sha256) {
+      mismatches.push({ integrationId, diffs: [{ field: "manifest_sha256", expected: previous.manifest_sha256, actual: `conflicting duplicate ${signed.manifest_sha256}` }] });
+      continue;
+    }
     const signature = verifySignedInferenceManifest(signed, { env });
-    if (!signature.ok) {
-      mismatches.push({ integrationId, diffs: [{ field: "signature", expected: "valid workspace-key signature", actual: signature.reason }] });
+    if (!signature.ok || signature.unsigned) {
+      // Publish is a production trust boundary: an unsigned manifest (or a
+      // missing/mismatched signing key) fails closed. The digest proves
+      // internal consistency, not origin or authorization.
+      mismatches.push({ integrationId, diffs: [{ field: "signature", expected: "a manifest signed by the workspace signing key", actual: signature.unsigned ? "unsigned manifest" : String(signature.reason) }] });
       continue;
     }
     const liveRow = rows.find((row) => clean(row?.integrationId) === integrationId) || null;
@@ -238,9 +312,17 @@ export function verifyWorkflowManifestsAtPublish({ workspaceConfig, invocations 
       mismatches.push({ integrationId, diffs });
       continue;
     }
-    verifiedManifests.push(signed);
+    manifestsByIntegration.set(integrationId, signed);
   }
-  return { ok: mismatches.length === 0, mismatches, manifests: verifiedManifests };
+
+  // One-to-one set match: every expected integration must have produced a
+  // valid signed manifest in the tested run.
+  for (const integrationId of expected) {
+    if (!manifestsByIntegration.has(integrationId) && !mismatches.some((entry) => entry.integrationId === integrationId)) {
+      mismatches.push({ integrationId, diffs: [{ field: "manifest", expected: "exactly one valid signed manifest from the tested run", actual: "(none produced)" }] });
+    }
+  }
+  return { ok: mismatches.length === 0, mismatches, manifests: [...manifestsByIntegration.values()] };
 }
 
 /** Field-level diff between a tested-run manifest and a freshly compiled one. */

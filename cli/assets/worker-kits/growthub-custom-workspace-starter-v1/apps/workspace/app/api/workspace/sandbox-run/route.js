@@ -107,7 +107,7 @@ import {
   TRACE_CAPTURE_RUN_KIND
 } from "@/lib/distillation-gateway";
 import { trainingRunSourceKey } from "@/lib/training-run-receipts";
-import { resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
+import { resolveTrustedChildReceipt, resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
@@ -151,6 +151,29 @@ async function resolvePersistedInferenceContinuation({
   const source = await readWorkspaceSourceRecords(sourceId);
   return resolveTrustedInferenceContinuation(source?.records, {
     receiptId,
+    modelId: safeModelId,
+    policyRegistryId: safePolicyRegistryId,
+    appScope,
+  });
+}
+
+async function resolvePersistedChildReceipt({
+  childReceiptId,
+  expectedParentReceiptId,
+  modelId,
+  policyRegistryId,
+  appScope,
+} = {}) {
+  const safeModelId = String(modelId || "workspace-local").trim() || "workspace-local";
+  const safePolicyRegistryId = String(policyRegistryId || "").trim();
+  if (!safePolicyRegistryId) {
+    return { ok: false, reason: "the governed model policy registry id is required for child receipt resolution" };
+  }
+  const sourceId = `model-invocation:${safePolicyRegistryId}:${safeModelId}`;
+  const source = await readWorkspaceSourceRecords(sourceId);
+  return resolveTrustedChildReceipt(source?.records, {
+    childReceiptId,
+    expectedParentReceiptId,
     modelId: safeModelId,
     policyRegistryId: safePolicyRegistryId,
     appScope,
@@ -836,8 +859,19 @@ async function executeSandboxRun(body, {
         inferenceContinuation,
         resolveInferenceContinuation: resolvePersistedInferenceContinuation,
         // Published manifests bound to the live workflow version; the
-        // gateway rejects a pool serving a different composite SHA.
+        // gateway rejects a pool serving a different composite SHA. On a
+        // LIVE (non-draft) run, a control-plane integration without its
+        // published signed manifest is refused outright.
         inferenceManifests: Array.isArray(rowForRun.inferenceManifests) ? rowForRun.inferenceManifests : [],
+        inferenceManifestsRequired: !useDraft && String(rowForRun.lifecycleStatus || "").trim() === "live",
+        // Server-owned child receipt resolution: continuations carry only an
+        // opaque child receipt id; the canonical receipt is read from the
+        // persisted invocation stream and the caller-shaped body discarded.
+        // The runner injects the per-node policy/model identity.
+        resolveChildReceipt: (args) => resolvePersistedChildReceipt({
+          ...args,
+          appScope: String(appScope || "workspace-wide")
+        }),
         signal,
         onEvent: emit
       }

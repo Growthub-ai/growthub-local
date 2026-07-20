@@ -29,7 +29,7 @@ import {
   normalizeSpanKind,
   workflowOperationIds,
 } from "./lineage.js";
-import { verifyManifestAgainstIdentity } from "./manifest.js";
+import { verifyManifestAgainstIdentity, verifySignedInferenceManifest } from "./manifest.js";
 import { createStreamingRedactor, normalizeRedactionPolicy, redactText, resolveRedactionPreviewKey } from "./redaction.js";
 import {
   buildOtlpSpan,
@@ -842,10 +842,21 @@ export async function executeInferenceGateway({
   // hashes it (Merkle edge); a declared child call without an ingested
   // receipt fails the parent continuation closed instead of completing with
   // an orphaned span. A failed child is recorded with its exact error.
+  //
+  // Trust boundary: when a server-owned childReceiptResolver is configured
+  // (every HTTP-facing lane), the caller-shaped receipt body is DISCARDED —
+  // only an opaque receipt id is taken from the wire, the canonical receipt
+  // is resolved from persisted records, and its hash is recomputed here.
+  // Bare hashes are never accepted. Each child receipt must declare THIS
+  // continuation's prior receipt as its parent and share its tenant scope,
+  // and one child receipt cannot satisfy two tool calls.
   const workflowOps = workflowOperationIds(normalized.openapi);
   const childLinks = [];
   const childViolations = [];
   const childLinkByCallId = new Map();
+  const seenChildReceiptIds = new Set();
+  const parentScopeSha256 = sha256Hex(String(defaults.tenantScope || normalized.metadata?.workspace_id || "workspace-local"));
+  const childReceiptResolver = typeof defaults.childReceiptResolver === "function" ? defaults.childReceiptResolver : null;
   const rawToolResultById = new Map(
     (Array.isArray(continuationRequest.toolResults) ? continuationRequest.toolResults : [])
       .map((result) => [String(result?.tool_call_id || result?.toolCallId || ""), result]),
@@ -854,23 +865,53 @@ export async function executeInferenceGateway({
     const raw = rawToolResultById.get(String(item.toolCallId || "")) || {};
     const workflowRef = String(raw.child_workflow_ref || raw.childWorkflowRef || "");
     const requiresChildReceipt = workflowOps.has(String(item.operationId || "")) || Boolean(workflowRef);
-    const suppliedChild = raw.child_receipt || raw.childReceipt || raw.child_receipt_sha256 || raw.childReceiptSha256;
+    const callerReceipt = raw.child_receipt || raw.childReceipt || null;
+    const suppliedChild = callerReceipt || raw.child_receipt_sha256 || raw.childReceiptSha256 || raw.child_receipt_id || raw.childReceiptId;
     if (!requiresChildReceipt && !suppliedChild) continue;
-    const ingestion = ingestChildReceipt({
-      toolCallId: String(item.toolCallId || ""),
-      workflowRef,
-      childReceipt: raw.child_receipt || raw.childReceipt || null,
-      childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
-      // The full known ancestry, not just the immediate parent: the runner
-      // threads every upstream receipt id of this workflow chain through
-      // defaults so a multi-hop loop is refused at ingestion depth too.
-      forbiddenReceiptIds: [
-        normalized.priorReceiptId,
-        normalized.parentReceiptId,
-        ...(Array.isArray(defaults.ancestorReceiptIds) ? defaults.ancestorReceiptIds.map(String) : []),
-      ],
-    });
+    let childReceipt = callerReceipt;
+    let resolverFailure = "";
+    if (childReceiptResolver) {
+      const childReceiptId = String(raw.child_receipt_id || raw.childReceiptId || callerReceipt?.receipt_id || "");
+      childReceipt = null;
+      if (childReceiptId) {
+        try {
+          const resolution = await childReceiptResolver({
+            childReceiptId,
+            expectedParentReceiptId: normalized.priorReceiptId,
+          });
+          if (resolution?.ok && resolution.receipt) childReceipt = resolution.receipt;
+          else resolverFailure = String(resolution?.reason || "child receipt could not be resolved from server-owned records");
+        } catch (error) {
+          resolverFailure = String(error?.message || "child receipt resolution failed");
+        }
+      } else {
+        resolverFailure = "a child workflow tool result requires child_receipt_id for server-side resolution";
+      }
+    }
+    const ingestion = resolverFailure
+      ? { ok: false, error: { code: "child_receipt_missing", message: resolverFailure } }
+      : ingestChildReceipt({
+          toolCallId: String(item.toolCallId || ""),
+          workflowRef,
+          childReceipt,
+          childReceiptSha256: String(raw.child_receipt_sha256 || raw.childReceiptSha256 || ""),
+          expectedParentReceiptId: normalized.priorReceiptId,
+          expectedScopeSha256: parentScopeSha256,
+          // The full known ancestry, not just the immediate parent: the
+          // runner threads every upstream receipt id of this workflow chain
+          // through defaults so a multi-hop loop is refused at depth too.
+          forbiddenReceiptIds: [
+            normalized.priorReceiptId,
+            normalized.parentReceiptId,
+            ...(Array.isArray(defaults.ancestorReceiptIds) ? defaults.ancestorReceiptIds.map(String) : []),
+          ],
+        });
+    if (ingestion.ok && seenChildReceiptIds.has(ingestion.link.child_receipt_id)) {
+      ingestion.ok = false;
+      ingestion.error = { code: "child_receipt_replayed", message: `child receipt ${ingestion.link.child_receipt_id} was already consumed by another tool call in this continuation` };
+    }
     if (ingestion.ok) {
+      seenChildReceiptIds.add(ingestion.link.child_receipt_id);
       childLinks.push(ingestion.link);
       childLinkByCallId.set(String(item.toolCallId || ""), ingestion.link);
       continue;
@@ -880,7 +921,7 @@ export async function executeInferenceGateway({
     childLinkByCallId.set(String(item.toolCallId || ""), link);
     childViolations.push({
       code: "child_receipt_missing",
-      message: `tool call ${item.toolCallId} targeted a governed workflow but no child receipt was ingested: ${ingestion.error.message}`,
+      message: `tool call ${item.toolCallId} targeted a governed workflow but no verified child receipt was ingested: ${ingestion.error.message}`,
     });
   }
   const childReceiptsOk = childViolations.length === 0;
@@ -912,6 +953,25 @@ export async function executeInferenceGateway({
     errors.push({
       code: "child_receipt_missing",
       message: childViolations.map((item) => item.message).join("; "),
+      retryable: false,
+    });
+  }
+  // Manifest authentication gate — evaluated BEFORE any transport or cache
+  // replay. A published workflow's manifest must verify under the workspace
+  // signing key: unsigned manifests, bad signatures, and a missing manifest
+  // when the workflow version requires one all fail closed here, so an
+  // unauthenticated manifest can never reach a model or serve a cached
+  // completion. (The digest alone proves internal consistency, not origin.)
+  const manifestGate = defaults.manifest
+    ? verifySignedInferenceManifest(defaults.manifest, { env })
+    : defaults.manifestRequired === true
+      ? { ok: false, unsigned: false, reason: "this published workflow requires a signed inference manifest but none was supplied to the gateway" }
+      : null;
+  const manifestGateOk = !manifestGate || (manifestGate.ok === true && manifestGate.unsigned !== true);
+  if (!manifestGateOk) {
+    errors.push({
+      code: !defaults.manifest ? "manifest_missing" : manifestGate.unsigned ? "manifest_unsigned" : "manifest_signature_invalid",
+      message: String(manifestGate.reason || "inference manifest is not authenticated for live execution"),
       retryable: false,
     });
   }
@@ -1016,7 +1076,9 @@ export async function executeInferenceGateway({
   const transportSignal = signal && typeof AbortSignal.any === "function"
     ? AbortSignal.any([signal, deadlineSignal])
     : signal || deadlineSignal;
-  if (!continuationValid) {
+  if (!continuationValid || !manifestGateOk) {
+    // An unauthenticated manifest or rejected continuation never reaches a
+    // model AND never serves a cached completion.
     transportResult = {
       ok: false,
       status: 400,
@@ -1178,12 +1240,16 @@ export async function executeInferenceGateway({
         env,
       })
     : { status: "not_requested", manifest_sha256: null, composite_sha256: null, diffs: [] };
-  const manifestValid = manifestEvidence.status !== "mismatch";
+  // A manifest is enforceable only in two states: "verified" (signed and
+  // matching the live identity) or "not_requested" (no manifest on this
+  // call). "unsigned"/"unavailable" are honest evidence states but NOT valid
+  // execution states — the pre-transport gate already blocked them.
+  const manifestValid = manifestEvidence.status === "verified" || manifestEvidence.status === "not_requested";
   if (transportResult?.ok && !manifestValid) {
     errors.push({
-      code: "manifest_composite_mismatch",
+      code: manifestEvidence.status === "mismatch" ? "manifest_composite_mismatch" : "manifest_unsigned",
       message: manifestEvidence.diffs.map((diff) => `${diff.field}: expected ${diff.expected}, got ${diff.actual}`).join("; ")
-        || "live gateway identity does not match the published inference manifest",
+        || String(manifestEvidence.reason || "live gateway identity does not match the published inference manifest"),
       retryable: false,
     });
   }
@@ -1297,6 +1363,7 @@ export async function executeInferenceGateway({
     && priorValidation.ok
     && toolResultsAudit.ok
     && childReceiptsOk
+    && manifestGateOk
     && manifestValid;
   const awaitingToolResult = completedSuccessfully && currentToolValidation.calls.length > 0;
   const receiptId = `infr_${requestSha256.slice(0, 20)}_${rootContext.spanId}`;
