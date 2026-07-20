@@ -142,6 +142,16 @@ export interface InferenceCacheEvidence {
     bypass_reason?: string;
     /** Signed-envelope verification state for the entry actually consulted. */
     envelope_signature_state?: "verified" | "invalid" | "unsigned" | "not_checked";
+    /**
+     * Integrity verdict for a REFUSED entry. `remote_unverified` means the
+     * signature passed but shared invalidation state (epoch / tombstone /
+     * poison marker) was unreachable, so the entry was withheld on uncertainty
+     * — efficiency is sacrificed, never integrity. Absent when nothing was
+     * refused.
+     */
+    integrity_state?: "invalid" | "invalidated" | "unsigned" | "remote_unverified" | (string & {});
+    /** Bounded operator reason for the integrity verdict; never a secret. */
+    integrity_reason?: string;
     /** Credential-binding cache version active for this lookup/store. */
     cache_version?: string | null;
     /** Correction receipt that poisoned the bypassed entry, when applicable. */
@@ -167,12 +177,27 @@ export interface ChildReceiptLink {
     tool_call_id?: string;
     /** Governed workflow reference the child executed, when applicable. */
     workflow_ref?: string;
+    /**
+     * Provenance of the ingested receipt body. `server-resolved` means the
+     * canonical receipt came from server-owned persisted records (the only
+     * basis live execution accepts); `caller-draft` means a caller-supplied
+     * body was ingested by a development/draft lane and is NOT trusted
+     * production evidence.
+     */
+    evidence_basis?: "server-resolved" | "caller-draft" | (string & {});
     /** Exact child failure; a failed child is recorded, never orphaned. */
     error?: {
         code: string;
         message: string;
     };
 }
+/**
+ * Stable, machine-readable outcome codes for the governed inference gateway
+ * and workflow assembly. Every trust-boundary failure keeps a distinct code
+ * so an operator can act (wire the resolver, bind the tenant scope, price the
+ * route) without parsing prose. This union is additive and not exhaustive.
+ */
+export type InferenceGovernanceCode = "manifest_missing" | "manifest_unsigned" | "manifest_signature_invalid" | "manifest_composite_mismatch" | "inference_manifest_mismatch" | "child_receipt_missing" | "child_receipt_hash_only" | "child_receipt_invalid" | "child_receipt_parent_mismatch" | "child_receipt_scope_mismatch" | "child_receipt_scope_unbound" | "child_receipt_resolver_required" | "child_receipt_replayed" | "child_receipt_cycle" | "receipt_lineage_cycle" | "receipt_graph_unverifiable" | "cost_unknown" | (string & {});
 export interface ReceiptLineageEvidence {
     span_kind: InferenceSpanKind;
     parent_receipt_id: string | null;
@@ -185,6 +210,26 @@ export interface ReceiptLineageEvidence {
     /** `incomplete` means a declared child never ingested a receipt. */
     status: "leaf" | "complete" | "incomplete";
     reason?: string;
+}
+/**
+ * The assembled multi-step workflow receipt DAG. A cyclic or unverifiable
+ * graph is a TERMINAL failure at workflow assembly (the envelope's `ok`
+ * becomes false with `receipt_lineage_cycle` / `receipt_graph_unverifiable`)
+ * — `acyclic: false` is never a flagged success.
+ */
+export interface ReceiptDagEvidence {
+    schema: "growthub-receipt-dag-v1";
+    root_receipt_id: string;
+    edges: Array<{
+        receipt_id: string;
+        parent_receipt_id: string | null;
+        span_kind: InferenceSpanKind;
+        receipt_sha256: string;
+    }>;
+    dag_sha256: string;
+    acyclic: boolean;
+    /** Bounded cycle path; present only when `acyclic` is false. */
+    cycle_path?: string[];
 }
 export type CacheInvalidationReason = "MODEL_UPDATE" | "SCHEMA_CHANGE" | "FEEDBACK_CORRECTION" | "SECURITY";
 /**
