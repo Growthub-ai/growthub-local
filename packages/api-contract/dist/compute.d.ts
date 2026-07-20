@@ -49,8 +49,8 @@ export declare const COMPUTE_AVAILABILITY_MODES: readonly ["local", "on-demand",
  * plan compiles into. A profile describes a SHAPE of capacity, never a
  * vendor. Open union so a workspace can define additional profiles.
  */
-export type ComputeCapacityProfileId = "harvest-only" | "serve-local" | "burst-gpu" | "warm-inference" | "single-gpu-finetune" | "multi-gpu-finetune" | "distributed-training" | (string & {});
-export declare const COMPUTE_CAPACITY_PROFILE_IDS: readonly ["harvest-only", "serve-local", "burst-gpu", "warm-inference", "single-gpu-finetune", "multi-gpu-finetune", "distributed-training"];
+export type ComputeCapacityProfileId = "harvest-only" | "serve-local" | "cpu-local-finetune" | "burst-gpu" | "warm-inference" | "single-gpu-finetune" | "multi-gpu-finetune" | "distributed-training" | (string & {});
+export declare const COMPUTE_CAPACITY_PROFILE_IDS: readonly ["harvest-only", "serve-local", "cpu-local-finetune", "burst-gpu", "warm-inference", "single-gpu-finetune", "multi-gpu-finetune", "distributed-training"];
 /**
  * Accelerator class floors, coarsest-useful granularity. Placement reasons
  * about class + VRAM floor, never a provider SKU string; provider adapters
@@ -252,6 +252,8 @@ export interface ComputeEvent {
     providerEventId: string;
     /** Bounded human detail. */
     detail: string;
+    workSpecHash?: string;
+    requirementsHash?: string;
 }
 /**
  * Checkpoint evidence. A checkpoint is resumable only when its identity is
@@ -270,6 +272,7 @@ export interface ComputeCheckpointRef {
     sizeBytes: number;
     createdAt: string;
     evidenceObservedAt: string;
+    workSpecHash?: string;
 }
 /**
  * Artifact evidence a completed run must return. Mirrors the existing
@@ -285,6 +288,30 @@ export interface ComputeArtifactRef {
     sha256: string;
     sizeBytes: number;
     evidenceObservedAt: string;
+    workSpecHash?: string;
+    requirementsHash?: string;
+    verifiedSha256?: string;
+    verificationKind?: string;
+}
+export interface ComputeIntent {
+    schema: "growthub-compute-intent-v1";
+    capacityProfileId: ComputeCapacityProfileId;
+    requirements: ComputeRequirements;
+    requirementsHash: string;
+    policy: ComputeBudgetPolicy & Record<string, unknown>;
+    intentHash: string;
+}
+export interface ComputeWorkSpec {
+    schema: "growthub-training-execution-spec-v1";
+    intentHash: string;
+    requirementsHash: string;
+    capacityProfileId: ComputeCapacityProfileId;
+    trainingRunId: string;
+    modelTrainingRowId: string;
+    training: Record<string, unknown>;
+    dataset: Record<string, unknown>;
+    output: Record<string, unknown>;
+    workSpecHash: string;
 }
 /** Machine-readable reason a candidate was excluded or out-ranked. */
 export interface ComputeCandidateVerdict {
@@ -331,6 +358,11 @@ export interface ComputeEvidence {
     events: ComputeEvent[];
     checkpoints: ComputeCheckpointRef[];
     artifact: ComputeArtifactRef | null;
+    intent?: ComputeIntent | null;
+    workSpec?: ComputeWorkSpec | null;
+    intentHash?: string;
+    requirementsHash?: string;
+    workSpecHash?: string;
     evidenceObservedAt: string;
 }
 /**
@@ -349,10 +381,14 @@ export interface ComputeProviderAdapter {
     describeCapabilities(config: Record<string, unknown>): ComputeProviderCapabilities;
     /** Observe live capacity/prices. Never allocates. */
     inspectCapacity(ctx: ComputeAdapterContext): Promise<ComputeProviderQuote>;
-    /** Allocate (or submit) capacity for the run. Must honor idempotency. */
+    /** Allocate capacity only. Must honor idempotency. */
     allocate(ctx: ComputeAdapterContext): Promise<ComputeAllocation>;
+    /** Submit the exact immutable work spec to the verified allocation. */
+    execute(ctx: ComputeAdapterContext): Promise<ComputeEvent[]>;
     /** Observe current provider-side status, normalized to events. */
     status(ctx: ComputeAdapterContext): Promise<ComputeEvent[]>;
+    /** Resume only from a proven checkpoint in this work-spec lineage. */
+    resume(ctx: ComputeAdapterContext, checkpoint: ComputeCheckpointRef): Promise<ComputeEvent[]>;
     /** Request cooperative cancellation. */
     cancel(ctx: ComputeAdapterContext): Promise<ComputeEvent[]>;
     /** Release/terminate capacity. Must report release-failed honestly. */
@@ -365,6 +401,11 @@ export interface ComputeAdapterContext {
     capacityProfileId: ComputeCapacityProfileId;
     /** Deterministic idempotency key hash for this governed request. */
     idempotencyKeyHash: string;
+    intent: ComputeIntent;
+    workSpec: ComputeWorkSpec;
+    intentHash: string;
+    requirementsHash: string;
+    workSpecHash: string;
     /** Governed row config (secret-free; env NAMES only). */
     providerConfig: Record<string, unknown>;
     /** Server-side env resolution by NAME. Returns "" when absent. */

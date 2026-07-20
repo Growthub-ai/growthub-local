@@ -71,6 +71,12 @@ jobs:
         # suite failure fails this job — there is no skip lane.
         run: npm run test:inference-certification
 
+      - name: Certify governed compute realization
+        # Canonical unconditional gate: contract, profiles, registry, resolver,
+        # execution, all provider adapters, customer state, adversarial cases,
+        # route wiring, booted durable route loop, and composed proof loop.
+        run: npm run test:compute-certification
+
       - name: Validate workspace add-ons scheduler loop
         run: |
           node --test scripts/unit-workspace-add-ons-scheduler.test.mjs

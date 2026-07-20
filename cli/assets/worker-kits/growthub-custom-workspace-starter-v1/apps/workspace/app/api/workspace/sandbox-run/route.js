@@ -382,6 +382,36 @@ function reconcileModelTrainingRunnerResult({ workspaceConfig, objectId, name, r
   return changed ? nextObjects : null;
 }
 
+/** Durable compute journal on the existing model-training-run receipt. */
+async function persistComputeReceipt(trainingRunId, computeBlock) {
+  const current = await readWorkspaceConfig();
+  const objects = Array.isArray(current?.dataModel?.objects) ? current.dataModel.objects : [];
+  const nextObjects = applyComputeBlockToReceiptRows(objects, trainingRunId, computeBlock);
+  if (!nextObjects) throw new Error(`training receipt ${trainingRunId} disappeared during compute execution`);
+  await writeWorkspaceConfig({ dataModel: { ...(current.dataModel || {}), objects: nextObjects } });
+}
+
+/** Canonical artifact materialization/readback. Provider SHA claims alone fail. */
+async function verifyComputeArtifactBytes(artifact) {
+  const locator = String(artifact?.locator || "").trim();
+  if (!locator) throw new Error("artifact locator missing");
+  let bytes;
+  let kind;
+  if (/^https?:\/\//i.test(locator)) {
+    const res = await fetch(locator, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(`artifact readback HTTP ${res.status}`);
+    bytes = Buffer.from(await res.arrayBuffer());
+    kind = "materialized-http-bytes";
+  } else {
+    const filePath = locator.startsWith("file://") ? new URL(locator) : locator;
+    bytes = await fs.readFile(filePath);
+    kind = "materialized-file-bytes";
+  }
+  const verifiedSha256 = createHash("sha256").update(bytes).digest("hex");
+  if (verifiedSha256 !== String(artifact.sha256 || "")) throw new Error("materialized artifact SHA-256 does not match provider claim");
+  return { verifiedSha256, verificationKind: kind, sizeBytes: bytes.byteLength };
+}
+
 async function runServerlessScheduler({
   workspaceConfig,
   row,
@@ -928,6 +958,8 @@ async function executeSandboxRun(body, {
         workspaceConfig,
         objectId,
         name: rowForRun.Name || name,
+        action: ["run", "cancel", "resume"].includes(String(body?.computeAction || "run")) ? String(body?.computeAction || "run") : "run",
+        checkpointId: String(body?.checkpointId || ""),
         io: {
           getAdapter: getComputeProviderAdapter,
           listAdapterIds: listComputeProviderAdapters,
@@ -948,6 +980,8 @@ async function executeSandboxRun(body, {
           },
           now: () => Date.now(),
           sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          persistCompute: (computeBlock) => persistComputeReceipt(rowForRun.Name || name, computeBlock),
+          verifyArtifact: verifyComputeArtifactBytes,
           // Bound remote observation to the row's own timeout budget.
           maxPolls: Math.max(1, Math.floor(timeoutMs / 5000)),
           pollIntervalMs: 5000
@@ -1115,7 +1149,11 @@ async function executeSandboxRun(body, {
     try {
       const compactResponse = JSON.stringify(response, null, 2);
       const sourceIdValue = sourceId || "";
-      const objects = Array.isArray(workspaceConfig.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+      // Provider compute journals progressively. Re-read before the final row
+      // stamp so a crash/error path cannot overwrite a durable allocation with
+      // the request-start snapshot.
+      const persistenceConfig = effectiveAdapterId === "provider-compute" ? await readWorkspaceConfig() : workspaceConfig;
+      const objects = Array.isArray(persistenceConfig.dataModel?.objects) ? persistenceConfig.dataModel.objects : [];
       let nextObjects = objects.map((entry) => {
         if (entry.id !== object.id) return entry;
         const rows = Array.isArray(entry.rows) ? entry.rows : [];
@@ -1140,8 +1178,8 @@ async function executeSandboxRun(body, {
       });
       const reconciledObjects = reconcileModelTrainingRunnerResult({
         workspaceConfig: {
-          ...(workspaceConfig || {}),
-          dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
+          ...(persistenceConfig || {}),
+          dataModel: { ...(persistenceConfig.dataModel || {}), objects: nextObjects }
         },
         objectId,
         name: rowForRun.Name || name,
@@ -1157,7 +1195,7 @@ async function executeSandboxRun(body, {
         if (computeStamped) nextObjects = computeStamped;
       }
       await writeWorkspaceConfig({
-        dataModel: { ...(workspaceConfig.dataModel || {}), objects: nextObjects }
+        dataModel: { ...(persistenceConfig.dataModel || {}), objects: nextObjects }
       });
     } catch (error) {
       persistError = persistError || error?.message || "failed to stamp row status";

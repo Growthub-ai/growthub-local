@@ -69,12 +69,19 @@ function totalUsd(quote) {
  * { eligible, reasonCodes[], reasons[] } — every failure named, all gates
  * evaluated (no short-circuit) so the operator sees the FULL repair list.
  */
-export function evaluateCandidateEligibility({ requirements, capacityProfileId, provider, capabilities, quote, budget, now }) {
+export function evaluateCandidateEligibility({ requirements, capacityProfileId, provider, capabilities, quote, budget, policy, now }) {
   const req = requirements && typeof requirements === "object" ? requirements : {};
   const caps = capabilities && typeof capabilities === "object" ? capabilities : null;
   const reasonCodes = [];
   const reasons = [];
   const flag = (code, reason) => { reasonCodes.push(code); reasons.push(reason); };
+  const portablePolicy = policy && typeof policy === "object" ? policy : {};
+  const providerId = String(provider?.providerId || "");
+  const availability = String(quote?.availabilityMode || "");
+  if ((portablePolicy.excludeLocal === true || portablePolicy.mode === "cloud") && providerId === "local-machine") flag("local-excluded-by-policy", "customer policy requires cloud compute");
+  if ((portablePolicy.localOnly === true || portablePolicy.mode === "local") && providerId !== "local-machine") flag("remote-excluded-by-policy", "customer policy requires this machine");
+  if ((portablePolicy.reservedOnly === true || portablePolicy.mode === "reserved-cluster") && !["reserved", "warm"].includes(availability)) flag("reserved-capacity-required", "customer policy requires reserved cluster capacity");
+  if (portablePolicy.allowPreemptible !== true && availability === "spot") flag("preemptible-excluded-by-policy", "customer policy does not permit preemptible capacity");
 
   // -- provider configuration state (from the governed registry derivation)
   const status = String(provider?.status || "");
@@ -263,6 +270,7 @@ export function resolveCompute({
   capabilitiesById = {},
   quotesById = {},
   budget = null,
+  policy = null,
   selectionMode = "auto",
   pinnedProviderId = "",
   now = "",
@@ -286,7 +294,7 @@ export function resolveCompute({
     const providerId = String(provider.providerId || "");
     const capabilities = capabilitiesById?.[providerId] || null;
     const quote = quotesById?.[providerId] || null;
-    const gate = evaluateCandidateEligibility({ requirements, capacityProfileId, provider, capabilities, quote, budget, now });
+    const gate = evaluateCandidateEligibility({ requirements, capacityProfileId, provider, capabilities, quote, budget, policy, now });
     // Under explicit mode, non-pinned providers are skipped BY POLICY, with
     // the reason named (they are not "ineligible" — they were not asked).
     if (pin && providerId !== pin) {
@@ -314,6 +322,7 @@ export function resolveCompute({
     capacityProfileId: String(capacityProfileId || ""),
     requirements: requirements && typeof requirements === "object" ? requirements : null,
     budget: normalizeBudget(budget),
+    policy: policy && typeof policy === "object" ? policy : null,
     selectionMode: mode,
     selectedProviderId: winner ? winner.providerId : "",
     selectedReasons: winner ? selectionReasons({ provider: winner.provider, quote: winner.quote, capabilities: winner.capabilities, pinnedProviderId: pin }) : [],

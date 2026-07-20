@@ -98,6 +98,8 @@ export function normalizeComputeEvent(raw) {
     runRef: normalizeComputeRunRef(e.runRef),
     providerEventId: str(e.providerEventId).trim(),
     detail: str(e.detail).slice(0, 500),
+    workSpecHash: str(e.workSpecHash).trim(),
+    requirementsHash: str(e.requirementsHash).trim(),
   };
 }
 
@@ -115,6 +117,7 @@ export function normalizeComputeCheckpoint(raw) {
     sizeBytes: Math.max(0, Math.floor(num(c.sizeBytes))),
     createdAt: str(c.createdAt).trim(),
     evidenceObservedAt: str(c.evidenceObservedAt).trim(),
+    workSpecHash: str(c.workSpecHash).trim(),
     // A checkpoint with no locator or no content identity cannot be resumed
     // from — a CLAIMED checkpoint is not a proven one.
     resumable: Boolean(locator && sha256),
@@ -143,6 +146,7 @@ export function normalizeComputeAllocation(raw) {
     allocated: raw.allocated && typeof raw.allocated === "object"
       ? { gpuType: str(raw.allocated.gpuType), gpuCount: Math.max(0, Math.floor(num(raw.allocated.gpuCount))), workers: Math.max(0, Math.floor(num(raw.allocated.workers))), region: str(raw.allocated.region) }
       : null,
+    workSpecHash: str(raw.workSpecHash).trim(),
   };
 }
 
@@ -155,6 +159,11 @@ export function normalizeComputeArtifactRef(raw) {
     sha256: str(raw.sha256).trim(),
     sizeBytes: Math.max(0, Math.floor(num(raw.sizeBytes))),
     evidenceObservedAt: str(raw.evidenceObservedAt).trim(),
+    workSpecHash: str(raw.workSpecHash).trim(),
+    requirementsHash: str(raw.requirementsHash).trim(),
+    verifiedSha256: str(raw.verifiedSha256).trim(),
+    verificationKind: str(raw.verificationKind).trim(),
+    evaluationResults: Array.isArray(raw.evaluationResults) ? raw.evaluationResults : [],
   };
 }
 
@@ -172,6 +181,14 @@ export function normalizeComputeBlock(raw) {
     providerRegistryId: str(raw.providerRegistryId).trim(),
     selectionMode: raw.selectionMode === "explicit" ? "explicit" : "auto",
     idempotencyKeyHash: str(raw.idempotencyKeyHash).trim(),
+    intent: raw.intent && typeof raw.intent === "object" ? raw.intent : null,
+    intentHash: str(raw.intentHash || raw.intent?.intentHash).trim(),
+    requirementsHash: str(raw.requirementsHash || raw.intent?.requirementsHash).trim(),
+    workSpec: raw.workSpec && typeof raw.workSpec === "object" ? raw.workSpec : null,
+    workSpecHash: str(raw.workSpecHash || raw.workSpec?.workSpecHash).trim(),
+    policy: raw.policy && typeof raw.policy === "object" ? raw.policy : (raw.intent?.policy || null),
+    capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : null,
+    evaluation: raw.evaluation && typeof raw.evaluation === "object" ? raw.evaluation : null,
     decision,
     allocation: normalizeComputeAllocation(raw.allocation),
     events: (Array.isArray(raw.events) ? raw.events : []).map(normalizeComputeEvent).filter(Boolean).slice(0, MAX_EVENTS),
@@ -250,6 +267,13 @@ export function deriveComputeLifecycle({ events = [], allocation = null, checkpo
 
     switch (event.type) {
       case "compute-requested":
+        if (terminal && allCheckpoints.some((c) => c.resumable)) {
+          terminal = "";
+          running = false;
+          releaseRequested = false;
+          releaseConfirmed = false;
+          releaseFailed = false;
+        }
         apply(event, "requested");
         break;
       case "compute-queued":
@@ -373,6 +397,9 @@ export function deriveComputeArtifactHonesty({ lifecycle = null, artifact = null
   const expected = str(expectedSha256).trim();
   if (expected && expected !== art.sha256) {
     return { promotable: false, reasonCode: "artifact-hash-mismatch", reason: `artifact sha256 ${art.sha256.slice(0, 12)}… does not match the expected ${expected.slice(0, 12)}… — non-promotable` };
+  }
+  if (!art.verifiedSha256 || art.verifiedSha256 !== art.sha256) {
+    return { promotable: false, reasonCode: "artifact-bytes-unverified", reason: "artifact bytes were not verified by the canonical materialization/storage boundary — non-promotable" };
   }
   return { promotable: true, reasonCode: "", reason: "artifact identity present — eligible for the existing import/verification/evaluation ladder" };
 }

@@ -33,6 +33,7 @@
     "test:training-local-readiness": "node --test ./scripts/unit-training-local-readiness.test.mjs",
     "test:distillation-flywheel": "node --test ./scripts/unit-distillation-flywheel.test.mjs",
     "test:inference-certification": "node ./scripts/run-inference-certification.mjs",
+    "test:compute-certification": "node ./scripts/run-compute-certification.mjs",
     "e2e:distillation-flywheel": "node ./scripts/e2e-distillation-flywheel-loop.mjs",
     "e2e:distillation-utilization": "node ./scripts/e2e-distillation-utilization-playwright.mjs",
     "smoke:serverless-readiness": "node ./scripts/smoke-serverless-readiness-localhost.mjs",

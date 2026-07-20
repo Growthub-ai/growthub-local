@@ -132,6 +132,8 @@ export function buildRayJobSubmission({ ctx, config }) {
         GROWTHUB_GPUS_PER_WORKER: String(gpusPerWorker),
         GROWTHUB_CHECKPOINT_REQUIRED: req.checkpointRequired === true ? "1" : "0",
         GROWTHUB_GANG_SCHEDULING: dist?.gangScheduling === true ? "1" : "0",
+        GROWTHUB_WORK_SPEC_HASH: str(ctx?.workSpecHash),
+        GROWTHUB_WORK_SPEC_JSON: JSON.stringify(ctx?.workSpec || {}),
         ...(config.storagePath ? { GROWTHUB_STORAGE_PATH: config.storagePath } : {}),
         ...(config.corpusRootHash ? { GROWTHUB_CORPUS_ROOT_HASH: config.corpusRootHash } : {}),
       },
@@ -143,6 +145,7 @@ export function buildRayJobSubmission({ ctx, config }) {
       growthubCapacityProfileId: str(ctx?.capacityProfileId),
       growthubCorpusRootHash: config.corpusRootHash,
       growthubIdempotencyHash: str(ctx?.idempotencyKeyHash),
+      growthubWorkSpecHash: str(ctx?.workSpecHash),
     },
     // The driver command itself is light; worker resources are reserved by
     // Ray Train's ScalingConfig (placement group) from the env vars above.
@@ -323,6 +326,25 @@ export function createRayClusterAdapter(realization = null) {
       return events;
     },
 
+    async execute(ctx) {
+      if (!ctx?.workSpec?.workSpecHash) throw new Error("immutable work spec required");
+      const at = new Date().toISOString();
+      return [{ type: "compute-queued", at, evidenceObservedAt: at, source: "provider", runRef: { ...(ctx?.runRef || {}) }, providerEventId: `${ctx.runRef.providerResourceId}:work-spec:${ctx.workSpecHash}`, detail: `exact training work spec ${ctx.workSpecHash} submitted` }];
+    },
+
+    async resume(ctx, checkpoint) {
+      const config = cfg(ctx, realization);
+      if (!config.storagePath) throw new Error("Ray resume unavailable without governed checkpoint storage");
+      if (!checkpoint?.resumable || checkpoint?.runRef?.trainingRunId !== ctx?.runRef?.trainingRunId || checkpoint?.workSpecHash !== ctx?.workSpecHash) throw new Error("foreign, unproven, or wrong-work-spec checkpoint refused");
+      const submission = buildRayJobSubmission({ ctx, config });
+      submission.submission_id = `${submission.submission_id}-resume-${str(checkpoint.checkpointId).slice(0, 12)}`;
+      submission.runtime_env.env_vars.GROWTHUB_RESUME_CHECKPOINT_JSON = JSON.stringify(checkpoint);
+      const resumed = await ctx.fetchJson(`${config.dashboardUrl}/api/jobs/`, { method: "POST", headers: headers(ctx, config), body: JSON.stringify(submission) });
+      const jobId = str(resumed?.submission_id) || submission.submission_id;
+      const at = new Date().toISOString();
+      return [{ type: "compute-resuming", at, evidenceObservedAt: at, source: "provider", runRef: { ...(ctx?.runRef || {}), providerResourceId: jobId }, providerEventId: `${jobId}:resume:${checkpoint.checkpointId}`, detail: `resuming proven checkpoint ${checkpoint.checkpointId}` }];
+    },
+
     async collectArtifact(ctx) {
       const config = cfg(ctx, realization);
       const jobId = str(ctx?.runRef?.providerResourceId);
@@ -337,6 +359,7 @@ export function createRayClusterAdapter(realization = null) {
         sha256: str(artifact.sha256),
         sizeBytes: Math.max(0, Math.floor(num(artifact.sizeBytes))),
         evidenceObservedAt: new Date().toISOString(),
+        evaluationResults: Array.isArray(artifact.evaluationResults) ? artifact.evaluationResults : [],
       };
     },
 

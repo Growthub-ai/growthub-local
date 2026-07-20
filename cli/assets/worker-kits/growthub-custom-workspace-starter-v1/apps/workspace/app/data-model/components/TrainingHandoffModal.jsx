@@ -55,6 +55,7 @@ import { deriveComputeCustomerState, computeAskForPolicy } from "../../../lib/co
 import { deriveCapacityPlan } from "../../../lib/compute-capacity-profiles.js";
 import { buildAdaptiveStudentPlan } from "../../../lib/distillation-student-plan.js";
 import { parseReceiptComputeBlock } from "../../../lib/compute-execution.js";
+import { buildComputeIntent, buildComputeWorkSpec, normalizeComputePolicy } from "../../../lib/compute-work-spec.js";
 import ComputeRealizationPanel from "./ComputeRealizationPanel.jsx";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
@@ -68,14 +69,14 @@ import { PIPELINE_SCRIPTS } from "../../../lib/training-pipeline-scripts.js";
 import { buildMothershipProxyRow } from "../../../lib/distillation-fleet.js";
 
 const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
-const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
+const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "computePolicy", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
 const RUN_COLUMNS = [
   "trainingRunId", "modelTrainingRowId", "datasetExportId", "baseModel", "trainingProfile", "runnerMode",
   "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization",
   // Quant proof (fp16 → quantized bytes) + live thin-delta progress / preflight
   // the local runner stamps each stage boundary. runKind/preinit distinguish
   // Finalize's pre-init probe receipts from real training runs.
-  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "schema",
+  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "compute", "schema",
 ];
 const SLUG = "workspace-local";
 /** Human labels for raw artifact types — the customer never sees bare "gguf". */
@@ -165,6 +166,7 @@ function runReceiptToRow(receipt) {
     // the declared level survived a manual/import path too, not just the runner.
     artifactSourceBytes: receipt.artifact?.sourceBytes || 0,
     artifactArtifactBytes: receipt.artifact?.artifactBytes || 0,
+    compute: receipt.compute ? JSON.stringify(receipt.compute) : "",
     schema: receipt.schema,
   };
 }
@@ -524,6 +526,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // local pipeline byte-for-byte; other policies stamp a compute ask on the
   // receipt so the run resolves through the deterministic compute resolver.
   const [computePolicy, setComputePolicy] = useState("local");
+  const [computePolicySnapshot, setComputePolicySnapshot] = useState({ mode: "local" });
   const [tunedTag, setTunedTag] = useState("");
   const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [trainPhase, setTrainPhase] = useState("idle"); // idle|starting|running
@@ -610,6 +613,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     })();
     return () => { cancelled = true; };
   }, [open]);
+
+  // React mirrors the durable model-training policy; reload never resets it.
+  useEffect(() => {
+    if (!open) return;
+    const rows = (workspaceConfig?.dataModel?.objects || []).filter((o) => o?.objectType === TRAINING_OBJECT_TYPE).flatMap((o) => o.rows || []);
+    const saved = [...rows].reverse().find((row) => row?.computePolicy)?.computePolicy;
+    if (!saved) return;
+    try {
+      const parsed = typeof saved === "string" ? JSON.parse(saved) : saved;
+      if (["automatic", "local", "cloud", "reserved-cluster"].includes(parsed?.mode)) { setComputePolicy(parsed.mode); setComputePolicySnapshot(parsed); }
+    } catch { /* malformed legacy field remains inert */ }
+  }, [open, workspaceConfig]);
 
   // Probe the local substrate when the configuration step opens — one bounded
   // read-only GET; a failure surfaces as an honest "couldn't check" row (the
@@ -716,7 +731,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Artifact root = the user's chosen training folder (workspace fallback when
   // none picked yet) + the tuned tag — the runner mkdir -p's it on preflight.
   const artifactRootPath = chosenFolder?.path ? String(chosenFolder.path).replace(/\/+$/, "") : "./artifacts";
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}`, compute: computeAskForPolicy(computePolicy) });
+  const adaptivePlan = buildAdaptiveStudentPlan({ preflight: readinessProbe?.preflight || null, requestedBaseModel: baseModel });
+  const preparedCapacityPlan = deriveCapacityPlan({ plan: adaptivePlan, preflight: readinessProbe?.preflight || null, workloadKind: "fine-tune" });
+  const baseRunConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
+  const computeAsk = computeAskForPolicy(computePolicy, { capacityProfileId: preparedCapacityPlan.capacityProfileId, portablePolicy: computePolicySnapshot });
+  const computeIntent = buildComputeIntent({ adaptivePlan, capacityPlan: preparedCapacityPlan, policy: computeAsk.policy, trainingRunConfig: baseRunConfig });
+  const runConfig = { ...baseRunConfig, compute: { ...computeAsk, intent: computeIntent, intentHash: computeIntent.intentHash, requirementsHash: computeIntent.requirementsHash, policy: computeIntent.policy } };
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -779,13 +799,22 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // no surface can invent a compute state the receipts don't prove.
   const computePreflight = (liveRunRow?.preflight && typeof liveRunRow.preflight === "object" ? liveRunRow.preflight : null)
     || (readinessProbe?.preflight && typeof readinessProbe.preflight === "object" ? readinessProbe.preflight : null);
+  const liveComputeBlock = parseReceiptComputeBlock(liveRunRow);
+  const receiptCapacityPlan = liveComputeBlock?.intent ? {
+    schema: "growthub-compute-capacity-plan-v1",
+    requirements: liveComputeBlock.intent.requirements,
+    capacityProfileId: liveComputeBlock.intent.capacityProfileId,
+    capacityProfileLabel: liveComputeBlock.intent.capacityProfileId,
+    local: preparedCapacityPlan.local,
+    executes: true,
+  } : null;
   const computeCustomerState = deriveComputeCustomerState({
-    capacityPlan: deriveCapacityPlan({
+    capacityPlan: receiptCapacityPlan || deriveCapacityPlan({
       plan: buildAdaptiveStudentPlan({ preflight: computePreflight, requestedBaseModel: baseModel }),
       preflight: computePreflight,
       workloadKind: "fine-tune",
     }),
-    computeBlock: parseReceiptComputeBlock(liveRunRow),
+    computeBlock: liveComputeBlock,
     providers: [],
     benchmarkWins: (() => {
       let d = liveRunRow?.distillation;
@@ -798,7 +827,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const runnerWaiting = trainPhase === "running"
     && Number(liveWaitState.barPct || 0) === 0
     && !liveRunRow?.progress?.stageId
-    && String(liveRunRow?.status || "").toLowerCase() === "running";
+    && String(liveRunRow?.status || "").toLowerCase() === "running"
+    && !(liveComputeBlock?.decision || liveComputeBlock?.events?.length || liveComputeBlock?.allocation);
   const runnerEndpoint = liveRegistryRow?.baseUrl
     ? `${String(liveRegistryRow.baseUrl).replace(/\/+$/, "")}${String(liveRegistryRow.endpoint || "/chat/completions").startsWith("/") ? liveRegistryRow.endpoint : `/${liveRegistryRow.endpoint || "chat/completions"}`}`
     : "the configured local endpoint";
@@ -937,13 +967,16 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // version row carries the dataset export + base model so the lifecycle links.
       versionRow.baseModel = baseModel;
       versionRow.lastExportId = exportId;
-      const preparedReceipt = buildTrainingRunReceipt({
+      versionRow.computePolicy = JSON.stringify(normalizeComputePolicy(runConfig.compute?.policy));
+      let preparedReceipt = buildTrainingRunReceipt({
         modelTrainingRowId: SLUG, datasetExportId: exportId, baseModel,
         trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared",
         // The governed compute ask (null for the pure-local policy): the
         // sandbox-run seam resolves it deterministically at execution time.
         compute: runConfig.compute,
       });
+      const preparedWorkSpec = buildComputeWorkSpec({ intent: computeIntent, trainingRunConfig: runConfig, trainingRunId: preparedReceipt.trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId });
+      preparedReceipt = { ...preparedReceipt, compute: { ...preparedReceipt.compute, workSpec: preparedWorkSpec, workSpecHash: preparedWorkSpec.workSpecHash } };
       // Atomic proof-chain links on the API Registry row (§7/§11): the row
       // references the model-training row, the training run, and the tuned tag
       // the endpoint must serve to verify — so the chain is traceable from the
@@ -1240,13 +1273,15 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     const trainingRunId = `trainrun_${startedAt.replace(/[:.]/g, "-")}`;
     const exportId = result.exportId || `ft_${result.version || version}_${startedAt.replace(/[:.]/g, "-")}`;
     try {
-      const runningReceipt = buildTrainingRunReceipt({
+      let runningReceipt = buildTrainingRunReceipt({
         trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
         // Carry the governed compute ask onto the RUNNING receipt so the
         // sandbox-run seam resolves placement for THIS run id.
         compute: runConfig.compute,
       });
+      const runningWorkSpec = buildComputeWorkSpec({ intent: computeIntent, trainingRunConfig: runConfig, trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId });
+      runningReceipt = { ...runningReceipt, compute: { ...runningReceipt.compute, workSpec: runningWorkSpec, workSpecHash: runningWorkSpec.workSpecHash } };
       const activeResult = { ...result, trainingRunId, exportId };
       setResult(activeResult);
       // One governed PATCH: running receipt + the runner sandbox row.
@@ -1308,6 +1343,21 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       return false;
     }
     return true;
+  }
+
+  async function controlProviderCompute(computeAction, checkpointId = "") {
+    const trainingRunId = result?.trainingRunId;
+    if (!trainingRunId) return;
+    setError("");
+    const res = await fetch("/api/workspace/sandbox-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: trainingRunId, computeAction, checkpointId, intent: `model-training-${computeAction}`, actor: "training-runtime-modal" }),
+    });
+    const data = await res.json().catch(() => null);
+    const fresh = await fetch("/api/workspace", { cache: "no-store" }).then((response) => response.json()).catch(() => null);
+    if (fresh?.workspaceConfig) { setLiveConfig(fresh.workspaceConfig); if (typeof onApplied === "function") onApplied(fresh.workspaceConfig); }
+    if (!res.ok || data?.ok === false) setError(String(data?.response?.error || data?.error || `${computeAction} failed`));
   }
 
   async function reconcileRunnerResult(trainingRunId, response, fallbackMessage = "") {
@@ -1399,7 +1449,8 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         const myStage = mine?.stage || (String(rawRow.status || "").toLowerCase() === "running" ? "running" : "prepared");
         // Handshaked once THIS run stamps preflight/progress or reaches a
         // terminal stage — never inferred from another run's evidence.
-        if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
+        const remoteCompute = parseReceiptComputeBlock(rawRow);
+        if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || remoteCompute?.decision || remoteCompute?.events?.length || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
 
         if (myStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
@@ -1910,7 +1961,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               <ComputeRealizationPanel
                 state={computeCustomerState}
                 policy={computePolicy}
-                onPolicyChange={setComputePolicy}
+                onPolicyChange={(mode) => { setComputePolicy(mode); setComputePolicySnapshot((current) => ({ ...current, mode })); }}
                 showPolicyPicker
               />
 
@@ -2041,7 +2092,7 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
               {/* Compute realization state — read-only here; every visible
                   value derives from the SAME receipts the runtime writes. */}
               {computePolicy !== "local" || computeCustomerState.stateId !== "local-eligible" ? (
-                <ComputeRealizationPanel state={computeCustomerState} policy={computePolicy} />
+                <ComputeRealizationPanel state={computeCustomerState} policy={computePolicy} onCancel={() => controlProviderCompute("cancel")} onResume={(checkpointId) => controlProviderCompute("resume", checkpointId)} />
               ) : null}
 
               {runConfig.commands.length ? (

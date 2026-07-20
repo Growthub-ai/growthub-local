@@ -146,7 +146,7 @@ test("ADVERSARIAL — wrong-run checkpoint: a checkpoint from another training r
 
 test("ADVERSARIAL — artifact hash mismatch against the expected identity is non-promotable", () => {
   const lifecycle = { terminal: "completed" };
-  const artifact = { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
+  const artifact = { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
   const mismatch = deriveComputeArtifactHonesty({ lifecycle, artifact, expectedSha256: "c".repeat(64) });
   assert.equal(mismatch.promotable, false);
   assert.equal(mismatch.reasonCode, "artifact-hash-mismatch");
@@ -222,7 +222,7 @@ test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a
         { type: "compute-released", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "4", detail: "" },
       ],
       checkpoints: [],
-      artifact: { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "d".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" },
+      artifact: { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "d".repeat(64), verifiedSha256: "d".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" },
       evidenceObservedAt: "t",
     },
     benchmarkWins: null,

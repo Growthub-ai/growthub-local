@@ -25,6 +25,7 @@ import { resolveMachineTier, STUDENT_BASE_CANDIDATES } from "./distillation-stud
 export const COMPUTE_CAPACITY_PROFILE_IDS = [
   "harvest-only",
   "serve-local",
+  "cpu-local-finetune",
   "burst-gpu",
   "warm-inference",
   "single-gpu-finetune",
@@ -66,6 +67,17 @@ export const COMPUTE_CAPACITY_PROFILES = [
     localCapable: true,
     floors: { gpuCount: 0, minVramPerGpuGB: 0, minCpuCores: 2, minRamGB: 8, minDiskGB: 10 },
     checkpointRequired: false,
+    distributed: false,
+  },
+  {
+    id: "cpu-local-finetune",
+    label: "Train on this machine · CPU",
+    description: "Single-worker CPU training on owned local hardware for a student plan that does not require an accelerator.",
+    workloadKinds: ["fine-tune", "distillation", "training"],
+    execution: true,
+    localCapable: true,
+    floors: { gpuCount: 0, minVramPerGpuGB: 0, minCpuCores: 2, minRamGB: 8, minDiskGB: 20 },
+    checkpointRequired: true,
     distributed: false,
   },
   {
@@ -321,10 +333,33 @@ export function resolveCapacityProfileForRequirements(requirements) {
   const trainingKind = ["training", "fine-tune", "distillation"].includes(req.workloadKind);
   if (trainingKind) {
     if (req.gpuCount >= 2) return { profile: byId("multi-gpu-finetune"), reason: `${req.gpuCount} GPUs on one worker` };
-    return { profile: byId("single-gpu-finetune"), reason: req.gpuCount === 1 ? "one accelerator carries the run" : "CPU-mode fine-tune (single worker)" };
+    return req.gpuCount === 1
+      ? { profile: byId("single-gpu-finetune"), reason: "one accelerator carries the run" }
+      : { profile: byId("cpu-local-finetune"), reason: "CPU-mode fine-tune on one local worker" };
   }
   // Short-lived jobs: evaluation / conversion / quantization / data-prep.
   return { profile: byId("burst-gpu"), reason: `short-lived ${req.workloadKind} job` };
+}
+
+/** Tighten requirements to a named profile's authoritative floors. */
+export function normalizeRequirementsForProfile(requirements, profileId) {
+  const req = requirements && typeof requirements === "object" ? requirements : {};
+  const profile = resolveCapacityProfile(profileId);
+  if (!profile) throw new Error(`unknown capacity profile "${String(profileId || "")}"`);
+  const floors = profile.floors || {};
+  const distributed = profile.distributed
+    ? { workers: Math.max(2, Number(req?.distributed?.workers) || 2), gpusPerWorker: Math.max(1, Number(req?.distributed?.gpusPerWorker) || Number(floors.gpuCount) || 1), gangScheduling: true, highBandwidthInterconnect: req?.distributed?.highBandwidthInterconnect !== false }
+    : (req.distributed || null);
+  return {
+    ...req,
+    gpuCount: Math.max(Number(req.gpuCount) || 0, Number(floors.gpuCount) || 0),
+    minVramPerGpuGB: Math.max(Number(req.minVramPerGpuGB) || 0, Number(floors.minVramPerGpuGB) || 0),
+    minCpuCores: Math.max(Number(req.minCpuCores) || 0, Number(floors.minCpuCores) || 0),
+    minRamGB: Math.max(Number(req.minRamGB) || 0, Number(floors.minRamGB) || 0),
+    minDiskGB: Math.max(Number(req.minDiskGB) || 0, Number(floors.minDiskGB) || 0),
+    checkpointRequired: req.checkpointRequired === true || profile.checkpointRequired === true,
+    distributed,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,8 +441,9 @@ export function deriveCapacityPlan({
   locality = null,
   estimatedDurationMinutes = 0,
 } = {}) {
-  const requirements = deriveComputeRequirements({ plan, preflight, workloadKind, paramsB, requireAccelerator, distributed, locality, estimatedDurationMinutes });
-  const { profile, reason } = resolveCapacityProfileForRequirements(requirements);
+  const derived = deriveComputeRequirements({ plan, preflight, workloadKind, paramsB, requireAccelerator, distributed, locality, estimatedDurationMinutes });
+  const { profile, reason } = resolveCapacityProfileForRequirements(derived);
+  const requirements = normalizeRequirementsForProfile(derived, profile.id);
   const local = deriveLocalComputeCompatibility({ requirements, preflight });
 
   // The tier resolver is the second honesty gate: even when the raw floors

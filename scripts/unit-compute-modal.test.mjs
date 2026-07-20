@@ -196,7 +196,7 @@ test("CONFORMANCE — full governed lifecycle over the Modal adapter (faked tran
               availabilityModes: ["on-demand"],
               requiredEnv: ["MODAL_KEY", "MODAL_SECRET"],
               executionLane: "sandbox-local",
-              config: { baseUrl: BASE, gpuType: "H100" },
+              config: { baseUrl: BASE, gpuType: "H100", volumeConfigured: true },
             },
           },
         }],
@@ -219,6 +219,7 @@ test("CONFORMANCE — full governed lifecycle over the Modal adapter (faked tran
       sleep: async () => {},
       maxPolls: 6,
       pollIntervalMs: 0,
+      verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
     },
   });
   assert.equal(outcome.result.ok, true, outcome.result.error || "should complete promotably");

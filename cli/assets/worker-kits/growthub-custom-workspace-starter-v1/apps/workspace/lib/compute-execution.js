@@ -43,8 +43,10 @@ import {
   deriveComputeLifecycle,
   normalizeComputeBlock,
 } from "./compute-evidence.js";
-import { deriveComputeRequirements, resolveCapacityProfileForRequirements } from "./compute-capacity-profiles.js";
+import { deriveComputeRequirements, normalizeRequirementsForProfile, resolveCapacityProfileForRequirements } from "./compute-capacity-profiles.js";
 import { LOCAL_PROVIDER_ID } from "./compute-provider-registry.js";
+import { normalizeComputePolicy, verifyComputeAuthority } from "./compute-work-spec.js";
+import { buildBenchmarkReceiptFields, deriveBenchmarkWins } from "./distillation-eval-harness.js";
 
 const DEFAULT_MAX_POLLS = 120;
 const DEFAULT_POLL_INTERVAL_MS = 5000;
@@ -85,9 +87,22 @@ export function applyComputeBlockToReceiptRows(objects, trainingRunId, computeBl
     const nextRows = rows.map((row) => {
       if (str(row?.trainingRunId).trim() !== id) return row;
       changed = true;
+      const verifiedArtifact = computeBlock?.artifact?.verifiedSha256 && computeBlock.artifact.verifiedSha256 === computeBlock.artifact.sha256
+        ? computeBlock.artifact : null;
+      let distillation = row.distillation;
+      if (typeof distillation === "string") { try { distillation = JSON.parse(distillation); } catch { distillation = null; } }
       return {
         ...row,
-        ...(statusOverride ? { status: statusOverride } : {}),
+        ...(statusOverride ? { status: statusOverride } : verifiedArtifact ? {
+          status: "imported",
+          completedAt: computeBlock.evidenceObservedAt || row.completedAt,
+          artifactType: verifiedArtifact.kind || "gguf",
+          artifactModelTag: computeBlock?.workSpec?.output?.modelTag || row.artifactModelTag || "",
+          artifactPath: verifiedArtifact.locator,
+          artifactSha256: verifiedArtifact.verifiedSha256,
+          artifactArtifactBytes: verifiedArtifact.sizeBytes || 0,
+          distillation: { ...(distillation && typeof distillation === "object" ? distillation : {}), ...(computeBlock?.evaluation?.benchmarkWins ? { benchmarkWins: computeBlock.evaluation.benchmarkWins, evaluationLineage: { workSpecHash: computeBlock.workSpecHash, requirementsHash: computeBlock.requirementsHash } } : {}) },
+        } : {}),
         compute: JSON.stringify(computeBlock),
       };
     });
@@ -140,20 +155,28 @@ export async function executeProviderComputeRun({
   budget = null,
   attempt = 1,
   priorCompute = null,
+  requireAuthority = false,
   io = null,
 } = {}) {
   if (!io || typeof io.getAdapter !== "function" || typeof io.now !== "function") {
     throw new Error("executeProviderComputeRun: io.getAdapter and io.now are required");
   }
   const ask = computeAsk && typeof computeAsk === "object" ? computeAsk : {};
+  const intent = ask.intent && typeof ask.intent === "object" ? ask.intent : priorCompute?.intent;
+  const workSpec = ask.workSpec && typeof ask.workSpec === "object" ? ask.workSpec : priorCompute?.workSpec;
+  const authority = verifyComputeAuthority({ intent, workSpec });
+  if (requireAuthority && !authority.ok) throw new Error("provider compute refused: immutable compute intent/work spec is missing or failed hash/lineage validation");
   const events = [];
   const checkpoints = [];
 
   // 1. Requirements + Capacity Profile.
-  const req = requirements && typeof requirements === "object"
-    ? requirements
-    : deriveComputeRequirements({ preflight, workloadKind: "fine-tune" });
-  const capacityProfileId = str(ask.capacityProfileId).trim() || resolveCapacityProfileForRequirements(req).profile.id;
+  const derived = authority.ok ? intent.requirements : (requirements && typeof requirements === "object" ? requirements : deriveComputeRequirements({ preflight, workloadKind: "fine-tune" }));
+  const capacityProfileId = authority.ok ? intent.capacityProfileId : (str(ask.capacityProfileId).trim() || resolveCapacityProfileForRequirements(derived).profile.id);
+  const req = normalizeRequirementsForProfile(derived, capacityProfileId);
+  const policy = authority.ok
+    ? normalizeComputePolicy(intent.policy)
+    : (ask.policy && typeof ask.policy === "object" ? normalizeComputePolicy(ask.policy) : null);
+  const effectiveBudget = policy?.budget || budget;
 
   // 2. Providers + capabilities + quotes.
   const providersState = deriveComputeProviders({
@@ -183,18 +206,21 @@ export async function executeProviderComputeRun({
     providers: providersState.providers,
     capabilitiesById,
     quotesById,
-    budget,
+    budget: effectiveBudget,
+    policy,
     selectionMode: ask.selectionMode === "explicit" ? "explicit" : "auto",
     pinnedProviderId: str(ask.providerRegistryId).trim(),
     now: io.now(),
   });
+  const decisionBlock = normalizeComputeBlock({ capacityProfileId, selectionMode: decision.selectionMode, decision, intent, workSpec, policy, evidenceObservedAt: eventNow(io) });
+  if (typeof io.persistCompute === "function") await io.persistCompute(decisionBlock);
 
   const selectedId = decision.selectedProviderId;
   if (!selectedId) {
     const reasons = decision.candidates.filter((c) => !c.eligible).map((c) => `${c.providerId}: ${c.reasons.join("; ")}`);
     return {
       localFallthrough: false,
-      computeBlock: normalizeComputeBlock({ capacityProfileId, selectionMode: decision.selectionMode, decision, events, evidenceObservedAt: eventNow(io) }),
+      computeBlock: decisionBlock,
       result: {
         ok: false,
         exitCode: null,
@@ -210,7 +236,7 @@ export async function executeProviderComputeRun({
   // The deterministic resolver may pick the LOCAL machine — that is not a
   // provider-compute execution; the existing local pipeline runs unchanged.
   if (selectedId === LOCAL_PROVIDER_ID) {
-    return { localFallthrough: true, computeBlock: normalizeComputeBlock({ capacityProfileId, selectionMode: decision.selectionMode, decision, evidenceObservedAt: eventNow(io) }), result: null };
+    return { localFallthrough: true, computeBlock: decisionBlock, result: null };
   }
 
   const provider = providersState.providers.find((p) => p.providerId === selectedId);
@@ -255,15 +281,28 @@ export async function executeProviderComputeRun({
     selectionMode: decision.selectionMode,
     idempotencyKeyHash,
     decision,
+    intent,
+    intentHash: intent?.intentHash,
+    requirementsHash: intent?.requirementsHash,
+    workSpec,
+    workSpecHash: workSpec?.workSpecHash,
+    policy,
+    capabilities: capabilitiesById[selectedId] || null,
     events,
     checkpoints,
     evidenceObservedAt: eventNow(io),
     ...extra,
   });
+  const persist = async (extra = {}) => {
+    const value = block(extra);
+    if (typeof io.persistCompute === "function") await io.persistCompute(value);
+    return value;
+  };
+  await persist();
 
   // 5. Allocate + verify allocation evidence.
-  const ctx = baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainingRunId, idempotencyKeyHash, runRef });
-  const allocation = await safeCall(() => adapter.allocate(ctx));
+  const ctx = baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainingRunId, idempotencyKeyHash, runRef, intent, workSpec });
+  let allocation = await safeCall(() => adapter.allocate(ctx));
   if (allocation?.__error || !allocation || allocation.status === "failed" || !str(allocation.allocationId).trim()) {
     const reason = allocation?.__error || allocation?.error || "provider did not return a verifiable allocation";
     events.push(workspaceEvent(io, "compute-failed", runRef, `allocation failed: ${reason}`));
@@ -297,7 +336,25 @@ export async function executeProviderComputeRun({
     };
   }
   runRef.providerResourceId = str(allocation.runRef?.providerResourceId || allocation.allocationId);
+  allocation = { ...allocation, runRef: { ...(allocation.runRef || runRef), providerResourceId: runRef.providerResourceId }, workSpecHash: workSpec?.workSpecHash || "" };
   events.push({ ...workspaceEvent(io, "compute-allocated", runRef, `allocation ${allocation.allocationId} verified`), source: "provider" });
+  await persist({ allocation });
+
+  // Allocation and workload submission are separate adapter operations. The
+  // exact immutable portable work spec is the only workload authority.
+  if (!authority.ok && !requireAuthority) {
+    // Backward-compatible direct library callers have no prepared training
+    // authority. The shipped sandbox route always sets requireAuthority and
+    // therefore always crosses the explicit execute boundary with a work spec.
+  } else if (typeof adapter.execute !== "function") {
+    events.push(workspaceEvent(io, "compute-failed", runRef, "provider adapter has no execute operation"));
+    await persist({ allocation });
+  } else {
+    const executionEvents = await safeCall(() => adapter.execute(ctx));
+    if (executionEvents?.__error) events.push(workspaceEvent(io, "compute-failed", runRef, `execution submission failed: ${executionEvents.__error}`));
+    else for (const event of Array.isArray(executionEvents) ? executionEvents : []) events.push({ ...event, workSpecHash: workSpec?.workSpecHash || "", requirementsHash: intent?.requirementsHash || "" });
+    await persist({ allocation });
+  }
 
   // 6. Observe execution until terminal (bounded).
   const maxPolls = Number(io.maxPolls) > 0 ? Number(io.maxPolls) : DEFAULT_MAX_POLLS;
@@ -309,10 +366,12 @@ export async function executeProviderComputeRun({
       events.push(workspaceEvent(io, "compute-failed", runRef, `provider status unobservable: ${observed.__error}`));
     } else {
       for (const event of Array.isArray(observed) ? observed : []) {
-        events.push(event);
-        if (event?.type === "checkpoint-created" && event?.checkpoint) checkpoints.push(event.checkpoint);
+        const boundEvent = { ...event, workSpecHash: workSpec?.workSpecHash || "", requirementsHash: intent?.requirementsHash || "" };
+        events.push(boundEvent);
+        if (event?.type === "checkpoint-created" && event?.checkpoint) checkpoints.push({ ...event.checkpoint, workSpecHash: workSpec?.workSpecHash || "" });
       }
     }
+    await persist({ allocation });
     lifecycle = deriveComputeLifecycle({ events, allocation, checkpoints });
     if (lifecycle.terminal) break;
     if (typeof io.sleep === "function" && pollInterval > 0) await io.sleep(pollInterval);
@@ -326,21 +385,31 @@ export async function executeProviderComputeRun({
   let artifact = null;
   if (lifecycle.terminal === "completed" && typeof adapter.collectArtifact === "function") {
     const collected = await safeCall(() => adapter.collectArtifact(ctx));
-    if (!collected?.__error) artifact = collected;
+    if (!collected?.__error && collected) {
+      const candidate = { ...collected, workSpecHash: workSpec?.workSpecHash || "", requirementsHash: intent?.requirementsHash || "" };
+      const verified = typeof io.verifyArtifact === "function" ? await safeCall(() => io.verifyArtifact(candidate, workSpec)) : null;
+      if (verified && !verified.__error && verified.verifiedSha256 === candidate.sha256) artifact = { ...candidate, ...verified };
+      else artifact = candidate;
+    }
   }
   const honesty = deriveComputeArtifactHonesty({ lifecycle, artifact });
+  const benchmark = artifact?.verifiedSha256 && Array.isArray(artifact.evaluationResults) && artifact.evaluationResults.length
+    ? deriveBenchmarkWins({ results: artifact.evaluationResults }) : null;
+  const evaluation = benchmark ? { workSpecHash: workSpec?.workSpecHash || "", requirementsHash: intent?.requirementsHash || "", benchmarkWins: buildBenchmarkReceiptFields(benchmark), reason: benchmark.reason } : null;
 
   // 8. Release — always attempted, failure stays visible.
   events.push(workspaceEvent(io, "compute-release-requested", runRef, "governed release of provider capacity"));
+  await persist({ allocation, artifact, evaluation });
   const released = await safeCall(() => adapter.release(ctx));
   if (released?.__error) {
     events.push({ ...workspaceEvent(io, "compute-release-failed", runRef, `release failed: ${released.__error} — capacity may still exist and cost may accrue`), source: "workspace" });
   } else {
     for (const event of Array.isArray(released) ? released : []) events.push(event);
   }
+  await persist({ allocation, artifact, evaluation });
   lifecycle = deriveComputeLifecycle({ events, allocation, checkpoints });
 
-  const computeBlock = block({ allocation, artifact });
+  const computeBlock = block({ allocation, artifact, evaluation });
   const ok = lifecycle.terminal === "completed" && honesty.promotable;
   const summary = {
     providerId: selectedId,
@@ -389,6 +458,7 @@ export async function cancelProviderComputeRun({ priorCompute = null, provider =
   const cancelEvents = await safeCall(() => adapter.cancel(ctx));
   if (cancelEvents?.__error) events.push(workspaceEvent(io, "compute-failed", runRef, `cancel failed: ${cancelEvents.__error}`));
   else for (const e of Array.isArray(cancelEvents) ? cancelEvents : []) events.push(e);
+  if (typeof io.persistCompute === "function") await io.persistCompute(normalizeComputeBlock({ ...prior, events, evidenceObservedAt: eventNow(io) }));
 
   events.push(workspaceEvent(io, "compute-release-requested", runRef, "release after cancellation"));
   const releaseEvents = await safeCall(() => adapter.release(ctx));
@@ -397,6 +467,7 @@ export async function cancelProviderComputeRun({ priorCompute = null, provider =
   } else {
     for (const e of Array.isArray(releaseEvents) ? releaseEvents : []) events.push(e);
   }
+  if (typeof io.persistCompute === "function") await io.persistCompute(normalizeComputeBlock({ ...prior, events, evidenceObservedAt: eventNow(io) }));
   const lifecycle = deriveComputeLifecycle({ events, allocation: prior.allocation, checkpoints: prior.checkpoints });
   return {
     computeBlock: normalizeComputeBlock({ ...prior, events, evidenceObservedAt: eventNow(io) }),
@@ -408,12 +479,43 @@ export async function cancelProviderComputeRun({ priorCompute = null, provider =
   };
 }
 
-function baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainingRunId, idempotencyKeyHash, runRef = null }) {
+/** Resume the same governed workload from a proven checkpoint in its lineage. */
+export async function resumeProviderComputeRun({ priorCompute = null, provider = null, checkpointId = "", io = null } = {}) {
+  if (!io || typeof io.getAdapter !== "function") throw new Error("resumeProviderComputeRun: io.getAdapter required");
+  const prior = normalizeComputeBlock(priorCompute);
+  const lifecycle = deriveComputeLifecycle({ events: prior?.events, allocation: prior?.allocation, checkpoints: prior?.checkpoints });
+  const checkpoint = lifecycle.provenCheckpoints.find((item) => item.checkpointId === String(checkpointId || ""));
+  if (!checkpoint) return { computeBlock: prior, resumed: false, reason: "checkpoint is missing, unproven, or foreign to this run" };
+  if (checkpoint.workSpecHash !== prior.workSpecHash) return { computeBlock: prior, resumed: false, reason: "checkpoint work-spec lineage mismatch" };
+  if (prior?.capabilities?.supportsResume !== true) return { computeBlock: prior, resumed: false, reason: "selected provider does not support resume" };
+  const adapter = io.getAdapter(provider?.adapterId || "");
+  if (!adapter || typeof adapter.resume !== "function") return { computeBlock: prior, resumed: false, reason: "provider resume operation unavailable" };
+  const runRef = prior.allocation?.runRef;
+  const ctx = baseCtx({ io, provider, providerConfig: { ...(provider?.config || {}), providerId: provider?.providerId }, req: prior.intent?.requirements, capacityProfileId: prior.capacityProfileId, trainingRunId: runRef?.trainingRunId, idempotencyKeyHash: prior.idempotencyKeyHash, runRef, intent: prior.intent, workSpec: prior.workSpec });
+  const events = [...prior.events];
+  events.push(workspaceEvent(io, "compute-requested", { ...runRef, providerResourceId: "" }, `new governed attempt resuming checkpoint ${checkpoint.checkpointId}`));
+  const resumedEvents = await safeCall(() => adapter.resume(ctx, checkpoint));
+  if (resumedEvents?.__error) return { computeBlock: prior, resumed: false, reason: resumedEvents.__error };
+  const returned = Array.isArray(resumedEvents) ? resumedEvents : [];
+  const resumeRef = returned.find((event) => event?.runRef?.providerResourceId)?.runRef || runRef;
+  events.push({ ...workspaceEvent(io, "compute-allocated", resumeRef, "resume attempt allocation adopted"), source: "provider", workSpecHash: prior.workSpecHash, requirementsHash: prior.requirementsHash });
+  for (const event of returned) events.push({ ...event, workSpecHash: prior.workSpecHash, requirementsHash: prior.requirementsHash });
+  const computeBlock = normalizeComputeBlock({ ...prior, events, evidenceObservedAt: eventNow(io) });
+  if (typeof io.persistCompute === "function") await io.persistCompute(computeBlock);
+  return { computeBlock, resumed: deriveComputeLifecycle({ events, allocation: prior.allocation, checkpoints: prior.checkpoints }).resumed, reason: "resume submitted from proven checkpoint" };
+}
+
+function baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainingRunId, idempotencyKeyHash, runRef = null, intent = null, workSpec = null }) {
   return {
     runRef: runRef || { trainingRunId: str(trainingRunId), modelTrainingRowId: "", providerId: str(provider?.providerId), capacityProfileId: str(capacityProfileId), providerResourceId: "" },
     requirements: req,
     capacityProfileId: str(capacityProfileId),
     idempotencyKeyHash: str(idempotencyKeyHash),
+    intent,
+    workSpec,
+    intentHash: str(intent?.intentHash),
+    requirementsHash: str(intent?.requirementsHash),
+    workSpecHash: str(workSpec?.workSpecHash),
     providerConfig: providerConfig || {},
     resolveEnv: typeof io.resolveEnv === "function" ? io.resolveEnv : () => "",
     fetchJson: typeof io.fetchJson === "function" ? io.fetchJson : async () => { throw new Error("fetchJson not provided"); },
@@ -426,15 +528,26 @@ function baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainin
  * unchanged (the default for every pre-compute workspace). Applicability is
  * evidence-based: the governed receipt must carry a compute ask.
  */
-export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig = null, objectId = "", name = "", io = null } = {}) {
+export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig = null, objectId = "", name = "", action = "run", checkpointId = "", io = null } = {}) {
   if (str(objectId) !== "model-training-runner") return null;
   const trainingRunId = str(name).trim();
   if (!trainingRunId) return null;
   const row = findTrainingRunReceiptRow(workspaceConfig, trainingRunId);
   if (!row) return null;
   const prior = parseReceiptComputeBlock(row);
+  if (["cancel", "resume"].includes(action)) {
+    if (!prior?.providerRegistryId) return { localFallthrough: false, computeBlock: prior, result: { ok: false, exitCode: 1, durationMs: 0, stdout: "", stderr: "", error: "no remote compute provider is recorded for this run", adapterMeta: { adapter: "provider-compute" } } };
+    const providersState = deriveComputeProviders({ workspaceConfig, registeredAdapterIds: typeof io.listAdapterIds === "function" ? io.listAdapterIds() : [], envPresent: io.envPresent || (() => false), preflight: row.preflight || null });
+    const provider = providersState.providers.find((item) => item.providerId === prior.providerRegistryId);
+    if (!provider) return { localFallthrough: false, computeBlock: prior, result: { ok: false, exitCode: 1, durationMs: 0, stdout: "", stderr: "", error: "recorded compute provider no longer exists", adapterMeta: { adapter: "provider-compute" } } };
+    const controlled = action === "cancel"
+      ? await cancelProviderComputeRun({ priorCompute: prior, provider, io })
+      : await resumeProviderComputeRun({ priorCompute: prior, provider, checkpointId, io });
+    const ok = action === "cancel" ? controlled.cancelled : controlled.resumed;
+    return { localFallthrough: false, computeBlock: controlled.computeBlock, result: { ok, exitCode: ok ? 0 : 1, durationMs: 0, stdout: JSON.stringify({ action, reason: controlled.reason }), stderr: "", ...(ok ? {} : { error: controlled.reason }), adapterMeta: { adapter: "provider-compute", providerId: prior.providerRegistryId, action } } };
+  }
   const ask = prior && (prior.capacityProfileId || prior.providerRegistryId)
-    ? { capacityProfileId: prior.capacityProfileId, providerRegistryId: prior.providerRegistryId, selectionMode: prior.selectionMode }
+    ? { capacityProfileId: prior.capacityProfileId, providerRegistryId: prior.providerRegistryId, selectionMode: prior.selectionMode, intent: prior.intent, workSpec: prior.workSpec, policy: prior.policy }
     : null;
   if (!ask) return null; // no compute ask → existing local behavior, byte-for-byte
   const preflight = row.preflight && typeof row.preflight === "object" ? row.preflight : null;
@@ -443,8 +556,9 @@ export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig
     trainingRunId,
     computeAsk: ask,
     preflight,
-    budget: prior?.decision?.budget || null,
+    budget: prior?.policy?.budget || prior?.decision?.budget || null,
     priorCompute: prior,
+    requireAuthority: true,
     io,
   });
   if (outcome.localFallthrough) return null;

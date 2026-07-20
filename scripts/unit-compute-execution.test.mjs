@@ -34,6 +34,7 @@ const {
   parseReceiptComputeBlock,
 } = await import(lib("compute-execution.js"));
 const { deriveComputeLifecycle, normalizeComputeCheckpoint, computeIdempotencyKey } = await import(lib("compute-evidence.js"));
+const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 const { default: localAdapter } = await import(lib("adapters/compute/default-local-machine.js"));
 
 const NOW0 = Date.parse("2026-07-20T12:00:00.000Z");
@@ -83,7 +84,7 @@ function receiptRowWith(compute) {
 
 /** A well-behaved fake remote adapter whose behavior is scriptable. */
 function fakeAdapter(script = {}) {
-  const calls = { allocate: 0, status: 0, cancel: 0, release: 0, collectArtifact: 0 };
+  const calls = { allocate: 0, execute: 0, resume: 0, status: 0, cancel: 0, release: 0, collectArtifact: 0 };
   const resourceId = script.resourceId ?? "pod-777";
   const adapter = {
     id: "fake-remote-adapter",
@@ -138,6 +139,14 @@ function fakeAdapter(script = {}) {
         releaseConfirmed: false,
         allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "us-east" },
       };
+    },
+    async execute(ctx) {
+      calls.execute += 1;
+      return [{ type: "compute-queued", at: "2026-07-20T12:00:03.000Z", evidenceObservedAt: "2026-07-20T12:00:03.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-execute", detail: "exact work spec submitted" }];
+    },
+    async resume(ctx) {
+      calls.resume += 1;
+      return [{ type: "compute-resuming", at: "2026-07-20T12:00:03.000Z", evidenceObservedAt: "2026-07-20T12:00:03.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-resume", detail: "proven checkpoint submitted" }];
     },
     async status(ctx) {
       calls.status += 1;
@@ -195,6 +204,7 @@ function makeIo(adapter, { withLocal = false, envPresent = () => true } = {}) {
     sleep: async () => {},
     maxPolls: 10,
     pollIntervalMs: 0,
+    verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
   };
 }
 
@@ -349,7 +359,7 @@ test("resolver choosing the LOCAL machine falls through to the existing local pi
   const outcome = await executeProviderComputeRun({
     workspaceConfig: { dataModel: { objects: [] } },
     trainingRunId: RUN_ID,
-    computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "", selectionMode: "auto" },
+    computeAsk: { capacityProfileId: "cpu-local-finetune", providerRegistryId: "", selectionMode: "auto" },
     preflight,
     io: makeIo(fakeAdapter(), { withLocal: true }),
   });
@@ -460,8 +470,12 @@ test("compute block round-trips through the governed receipt row (JSON column)",
 
 test("a run whose receipt carries a compute ask executes provider compute through the route hook", async () => {
   const adapter = fakeAdapter();
+  const requirements = { workloadKind: "fine-tune", acceleratorClass: "any-gpu", gpuCount: 1, minVramPerGpuGB: 24, minCpuCores: 4, minRamGB: 16, minDiskGB: 60, checkpointRequired: true, distributed: null, locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 60 };
+  const runConfig = { profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "pipeline", baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m", steps: [], datasetPath: "data/train.jsonl", outputModelTag: "workspace-tuned-v1", artifactPath: "artifacts/run" };
+  const intent = buildComputeIntent({ adaptivePlan: { mode: "train-local", tier: "test", baseModel: runConfig.baseModel }, capacityPlan: { capacityProfileId: "single-gpu-finetune", requirements }, policy: { mode: "cloud", excludeLocal: true }, trainingRunConfig: runConfig });
+  const workSpec = buildComputeWorkSpec({ intent, trainingRunConfig: runConfig, trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", datasetExportId: "dataset-test", corpusSha256: "a".repeat(64) });
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith({ capacityProfileId: "single-gpu-finetune", providerRegistryId: "fake-remote", selectionMode: "explicit" }) }),
+    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith({ capacityProfileId: "single-gpu-finetune", providerRegistryId: "fake-remote", selectionMode: "explicit", intent, workSpec, policy: intent.policy }) }),
     objectId: "model-training-runner",
     name: RUN_ID,
     io: makeIo(adapter),

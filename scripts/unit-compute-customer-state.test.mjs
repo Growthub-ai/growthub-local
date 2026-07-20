@@ -76,16 +76,16 @@ function blockWith({ events = [], checkpoints = [], artifact = null, decision = 
 }
 
 const PROVEN_CKPT = { checkpointId: "ck1", runRef: RUN_REF, locator: "s3://ck/1", sha256: "a".repeat(64), step: 100, sizeBytes: 1, createdAt: "t", evidenceObservedAt: "t" };
-const GOOD_ARTIFACT = { runRef: RUN_REF, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
+const GOOD_ARTIFACT = { runRef: RUN_REF, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
 
 // ---------------------------------------------------------------------------
 
-test("customer policies are the four required terms; local maps to NO governed ask", () => {
+test("customer policies are the four required terms and persist an explicit portable policy", () => {
   assert.deepEqual(COMPUTE_POLICIES.map((p) => p.label), ["Automatic", "Local", "Cloud compute", "Reserved cluster"]);
-  assert.equal(computeAskForPolicy("local"), null, "Local = the existing pipeline, byte-for-byte");
+  assert.equal(computeAskForPolicy("local").policy.localOnly, true, "Local remains explicit across reload and execution");
   assert.equal(computeAskForPolicy("automatic").selectionMode, "auto");
   assert.equal(computeAskForPolicy("reserved-cluster").capacityProfileId, "distributed-training");
-  assert.equal(computeAskForPolicy(undefined), null, "unknown policy defaults to the safe local behavior");
+  assert.equal(computeAskForPolicy(undefined).policy.localOnly, true, "unknown policy defaults to the safe local behavior");
 });
 
 test("REQUIRED STATES — every state in the contract list is derivable from evidence", () => {

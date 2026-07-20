@@ -118,9 +118,9 @@ export function mapModalCallStatus(status) {
   }
 }
 
-function providerEvent({ type, ctx, providerEventId, detail, source = "provider" }) {
+function providerEvent({ type, ctx, providerEventId, detail, source = "provider", extra = {} }) {
   const at = new Date().toISOString();
-  return { type, at, evidenceObservedAt: at, source, runRef: { ...(ctx?.runRef || {}) }, providerEventId: str(providerEventId), detail: str(detail).slice(0, 500) };
+  return { type, at, evidenceObservedAt: at, source, runRef: { ...(ctx?.runRef || {}) }, providerEventId: str(providerEventId), detail: str(detail).slice(0, 500), ...extra };
 }
 
 const modalAdapter = {
@@ -212,7 +212,7 @@ const modalAdapter = {
       method: "POST",
       headers: authHeaders(ctx, config),
       body: JSON.stringify({
-        workload: config.workload || {},
+        workSpec: ctx?.workSpec,
         gpu: gpu ? `${gpu.gpu}${gpuCount > 1 ? `:${gpuCount}` : ""}` : "",
         growthub: {
           trainingRunId: str(ctx?.runRef?.trainingRunId),
@@ -220,6 +220,7 @@ const modalAdapter = {
           // Forwarded so a compliant deployed function can dedupe; exactly-
           // once is otherwise enforced upstream, fail closed.
           idempotencyKey: str(ctx?.idempotencyKeyHash),
+          workSpecHash: str(ctx?.workSpecHash),
         },
       }),
     });
@@ -247,7 +248,26 @@ const modalAdapter = {
     const status = str(call?.status);
     const type = mapModalCallStatus(status);
     if (!type) return [];
-    return [providerEvent({ type, ctx, providerEventId: `${callId}:${status}`, detail: type === "compute-failed" ? str(call?.error || status).slice(0, 200) : status })];
+    const events = [];
+    if (call?.checkpoint && typeof call.checkpoint === "object") {
+      events.push(providerEvent({ type: "checkpoint-created", ctx, providerEventId: `${callId}:checkpoint:${str(call.checkpoint.checkpointId || call.checkpoint.step)}`, detail: `checkpoint ${str(call.checkpoint.checkpointId || call.checkpoint.step)}`, extra: { checkpoint: call.checkpoint } }));
+    }
+    events.push(providerEvent({ type, ctx, providerEventId: `${callId}:${status}`, detail: type === "compute-failed" ? str(call?.error || status).slice(0, 200) : status }));
+    return events;
+  },
+
+  async execute(ctx) {
+    if (!ctx?.workSpec?.workSpecHash) throw new Error("immutable work spec required");
+    return [providerEvent({ type: "compute-queued", ctx, providerEventId: `${ctx.runRef.providerResourceId}:work-spec:${ctx.workSpec.workSpecHash}`, detail: `exact training work spec ${ctx.workSpec.workSpecHash} submitted` })];
+  },
+
+  async resume(ctx, checkpoint) {
+    const config = cfg(ctx);
+    if (!config.volumeConfigured) throw new Error("Modal resume unavailable without a configured Volume");
+    if (!checkpoint?.resumable || checkpoint?.runRef?.trainingRunId !== ctx?.runRef?.trainingRunId || checkpoint?.workSpecHash !== ctx?.workSpecHash) throw new Error("foreign, unproven, or wrong-work-spec checkpoint refused");
+    const resumed = await ctx.fetchJson(`${config.baseUrl}/resume`, { method: "POST", headers: authHeaders(ctx, config), body: JSON.stringify({ call_id: ctx.runRef.providerResourceId, workSpec: ctx.workSpec, checkpoint }) });
+    const callId = str(resumed?.call_id || resumed?.callId || ctx.runRef.providerResourceId);
+    return [providerEvent({ type: "compute-resuming", ctx: { ...ctx, runRef: { ...ctx.runRef, providerResourceId: callId } }, providerEventId: `${callId}:resume:${checkpoint.checkpointId}`, detail: `resuming proven checkpoint ${checkpoint.checkpointId}` })];
   },
 
   async collectArtifact(ctx) {
@@ -264,6 +284,7 @@ const modalAdapter = {
       sha256: str(artifact.sha256),
       sizeBytes: Math.max(0, Math.floor(num(artifact.sizeBytes))),
       evidenceObservedAt: new Date().toISOString(),
+      evaluationResults: Array.isArray(call?.evaluationResults) ? call.evaluationResults : [],
     };
   },
 

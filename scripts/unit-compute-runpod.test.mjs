@@ -247,7 +247,7 @@ test("CONFORMANCE — full governed lifecycle over the Runpod adapter (faked tra
               availabilityModes: ["on-demand"],
               requiredEnv: ["RUNPOD_API_KEY"],
               executionLane: "sandbox-local",
-              config: { imageName: "ghcr.io/growthub/train:latest" },
+              config: { imageName: "ghcr.io/growthub/train:latest", networkVolumeId: "vol-test" },
             },
           },
         }],
@@ -270,6 +270,7 @@ test("CONFORMANCE — full governed lifecycle over the Runpod adapter (faked tra
       sleep: async () => {},
       maxPolls: 6,
       pollIntervalMs: 0,
+      verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
     },
   });
   assert.equal(outcome.computeBlock.decision.selectedProviderId, "runpod-burst");

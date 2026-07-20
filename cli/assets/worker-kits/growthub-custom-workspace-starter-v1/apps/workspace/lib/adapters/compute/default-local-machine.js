@@ -58,7 +58,7 @@ const localMachineAdapter = {
     return {
       providerId: String(config?.providerId || LOCAL_COMPUTE_ADAPTER_ID),
       adapterId: LOCAL_COMPUTE_ADAPTER_ID,
-      capacityProfiles: ["harvest-only", "serve-local", "single-gpu-finetune"],
+      capacityProfiles: ["harvest-only", "serve-local", "cpu-local-finetune", "single-gpu-finetune"],
       availabilityModes: ["local"],
       acceleratorClasses: gpuPresent ? ["none", "any-gpu"] : ["none"],
       maxVramPerGpuGB: vramFreeGB,
@@ -142,6 +142,16 @@ const localMachineAdapter = {
     // adapter has no separate status channel and says so instead of inventing
     // one.
     return [eventFor(ctx, "compute-running", "local execution status is carried by the governed run receipt (runner-stamped progress), not a provider channel")];
+  },
+
+  async execute(ctx) {
+    if (!ctx?.workSpec?.workSpecHash) throw new Error("immutable work spec required");
+    return [eventFor(ctx, "compute-running", `local runner accepted work spec ${ctx.workSpec.workSpecHash}`)];
+  },
+
+  async resume(ctx, checkpoint) {
+    if (!checkpoint?.resumable || checkpoint?.runRef?.trainingRunId !== ctx?.runRef?.trainingRunId) throw new Error("foreign or unproven checkpoint refused");
+    return [eventFor(ctx, "compute-resuming", `local runner resuming ${checkpoint.checkpointId}`)];
   },
 
   async cancel(ctx) {

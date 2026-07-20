@@ -22,7 +22,9 @@
  *     describeCapabilities(config) => ComputeProviderCapabilities  // static truth, no IO
  *     inspectCapacity(ctx)  => Promise<ComputeProviderQuote>       // observe only, never allocate
  *     allocate(ctx)         => Promise<ComputeAllocation>          // idempotency-honoring
+ *     execute(ctx)          => Promise<ComputeEvent[]>             // submit exact ctx.workSpec
  *     status(ctx)           => Promise<ComputeEvent[]>
+ *     resume(ctx, checkpoint) => Promise<ComputeEvent[]>           // fail closed when unsupported
  *     cancel(ctx)           => Promise<ComputeEvent[]>
  *     release(ctx)          => Promise<ComputeEvent[]>
  *   }
@@ -48,7 +50,7 @@ if (!globalThis.__growthubComputeAdapterRegistry) {
 }
 const registry = globalThis.__growthubComputeAdapterRegistry;
 
-const REQUIRED_METHODS = ["describeCapabilities", "inspectCapacity", "allocate", "status", "cancel", "release"];
+const REQUIRED_METHODS = ["describeCapabilities", "inspectCapacity", "allocate", "execute", "status", "resume", "cancel", "release"];
 
 function registerComputeProviderAdapter(adapter) {
   if (!adapter || typeof adapter !== "object") {

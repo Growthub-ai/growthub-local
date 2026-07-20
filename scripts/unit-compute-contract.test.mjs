@@ -48,10 +48,11 @@ test("schema ids are the frozen v1 identifiers", () => {
   assert.equal(COMPUTE_EVIDENCE_SCHEMA, "growthub-compute-evidence-v1");
 });
 
-test("the seven governed capacity profiles are named, vendor-free", () => {
+test("the governed capacity profiles are named, vendor-free", () => {
   assert.deepEqual([...COMPUTE_CAPACITY_PROFILE_IDS], [
     "harvest-only",
     "serve-local",
+    "cpu-local-finetune",
     "burst-gpu",
     "warm-inference",
     "single-gpu-finetune",

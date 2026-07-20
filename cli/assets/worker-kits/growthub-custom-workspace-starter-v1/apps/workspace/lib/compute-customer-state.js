@@ -28,18 +28,21 @@ export const COMPUTE_POLICIES = [
 ];
 
 /** Map a customer policy to the governed compute ask (null = pure local). */
-export function computeAskForPolicy(policy, { capacityProfileId = "" } = {}) {
+export function computeAskForPolicy(policy, { capacityProfileId = "", portablePolicy = null } = {}) {
+  const overrides = portablePolicy && typeof portablePolicy === "object" ? portablePolicy : {};
+  let ask;
   switch (String(policy || "")) {
     case "automatic":
-      return { capacityProfileId: capacityProfileId || "single-gpu-finetune", providerRegistryId: "", selectionMode: "auto" };
+      ask = { capacityProfileId, providerRegistryId: "", selectionMode: "auto", policy: { ...overrides, mode: "automatic" } }; break;
     case "cloud":
-      return { capacityProfileId: capacityProfileId || "single-gpu-finetune", providerRegistryId: "", selectionMode: "auto", excludeLocal: true };
+      ask = { capacityProfileId, providerRegistryId: "", selectionMode: "auto", excludeLocal: true, policy: { ...overrides, mode: "cloud", excludeLocal: true } }; break;
     case "reserved-cluster":
-      return { capacityProfileId: "distributed-training", providerRegistryId: "", selectionMode: "auto" };
+      ask = { capacityProfileId: "distributed-training", providerRegistryId: "", selectionMode: "auto", policy: { ...overrides, mode: "reserved-cluster", reservedOnly: true } }; break;
     case "local":
     default:
-      return null; // the existing local behavior, byte-for-byte
+      ask = { capacityProfileId, providerRegistryId: "local-machine", selectionMode: "explicit", policy: { ...overrides, mode: "local", localOnly: true } }; break;
   }
+  return ask;
 }
 
 export const COMPUTE_CUSTOMER_STATES = [
@@ -114,6 +117,7 @@ export function deriveComputeCustomerState({
     budget: describeBudget(computeBlock?.decision),
     checkpoint: describeCheckpoint(computeBlock),
     release: describeRelease(computeBlock),
+    actions: deriveComputeActions(computeBlock),
     advanced: {
       capacityProfileId: String(computeBlock?.capacityProfileId || capacityPlan?.capacityProfileId || ""),
       selectedProviderId: String(computeBlock?.decision?.selectedProviderId || ""),
@@ -212,6 +216,17 @@ export function deriveComputeCustomerState({
   }
 
   return out("finding-capacity", "Finding capacity", "running", "Resolving where this training run may execute.");
+}
+
+export function deriveComputeActions(computeBlock) {
+  if (!computeBlock?.allocation) return { canCancel: false, canResume: false, checkpointId: "" };
+  const lifecycle = deriveComputeLifecycle({ events: computeBlock.events, allocation: computeBlock.allocation, checkpoints: computeBlock.checkpoints });
+  const latest = lifecycle.provenCheckpoints[lifecycle.provenCheckpoints.length - 1] || null;
+  return {
+    canCancel: Boolean(!lifecycle.terminal && computeBlock.providerRegistryId),
+    canResume: Boolean(["failed", "cancelled"].includes(lifecycle.terminal) && latest && computeBlock.capabilities?.supportsResume === true && latest.workSpecHash === computeBlock.workSpecHash),
+    checkpointId: latest?.checkpointId || "",
+  };
 }
 
 function describeRequiredCapacity(capacityPlan) {

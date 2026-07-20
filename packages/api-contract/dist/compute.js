@@ -48,6 +48,7 @@ export const COMPUTE_AVAILABILITY_MODES = [
 export const COMPUTE_CAPACITY_PROFILE_IDS = [
     "harvest-only",
     "serve-local",
+    "cpu-local-finetune",
     "burst-gpu",
     "warm-inference",
     "single-gpu-finetune",

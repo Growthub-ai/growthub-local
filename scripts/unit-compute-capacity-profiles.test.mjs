@@ -51,8 +51,8 @@ test("runtime vocabulary mirrors the shared contract exactly", () => {
   assert.deepEqual(COMPUTE_WORKLOAD_KINDS, [...contract.COMPUTE_WORKLOAD_KINDS]);
 });
 
-test("all seven profiles exist, each id resolvable, unknown id resolves to null", () => {
-  assert.equal(COMPUTE_CAPACITY_PROFILES.length, 7);
+test("all profiles exist, each id resolvable, unknown id resolves to null", () => {
+  assert.equal(COMPUTE_CAPACITY_PROFILES.length, 8);
   for (const id of COMPUTE_CAPACITY_PROFILE_IDS) {
     const p = resolveCapacityProfile(id);
     assert.ok(p, `profile ${id} must resolve`);
@@ -92,7 +92,7 @@ test("EXIT PROOF 1 — a small student that fits locally selects a local-compati
   const plan = buildAdaptiveStudentPlan({ preflight });
   assert.equal(plan.mode, "train-local", "precondition: the planner sizes a local plan");
   const capacity = deriveCapacityPlan({ plan, preflight, workloadKind: "fine-tune" });
-  assert.equal(capacity.capacityProfileId, "single-gpu-finetune");
+  assert.equal(capacity.capacityProfileId, "cpu-local-finetune");
   const profile = resolveCapacityProfile(capacity.capacityProfileId);
   assert.equal(profile.localCapable, true, "the resolved profile admits local execution");
   assert.equal(capacity.local.eligible, true, `local must be eligible: ${capacity.local.reasons.join("; ")}`);

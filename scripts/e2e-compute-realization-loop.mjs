@@ -63,7 +63,7 @@ const plan = buildAdaptiveStudentPlan({ preflight });
 const capacity = deriveCapacityPlan({ plan, preflight, workloadKind: "fine-tune" });
 evidence["capacity-plan"] = capacity;
 if (plan.mode === "train-local") {
-  ok(`A: plan sized to this machine (${plan.baseModel}, tier ${plan.tier}) → profile ${capacity.capacityProfileId}, local eligible`, capacity.local.eligible && capacity.capacityProfileId === "single-gpu-finetune");
+ok(`A: plan sized to this machine (${plan.baseModel}, tier ${plan.tier}) → profile ${capacity.capacityProfileId}, local eligible`, capacity.local.eligible && capacity.capacityProfileId === "cpu-local-finetune");
   const providers = deriveComputeProviders({ workspaceConfig: {}, registeredAdapterIds: listComputeProviderAdapters(), envPresent: () => false, preflight });
   const local = getComputeProviderAdapter("local-machine");
   const quote = await local.inspectCapacity({ providerConfig: { preflight }, requirements: capacity.requirements, capacityProfileId: capacity.capacityProfileId, runRef: { providerId: "local-machine" } });
@@ -132,6 +132,8 @@ function scriptedAdapter(script = {}) {
       return mkQuote({ providerId: "e2e-provider", capacityProfileId: ctx.capacityProfileId, quoteObservedAt: observedAt, quoteExpiresAt: new Date(Date.parse(observedAt) + 10 * 60 * 1000).toISOString() });
     },
     allocate: async (ctx) => ({ allocationId: "alloc-e2e", runRef: { ...ctx.runRef, providerResourceId: "res-e2e" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 2, source: "s" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "us-east" } }),
+    execute: async (ctx) => [{ type: "compute-queued", at: new Date().toISOString(), evidenceObservedAt: new Date().toISOString(), source: "provider", runRef: { ...ctx.runRef }, providerEventId: "exec", detail: "exact work spec submitted" }],
+    resume: async (ctx) => [{ type: "compute-resuming", at: new Date().toISOString(), evidenceObservedAt: new Date().toISOString(), source: "provider", runRef: { ...ctx.runRef }, providerEventId: "resume", detail: "proven checkpoint submitted" }],
     status: async (ctx) => {
       statusCalls += 1;
       const mk = (type, id, extra = {}) => ({ type, at: new Date().toISOString(), evidenceObservedAt: new Date().toISOString(), source: "provider", runRef: { ...ctx.runRef }, providerEventId: id, detail: "", ...extra });
@@ -146,7 +148,7 @@ function scriptedAdapter(script = {}) {
 }
 
 const e2eConfig = { dataModel: { objects: [{ id: "api-registry", objectType: "api-registry", rows: [{ integrationId: "e2e-provider", Name: "E2E provider", metadata: { computeProvider: { schema: "growthub-compute-provider-v1", adapterId: "e2e-adapter", capacityProfiles: ["single-gpu-finetune"], availabilityModes: ["on-demand"], requiredEnv: [], executionLane: "sandbox-local", config: {} } } }] }] } };
-const e2eIo = (adapter) => { let clock = Date.now(); return { getAdapter: (id) => (id === "e2e-adapter" ? adapter : null), listAdapterIds: () => ["e2e-adapter"], envPresent: () => true, resolveEnv: () => "", fetchJson: async () => { throw new Error("no net"); }, now: () => { clock += 500; return clock; }, sleep: async () => {}, maxPolls: 8, pollIntervalMs: 0 }; };
+const e2eIo = (adapter) => { let clock = Date.now(); return { getAdapter: (id) => (id === "e2e-adapter" ? adapter : null), listAdapterIds: () => ["e2e-adapter"], envPresent: () => true, resolveEnv: () => "", fetchJson: async () => { throw new Error("no net"); }, now: () => { clock += 500; return clock; }, sleep: async () => {}, maxPolls: 8, pollIntervalMs: 0, verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }) }; };
 
 const lifecycleRun = await executeProviderComputeRun({ workspaceConfig: e2eConfig, trainingRunId: "e2e-run-1", computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "e2e-provider", selectionMode: "explicit" }, requirements: req1, io: e2eIo(scriptedAdapter()) });
 const lifecycleTypes = lifecycleRun.computeBlock.events.map((e) => e.type);

@@ -306,9 +306,12 @@ export function buildTrainingRunConfig({
     // selectionMode "auto" lets the deterministic resolver rank.
     compute: compute && typeof compute === "object"
       ? {
+          ...compute,
           capacityProfileId: String(compute.capacityProfileId || "").trim(),
           providerRegistryId: String(compute.providerRegistryId || "").trim(),
           selectionMode: compute.selectionMode === "explicit" ? "explicit" : "auto",
+          ...(compute.excludeLocal === true ? { excludeLocal: true } : {}),
+          ...(compute.policy && typeof compute.policy === "object" ? { policy: compute.policy } : {}),
         }
       : null,
     importProof: profile.importProof,

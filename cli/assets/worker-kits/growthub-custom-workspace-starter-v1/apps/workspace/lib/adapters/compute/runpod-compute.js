@@ -252,11 +252,12 @@ const runpodAdapter = {
         headers: { Authorization: key, "Content-Type": "application/json" },
         body: JSON.stringify({
           input: {
-            ...(config.jobInput || {}),
+            workSpec: ctx?.workSpec,
             growthub: {
               trainingRunId: str(ctx?.runRef?.trainingRunId),
               capacityProfileId: str(ctx?.capacityProfileId),
               idempotencyKeyHash: str(ctx?.idempotencyKeyHash),
+              workSpecHash: str(ctx?.workSpecHash),
             },
           },
         }),
@@ -321,6 +322,8 @@ const runpodAdapter = {
         GROWTHUB_TRAINING_RUN_ID: str(ctx?.runRef?.trainingRunId),
         GROWTHUB_CAPACITY_PROFILE: str(ctx?.capacityProfileId),
         GROWTHUB_IDEMPOTENCY_HASH: str(ctx?.idempotencyKeyHash),
+        GROWTHUB_WORK_SPEC_HASH: str(ctx?.workSpecHash),
+        GROWTHUB_WORK_SPEC_JSON: JSON.stringify(ctx?.workSpec || {}),
       },
     };
     const pod = await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods`, { method: "POST", headers: restHeaders(key), body: JSON.stringify(body) });
@@ -370,6 +373,26 @@ const runpodAdapter = {
     return [];
   },
 
+  async execute(ctx) {
+    if (!ctx?.workSpec?.workSpecHash) throw new Error("immutable work spec required");
+    return [providerEvent({ type: "compute-queued", ctx, providerEventId: `${ctx.runRef.providerResourceId}:work-spec:${ctx.workSpec.workSpecHash}`, detail: `exact training work spec ${ctx.workSpec.workSpecHash} submitted` })];
+  },
+
+  async resume(ctx, checkpoint) {
+    const config = cfg(ctx);
+    if (!config.networkVolumeId) throw new Error("Runpod resume unavailable without a configured network volume");
+    if (!checkpoint?.resumable || checkpoint?.runRef?.trainingRunId !== ctx?.runRef?.trainingRunId || checkpoint?.workSpecHash !== ctx?.workSpecHash) throw new Error("foreign, unproven, or wrong-work-spec checkpoint refused");
+    const key = apiKey(ctx, config);
+    if (config.mode === "serverless") {
+      const submitted = await ctx.fetchJson(`${RUNPOD_SERVERLESS_BASE}/${config.endpointId}/run`, { method: "POST", headers: { Authorization: key, "Content-Type": "application/json" }, body: JSON.stringify({ input: { workSpec: ctx.workSpec, resumeCheckpoint: checkpoint } }) });
+      const jobId = str(submitted?.id);
+      if (!jobId) throw new Error("Runpod resume returned no job id");
+      return [providerEvent({ type: "compute-resuming", ctx: { ...ctx, runRef: { ...ctx.runRef, providerResourceId: jobId } }, providerEventId: `${jobId}:resume:${checkpoint.checkpointId}`, detail: `resuming proven checkpoint ${checkpoint.checkpointId}` })];
+    }
+    await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods/${ctx.runRef.providerResourceId}/start`, { method: "POST", headers: restHeaders(key) });
+    return [providerEvent({ type: "compute-resuming", ctx, providerEventId: `${ctx.runRef.providerResourceId}:resume:${checkpoint.checkpointId}`, detail: `pod restarted from proven volume checkpoint ${checkpoint.checkpointId}` })];
+  },
+
   async collectArtifact(ctx) {
     const config = cfg(ctx);
     const resourceId = str(ctx?.runRef?.providerResourceId);
@@ -388,6 +411,7 @@ const runpodAdapter = {
           sha256: str(out.sha256),
           sizeBytes: Math.max(0, Math.floor(num(out.sizeBytes))),
           evidenceObservedAt: new Date().toISOString(),
+          evaluationResults: Array.isArray(job?.output?.evaluationResults) ? job.output.evaluationResults : [],
         };
       }
       return null;

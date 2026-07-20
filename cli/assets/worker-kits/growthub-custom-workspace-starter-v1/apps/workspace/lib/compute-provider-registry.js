@@ -186,7 +186,7 @@ export function deriveComputeProviders({ workspaceConfig = null, registeredAdapt
       statusReason: localRegistered
         ? (preflight ? "owned hardware — capacity from stamped machine evidence" : "owned hardware — machine not measured yet; the preflight probe runs before anything trains")
         : "local adapter not registered",
-      capacityProfiles: ["harvest-only", "serve-local", "single-gpu-finetune"],
+      capacityProfiles: ["harvest-only", "serve-local", "cpu-local-finetune", "single-gpu-finetune"],
       availabilityModes: ["local"],
       executionLane: "sandbox-local",
       requiredEnv: [],

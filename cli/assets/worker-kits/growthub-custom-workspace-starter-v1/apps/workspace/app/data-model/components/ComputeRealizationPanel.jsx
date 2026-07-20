@@ -16,7 +16,7 @@ import { COMPUTE_POLICIES } from "../../../lib/compute-customer-state.js";
 
 const TONE_CLASS = { ok: "is-ok", warn: "is-warn", bad: "is-bad", running: "is-running", muted: "" };
 
-export default function ComputeRealizationPanel({ state, policy, onPolicyChange, showPolicyPicker = false }) {
+export default function ComputeRealizationPanel({ state, policy, onPolicyChange, onCancel, onResume, showPolicyPicker = false }) {
   if (!state) return null;
   const tone = TONE_CLASS[state.tone] ?? "";
   return (
@@ -60,6 +60,12 @@ export default function ComputeRealizationPanel({ state, policy, onPolicyChange,
             <div className="dm-cockpit-field"><span>Capacity</span><strong data-compute-release-risk={state.release.risk ? "true" : "false"}>{state.release.label}</strong></div>
           ) : null}
         </div>
+        {state.actions?.canCancel || state.actions?.canResume ? (
+          <div className="training-handoff-action-row" data-compute-actions="">
+            {state.actions.canCancel ? <button type="button" className="dm-btn-ghost" onClick={onCancel}>Cancel compute</button> : null}
+            {state.actions.canResume ? <button type="button" className="dm-btn-primary-sm" onClick={() => onResume?.(state.actions.checkpointId)}>Resume from checkpoint</button> : null}
+          </div>
+        ) : null}
 
         {(state.advanced?.selectedProviderId || state.advanced?.skipped?.length > 0 || state.advanced?.localReasons?.length > 0) ? (
           <details className="training-advanced" data-compute-advanced="">

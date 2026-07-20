@@ -266,6 +266,7 @@ test("CONFORMANCE — distributed lifecycle over the CoreWeave realization: queu
       sleep: async () => {},
       maxPolls: 8,
       pollIntervalMs: 0,
+      verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
     },
   });
   assert.equal(outcome.result.ok, true, outcome.result.error || "distributed run should complete promotably");
