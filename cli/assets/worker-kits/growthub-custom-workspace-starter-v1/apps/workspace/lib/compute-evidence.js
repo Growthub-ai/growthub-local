@@ -215,7 +215,17 @@ export function deriveComputeLifecycle({ events = [], allocation = null, checkpo
   const applied = [];
   const refused = [];
   const seenProviderEventIds = new Set();
-  const allCheckpoints = (Array.isArray(checkpoints) ? checkpoints : []).map(normalizeComputeCheckpoint);
+  // Checkpoints must belong to THIS run: a checkpoint stamped with a
+  // different trainingRunId can never satisfy a resume for this one (the
+  // wrong-checkpoint defense). Unstamped checkpoints only count when the
+  // run identity is unknowable on either side.
+  const runId = str(alloc?.runRef?.trainingRunId)
+    || str((Array.isArray(events) ? events : []).map((e) => e?.runRef?.trainingRunId).find(Boolean));
+  const allCheckpoints = (Array.isArray(checkpoints) ? checkpoints : [])
+    .map(normalizeComputeCheckpoint)
+    .map((c) => (runId && c.runRef.trainingRunId && c.runRef.trainingRunId !== runId
+      ? { ...c, resumable: false, foreignRun: true }
+      : c));
 
   let status = "none";
   let allocated = false;

@@ -1,0 +1,108 @@
+{
+  "schema": "growthub-compute-decision-v1",
+  "capacityProfileId": "single-gpu-finetune",
+  "requirements": {
+    "workloadKind": "fine-tune",
+    "acceleratorClass": "high-memory-gpu",
+    "gpuCount": 1,
+    "minVramPerGpuGB": 80,
+    "minCpuCores": 4,
+    "minRamGB": 16,
+    "minDiskGB": 20,
+    "checkpointRequired": true,
+    "distributed": null,
+    "locality": {
+      "regions": [],
+      "dataResidency": ""
+    },
+    "estimatedDurationMinutes": 0
+  },
+  "budget": {
+    "mode": "advisory",
+    "maxTotalUsd": 0,
+    "maxHourlyUsd": 0,
+    "allowUnknownCost": false
+  },
+  "selectionMode": "auto",
+  "selectedProviderId": "provider-a",
+  "selectedReasons": [
+    "capacity availability proven by observation",
+    "estimated $4.00 total",
+    "supports checkpoint + resume"
+  ],
+  "candidates": [
+    {
+      "providerId": "provider-a",
+      "eligible": true,
+      "reasonCodes": [],
+      "reasons": [],
+      "rank": 0,
+      "quote": {
+        "available": true,
+        "availabilityMode": "on-demand",
+        "costBasis": {
+          "kind": "per-hour",
+          "unitUsd": 2,
+          "source": "s"
+        },
+        "estimatedTotalUsd": 4,
+        "queueLatencySeconds": 10,
+        "quoteObservedAt": "2026-07-20T12:00:00.000Z",
+        "quoteExpiresAt": "2026-07-20T13:00:00.000Z",
+        "quoteRef": ""
+      }
+    },
+    {
+      "providerId": "provider-b",
+      "eligible": true,
+      "reasonCodes": [
+        "outranked"
+      ],
+      "reasons": [
+        "ranked #2 behind provider-a"
+      ],
+      "rank": 1,
+      "quote": {
+        "available": true,
+        "availabilityMode": "on-demand",
+        "costBasis": {
+          "kind": "per-hour",
+          "unitUsd": 2,
+          "source": "s"
+        },
+        "estimatedTotalUsd": 9,
+        "queueLatencySeconds": 10,
+        "quoteObservedAt": "2026-07-20T12:00:00.000Z",
+        "quoteExpiresAt": "2026-07-20T13:00:00.000Z",
+        "quoteRef": ""
+      }
+    },
+    {
+      "providerId": "provider-c",
+      "eligible": false,
+      "reasonCodes": [
+        "credential-missing"
+      ],
+      "reasons": [
+        "KEY absent"
+      ],
+      "rank": -1,
+      "quote": {
+        "available": true,
+        "availabilityMode": "on-demand",
+        "costBasis": {
+          "kind": "per-hour",
+          "unitUsd": 2,
+          "source": "s"
+        },
+        "estimatedTotalUsd": 4,
+        "queueLatencySeconds": 10,
+        "quoteObservedAt": "2026-07-20T12:00:00.000Z",
+        "quoteExpiresAt": "2026-07-20T13:00:00.000Z",
+        "quoteRef": ""
+      }
+    }
+  ],
+  "decidedAt": "2026-07-20T12:05:00.000Z",
+  "evidenceObservedAt": "2026-07-20T12:05:00.000Z"
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "growthub-compute-capacity-plan-v1",
+  "requirements": {
+    "workloadKind": "fine-tune",
+    "acceleratorClass": "none",
+    "gpuCount": 0,
+    "minVramPerGpuGB": 0,
+    "minCpuCores": 2,
+    "minRamGB": 16,
+    "minDiskGB": 20,
+    "checkpointRequired": true,
+    "distributed": null,
+    "locality": {
+      "regions": [],
+      "dataResidency": ""
+    },
+    "estimatedDurationMinutes": 0
+  },
+  "capacityProfileId": "single-gpu-finetune",
+  "capacityProfileLabel": "Cloud compute · single-GPU fine-tune",
+  "profileReason": "CPU-mode fine-tune (single worker)",
+  "executes": true,
+  "local": {
+    "eligible": true,
+    "reasons": [],
+    "reasonCodes": []
+  }
+}

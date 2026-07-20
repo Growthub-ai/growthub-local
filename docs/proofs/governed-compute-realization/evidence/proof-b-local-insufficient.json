@@ -1,0 +1,28 @@
+{
+  "requirements": {
+    "workloadKind": "fine-tune",
+    "acceleratorClass": "high-memory-gpu",
+    "gpuCount": 1,
+    "minVramPerGpuGB": 80,
+    "minCpuCores": 4,
+    "minRamGB": 16,
+    "minDiskGB": 20,
+    "checkpointRequired": true,
+    "distributed": null,
+    "locality": {
+      "regions": [],
+      "dataResidency": ""
+    },
+    "estimatedDurationMinutes": 0
+  },
+  "verdict": {
+    "eligible": false,
+    "reasons": [
+      "an accelerator is required and none is present locally"
+    ],
+    "reasonCodes": [
+      "no-local-gpu"
+    ]
+  },
+  "remoteProfile": "single-gpu-finetune"
+}

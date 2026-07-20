@@ -1,0 +1,42 @@
+{
+  "collectedAt": "2026-07-20T20:46:40.450Z",
+  "preflight": {
+    "ramGB": 16,
+    "diskFreeGB": 31,
+    "gpu": {
+      "present": false,
+      "name": "",
+      "vramFreeGB": 0
+    }
+  },
+  "tooling": [
+    {
+      "id": "dataset-builder",
+      "ok": true
+    },
+    {
+      "id": "python-runtime",
+      "ok": true
+    },
+    {
+      "id": "pipeline-scripts",
+      "ok": true
+    },
+    {
+      "id": "quantize-tools",
+      "ok": false
+    },
+    {
+      "id": "ollama-cli",
+      "ok": false
+    },
+    {
+      "id": "model-server",
+      "ok": false
+    },
+    {
+      "id": "workflow-test-lane",
+      "ok": true
+    }
+  ]
+}

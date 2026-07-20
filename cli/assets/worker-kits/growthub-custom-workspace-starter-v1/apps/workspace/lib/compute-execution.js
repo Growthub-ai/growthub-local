@@ -273,6 +273,29 @@ export async function executeProviderComputeRun({
       result: { ok: false, exitCode: null, durationMs: io.now() - startedMs, stdout: "", stderr: "", error: `compute allocation failed: ${reason}`, adapterMeta: { adapter: "provider-compute", providerId: selectedId } },
     };
   }
+  // Verify the allocation EVIDENCE against the governed ask: a provider that
+  // reports fewer GPUs/workers than the requirements demanded has not
+  // satisfied this allocation — fail closed and release rather than train on
+  // silently degraded capacity (the reported-GPU-mismatch defense).
+  const reported = allocation.allocated && typeof allocation.allocated === "object" ? allocation.allocated : null;
+  const wantGpus = Math.max(0, Math.floor(Number(req?.gpuCount) || 0));
+  const wantWorkers = req?.distributed && Number(req.distributed.workers) >= 2 ? Math.floor(Number(req.distributed.workers)) : 1;
+  if (reported && ((wantGpus > 0 && Number(reported.gpuCount) > 0 && Number(reported.gpuCount) < wantGpus)
+    || (wantWorkers > 1 && Number(reported.workers) > 0 && Number(reported.workers) < wantWorkers))) {
+    const mismatch = `allocation evidence mismatch: asked for ${wantGpus} GPU(s) × ${wantWorkers} worker(s), provider reports ${Number(reported.gpuCount) || 0} GPU(s) × ${Number(reported.workers) || 0} worker(s)`;
+    runRef.providerResourceId = str(allocation.runRef?.providerResourceId || allocation.allocationId);
+    events.push({ ...workspaceEvent(io, "compute-allocated", runRef, `allocation ${allocation.allocationId} recorded`), source: "provider" });
+    events.push(workspaceEvent(io, "compute-failed", runRef, mismatch));
+    events.push(workspaceEvent(io, "compute-release-requested", runRef, "releasing mismatched allocation"));
+    const releasedEvents = await safeCall(() => adapter.release(ctx));
+    if (releasedEvents?.__error) events.push(workspaceEvent(io, "compute-release-failed", runRef, `release failed: ${releasedEvents.__error} — capacity may still exist and cost may accrue`));
+    else for (const event of Array.isArray(releasedEvents) ? releasedEvents : []) events.push(event);
+    return {
+      localFallthrough: false,
+      computeBlock: block({ allocation }),
+      result: { ok: false, exitCode: null, durationMs: io.now() - startedMs, stdout: "", stderr: "", error: mismatch, adapterMeta: { adapter: "provider-compute", providerId: selectedId } },
+    };
+  }
   runRef.providerResourceId = str(allocation.runRef?.providerResourceId || allocation.allocationId);
   events.push({ ...workspaceEvent(io, "compute-allocated", runRef, `allocation ${allocation.allocationId} verified`), source: "provider" });
 
