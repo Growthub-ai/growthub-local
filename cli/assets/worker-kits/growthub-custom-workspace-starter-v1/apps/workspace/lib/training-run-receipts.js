@@ -22,6 +22,7 @@
  */
 
 import { deriveArtifactState } from "./training-artifacts.js";
+import { normalizeComputeBlock } from "./compute-evidence.js";
 
 export const TRAINING_RUN_SCHEMA = "growthub-local-model-training-run-v1";
 export const TRAINING_RUN_SOURCE_PREFIX = "training-run:";
@@ -277,6 +278,7 @@ export function buildTrainingRunReceipt({
   blockedReason = "",
   runKind = "",
   distillation = null,
+  compute = null,
   now = "",
 } = {}) {
   const at = startedAt || now || new Date().toISOString();
@@ -317,6 +319,11 @@ export function buildTrainingRunReceipt({
     // excluded from the run lifecycle by the readers; "" = a training run.
     runKind: String(runKind || "").trim(),
     distillation: normalizeDistillationBlock(distillation),
+    // Additive compute-realization evidence (growthub-compute-evidence-v1):
+    // placement decision, allocation, normalized events, checkpoints,
+    // artifact ref. `null` for local/pre-compute receipts — readers are
+    // entirely unaffected, exactly like the distillation block.
+    compute: normalizeComputeBlock(compute),
     receipts: Array.isArray(receipts) ? receipts.map(String) : [],
   };
 }

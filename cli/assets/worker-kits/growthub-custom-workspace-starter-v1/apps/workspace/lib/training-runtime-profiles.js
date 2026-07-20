@@ -270,6 +270,7 @@ export function buildTrainingRunConfig({
   quantization = "q4_k_m",
   teacherModel = "",
   expertTopK = "8",
+  compute = null,
 } = {}) {
   const profile = resolveTrainingProfile(profileId);
   const vars = { baseModel, datasetPath, outputModelTag, artifactPath, quantization, teacherModel, expertTopK };
@@ -299,6 +300,17 @@ export function buildTrainingRunConfig({
     stageIds,
     stageLabels,
     commandSafety: safety,
+    // Optional governed compute selection (additive — absent means the
+    // existing local behavior, byte-for-byte). The capacity profile names a
+    // SHAPE of capacity; providerRegistryId pins a governed provider row;
+    // selectionMode "auto" lets the deterministic resolver rank.
+    compute: compute && typeof compute === "object"
+      ? {
+          capacityProfileId: String(compute.capacityProfileId || "").trim(),
+          providerRegistryId: String(compute.providerRegistryId || "").trim(),
+          selectionMode: compute.selectionMode === "explicit" ? "explicit" : "auto",
+        }
+      : null,
     importProof: profile.importProof,
     verification: {
       type: profile.verification.type,
