@@ -20,6 +20,7 @@ const suites = [
   "scripts/unit-compute-customer-state.test.mjs",
   "scripts/unit-compute-adversarial.test.mjs",
   "scripts/unit-compute-route-wiring.test.mjs",
+  "scripts/unit-training-evidence-completeness.test.mjs",
 ];
 
 let failures = 0;
