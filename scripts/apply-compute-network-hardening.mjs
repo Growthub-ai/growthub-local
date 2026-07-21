@@ -81,6 +81,126 @@ route = replaceOnce(
 );
 write(routePath, route);
 
+const executionPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js";
+let execution = read(executionPath);
+execution = replaceOnce(
+  execution,
+  `  const critical = ordered.filter((event) => criticalTypes.has(event.type));
+  const latest = ordered.slice(-Math.max(0, MAX_EVENTS - critical.length));
+  return mergeEvents([], [...critical, ...latest]).slice(-MAX_EVENTS);`,
+  `  // Never recurse during compaction: an attacker/provider may emit more
+  // than MAX_EVENTS critical events. Preserve the first request anchor, the
+  // latest critical transitions, and then the latest non-critical context.
+  const firstRequest = ordered.find((event) => event.type === "compute-requested") || null;
+  const criticalTail = ordered
+    .filter((event) => criticalTypes.has(event.type) && event !== firstRequest)
+    .slice(-(MAX_EVENTS - (firstRequest ? 1 : 0)));
+  const criticalIds = new Set([
+    ...(firstRequest ? [eventIdentity(firstRequest)] : []),
+    ...criticalTail.map(eventIdentity),
+  ]);
+  const remaining = Math.max(0, MAX_EVENTS - criticalIds.size);
+  const nonCriticalTail = ordered
+    .filter((event) => !criticalTypes.has(event.type))
+    .slice(-remaining);
+  const keepIds = new Set([...criticalIds, ...nonCriticalTail.map(eventIdentity)]);
+  return ordered.filter((event) => keepIds.has(eventIdentity(event))).slice(-MAX_EVENTS);`,
+  "non-recursive event compaction",
+);
+execution = replaceOnce(
+  execution,
+  `    evaluation: incoming?.evaluation?.source === "workspace-canonical"
+      ? incoming.evaluation
+      : prior?.evaluation?.source === "workspace-canonical"
+        ? prior.evaluation
+        : incoming.evaluation || prior.evaluation,`,
+  `    // Legacy/provider-authored evaluation is never carried forward as
+    // authority. Only the workspace-owned canonical evaluator may persist.
+    evaluation: incoming?.evaluation?.source === "workspace-canonical"
+      ? incoming.evaluation
+      : prior?.evaluation?.source === "workspace-canonical"
+        ? prior.evaluation
+        : null,`,
+  "canonical evaluation-only merge",
+);
+execution = replaceOnce(
+  execution,
+  `function providerMayBeObserved(provider, policy, selectionMode, pinnedProviderId) {
+  const providerId = str(provider?.providerId);
+  const availability = Array.isArray(provider?.availabilityModes)
+    ? provider.availabilityModes.map(String)
+    : [];
+  if (selectionMode === "explicit" && pinnedProviderId) return providerId === pinnedProviderId;
+  if (policy?.mode === "local" || policy?.localOnly === true) return providerId === LOCAL_PROVIDER_ID;
+  if (policy?.mode === "cloud" || policy?.excludeLocal === true) return providerId !== LOCAL_PROVIDER_ID;
+  if (policy?.mode === "reserved-cluster" || policy?.reservedOnly === true) {
+    return providerId !== LOCAL_PROVIDER_ID
+      && availability.some((mode) => mode === "reserved" || mode === "warm");
+  }
+  if (policy?.allowPreemptible !== true && availability.length === 1 && availability[0] === "spot") return false;
+  return true;
+}`,
+  `function providerMayBeObserved(provider, policy, selectionMode, pinnedProviderId) {
+  const providerId = str(provider?.providerId);
+  const availability = Array.isArray(provider?.availabilityModes)
+    ? provider.availabilityModes.map(String)
+    : [];
+  // Hard customer policy gates are evaluated before an explicit pin. A pin
+  // selects within the allowed universe; it cannot authorize a forbidden
+  // local, remote, reserved, or spot provider to receive even a quote probe.
+  if (policy?.mode === "local" || policy?.localOnly === true) {
+    if (providerId !== LOCAL_PROVIDER_ID) return false;
+  }
+  if ((policy?.mode === "cloud" || policy?.excludeLocal === true) && providerId === LOCAL_PROVIDER_ID) return false;
+  if (policy?.mode === "reserved-cluster" || policy?.reservedOnly === true) {
+    if (providerId === LOCAL_PROVIDER_ID || !availability.some((mode) => mode === "reserved" || mode === "warm")) return false;
+  }
+  if (policy?.allowPreemptible !== true && availability.length === 1 && availability[0] === "spot") return false;
+  if (selectionMode === "explicit" && pinnedProviderId) return providerId === pinnedProviderId;
+  return true;
+}`,
+  "policy-before-pin provider filtering",
+);
+write(executionPath, execution);
+
+const networkPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js";
+let network = read(networkPath);
+network = replaceOnce(
+  network,
+  `const FORBIDDEN_METADATA_HOSTS = new Set([
+  "169.254.169.254",`,
+  `const FORBIDDEN_METADATA_HOSTS = new Set([
+  "169.254.169.254",
+  "100.100.100.200",`,
+  "additional metadata endpoint",
+);
+network = replaceOnce(
+  network,
+  `  const privateRules = parseComputeHostAllowList(env?.[COMPUTE_PRIVATE_NETWORK_ALLOWLIST_ENV]);
+  const privateApproved = hostMatches(hostname, privateRules);
+  const normalizedAddresses = addresses.map((entry) => ({
+    address: normalizeHost(entry?.address),
+    family: Number(entry?.family) || isIP(entry?.address),
+  }));
+  if (normalizedAddresses.some((entry) => privateOrReservedAddress(entry.address)) && !privateApproved) {`,
+  `  const privateRules = parseComputeHostAllowList(env?.[COMPUTE_PRIVATE_NETWORK_ALLOWLIST_ENV]);
+  const privateApproved = hostMatches(hostname, privateRules);
+  const normalizedAddresses = addresses.map((entry) => ({
+    address: normalizeHost(entry?.address),
+    family: Number(entry?.family) || isIP(entry?.address),
+  }));
+  if (normalizedAddresses.some((entry) => FORBIDDEN_METADATA_HOSTS.has(entry.address))) {
+    throw new Error(\`compute outbound hostname "\${hostname}" resolves to a forbidden metadata-service address\`);
+  }
+  const privateAddresses = normalizedAddresses.filter((entry) => privateOrReservedAddress(entry.address));
+  if (privateAddresses.length > 0 && privateAddresses.length !== normalizedAddresses.length) {
+    throw new Error(\`compute outbound hostname "\${hostname}" resolves to mixed public/private addresses\`);
+  }
+  if (privateAddresses.length > 0 && !privateApproved) {`,
+  "metadata and mixed-DNS refusal",
+);
+write(networkPath, network);
+
 const e2ePath = "scripts/e2e-compute-route-realization-loop.mjs";
 let e2e = read(e2ePath);
 e2e = replaceOnce(
@@ -112,4 +232,4 @@ if (!certification.includes("scripts/unit-compute-network-policy.test.mjs")) {
 }
 write(certificationPath, certification);
 
-console.log("[one-shot] governed compute network policy wired into sandbox-run, route proof, and certification");
+console.log("[one-shot] governed network, executor compaction, canonical-evaluation merge, and policy filtering wired and ready for certification");
