@@ -12,31 +12,22 @@
  *   - the authoritative `model-training` version row bound by dataset
  *     export id;
  *   - the customer compute request snapshot;
- *   - the pure planning derivers (adaptive plan, capacity plan, training
- *     run config) this repo already certifies.
+ *   - the pure planning derivers this repo already certifies.
  *
  * The compiled authority is HMAC-SHA256 SEALED with a server-owned key.
- * Because the persisted receipt store is reachable through caller PATCH
- * (policy-protected, but defense-in-depth assumes it is not), verification
- * NEVER trusts a stored authority by its self-hash: it checks the seal AND
- * recompiles from current server inputs, failing closed on any drift —
- * stale training row, missing dataset identity, changed policy, changed
- * ordered steps, changed output identity.
+ * Verification never trusts a stored authority by its self-hash: it verifies
+ * the seal first, then recompiles from current server inputs and refuses drift.
  *
  * Key material, in precedence order:
  *   1. `GROWTHUB_COMPUTE_AUTHORITY_KEY` — dedicated override;
- *   2. `GROWTHUB_WORKSPACE_SIGNING_KEY` — the SAME workspace signing key the
- *      inference evidentiary backbone already asks operators to configure
- *      (lib/adapters/inference/manifest.js), so one server key covers both
- *      sealed domains by default. The keyId derivation string
- *      (`growthub-compute-authority-key:`) domain-separates this seal from
- *      manifest signatures;
- *   3. a per-process ephemeral key — seals then do not survive a restart,
- *      which fails closed to RECOMPILATION (never to trusting the caller).
- * The key never appears in receipts; only the non-secret keyId does.
+ *   2. `GROWTHUB_WORKSPACE_SIGNING_KEY` — shared operator root, from which a
+ *      compute-specific subkey is derived so the manifest and compute HMAC
+ *      domains never use the same effective key;
+ *   3. a per-process ephemeral key for non-production development only.
  *
- * Node-only on purpose (node:crypto): this module must never be importable
- * into a browser bundle that could then pretend to seal.
+ * Production remote authority compilation and verification fail closed when
+ * no durable configured key exists. The key never appears in receipts; only
+ * the non-secret keyId does.
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
@@ -57,16 +48,22 @@ import { parseJsonColumn } from "./compute-evidence.js";
 import { findTrainingRunReceiptRow } from "./compute-execution.js";
 
 export const COMPUTE_AUTHORITY_KEY_ENV = "GROWTHUB_COMPUTE_AUTHORITY_KEY";
-/** The workspace signing key the inference manifest seam already uses. */
 export const WORKSPACE_SIGNING_KEY_ENV = "GROWTHUB_WORKSPACE_SIGNING_KEY";
 export const COMPUTE_AUTHORITY_VERSION = 1;
 
+const AUTHORITY_HMAC_DOMAIN = "growthub-compute-authority-v1\0";
+const AUTHORITY_SUBKEY_DOMAIN = "growthub-compute-authority-subkey-v1\0";
 const str = (v) => String(v ?? "").trim();
 
-/** Domain-separated, non-secret key identity (manifest.js keyId pattern). */
+/** Domain-separated, non-secret key identity. */
 const authorityKeyId = (key) => sha256Hex(`growthub-compute-authority-key:${key}`).slice(0, 16);
 
 let ephemeralAuthorityKey = null;
+
+/** Derive a compute-only subkey from the shared workspace signing root. */
+function deriveWorkspaceComputeSubkey(workspaceKey) {
+  return createHmac("sha256", workspaceKey).update(AUTHORITY_SUBKEY_DOMAIN, "utf8").digest("hex");
+}
 
 /**
  * Resolve the server-owned sealing key. Returns `{ key, keyId, source }`;
@@ -79,34 +76,48 @@ export function resolveComputeAuthorityKey(env = process.env) {
   }
   const workspaceKey = str(env?.[WORKSPACE_SIGNING_KEY_ENV]);
   if (workspaceKey) {
-    return { key: workspaceKey, keyId: `wsk-${authorityKeyId(workspaceKey)}`, source: "workspace-signing-key" };
+    const derived = deriveWorkspaceComputeSubkey(workspaceKey);
+    return { key: derived, keyId: `wsk-${authorityKeyId(derived)}`, source: "workspace-signing-key" };
   }
   if (!ephemeralAuthorityKey) ephemeralAuthorityKey = randomBytes(32).toString("hex");
   return { key: ephemeralAuthorityKey, keyId: `boot-${authorityKeyId(ephemeralAuthorityKey)}`, source: "ephemeral" };
 }
 
+function durableAuthorityKeyRequired(env) {
+  return str(env?.NODE_ENV).toLowerCase() === "production";
+}
+
 function hmacSeal(key, authorityWithoutSeal) {
-  return createHmac("sha256", key).update(stableComputeStringify(authorityWithoutSeal), "utf8").digest("hex");
+  return createHmac("sha256", key)
+    .update(AUTHORITY_HMAC_DOMAIN, "utf8")
+    .update(stableComputeStringify(authorityWithoutSeal), "utf8")
+    .digest("hex");
 }
 
 /** Seal a compiled authority with the server key. Pure aside from the key. */
 export function sealComputeAuthority(authority, { key, keyId } = resolveComputeAuthorityKey()) {
+  if (!key || !keyId) throw new Error("compute authority sealing key unavailable");
   const body = { ...authority, keyId, seal: undefined };
   return { ...body, seal: hmacSeal(key, body) };
 }
 
 /**
- * Verify only the seal of a persisted authority (was it written by THIS
- * server with the current key?). A failed seal is not proof of forgery —
- * key rotation and restarts invalidate seals too — but a failed seal means
- * the stored object must be treated as untrusted and recompiled.
+ * Verify only the seal of a persisted authority. In production, an ephemeral
+ * boot key is not accepted as durable execution authority.
  */
 export function verifyComputeAuthoritySeal(authority, env = process.env) {
   if (!authority || typeof authority !== "object") return { ok: false, reasonCode: "authority-missing", reason: "no authority object" };
   if (authority.schema !== COMPUTE_AUTHORITY_SCHEMA) return { ok: false, reasonCode: "authority-schema", reason: `unexpected schema "${str(authority.schema)}"` };
-  const { key, keyId } = resolveComputeAuthorityKey(env);
-  if (str(authority.keyId) !== keyId) return { ok: false, reasonCode: "seal-key-mismatch", reason: "authority sealed under a different key — treating as untrusted" };
-  const expected = hmacSeal(key, { ...authority, seal: undefined });
+  const resolved = resolveComputeAuthorityKey(env);
+  if (resolved.source === "ephemeral" && durableAuthorityKeyRequired(env)) {
+    return {
+      ok: false,
+      reasonCode: "authority-key-missing",
+      reason: `production compute authority requires ${COMPUTE_AUTHORITY_KEY_ENV} or ${WORKSPACE_SIGNING_KEY_ENV}; an ephemeral boot key cannot authorize paid remote execution`,
+    };
+  }
+  if (str(authority.keyId) !== resolved.keyId) return { ok: false, reasonCode: "seal-key-mismatch", reason: "authority sealed under a different key — treating as untrusted" };
+  const expected = hmacSeal(resolved.key, { ...authority, seal: undefined });
   const got = str(authority.seal);
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(got, "utf8");
@@ -134,20 +145,7 @@ const failure = (reasonCode, reason) => ({ ok: false, reasonCode, reason, author
 
 /**
  * Compile the canonical, server-owned compute authority for one governed
- * training run. Deterministic over durable workspace state (recompiling with
- * unchanged inputs yields the same `authorityHash`), so drift detection is a
- * hash comparison. Returns `{ ok, reasonCode, reason, authority }`; the
- * authority is sealed.
- *
- * @param {object} opts.workspaceConfig  current governed config
- * @param {string} opts.trainingRunId    the model-training-run identity
- * @param {object} [opts.request]        customer request override (defaults
- *                                       to the receipt row's computeRequest)
- * @param {object} [opts.datasetManifest] { corpusSha256, sizeBytes } when the
- *                                       server has materialized the corpus
- * @param {string} [opts.now]            ISO timestamp (evidence only — never
- *                                       part of the content identity)
- * @param {object} [opts.env]            key resolution environment
+ * training run. Deterministic over durable workspace state.
  */
 export function compileComputeAuthority({
   workspaceConfig = null,
@@ -175,8 +173,6 @@ export function compileComputeAuthority({
   const outputModelTag = req.outputModelTag;
   if (!outputModelTag) return failure("output-identity-missing", "requested output model tag is required for compute authority");
 
-  // Cross-check the request against the governed receipt row: a request that
-  // contradicts the run's own durable identity is rejected, not repaired.
   if (req.baseModel && req.baseModel !== baseModel) {
     return failure("base-model-conflict", `request base model "${req.baseModel}" contradicts the governed receipt's "${baseModel}"`);
   }
@@ -195,16 +191,12 @@ export function compileComputeAuthority({
     return failure("training-row-stale", `model-training row "${trainingRowBinding.rowName}" carries base model "${trainingRowBinding.baseModel}", receipt claims "${baseModel}" — stale or tampered lineage`);
   }
 
-  // Server-side recompilation of the exact workload from PURE derivers over
-  // durable evidence (never from a caller-supplied plan or step list).
   const preflight = row.preflight && typeof row.preflight === "object" ? row.preflight : null;
   const adaptivePlan = buildAdaptiveStudentPlan({ preflight, requestedBaseModel: baseModel });
   const capacityPlan = deriveCapacityPlan({
     plan: adaptivePlan,
     preflight,
     workloadKind: "fine-tune",
-    // Quote-estimation input from the customer request; 0 keeps total cost
-    // unknown, which the resolver refuses under a hard cap (never zero).
     estimatedDurationMinutes: req.estimatedDurationMinutes,
   });
   const capacityProfileId = req.capacityProfileId && resolveCapacityProfile(req.capacityProfileId)
@@ -263,22 +255,22 @@ export function compileComputeAuthority({
     compiledBy: "workspace-server",
     compiledAt: str(now),
   };
-  // Content identity excludes the compile timestamp so re-compilation over
-  // unchanged inputs is hash-stable (drift detection = hash comparison).
   const authorityHash = hashComputeValue({ ...body, compiledAt: undefined });
-  const authority = sealComputeAuthority({ ...body, authorityHash }, resolveComputeAuthorityKey(env));
+  const resolvedKey = resolveComputeAuthorityKey(env);
+  if (resolvedKey.source === "ephemeral" && durableAuthorityKeyRequired(env)) {
+    return failure(
+      "authority-key-missing",
+      `production compute authority requires ${COMPUTE_AUTHORITY_KEY_ENV} or ${WORKSPACE_SIGNING_KEY_ENV}; refusing remote authority compilation under an ephemeral boot key`,
+    );
+  }
+  const authority = sealComputeAuthority({ ...body, authorityHash }, resolvedKey);
   return { ok: true, reasonCode: "", reason: "authority compiled and sealed", authority };
 }
 
 /**
- * Verify a PERSISTED authority against the workspace it claims to govern.
- * Trust requires BOTH: (1) the server seal verifies, and (2) recompiling
- * from current authoritative inputs reproduces the same content identity.
- * A caller-supplied object that is merely self-consistent fails here.
- *
- * Returns `{ ok, reasonCode, reason, recompiled }` where `recompiled` is the
- * freshly compiled authority (usable when the caller wants to proceed with
- * current truth after a seal-only failure).
+ * Verify a persisted authority against the workspace it claims to govern.
+ * The seal is verified BEFORE any persisted dataset metadata is reused for
+ * recompilation; untrusted authority fields never become compiler inputs.
  */
 export function verifyComputeAuthorityAgainstWorkspace({
   workspaceConfig = null,
@@ -287,21 +279,20 @@ export function verifyComputeAuthorityAgainstWorkspace({
   env = process.env,
   now = "",
 } = {}) {
+  const seal = verifyComputeAuthoritySeal(authority, env);
+  if (!seal.ok) return { ok: false, reasonCode: seal.reasonCode, reason: seal.reason, recompiled: null };
+
+  const internal = verifyComputeAuthority({ intent: authority.intent, workSpec: authority.workSpec });
+  if (!internal.ok) return { ok: false, reasonCode: "authority-inconsistent", reason: "sealed authority failed internal intent/work-spec lineage validation", recompiled: null };
+
   const recompileResult = compileComputeAuthority({
     workspaceConfig,
     trainingRunId,
-    datasetManifest: authority?.dataset,
+    datasetManifest: authority.dataset,
     now,
     env,
   });
   const recompiled = recompileResult.ok ? recompileResult.authority : null;
-
-  const seal = verifyComputeAuthoritySeal(authority, env);
-  if (!seal.ok) return { ok: false, reasonCode: seal.reasonCode, reason: seal.reason, recompiled };
-
-  const internal = verifyComputeAuthority({ intent: authority.intent, workSpec: authority.workSpec });
-  if (!internal.ok) return { ok: false, reasonCode: "authority-inconsistent", reason: "sealed authority failed internal intent/work-spec lineage validation", recompiled };
-
   if (!recompileResult.ok) {
     return { ok: false, reasonCode: recompileResult.reasonCode, reason: `authoritative inputs no longer compile: ${recompileResult.reason}`, recompiled };
   }
