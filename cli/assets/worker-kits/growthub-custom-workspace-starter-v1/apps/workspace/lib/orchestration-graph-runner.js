@@ -148,14 +148,22 @@ function isAwaitingToolResult(result) {
 function classifySandboxRunResult(result, { auditRequired = false, auditPersisted = true } = {}) {
   const awaitingToolResult = isAwaitingToolResult(result);
   const auditUnpersisted = auditRequired && !auditPersisted;
-  const runOk = !awaitingToolResult && !auditUnpersisted && result?.exitCode === 0 && !result?.error;
+  // A pending provider-compute continuation is a live governed run, not a
+  // terminal outcome: the paid allocation is journaled and observation
+  // continues through the same route. It must never classify as failed.
+  const computePending = !awaitingToolResult
+    && !auditUnpersisted
+    && result?.adapterMeta?.compute?.pending === true
+    && !result?.error;
+  const runOk = !awaitingToolResult && !auditUnpersisted && (computePending || (result?.exitCode === 0 && !result?.error));
   return {
     awaitingToolResult,
     auditUnpersisted,
+    computePending,
     runOk,
-    executionStatus: auditUnpersisted ? "audit_unpersisted" : awaitingToolResult ? "awaiting_tool_result" : runOk ? "completed" : "failed",
-    rowStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "pending" : runOk ? "connected" : "failed",
-    outcomeStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "drafted" : runOk ? "tested" : "failed",
+    executionStatus: auditUnpersisted ? "audit_unpersisted" : awaitingToolResult ? "awaiting_tool_result" : computePending ? "pending" : runOk ? "completed" : "failed",
+    rowStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "pending" : computePending ? "pending" : runOk ? "connected" : "failed",
+    outcomeStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "drafted" : computePending ? "drafted" : runOk ? "tested" : "failed",
   };
 }
 

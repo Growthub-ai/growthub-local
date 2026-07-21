@@ -105,9 +105,21 @@ function mergeEvents(previous = [], next = []) {
     "compute-released",
     "compute-release-failed",
   ]);
-  const critical = ordered.filter((event) => criticalTypes.has(event.type));
-  const latest = ordered.slice(-Math.max(0, MAX_EVENTS - critical.length));
-  return mergeEvents([], [...critical, ...latest]).slice(-MAX_EVENTS);
+  // Never recurse during compaction: a hostile provider may emit more
+  // critical events than the cap. Preserve the first request anchor, newest
+  // critical transitions, then newest non-critical context.
+  const firstRequest = ordered.find((event) => event.type === "compute-requested") || null;
+  const criticalTail = ordered
+    .filter((event) => criticalTypes.has(event.type) && event !== firstRequest)
+    .slice(-(MAX_EVENTS - (firstRequest ? 1 : 0)));
+  const criticalIds = new Set([
+    ...(firstRequest ? [eventIdentity(firstRequest)] : []),
+    ...criticalTail.map(eventIdentity),
+  ]);
+  const remaining = Math.max(0, MAX_EVENTS - criticalIds.size);
+  const nonCriticalTail = ordered.filter((event) => !criticalTypes.has(event.type)).slice(-remaining);
+  const keepIds = new Set([...criticalIds, ...nonCriticalTail.map(eventIdentity)]);
+  return ordered.filter((event) => keepIds.has(eventIdentity(event))).slice(-MAX_EVENTS);
 }
 
 function mergeCheckpoints(previous = [], next = []) {
@@ -136,15 +148,23 @@ export function mergeComputeBlocks(previous, next) {
     policy: incoming.policy || prior.policy,
     decision: incoming.decision || prior.decision,
     capabilities: incoming.capabilities || prior.capabilities,
+    observation: incoming.observation || prior.observation
+      ? { ...(prior.observation || {}), ...(incoming.observation || {}) }
+      : null,
+    dataset: incoming.dataset || prior.dataset
+      ? { ...(prior.dataset || {}), ...(incoming.dataset || {}) }
+      : null,
     allocation: incoming.allocation || prior.allocation,
     events: mergeEvents(prior.events, incoming.events),
     checkpoints: mergeCheckpoints(prior.checkpoints, incoming.checkpoints),
     artifact: incoming.artifact || prior.artifact,
+    // Legacy/provider-authored evaluation is never carried forward as
+    // promotion authority. Only the workspace-owned evaluator may persist.
     evaluation: incoming?.evaluation?.source === "workspace-canonical"
       ? incoming.evaluation
       : prior?.evaluation?.source === "workspace-canonical"
         ? prior.evaluation
-        : incoming.evaluation || prior.evaluation,
+        : null,
     evidenceObservedAt: incoming.evidenceObservedAt || prior.evidenceObservedAt,
   });
 }
@@ -221,14 +241,18 @@ function providerMayBeObserved(provider, policy, selectionMode, pinnedProviderId
   const availability = Array.isArray(provider?.availabilityModes)
     ? provider.availabilityModes.map(String)
     : [];
-  if (selectionMode === "explicit" && pinnedProviderId) return providerId === pinnedProviderId;
-  if (policy?.mode === "local" || policy?.localOnly === true) return providerId === LOCAL_PROVIDER_ID;
-  if (policy?.mode === "cloud" || policy?.excludeLocal === true) return providerId !== LOCAL_PROVIDER_ID;
+  // Hard customer policy gates are evaluated before an explicit pin. A pin
+  // selects within the allowed universe; it cannot authorize a forbidden
+  // local, remote, reserved, or spot provider to receive even a quote probe.
+  if (policy?.mode === "local" || policy?.localOnly === true) {
+    if (providerId !== LOCAL_PROVIDER_ID) return false;
+  }
+  if ((policy?.mode === "cloud" || policy?.excludeLocal === true) && providerId === LOCAL_PROVIDER_ID) return false;
   if (policy?.mode === "reserved-cluster" || policy?.reservedOnly === true) {
-    return providerId !== LOCAL_PROVIDER_ID
-      && availability.some((mode) => mode === "reserved" || mode === "warm");
+    if (providerId === LOCAL_PROVIDER_ID || !availability.some((mode) => mode === "reserved" || mode === "warm")) return false;
   }
   if (policy?.allowPreemptible !== true && availability.length === 1 && availability[0] === "spot") return false;
+  if (selectionMode === "explicit" && pinnedProviderId) return providerId === pinnedProviderId;
   return true;
 }
 
@@ -260,6 +284,7 @@ function baseCtx({
   runRef = null,
   intent = null,
   workSpec = null,
+  datasetAccess = null,
 }) {
   return {
     runRef: runRef || {
@@ -277,6 +302,9 @@ function baseCtx({
     intentHash: str(intent?.intentHash),
     requirementsHash: str(intent?.requirementsHash),
     workSpecHash: str(workSpec?.workSpecHash),
+    // Short-lived bearer capability. It exists only in adapter call context
+    // and is deliberately excluded from every normalized receipt shape.
+    datasetAccess: datasetAccess && typeof datasetAccess === "object" ? datasetAccess : null,
     providerConfig: providerConfig || {},
     resolveEnv: typeof io.resolveEnv === "function" ? io.resolveEnv : () => "",
     fetchJson: typeof io.fetchJson === "function"
@@ -327,6 +355,8 @@ export async function executeProviderComputeRun({
   priorCompute = null,
   requireAuthority = false,
   authority = null,
+  datasetAccess = null,
+  datasetEvidence = null,
   io = null,
 } = {}) {
   if (!io || typeof io.getAdapter !== "function" || typeof io.now !== "function") {
@@ -419,6 +449,7 @@ export async function executeProviderComputeRun({
       intent,
       workSpec,
       policy,
+      dataset: datasetEvidence,
       evidenceObservedAt: nowIso(io),
     });
     const computeBlock = await persistMerged(io, prior, blocked);
@@ -441,6 +472,53 @@ export async function executeProviderComputeRun({
   }
 
   if (selectedId === LOCAL_PROVIDER_ID) return { localFallthrough: true, computeBlock: prior, result: null };
+
+  // A paid/remote production allocation is unsafe when the initiating request
+  // is the only observer. QStash readiness is server-owned and checked before
+  // allocation; local/test operation may still use explicit/manual observe.
+  if (io.requireDurableObservation === true && io.observationSchedulerReady !== true) {
+    const blocked = normalizeComputeBlock({
+      capacityProfileId,
+      selectionMode: decision.selectionMode,
+      decision,
+      authority: sealedAuthority,
+      intent,
+      workSpec,
+      policy,
+      observation: {
+        schema: "growthub-compute-observation-v1",
+        mode: "manual",
+        status: "manual",
+        attempt: 0,
+        nextAttempt: 1,
+        maxAttempts: 0,
+        requestId: "",
+        messageId: "",
+        scheduleId: "",
+        scheduledAt: "",
+        nextObservationAt: "",
+        lastObservedAt: "",
+        lastErrorCode: "observation-scheduler-unavailable",
+        authorityHash: str(sealedAuthority?.authorityHash),
+        workSpecHash: str(workSpec?.workSpecHash),
+      },
+      evidenceObservedAt: nowIso(io),
+    });
+    const computeBlock = await persistMerged(io, prior, blocked);
+    return {
+      localFallthrough: false,
+      computeBlock,
+      result: {
+        ok: false,
+        exitCode: null,
+        durationMs: 0,
+        stdout: "",
+        stderr: "",
+        error: "durable-observation-unavailable: remote production compute requires a configured signed QStash observer before paid allocation",
+        adapterMeta: { adapter: "provider-compute", providerId: selectedId, compute: { blocked: true, reasonCode: "durable-observation-unavailable" } },
+      },
+    };
+  }
 
   const provider = observableProviders.find((candidate) => candidate.providerId === selectedId);
   const adapter = provider ? io.getAdapter(provider.adapterId) : null;
@@ -479,6 +557,15 @@ export async function executeProviderComputeRun({
   let events = Array.isArray(prior?.events) ? [...prior.events] : [];
   let checkpoints = Array.isArray(prior?.checkpoints) ? [...prior.checkpoints] : [];
   let allocation = prior?.allocation || null;
+  // True whenever this invocation continues a provider submission that
+  // already happened (journaled allocation adopted, or an ambiguous accept
+  // reconciled). Dataset delivery evidence follows the SUBMISSION: the
+  // journaled grant is the identity the provider actually fetched under; a
+  // freshly issued grant binds only when THIS invocation performs the create.
+  let allocationContinued = false;
+  const submissionDataset = () => (allocationContinued && prior?.dataset
+    ? prior.dataset
+    : (datasetEvidence || prior?.dataset || null));
 
   if (allocation && !allocation.releaseConfirmed) {
     if (allocation.idempotencyKeyHash !== idempotencyKeyHash) {
@@ -501,6 +588,7 @@ export async function executeProviderComputeRun({
       };
     }
     runRef.providerResourceId = str(allocation.runRef?.providerResourceId || allocation.allocationId);
+    allocationContinued = true;
   } else {
     allocation = null;
   }
@@ -519,6 +607,7 @@ export async function executeProviderComputeRun({
     workSpecHash: workSpec?.workSpecHash,
     policy,
     capabilities: capabilitiesById[selectedId] || prior?.capabilities || null,
+    dataset: submissionDataset(),
     events,
     checkpoints,
     allocation,
@@ -543,7 +632,56 @@ export async function executeProviderComputeRun({
     runRef,
     intent,
     workSpec,
+    datasetAccess,
   });
+
+  const allocationUnverifiedEventId = `workspace:allocation-state-unverified:${idempotencyKeyHash}`;
+  const allocationStateUnverified = events.some((event) =>
+    str(event?.providerEventId) === allocationUnverifiedEventId
+      || str(event?.detail).includes("allocation-state-unverified"));
+
+  const adoptReconciledAllocation = async (candidate) => {
+    if (!candidate || candidate.status === "failed" || !str(candidate.allocationId).trim()) return false;
+    runRef.providerResourceId = str(candidate.runRef?.providerResourceId || candidate.allocationId);
+    allocation = {
+      ...candidate,
+      runRef: { ...(candidate.runRef || runRef), providerResourceId: runRef.providerResourceId },
+      idempotencyKeyHash,
+      workSpecHash: workSpec?.workSpecHash || "",
+      reconciled: true,
+    };
+    allocationContinued = true;
+    events.push({
+      ...workspaceEvent(io, "compute-allocated", runRef, `allocation ${allocation.allocationId} reconciled after an ambiguous provider response`, `workspace:allocation:${allocation.allocationId}`),
+      source: "provider",
+    });
+    await persist({ allocation });
+    return true;
+  };
+
+  // A prior call may have crossed the paid boundary but lost the provider
+  // response before the allocation id was persisted. Never call allocate again
+  // until deterministic provider reconciliation either adopts that resource or
+  // proves it does not exist.
+  if (!allocation && allocationStateUnverified) {
+    const reconciled = typeof adapter.reconcile === "function"
+      ? await safeCall(() => adapter.reconcile(ctx()))
+      : null;
+    if (!reconciled?.__error && await adoptReconciledAllocation(reconciled)) {
+      // Continue with the adopted resource below.
+    } else {
+      const computeBlock = await persist({ allocation: null });
+      return pendingResult({
+        io,
+        startedMs,
+        providerId: selectedId,
+        capacityProfileId,
+        computeBlock,
+        reason: "allocation-state-unverified: provider reconciliation has not yet produced a canonical resource id; no second paid allocation was attempted",
+        remoteStateUnverified: true,
+      });
+    }
+  }
 
   if (!allocation) {
     events.push(workspaceEvent(
@@ -556,26 +694,45 @@ export async function executeProviderComputeRun({
     await persist();
 
     let observedAllocation = await safeCall(() => adapter.allocate(ctx()));
-    if (observedAllocation?.__error
-      || !observedAllocation
-      || observedAllocation.status === "failed"
-      || !str(observedAllocation.allocationId).trim()) {
-      const reason = observedAllocation?.__error || observedAllocation?.error || "provider did not return a verifiable allocation";
+    if (observedAllocation && !observedAllocation.__error && observedAllocation.status === "failed") {
+      const reason = observedAllocation.error || "provider explicitly refused allocation";
       events.push(workspaceEvent(io, "compute-failed", runRef, `allocation failed: ${reason}`));
-      const computeBlock = await persist({ allocation: observedAllocation?.__error ? null : observedAllocation });
+      const computeBlock = await persist({ allocation: observedAllocation });
       return {
         localFallthrough: false,
         computeBlock,
-        result: {
-          ok: false,
-          exitCode: null,
-          durationMs: io.now() - startedMs,
-          stdout: "",
-          stderr: "",
-          error: `compute allocation failed: ${reason}`,
-          adapterMeta: { adapter: "provider-compute", providerId: selectedId },
-        },
+        result: { ok: false, exitCode: 1, durationMs: io.now() - startedMs, stdout: "", stderr: "", error: `compute allocation failed: ${reason}`, adapterMeta: { adapter: "provider-compute", providerId: selectedId } },
       };
+    }
+    if (observedAllocation?.__error || !observedAllocation || !str(observedAllocation.allocationId).trim()) {
+      // Network timeout/reset and a response with no resource id are ambiguous:
+      // the provider may already be billing. Reconcile by the exact sealed
+      // idempotency identity before deciding whether anything may be retried.
+      const reconciled = typeof adapter.reconcile === "function"
+        ? await safeCall(() => adapter.reconcile(ctx()))
+        : null;
+      if (!reconciled?.__error && reconciled && str(reconciled.allocationId).trim()) {
+        observedAllocation = reconciled;
+      } else {
+        const reason = observedAllocation?.__error || "provider returned no allocation identity";
+        events.push(workspaceEvent(
+          io,
+          "compute-requested",
+          runRef,
+          `allocation-state-unverified: ${reason}; deterministic reconciliation is required before any further paid create`,
+          allocationUnverifiedEventId,
+        ));
+        const computeBlock = await persist({ allocation: null });
+        return pendingResult({
+          io,
+          startedMs,
+          providerId: selectedId,
+          capacityProfileId,
+          computeBlock,
+          reason: "allocation-state-unverified: provider acceptance could not be confirmed; no second paid allocation was attempted",
+          remoteStateUnverified: true,
+        });
+      }
     }
 
     const reported = observedAllocation.allocated && typeof observedAllocation.allocated === "object"
@@ -727,16 +884,51 @@ export async function executeProviderComputeRun({
   }
 
   let artifact = prior?.artifact || null;
+  let dataEvidence = submissionDataset();
+  let datasetDeliveryReason = "";
+  let deliveryVerified = dataEvidence?.deliveryStatus === "delivered";
+  if (!deliveryVerified && lifecycle.terminal === "completed" && typeof io.verifyDatasetDelivery === "function") {
+    const delivery = await safeCall(() => io.verifyDatasetDelivery({ evidence: dataEvidence, workSpec }));
+    if (!delivery?.__error && delivery?.ok === true) {
+      deliveryVerified = true;
+      dataEvidence = {
+        ...dataEvidence,
+        deliveryStatus: "delivered",
+        deliveredAt: str(delivery.receipt?.deliveredAt),
+        reasonCode: "",
+      };
+    } else {
+      datasetDeliveryReason = str(delivery?.reason || delivery?.__error || "dataset delivery could not be proven");
+      dataEvidence = { ...dataEvidence, deliveryStatus: "unverified", reasonCode: str(delivery?.reasonCode || "dataset-delivery-unverified") };
+    }
+    await persist({ allocation, dataset: dataEvidence });
+  }
   if (lifecycle.terminal === "completed" && !artifact && typeof adapter.collectArtifact === "function") {
     const collected = await safeCall(() => adapter.collectArtifact(ctx()));
     if (!collected?.__error && collected) {
       const { evaluationResults: _untrustedEvaluation, ...artifactEvidence } = collected;
+      const reportedWorkSpecHash = str(artifactEvidence.workSpecHash);
+      const reportedCorpusSha256 = str(artifactEvidence.corpusSha256 || artifactEvidence.datasetSha256);
+      const expectedWorkSpecHash = str(workSpec?.workSpecHash);
+      const expectedCorpusSha256 = str(workSpec?.dataset?.corpusSha256);
+      const providerAttestationVerified = Boolean(
+        reportedWorkSpecHash
+          && reportedCorpusSha256
+          && reportedWorkSpecHash === expectedWorkSpecHash
+          && reportedCorpusSha256 === expectedCorpusSha256,
+      );
+      const providerAttestationReason = providerAttestationVerified
+        ? "provider artifact binds the exact governed work-spec and corpus identities"
+        : `provider artifact attestation mismatch: expected workSpec=${expectedWorkSpecHash || "missing"} corpus=${expectedCorpusSha256 || "missing"}; received workSpec=${reportedWorkSpecHash || "missing"} corpus=${reportedCorpusSha256 || "missing"}`;
       const candidate = {
         ...artifactEvidence,
-        workSpecHash: workSpec?.workSpecHash || "",
+        workSpecHash: reportedWorkSpecHash,
+        corpusSha256: reportedCorpusSha256,
         requirementsHash: intent?.requirementsHash || "",
+        providerAttestationVerified,
+        providerAttestationReason,
       };
-      const verified = typeof io.verifyArtifact === "function"
+      const verified = providerAttestationVerified && deliveryVerified && typeof io.verifyArtifact === "function"
         ? await safeCall(() => io.verifyArtifact(candidate, workSpec))
         : null;
       artifact = verified && !verified.__error && verified.verifiedSha256 === candidate.sha256
@@ -746,30 +938,57 @@ export async function executeProviderComputeRun({
   }
 
   const honesty = deriveComputeArtifactHonesty({ lifecycle, artifact });
-  const evaluation = null;
+  let evaluation = prior?.evaluation?.source === "workspace-canonical" ? prior.evaluation : null;
+  let evaluationPendingReason = "";
 
+  // Paid training capacity is released before any workspace benchmark work.
+  // Evaluation can take many model calls and must never extend provider billing.
   events.push(workspaceEvent(io, "compute-release-requested", runRef, "governed release of provider capacity"));
-  await persist({ allocation, artifact, evaluation });
+  await persist({ allocation, artifact, evaluation, dataset: dataEvidence });
   const released = await safeCall(() => adapter.release(ctx()));
   if (released?.__error) {
     events.push(workspaceEvent(io, "compute-release-failed", runRef, `release failed: ${released.__error} — capacity may still exist and cost may accrue`));
   } else {
     for (const event of Array.isArray(released) ? released : []) events.push(event);
   }
-  const computeBlock = await persist({ allocation, artifact, evaluation });
+  let computeBlock = await persist({ allocation, artifact, evaluation, dataset: dataEvidence });
   lifecycle = deriveComputeLifecycle({
     events: computeBlock?.events,
     allocation: computeBlock?.allocation,
     checkpoints: computeBlock?.checkpoints,
   });
 
+  if (honesty.promotable && !evaluation) {
+    if (!lifecycle.releaseConfirmed) {
+      evaluationPendingReason = "canonical evaluation waits until provider capacity release is confirmed";
+    } else if (typeof io.evaluateArtifact === "function") {
+      const evaluated = await safeCall(() => io.evaluateArtifact({ artifact, workSpec, intent, trainingRunId }));
+      if (!evaluated?.__error && evaluated?.ok === true && evaluated?.evaluation?.source === "workspace-canonical") {
+        evaluation = evaluated.evaluation;
+      } else {
+        evaluationPendingReason = str(evaluated?.reason || evaluated?.__error || "canonical evaluator returned no authoritative result");
+      }
+    } else {
+      evaluationPendingReason = "workspace canonical evaluator is unavailable";
+    }
+    computeBlock = await persistMerged(io, computeBlock, {
+      ...computeBlock,
+      evaluation,
+      evidenceObservedAt: nowIso(io),
+    });
+  }
+
   const ok = lifecycle.terminal === "completed" && honesty.promotable && lifecycle.releaseConfirmed;
   const summary = {
     providerId: selectedId,
     capacityProfileId,
     terminal: lifecycle.terminal,
+    datasetDelivered: deliveryVerified,
+    datasetDeliveryReason,
     artifactVerified: honesty.promotable,
-    canonicalEvaluationPending: lifecycle.terminal === "completed" && honesty.promotable,
+    canonicalEvaluationPending: lifecycle.terminal === "completed" && honesty.promotable && !evaluation,
+    canonicalEvaluationPromoted: evaluation?.benchmarkWins?.promoted === true,
+    evaluationPendingReason,
     releaseConfirmed: lifecycle.releaseConfirmed,
     capacityMayStillExist: lifecycle.capacityMayStillExist,
     costMayAccrue: lifecycle.costMayAccrue,
@@ -785,9 +1004,11 @@ export async function executeProviderComputeRun({
       stdout: JSON.stringify(summary),
       stderr: "",
       ...(ok ? {} : {
-        error: lifecycle.terminal === "completed" && honesty.promotable
-          ? "artifact verified but provider capacity release is not confirmed"
-          : lifecycle.terminal === "completed" ? honesty.reason : `provider compute ${lifecycle.terminal || "did not complete"}`,
+        error: lifecycle.terminal === "completed" && !deliveryVerified
+          ? `provider completed but governed dataset delivery is unproven: ${datasetDeliveryReason || "no signed delivery receipt"}`
+          : lifecycle.terminal === "completed" && honesty.promotable
+            ? "artifact verified but provider capacity release is not confirmed"
+            : lifecycle.terminal === "completed" ? honesty.reason : `provider compute ${lifecycle.terminal || "did not complete"}`,
       }),
       adapterMeta: { adapter: "provider-compute", providerId: selectedId, compute: summary },
     },
@@ -1032,10 +1253,18 @@ export async function maybeExecuteProviderComputeForSandboxRun({
   if (!request) return null;
   if (request.policy.mode === "local" || request.policy.localOnly === true) return null;
 
+  if (typeof io?.materializeDataset !== "function") {
+    return refusal(prior, "compute dataset materializer unavailable — remote execution requires server-owned corpus bytes", "dataset-materializer-unavailable");
+  }
+  const stagedDataset = await io.materializeDataset({ trainingRunId, request });
+  if (!stagedDataset?.ok || !stagedDataset.manifest) {
+    return refusal(prior, `compute dataset materialization failed (${str(stagedDataset?.reasonCode) || "unknown"}): ${str(stagedDataset?.reason) || "no detail"}`, str(stagedDataset?.reasonCode) || "dataset-materialization-failed");
+  }
+
   if (typeof io?.compileAuthority !== "function") {
     return refusal(prior, "compute authority compiler unavailable — remote-capable compute is refused without server-owned authority", "authority-compiler-unavailable");
   }
-  const compiled = await io.compileAuthority({ trainingRunId, request });
+  const compiled = await io.compileAuthority({ trainingRunId, request, datasetManifest: stagedDataset.manifest });
   if (!compiled?.ok || !compiled.authority) {
     return refusal(
       prior,
@@ -1056,7 +1285,7 @@ export async function maybeExecuteProviderComputeForSandboxRun({
     if (typeof io.verifyAuthority !== "function") {
       return refusal(prior, "compute authority verifier unavailable — refusing to supersede journaled authority", "authority-verifier-unavailable");
     }
-    const verdict = await io.verifyAuthority(prior.authority);
+    const verdict = await io.verifyAuthority(prior.authority, stagedDataset.manifest);
     if (!verdict || verdict.contentMatches !== true) {
       return refusal(
         prior,
@@ -1092,6 +1321,19 @@ export async function maybeExecuteProviderComputeForSandboxRun({
     };
   }
 
+  if (typeof io?.issueDatasetAccess !== "function") {
+    return refusal(prior, "compute dataset grant issuer unavailable — remote provider cannot receive governed corpus bytes", "dataset-access-unavailable");
+  }
+  const grant = await io.issueDatasetAccess({
+    manifest: stagedDataset.manifest,
+    trainingRunId,
+    workSpecHash: authority.workSpecHash,
+    priorEvidence: prior?.dataset || null,
+  });
+  if (!grant?.ok || !grant.access || !grant.evidence) {
+    return refusal(prior, `compute dataset access failed (${str(grant?.reasonCode) || "unknown"}): ${str(grant?.reason) || "no detail"}`, str(grant?.reasonCode) || "dataset-access-failed");
+  }
+
   const outcome = await executeProviderComputeRun({
     workspaceConfig,
     trainingRunId,
@@ -1106,6 +1348,8 @@ export async function maybeExecuteProviderComputeForSandboxRun({
     priorCompute: prior,
     requireAuthority: true,
     authority,
+    datasetAccess: grant.access,
+    datasetEvidence: { ...grant.evidence, manifestHash: stagedDataset.manifest.manifestHash, exportId: stagedDataset.manifest.exportId },
     io,
   });
   if (outcome.localFallthrough) return null;

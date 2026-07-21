@@ -155,6 +155,11 @@ const modalAdapter = {
       supportsGangScheduling: clustered,
       regions: c.region ? [c.region] : [],
       requiredEnv: [c.tokenIdEnv, c.tokenSecretEnv],
+      allocationIdempotency: {
+        guaranteed: false,
+        mode: "endpoint-contract",
+        evidence: "the deployed Modal function must dynamically attest growthub-idempotency-key-v1 at /health",
+      },
     };
   },
 
@@ -168,11 +173,15 @@ const modalAdapter = {
 
     // Availability is PROVEN by the deployed endpoint answering, never assumed.
     let reachable = false;
+    let allocationIdempotencyVerified = false;
     let probeDetail = "";
     if (config.baseUrl) {
       try {
-        await ctx.fetchJson(`${config.baseUrl}/health`, { headers: authHeaders(ctx, config) });
+        const health = await ctx.fetchJson(`${config.baseUrl}/health`, { headers: authHeaders(ctx, config) });
         reachable = true;
+        allocationIdempotencyVerified = String(
+          health?.growthub?.allocationIdempotency || health?.allocationIdempotency || "",
+        ) === "growthub-idempotency-key-v1";
       } catch (error) {
         probeDetail = str(error?.message).slice(0, 120);
       }
@@ -195,7 +204,13 @@ const modalAdapter = {
       quoteObservedAt: observedAt,
       quoteExpiresAt: expiry,
       quoteRef: gpu ? gpu.gpu : "",
-      ...(probeDetail ? { adapterMeta: { probeDetail } } : {}),
+      allocationIdempotencyVerified,
+      ...(probeDetail || !allocationIdempotencyVerified
+        ? { adapterMeta: {
+            ...(probeDetail ? { probeDetail } : {}),
+            ...(!allocationIdempotencyVerified ? { allocationIdempotency: "growthub-idempotency-key-v1 attestation missing" } : {}),
+          } }
+        : {}),
     };
   },
 
@@ -213,6 +228,7 @@ const modalAdapter = {
       headers: authHeaders(ctx, config),
       body: JSON.stringify({
         workSpec: ctx?.workSpec,
+        datasetAccess: ctx?.datasetAccess,
         gpu: gpu ? `${gpu.gpu}${gpuCount > 1 ? `:${gpuCount}` : ""}` : "",
         growthub: {
           trainingRunId: str(ctx?.runRef?.trainingRunId),
@@ -237,6 +253,47 @@ const modalAdapter = {
       costBasis: gpu ? { kind: "per-hour", unitUsd: gpu.usdPerHour * gpuCount, source: "static-catalog (billed per second)" } : { kind: "unknown", unitUsd: 0, source: "" },
       allocatedAt: new Date().toISOString(),
       allocated: { gpuType: gpu ? gpu.gpu : "", gpuCount, workers: Math.max(1, Math.floor(num(ctx?.requirements?.distributed?.workers, 1))), region: config.region },
+    };
+  },
+
+  async reconcile(ctx) {
+    const config = cfg(ctx);
+    if (!config.baseUrl || !ctx?.idempotencyKeyHash) return null;
+    // A health-attested growthub-idempotency-key-v1 endpoint must return the
+    // same call id when /submit is repeated with the same key.
+    const gpu = modalGpuFor({ requirements: ctx?.requirements, config });
+    const gpuCount = Math.max(1, Math.floor(num(ctx?.requirements?.gpuCount, 1)));
+    const submitted = await ctx.fetchJson(`${config.baseUrl}/submit`, {
+      method: "POST",
+      headers: authHeaders(ctx, config),
+      body: JSON.stringify({
+        workSpec: ctx?.workSpec,
+        datasetAccess: ctx?.datasetAccess,
+        gpu: gpu ? `${gpu.gpu}${gpuCount > 1 ? `:${gpuCount}` : ""}` : "",
+        growthub: {
+          trainingRunId: str(ctx?.runRef?.trainingRunId),
+          capacityProfileId: str(ctx?.capacityProfileId),
+          idempotencyKey: str(ctx?.idempotencyKeyHash),
+          workSpecHash: str(ctx?.workSpecHash),
+          reconcile: true,
+        },
+      }),
+    });
+    const callId = str(submitted?.call_id || submitted?.callId);
+    if (!callId) return null;
+    return {
+      allocationId: callId,
+      runRef: { ...(ctx?.runRef || {}), providerResourceId: callId },
+      status: "allocated",
+      idempotencyKeyHash: str(ctx.idempotencyKeyHash),
+      availabilityMode: config.warmContainers > 0 ? "warm" : "on-demand",
+      costBasis: gpu ? { kind: "per-hour", unitUsd: gpu.usdPerHour * gpuCount, source: "static-catalog (idempotent endpoint reconciliation)" } : { kind: "unknown", unitUsd: 0, source: "" },
+      requestedAt: new Date().toISOString(),
+      allocatedAt: new Date().toISOString(),
+      releasedAt: "",
+      releaseConfirmed: false,
+      allocated: { gpuType: gpu ? gpu.gpu : "", gpuCount, workers: Math.max(1, Math.floor(num(ctx?.requirements?.distributed?.workers, 1))), region: config.region },
+      reconciled: true,
     };
   },
 
@@ -284,6 +341,8 @@ const modalAdapter = {
       sha256: str(artifact.sha256),
       sizeBytes: Math.max(0, Math.floor(num(artifact.sizeBytes))),
       evidenceObservedAt: new Date().toISOString(),
+      workSpecHash: str(artifact.workSpecHash || call?.workSpecHash),
+      corpusSha256: str(artifact.corpusSha256 || call?.corpusSha256),
       evaluationResults: Array.isArray(call?.evaluationResults) ? call.evaluationResults : [],
     };
   },

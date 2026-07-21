@@ -943,6 +943,10 @@ export async function executeCustomModelWorkflow({
     clusterId: workflowVariant,
     allowedTargets: options.allowedTargets,
     ancestorReceiptIds: [...chainAncestry],
+    // The canonical evaluator itself is the tuned-endpoint verification
+    // probe. Only its explicitly marked tuned step may bypass a prior
+    // lastResponse verification stamp; base/teacher calls remain unchanged.
+    verificationProbe: options.verificationProbe === true,
   });
   const needsToolResult = (execution) => execution?.awaitingToolResult === true;
   const parentOf = (execution) => {
@@ -985,7 +989,7 @@ export async function executeCustomModelWorkflow({
   }
 
   if (workflowVariant === "eval-vs-base") {
-    const tuned = await call("tuned", prompt, { allowedTargets: ["local-student"] });
+    const tuned = await call("tuned", prompt, { allowedTargets: ["local-student"], verificationProbe: true });
     if (!tuned.ok || needsToolResult(tuned)) return { ...tuned, error: tuned.error || (needsToolResult(tuned) ? "trained student requested a tool result before evaluation can continue" : "the trained student is not available for evaluation") };
     const base = await call("base", prompt, { allowedTargets: ["local-base"], parentReceiptId: parentOf(tuned) });
     if (!base.ok || needsToolResult(base)) return { ...base, error: base.error || (needsToolResult(base) ? "base route requested a tool result before evaluation can continue" : "the governed base route is not available for evaluation") };

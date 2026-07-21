@@ -101,6 +101,16 @@ import {
   compileComputeAuthority,
   verifyComputeAuthorityAgainstWorkspace
 } from "@/lib/compute-authority";
+import {
+  issueComputeDatasetAccess,
+  materializeComputeDataset,
+  verifyComputeDatasetDelivery
+} from "@/lib/compute-data-plane";
+import {
+  createGovernedComputeFetchJson,
+  verifyGovernedComputeArtifact
+} from "@/lib/compute-network-policy";
+import { runCanonicalComputeEvaluation } from "@/lib/compute-canonical-evaluation";
 import { findTrainingRunReceiptRow } from "@/lib/compute-execution";
 import { parseJsonColumn } from "@/lib/compute-evidence";
 import { hashComputeValue, normalizeComputeRequest } from "@/lib/compute-work-spec";
@@ -128,7 +138,127 @@ import {
 } from "@/lib/distillation-gateway";
 import { trainingRunSourceKey } from "@/lib/training-run-receipts";
 import { resolveTrustedChildReceipt, resolveTrustedInferenceContinuation } from "@/lib/adapters/inference/continuation";
+import {
+  COMPUTE_OBSERVATION_SCHEMA,
+  computeObservationMaxAttempts,
+  computeObservationSchedulerReadiness,
+  scheduleComputeObservation,
+  verifyComputeObservationRequest
+} from "@/lib/compute-observation-scheduler";
 import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
+
+// All provider control-plane requests cross one server-owned DNS-pinned,
+// redirect-refusing, bounded outbound boundary.
+const governedComputeFetchJson = createGovernedComputeFetchJson();
+
+
+async function readSandboxRunRequestBody(request) {
+  const signature = String(request.headers.get("upstash-signature") || "").trim();
+  if (!signature) {
+    let body;
+    try { body = await request.json(); } catch {
+      return { ok: false, status: 400, error: "invalid JSON body" };
+    }
+    if (body?.observationKind === COMPUTE_OBSERVATION_SCHEMA || body?.actor === "qstash-compute-observer") {
+      return { ok: false, status: 401, error: "unsigned QStash compute observation refused" };
+    }
+    return { ok: true, body, signedObservation: false };
+  }
+  let rawBody = "";
+  try { rawBody = await request.text(); } catch {
+    return { ok: false, status: 400, error: "signed observation body could not be read" };
+  }
+  const requestOrigin = (() => { try { return new URL(request.url).origin; } catch { return ""; } })();
+  const verified = verifyComputeObservationRequest({
+    signature,
+    rawBody,
+    requestUrl: request.url,
+    requestOrigin,
+    env: process.env,
+  });
+  if (!verified?.ok) {
+    return { ok: false, status: 401, error: verified?.reason || "signed compute observation refused", reasonCode: verified?.reasonCode || "observation-signature-invalid" };
+  }
+  return { ok: true, body: verified.body, signedObservation: true };
+}
+
+async function validateSignedObservationAgainstJournal(body, request) {
+  const config = await readWorkspaceConfig().catch(() => null);
+  const row = config ? findTrainingRunReceiptRow(config, body?.name) : null;
+  const compute = parseJsonColumn(row?.compute);
+  const observation = compute?.observation && typeof compute.observation === "object" ? compute.observation : null;
+  const same = Boolean(
+    observation
+      && String(observation.requestId || "") === String(body?.observationRequestId || "")
+      && Number(observation.attempt) === Number(body?.observationAttempt)
+      && String(observation.authorityHash || compute?.authorityHash || compute?.authority?.authorityHash || "") === String(body?.authorityHash || "")
+      && String(observation.workSpecHash || compute?.workSpecHash || "") === String(body?.workSpecHash || ""),
+  );
+  if (!same || ["terminal", "exhausted"].includes(String(observation?.status || ""))) {
+    return { ok: false, stale: true, reason: "signed observation is stale or no longer owns the journal continuation" };
+  }
+  const delivered = {
+    ...compute,
+    observation: {
+      ...observation,
+      status: "delivered",
+      lastObservedAt: new Date().toISOString(),
+      messageId: String(request.headers.get("upstash-message-id") || observation.messageId || ""),
+      lastErrorCode: "",
+    },
+  };
+  await persistComputeReceipt(String(body.name || ""), delivered);
+  return { ok: true };
+}
+
+async function attachNextComputeObservation({ trainingRunId, computeBlock, result, requestOrigin, body }) {
+  if (!computeBlock || result?.adapterMeta?.compute?.pending !== true) {
+    if (computeBlock?.observation) {
+      return {
+        ...computeBlock,
+        observation: {
+          ...computeBlock.observation,
+          status: "terminal",
+          nextObservationAt: "",
+          lastObservedAt: new Date().toISOString(),
+          lastErrorCode: "",
+        },
+      };
+    }
+    return computeBlock;
+  }
+  const previous = computeBlock?.observation && typeof computeBlock.observation === "object" ? computeBlock.observation : null;
+  const currentAttempt = Math.max(Number(previous?.attempt) || 0, Number(body?.observationAttempt) || 0);
+  const nextAttempt = currentAttempt + 1;
+  const scheduled = await scheduleComputeObservation({
+    trainingRunId,
+    authorityHash: String(computeBlock?.authorityHash || computeBlock?.authority?.authorityHash || ""),
+    workSpecHash: String(computeBlock?.workSpecHash || ""),
+    attempt: nextAttempt,
+    requestOrigin,
+    env: process.env,
+    fetchImpl: fetch,
+  });
+  if (scheduled?.ok && scheduled.evidence) return { ...computeBlock, observation: scheduled.evidence };
+  const exhausted = scheduled?.reasonCode === "observation-attempts-exhausted";
+  return {
+    ...computeBlock,
+    observation: {
+      ...(previous || {}),
+      schema: COMPUTE_OBSERVATION_SCHEMA,
+      mode: previous?.mode || "manual",
+      status: exhausted ? "exhausted" : "schedule-failed",
+      attempt: currentAttempt,
+      nextAttempt,
+      maxAttempts: Number(scheduled?.maxAttempts) || computeObservationMaxAttempts(process.env),
+      authorityHash: String(computeBlock?.authorityHash || computeBlock?.authority?.authorityHash || ""),
+      workSpecHash: String(computeBlock?.workSpecHash || ""),
+      nextObservationAt: "",
+      lastObservedAt: new Date().toISOString(),
+      lastErrorCode: String(scheduled?.reasonCode || "observation-publish-failed"),
+    },
+  };
+}
 
 function coerceBoolean(value) {
   if (value === true || value === false) return value;
@@ -363,6 +493,9 @@ function reconcileModelTrainingRunnerResult({ workspaceConfig, objectId, name, r
   if (!trainingRunId) return null;
   const runOk = response?.exitCode === 0 && !response?.error;
   if (runOk) return null;
+  // A pending provider-compute continuation is still executing under a
+  // journaled paid allocation — never demote the governed run row to failed.
+  if (response?.adapterMeta?.compute?.pending === true && !response?.error) return null;
   const reason = String(response?.stderr || response?.error || response?.stdout || "Runner failed before writing a progress receipt").trim();
   if (!reason) return null;
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
@@ -417,27 +550,6 @@ async function persistComputeReceipt(trainingRunId, computeBlock) {
   const nextObjects = applyComputeBlockToReceiptRows(objects, trainingRunId, computeBlock);
   if (!nextObjects) throw new Error(`training receipt ${trainingRunId} disappeared during compute execution`);
   await writeWorkspaceConfig({ dataModel: { ...(current.dataModel || {}), objects: nextObjects } });
-}
-
-/** Canonical artifact materialization/readback. Provider SHA claims alone fail. */
-async function verifyComputeArtifactBytes(artifact) {
-  const locator = String(artifact?.locator || "").trim();
-  if (!locator) throw new Error("artifact locator missing");
-  let bytes;
-  let kind;
-  if (/^https?:\/\//i.test(locator)) {
-    const res = await fetch(locator, { signal: AbortSignal.timeout(30000) });
-    if (!res.ok) throw new Error(`artifact readback HTTP ${res.status}`);
-    bytes = Buffer.from(await res.arrayBuffer());
-    kind = "materialized-http-bytes";
-  } else {
-    const filePath = locator.startsWith("file://") ? new URL(locator) : locator;
-    bytes = await fs.readFile(filePath);
-    kind = "materialized-file-bytes";
-  }
-  const verifiedSha256 = createHash("sha256").update(bytes).digest("hex");
-  if (verifiedSha256 !== String(artifact.sha256 || "")) throw new Error("materialized artifact SHA-256 does not match provider claim");
-  return { verifiedSha256, verificationKind: kind, sizeBytes: bytes.byteLength };
 }
 
 async function runServerlessScheduler({
@@ -759,6 +871,7 @@ async function executeSandboxRun(body, {
   traceparent = "",
   tracestate = "",
   appScope = "",
+  requestOrigin = "",
   signal,
 } = {}) {
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
@@ -976,9 +1089,10 @@ async function executeSandboxRun(body, {
   // runner run whose governed receipt carries a compute ask executes through
   // the compute orchestrator on the SAME seam — this route, this receipt,
   // this outcome lane. Every other run, and every resolver decision of
-  // "local", falls through to the existing local path byte-for-byte. There
-  // is no /api/compute/run.
+  // "local", falls through to the existing local path byte-for-byte. No
+  // parallel compute mutation route exists.
   let providerComputeBlock = null;
+  const observationReadiness = computeObservationSchedulerReadiness({ env: process.env, requestOrigin });
   if (!result && runLocality !== "serverless") {
     await ensureComputeAdaptersLoaded();
     try {
@@ -986,34 +1100,39 @@ async function executeSandboxRun(body, {
         workspaceConfig,
         objectId,
         name: rowForRun.Name || name,
-        action: ["run", "cancel", "resume"].includes(String(body?.computeAction || "run")) ? String(body?.computeAction || "run") : "run",
+        // "observe" is a governed continuation of the same durable run — it
+        // never creates a new mutation lane or a new training identity.
+        action: ["run", "observe", "cancel", "resume"].includes(String(body?.computeAction || "run")) ? String(body?.computeAction || "run") : "run",
         checkpointId: String(body?.checkpointId || ""),
         io: {
           getAdapter: getComputeProviderAdapter,
           listAdapterIds: listComputeProviderAdapters,
           envPresent: (envName) => Boolean(process.env[String(envName)]),
           resolveEnv: (envName) => process.env[String(envName)] || "",
-          fetchJson: async (url, init) => {
-            const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
-            const text = await res.text();
-            let parsed = null;
-            try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
-            if (!res.ok) {
-              const detail = parsed?.message || parsed?.error || text.slice(0, 200);
-              const err = new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
-              err.status = res.status;
-              throw err;
-            }
-            return parsed;
-          },
+          // Provider quote/allocation/status/cancel/release traffic is
+          // allowlisted, DNS-pinned, redirect-refused, and size-bounded.
+          fetchJson: governedComputeFetchJson,
           now: () => Date.now(),
           sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          observationSchedulerReady: observationReadiness.ready,
+          requireDurableObservation: process.env.NODE_ENV === "production",
           // Server-owned authority seam: compile fresh execution authority
           // from the governed rows (never from caller-supplied objects) and
           // verify anything read back from the caller-reachable store with
           // the ONE production verification function. Both re-read the
           // CURRENT config — never the request-start snapshot — so a
           // concurrent PATCH cannot slip a stale row past compilation.
+          materializeDataset: async ({ trainingRunId, request }) => materializeComputeDataset({
+            workspaceConfig: await readWorkspaceConfig(),
+            trainingRunId,
+            request,
+          }),
+          issueDatasetAccess: async ({ manifest, trainingRunId, workSpecHash }) => issueComputeDatasetAccess({
+            manifest,
+            trainingRunId,
+            workSpecHash,
+          }),
+          verifyDatasetDelivery: ({ evidence, workSpec }) => verifyComputeDatasetDelivery({ evidence, workSpec }),
           compileAuthority: async ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
             workspaceConfig: await readWorkspaceConfig(),
             trainingRunId,
@@ -1021,18 +1140,36 @@ async function executeSandboxRun(body, {
             datasetManifest,
             now: new Date().toISOString(),
           }),
-          verifyAuthority: async (authority) => verifyComputeAuthorityAgainstWorkspace({
+          verifyAuthority: async (authority, datasetManifest) => verifyComputeAuthorityAgainstWorkspace({
             workspaceConfig: await readWorkspaceConfig(),
             trainingRunId: rowForRun.Name || name,
             authority,
             // The trusted dataset manifest comes from server-owned records
             // only (remote data-plane workstream); never from the authority
             // under verification.
-            datasetManifest: null,
+            datasetManifest,
             now: new Date().toISOString(),
           }),
           persistCompute: (computeBlock) => persistComputeReceipt(rowForRun.Name || name, computeBlock),
-          verifyArtifact: verifyComputeArtifactBytes,
+          // Artifact bytes are streamed and re-hashed; local paths are
+          // confined to governed roots and the sealed work-spec output.
+          verifyArtifact: (artifact, workSpec) => verifyGovernedComputeArtifact({ artifact, workSpec }),
+          // Only the existing workspace-owned eval-vs-base workflow may mint
+          // benchmarkWins. It receives a fresh config snapshot, the verified
+          // artifact/work-spec identity, and this sandbox's governed network
+          // and secret-reference context.
+          evaluateArtifact: async ({ artifact, workSpec, trainingRunId }) => runCanonicalComputeEvaluation({
+            workspaceConfig: await readWorkspaceConfig(),
+            artifact,
+            workSpec,
+            trainingRunId,
+            fetchImpl: fetch,
+            networkPolicy: { networkAllow, allowList },
+            resolvedEnv: resolvedSecretsByRef,
+            allowedEnvRefs: envRefSlugs,
+            signal,
+            timeoutMs: Math.min(timeoutMs, 120000),
+          }),
           // Bound remote observation to the row's own timeout budget.
           maxPolls: Math.max(1, Math.floor(timeoutMs / 5000)),
           pollIntervalMs: 5000
@@ -1041,6 +1178,28 @@ async function executeSandboxRun(body, {
       if (providerCompute) {
         result = providerCompute.result;
         providerComputeBlock = providerCompute.computeBlock || null;
+        if (providerComputeBlock) {
+          providerComputeBlock = await attachNextComputeObservation({
+            trainingRunId: rowForRun.Name || name,
+            computeBlock: providerComputeBlock,
+            result,
+            requestOrigin,
+            body,
+          });
+          await persistComputeReceipt(rowForRun.Name || name, providerComputeBlock);
+          if (providerComputeBlock?.observation) {
+            result = {
+              ...result,
+              adapterMeta: {
+                ...(result?.adapterMeta || {}),
+                compute: {
+                  ...(result?.adapterMeta?.compute || {}),
+                  observation: providerComputeBlock.observation,
+                },
+              },
+            };
+          }
+        }
         effectiveAdapterId = "provider-compute";
       }
     } catch (error) {
@@ -1284,6 +1443,8 @@ async function executeSandboxRun(body, {
     rollbackRef: sourceId ? { objectId, rowName: rowForRun.Name || name, sourceId } : undefined
   });
 
+  const observationStatus = String(providerComputeBlock?.observation?.status || "");
+  const httpStatus = observationStatus === "schedule-failed" ? 503 : 200;
   return NextResponse.json({
     ok: runOk,
     status,
@@ -1299,13 +1460,26 @@ async function executeSandboxRun(body, {
     persistError,
     sourceId,
     response
-  });
+  }, { status: httpStatus });
 }
 
 async function POST(request) {
   const accept = request.headers.get("accept") || "";
   const incomingTraceparent = request.headers.get("traceparent") || "";
   const incomingTracestate = request.headers.get("tracestate") || "";
+  const requestOrigin = (() => { try { return new URL(request.url).origin; } catch { return ""; } })();
+  const parsedRequest = await readSandboxRunRequestBody(request);
+  if (!parsedRequest.ok) {
+    await appendOutcomeReceipt({
+      kind: "sandbox-run",
+      lane: "execution-proof",
+      outcomeStatus: "blocked",
+      summary: `sandbox-run rejected (${parsedRequest.status || 400}): ${parsedRequest.reasonCode || parsedRequest.error}`,
+    });
+    return NextResponse.json({ ok: false, error: parsedRequest.error, reasonCode: parsedRequest.reasonCode }, { status: parsedRequest.status || 400 });
+  }
+  const body = parsedRequest.body;
+
   // Unified app-scope gate: with x-growthub-app-scope, this run must target
   // a workflow inside the app's governed scope (route-shopping closed).
   let scopedAppId = null;
@@ -1322,14 +1496,12 @@ async function POST(request) {
       return NextResponse.json(scope.violation, { status: 422 });
     }
     if (scope.scoped) {
-      let peek = null;
-      try { peek = await request.clone().json(); } catch { peek = null; }
-      const violation = checkScopedWorkflowAccess(scope.context, peek?.objectId, peek?.name);
+      const violation = checkScopedWorkflowAccess(scope.context, body?.objectId, body?.name);
       if (violation) {
         await appendOutcomeReceipt({
           kind: "sandbox-run", lane: "execution-proof", outcomeStatus: "blocked",
           appId: scope.appId,
-          summary: `sandbox-run rejected (422 app scope): workflow ${peek?.objectId}:${peek?.name} outside app ${scope.appId}`,
+          summary: `sandbox-run rejected (422 app scope): workflow ${body?.objectId}:${body?.name} outside app ${scope.appId}`,
           nextActions: [violation.suggestedAction]
         });
         return NextResponse.json(violation, { status: 422 });
@@ -1337,11 +1509,14 @@ async function POST(request) {
       scopedAppId = scope.appId;
     }
   }
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
+
+  if (parsedRequest.signedObservation) {
+    const binding = await validateSignedObservationAgainstJournal(body, request);
+    if (!binding.ok) {
+      // Stale/duplicate deliveries are acknowledged so QStash does not create a
+      // retry storm; they perform zero provider work.
+      return NextResponse.json({ ok: true, ignored: true, reason: binding.reason, observationRequestId: body?.observationRequestId });
+    }
   }
 
   const wantsStream = body?.stream === true || accept.includes("application/x-ndjson");
@@ -1350,6 +1525,7 @@ async function POST(request) {
       traceparent: incomingTraceparent,
       tracestate: incomingTracestate,
       appScope: scopedAppId || "",
+      requestOrigin,
       signal: request.signal,
     });
   }
@@ -1372,6 +1548,7 @@ async function POST(request) {
         traceparent: incomingTraceparent,
         tracestate: incomingTracestate,
         appScope: scopedAppId || "",
+        requestOrigin,
         signal: request.signal,
       })
         .then(async (response) => {

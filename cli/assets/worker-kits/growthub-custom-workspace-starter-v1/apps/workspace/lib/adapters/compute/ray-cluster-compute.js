@@ -134,6 +134,7 @@ export function buildRayJobSubmission({ ctx, config }) {
         GROWTHUB_GANG_SCHEDULING: dist?.gangScheduling === true ? "1" : "0",
         GROWTHUB_WORK_SPEC_HASH: str(ctx?.workSpecHash),
         GROWTHUB_WORK_SPEC_JSON: JSON.stringify(ctx?.workSpec || {}),
+        GROWTHUB_DATASET_ACCESS_JSON: JSON.stringify(ctx?.datasetAccess || {}),
         ...(config.storagePath ? { GROWTHUB_STORAGE_PATH: config.storagePath } : {}),
         ...(config.corpusRootHash ? { GROWTHUB_CORPUS_ROOT_HASH: config.corpusRootHash } : {}),
       },
@@ -209,6 +210,11 @@ export function createRayClusterAdapter(realization = null) {
         supportsGangScheduling: c.gangScheduling,
         regions: c.region ? [c.region] : [],
         requiredEnv: c.authTokenEnv ? [c.authTokenEnv] : [],
+        allocationIdempotency: {
+          guaranteed: true,
+          mode: "provider-native-key",
+          evidence: "Ray submission_id is derived from the sealed idempotency hash; already-exists resolves the same job",
+        },
       };
     },
 
@@ -299,6 +305,34 @@ export function createRayClusterAdapter(realization = null) {
       };
     },
 
+    async reconcile(ctx) {
+      const config = cfg(ctx, realization);
+      if (!config.dashboardUrl || !ctx?.idempotencyKeyHash) return null;
+      const submission = buildRayJobSubmission({ ctx, config });
+      let existing;
+      try {
+        existing = await ctx.fetchJson(`${config.dashboardUrl}/api/jobs/${submission.submission_id}`, { headers: headers(ctx, config) });
+      } catch {
+        return null;
+      }
+      if (!existing) return null;
+      const dist = ctx?.requirements?.distributed;
+      return {
+        allocationId: submission.submission_id,
+        runRef: { ...(ctx?.runRef || {}), providerResourceId: submission.submission_id },
+        status: "allocated",
+        idempotencyKeyHash: str(ctx.idempotencyKeyHash),
+        availabilityMode: "reserved",
+        costBasis: config.owned ? { kind: "owned-hardware", unitUsd: 0, source: "operator-owned cluster" } : config.clusterHourlyUsd > 0 ? { kind: "per-hour", unitUsd: config.clusterHourlyUsd, source: "operator-declared cluster rate" } : { kind: "unknown", unitUsd: 0, source: "cluster rate not declared" },
+        requestedAt: new Date().toISOString(),
+        allocatedAt: new Date().toISOString(),
+        releasedAt: "",
+        releaseConfirmed: false,
+        allocated: { gpuType: "", gpuCount: Math.max(0, Math.floor(num(dist?.gpusPerWorker, num(ctx?.requirements?.gpuCount)))), workers: Math.max(1, Math.floor(num(dist?.workers, 1))), region: config.region },
+        reconciled: true,
+      };
+    },
+
     async status(ctx) {
       const config = cfg(ctx, realization);
       const jobId = str(ctx?.runRef?.providerResourceId);
@@ -359,6 +393,8 @@ export function createRayClusterAdapter(realization = null) {
         sha256: str(artifact.sha256),
         sizeBytes: Math.max(0, Math.floor(num(artifact.sizeBytes))),
         evidenceObservedAt: new Date().toISOString(),
+        workSpecHash: str(artifact.workSpecHash),
+        corpusSha256: str(artifact.corpusSha256 || artifact.datasetSha256),
         evaluationResults: Array.isArray(artifact.evaluationResults) ? artifact.evaluationResults : [],
       };
     },

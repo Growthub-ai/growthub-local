@@ -10,10 +10,8 @@
  */
 
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { Readable } from "node:stream";
+import { resolveComputeDataStore } from "./compute-data-store.js";
 import { buildTrainingDatasetJsonl } from "./training-dataset.js";
 import { TRACES_OBJECT_ID } from "./training-ledger.js";
 
@@ -65,23 +63,8 @@ function failure(reasonCode, reason) {
   return { ok: false, reasonCode, reason };
 }
 
-function dataRoot(env = process.env) {
-  return path.resolve(str(env?.[COMPUTE_DATA_ROOT_ENV]) || path.join(process.cwd(), ".growthub", "compute-data"));
-}
-
-function datasetPathForSha(corpusSha256, env = process.env) {
-  return path.join(dataRoot(env), "datasets", `${corpusSha256}.jsonl`);
-}
-
-function deliveryPathForToken(tokenId, env = process.env) {
-  return path.join(dataRoot(env), "deliveries", `${tokenId}.json`);
-}
-
-async function atomicWrite(filePath, bytes, mode = 0o600) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(temp, bytes, { mode, flag: "wx" });
-  await fs.rename(temp, filePath);
+function resolveDataStore({ env = process.env, fetchImpl = globalThis.fetch, dataStore = null } = {}) {
+  return dataStore || resolveComputeDataStore({ env, fetchImpl });
 }
 
 function exactlyOne(rows, predicate) {
@@ -114,8 +97,12 @@ function traceRows(workspaceConfig) {
 }
 
 function exportedRowsFor(workspaceConfig, datasetExportId) {
+  const wanted = str(datasetExportId);
   return traceRows(workspaceConfig)
-    .filter((row) => str(row?.lastExportId || row?.datasetExportId) === str(datasetExportId))
+    .filter((row) => {
+      const historical = Array.isArray(row?.trainingExportIds) ? row.trainingExportIds.map(str) : [];
+      return str(row?.lastExportId || row?.datasetExportId) === wanted || historical.includes(wanted);
+    })
     .filter((row) => str(row?.redactionStatus).toLowerCase() !== "blocked")
     .filter((row) => str(row?.inputPrompt) && str(row?.agentOutput))
     .sort((left, right) => {
@@ -138,6 +125,8 @@ export async function materializeComputeDataset({
   trainingRunId = "",
   request = null,
   env = process.env,
+  fetchImpl = globalThis.fetch,
+  dataStore = null,
 } = {}) {
   const run = runRow(workspaceConfig, trainingRunId);
   if (!run) return failure("dataset-run-ambiguous", `exactly one model-training-run row is required for ${str(trainingRunId)}`);
@@ -163,16 +152,15 @@ export async function materializeComputeDataset({
   const bytes = Buffer.from(jsonl, "utf8");
   if (bytes.byteLength === 0) return failure("dataset-empty", "canonical dataset serialization produced no bytes");
   const corpusSha256 = sha256(bytes);
-  const filePath = datasetPathForSha(corpusSha256, env);
+  let store;
   try {
-    let existing = null;
-    try { existing = await fs.readFile(filePath); } catch {}
-    if (existing && sha256(existing) !== corpusSha256) {
-      return failure("dataset-storage-collision", "existing content-addressed dataset bytes do not match their path");
-    }
-    if (!existing) await atomicWrite(filePath, bytes);
+    store = resolveDataStore({ env, fetchImpl, dataStore });
+    await store.putDataset({ corpusSha256, bytes });
   } catch (error) {
-    return failure("dataset-stage-failed", `failed to stage governed dataset bytes: ${str(error?.message || error)}`);
+    return failure(
+      str(error?.code) || "dataset-stage-failed",
+      `failed to stage governed dataset bytes: ${str(error?.message || error)}`,
+    );
   }
   const manifestBody = {
     schema: COMPUTE_DATA_MANIFEST_SCHEMA,
@@ -182,11 +170,13 @@ export async function materializeComputeDataset({
     recordCount: rows.length,
     serialization: "growthub-training-jsonl-v1",
     binding: "materialized-bytes",
+    storageKind: str(store?.kind),
+    durableStorage: store?.durable === true,
   };
   return {
     ok: true,
     manifest: { ...manifestBody, manifestHash: sha256(stableStringify(manifestBody)) },
-    filePath,
+    storage: { kind: str(store?.kind), durable: store?.durable === true },
   };
 }
 
@@ -217,8 +207,10 @@ function publicBaseUrl(env = process.env) {
   let url;
   try { url = new URL(raw); } catch { return null; }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
-  const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
-  if (str(env?.NODE_ENV).toLowerCase() === "production" && url.protocol !== "https:" && !loopback) return null;
+  // Production grants are bearer capabilities crossing a remote provider
+  // boundary. HTTPS is mandatory even for a loopback-looking hostname; local
+  // HTTP is reserved for explicit development/certification environments.
+  if (str(env?.NODE_ENV).toLowerCase() === "production" && url.protocol !== "https:") return null;
   return url;
 }
 
@@ -243,6 +235,8 @@ export function issueComputeDatasetAccess({
     version: 1,
     trainingRunId: str(trainingRunId),
     workSpecHash: str(workSpecHash),
+    exportId: str(manifest.exportId),
+    manifestHash: str(manifest.manifestHash),
     corpusSha256: str(manifest.corpusSha256),
     sizeBytes: Math.max(0, Math.floor(Number(manifest.sizeBytes) || 0)),
     recordCount: Math.max(0, Math.floor(Number(manifest.recordCount) || 0)),
@@ -270,7 +264,12 @@ export function issueComputeDatasetAccess({
     evidence: {
       schema: COMPUTE_DATA_ACCESS_SCHEMA,
       tokenId: payload.tokenId,
+      issuedAt: payload.issuedAt,
       expiresAt: payload.expiresAt,
+      trainingRunId: payload.trainingRunId,
+      workSpecHash: payload.workSpecHash,
+      exportId: payload.exportId,
+      manifestHash: payload.manifestHash,
       corpusSha256: payload.corpusSha256,
       sizeBytes: payload.sizeBytes,
       recordCount: payload.recordCount,
@@ -304,34 +303,74 @@ function deliverySignature(body, key) {
   return createHmac("sha256", key).update(`growthub-compute-data-delivery-v1:${stableStringify(body)}`).digest("hex");
 }
 
-async function writeDeliveryReceipt(payload, env = process.env) {
+async function writeDeliveryReceipt(payload, {
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  dataStore = null,
+} = {}) {
   const key = resolveRootSigningKey(env);
   if (!key) throw new Error("dataset signing key is unavailable");
-  const body = {
+  const immutable = {
     schema: COMPUTE_DATA_DELIVERY_SCHEMA,
     tokenId: str(payload.tokenId),
     trainingRunId: str(payload.trainingRunId),
     workSpecHash: str(payload.workSpecHash),
+    exportId: str(payload.exportId),
+    manifestHash: str(payload.manifestHash),
     corpusSha256: str(payload.corpusSha256),
     sizeBytes: Number(payload.sizeBytes) || 0,
     recordCount: Number(payload.recordCount) || 0,
-    deliveredAt: new Date().toISOString(),
   };
-  await atomicWrite(deliveryPathForToken(body.tokenId, env), Buffer.from(`${JSON.stringify({ ...body, signature: deliverySignature(body, key) }, null, 2)}\n`, "utf8"));
+  const sameIdentity = (existing) => existing
+    && stableStringify(Object.fromEntries(Object.keys(immutable).map((field) => [field, existing[field]]))) === stableStringify(immutable);
+  const store = resolveDataStore({ env, fetchImpl, dataStore });
+  try {
+    const existingBytes = await store.getDeliveryReceipt({ tokenId: immutable.tokenId });
+    const existing = JSON.parse(existingBytes.toString("utf8"));
+    if (sameIdentity(existing)) return existing;
+    throw new Error("dataset delivery receipt identity collision");
+  } catch (error) {
+    if (error?.code !== "dataset-delivery-missing") {
+      if (/dataset delivery receipt identity collision/.test(str(error?.message))) throw error;
+      if (!/Unexpected token|JSON/.test(str(error?.message))) throw error;
+    }
+  }
+  const body = { ...immutable, deliveredAt: new Date().toISOString() };
+  const record = { ...body, signature: deliverySignature(body, key) };
+  const bytes = Buffer.from(`${JSON.stringify(record, null, 2)}\n`, "utf8");
+  try {
+    await store.putDeliveryReceipt({ tokenId: immutable.tokenId, bytes });
+    return record;
+  } catch (error) {
+    if (error?.code !== "compute-data-storage-collision") throw error;
+    const existing = JSON.parse((await store.getDeliveryReceipt({ tokenId: immutable.tokenId })).toString("utf8"));
+    if (!sameIdentity(existing)) throw new Error("dataset delivery receipt identity collision");
+    return existing;
+  }
 }
 
 /** Resolve a token to a bounded file and stream that records full delivery. */
-export async function openComputeDatasetDelivery(token, { env = process.env, now = () => Date.now() } = {}) {
+export async function openComputeDatasetDelivery(token, {
+  env = process.env,
+  now = () => Date.now(),
+  fetchImpl = globalThis.fetch,
+  dataStore = null,
+} = {}) {
   const verified = verifyComputeDatasetToken(token, { env, now });
   if (!verified.ok) return verified;
   const payload = verified.payload;
-  const filePath = datasetPathForSha(payload.corpusSha256, env);
-  let stat;
-  try { stat = await fs.stat(filePath); } catch {
-    return failure("dataset-file-missing", "content-addressed dataset file is unavailable");
+  let store;
+  let opened;
+  try {
+    store = resolveDataStore({ env, fetchImpl, dataStore });
+    opened = await store.openDataset({
+      corpusSha256: payload.corpusSha256,
+      sizeBytes: payload.sizeBytes,
+    });
+  } catch (error) {
+    return failure(str(error?.code) || "dataset-file-missing", str(error?.message || "content-addressed dataset object is unavailable"));
   }
-  if (!stat.isFile() || stat.size !== Number(payload.sizeBytes)) return failure("dataset-file-invalid", "staged dataset file size/type does not match token");
-  const source = createReadStream(filePath);
+  const source = opened.stream;
   let completed = false;
   const stream = Readable.from((async function* deliver() {
     const hash = createHash("sha256");
@@ -347,7 +386,7 @@ export async function openComputeDatasetDelivery(token, { env = process.env, now
       throw new Error("dataset bytes changed during delivery");
     }
     completed = true;
-    await writeDeliveryReceipt(payload, env);
+    await writeDeliveryReceipt(payload, { env, fetchImpl, dataStore: store });
   })());
   stream.once("close", () => { if (!completed) source.destroy(); });
   return {
@@ -365,19 +404,35 @@ export async function openComputeDatasetDelivery(token, { env = process.env, now
 }
 
 /** Prove this exact run/work-spec corpus was fully served before import. */
-export async function verifyComputeDatasetDelivery({ evidence = null, workSpec = null, env = process.env } = {}) {
+export async function verifyComputeDatasetDelivery({
+  evidence = null,
+  workSpec = null,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  dataStore = null,
+} = {}) {
   const tokenId = str(evidence?.tokenId);
   if (!tokenId) return failure("dataset-delivery-missing", "compute journal carries no dataset access identity");
   let receipt;
-  try { receipt = JSON.parse(await fs.readFile(deliveryPathForToken(tokenId, env), "utf8")); } catch {
-    return failure("dataset-delivery-missing", "no completed dataset delivery receipt exists for this run");
+  try {
+    const store = resolveDataStore({ env, fetchImpl, dataStore });
+    receipt = JSON.parse((await store.getDeliveryReceipt({ tokenId })).toString("utf8"));
+  } catch (error) {
+    return failure(str(error?.code) || "dataset-delivery-missing", str(error?.message || "no completed dataset delivery receipt exists for this run"));
   }
   const { signature, ...body } = receipt || {};
   const key = resolveRootSigningKey(env);
-  if (!key || str(signature) !== deliverySignature(body, key)) return failure("dataset-delivery-invalid", "dataset delivery receipt signature does not verify");
+  const expectedSignature = key ? deliverySignature(body, key) : "";
+  const expectedBytes = Buffer.from(expectedSignature, "utf8");
+  const suppliedBytes = Buffer.from(str(signature), "utf8");
+  if (!key || expectedBytes.length !== suppliedBytes.length || !timingSafeEqual(expectedBytes, suppliedBytes)) {
+    return failure("dataset-delivery-invalid", "dataset delivery receipt signature does not verify");
+  }
   const expectedSha = str(workSpec?.dataset?.corpusSha256);
   if (str(body.trainingRunId) !== str(workSpec?.trainingRunId)
     || str(body.workSpecHash) !== str(workSpec?.workSpecHash)
+    || str(body.exportId) !== str(workSpec?.dataset?.exportId)
+    || str(body.manifestHash) !== str(evidence?.manifestHash)
     || str(body.corpusSha256) !== expectedSha
     || str(evidence?.corpusSha256) !== expectedSha) {
     return failure("dataset-delivery-mismatch", "dataset delivery receipt does not bind this training run, work spec, and corpus identity");

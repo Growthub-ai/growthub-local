@@ -156,6 +156,17 @@ const runpodAdapter = {
       supportsGangScheduling: false,
       regions: c.dataCenterIds,
       requiredEnv: [c.apiKeyEnv],
+      allocationIdempotency: c.mode === "serverless"
+        ? {
+            guaranteed: false,
+            mode: "unproven",
+            evidence: "Runpod Serverless /run returns a generated job id and exposes no deterministic idempotency lookup",
+          }
+        : {
+            guaranteed: true,
+            mode: "reconcile-before-create",
+            evidence: "deterministic pod name from the sealed idempotency hash; GET /pods?name runs before POST /pods",
+          },
       // Optional extension floors the resolver honors when declared.
       maxRamGB: 0,
       maxDiskGB: 0,
@@ -253,6 +264,7 @@ const runpodAdapter = {
         body: JSON.stringify({
           input: {
             workSpec: ctx?.workSpec,
+            datasetAccess: ctx?.datasetAccess,
             growthub: {
               trainingRunId: str(ctx?.runRef?.trainingRunId),
               capacityProfileId: str(ctx?.capacityProfileId),
@@ -324,6 +336,7 @@ const runpodAdapter = {
         GROWTHUB_IDEMPOTENCY_HASH: str(ctx?.idempotencyKeyHash),
         GROWTHUB_WORK_SPEC_HASH: str(ctx?.workSpecHash),
         GROWTHUB_WORK_SPEC_JSON: JSON.stringify(ctx?.workSpec || {}),
+        GROWTHUB_DATASET_ACCESS_JSON: JSON.stringify(ctx?.datasetAccess || {}),
       },
     };
     const pod = await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods`, { method: "POST", headers: restHeaders(key), body: JSON.stringify(body) });
@@ -340,6 +353,31 @@ const runpodAdapter = {
       costBasis: { kind: "per-hour", unitUsd: num(pod.costPerHr), source: "runpod-pod-costPerHr" },
       allocatedAt: new Date().toISOString(),
       allocated: { gpuType: str(pod?.machine?.gpuType?.id || (Array.isArray(pod?.gpuTypeIds) ? pod.gpuTypeIds[0] : "")), gpuCount, workers: 1, region: str(pod?.machine?.dataCenterId || "") },
+    };
+  },
+
+  async reconcile(ctx) {
+    const config = cfg(ctx);
+    if (config.mode === "serverless" || !ctx?.idempotencyKeyHash) return null;
+    const key = apiKey(ctx, config);
+    const podName = `ghl-${str(ctx.idempotencyKeyHash).slice(0, 24) || "unkeyed"}`;
+    const existing = await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods?name=${encodeURIComponent(podName)}`, { headers: restHeaders(key) });
+    const pods = Array.isArray(existing) ? existing : Array.isArray(existing?.pods) ? existing.pods : [];
+    const live = pods.find((pod) => str(pod?.name) === podName && str(pod?.desiredStatus) !== "TERMINATED");
+    if (!live?.id) return null;
+    return {
+      allocationId: str(live.id),
+      runRef: { ...(ctx?.runRef || {}), providerResourceId: str(live.id) },
+      status: "allocated",
+      idempotencyKeyHash: str(ctx.idempotencyKeyHash),
+      availabilityMode: config.interruptible ? "spot" : "on-demand",
+      costBasis: { kind: "per-hour", unitUsd: num(live.costPerHr), source: "runpod-pod-costPerHr (reconciled existing pod)" },
+      requestedAt: new Date().toISOString(),
+      allocatedAt: str(live.lastStartedAt) || new Date().toISOString(),
+      releasedAt: "",
+      releaseConfirmed: false,
+      allocated: { gpuType: str(live?.machine?.gpuType?.id || live?.gpuTypeId || ""), gpuCount: Math.max(1, Math.floor(num(live.gpuCount, 1))), workers: 1, region: str(live?.machine?.dataCenterId || "") },
+      reconciled: true,
     };
   },
 
@@ -411,6 +449,8 @@ const runpodAdapter = {
           sha256: str(out.sha256),
           sizeBytes: Math.max(0, Math.floor(num(out.sizeBytes))),
           evidenceObservedAt: new Date().toISOString(),
+          workSpecHash: str(out.workSpecHash || job?.output?.workSpecHash),
+          corpusSha256: str(out.corpusSha256 || job?.output?.corpusSha256),
           evaluationResults: Array.isArray(job?.output?.evaluationResults) ? job.output.evaluationResults : [],
         };
       }
@@ -428,7 +468,11 @@ const runpodAdapter = {
     if (!resourceId) return [];
     if (config.mode === "serverless") {
       const res = await ctx.fetchJson(`${RUNPOD_SERVERLESS_BASE}/${config.endpointId}/cancel/${resourceId}`, { method: "POST", headers: { Authorization: key } });
-      return [providerEvent({ type: "compute-cancelled", ctx, providerEventId: `${resourceId}:cancel`, detail: str(res?.status || "CANCELLED") })];
+      const status = str(res?.status).toUpperCase();
+      // A request acknowledgement is not cancellation evidence. Only an
+      // explicit terminal acknowledgement may advance the governed lifecycle.
+      if (!["CANCELLED", "CANCELED"].includes(status) && res?.cancelled !== true) return [];
+      return [providerEvent({ type: "compute-cancelled", ctx, providerEventId: `${resourceId}:cancel`, detail: status || "CANCELLED" })];
     }
     await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods/${resourceId}/stop`, { method: "POST", headers: restHeaders(key) });
     return [providerEvent({ type: "compute-cancelled", ctx, providerEventId: `${resourceId}:stop`, detail: "pod stop requested — volume disk persists and still bills until terminated" })];
@@ -442,9 +486,30 @@ const runpodAdapter = {
       return [providerEvent({ type: "compute-released", ctx, providerEventId: "", detail: "no provider resource was ever allocated", source: "workspace" })];
     }
     if (config.mode === "serverless") {
-      // Scale-to-zero: a terminal job holds no capacity. Cancellation of a
-      // live job is the release path; a finished job releases implicitly.
-      return [providerEvent({ type: "compute-released", ctx, providerEventId: `${resourceId}:released`, detail: "serverless workers scale to zero — no standing capacity to terminate" })];
+      const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED", "CANCELED", "TIMED_OUT"]);
+      const live = new Set(["IN_QUEUE", "IN_PROGRESS"]);
+      const failed = (detail) => [providerEvent({
+        type: "compute-release-failed",
+        ctx,
+        providerEventId: `${resourceId}:serverless-release-unverified`,
+        detail: `${detail} — serverless job release is not confirmed; work may still be billing`,
+        source: "workspace",
+      })];
+      try {
+        const observed = await ctx.fetchJson(`${RUNPOD_SERVERLESS_BASE}/${config.endpointId}/status/${resourceId}`, { headers: { Authorization: key } });
+        const status = str(observed?.status).toUpperCase();
+        if (terminal.has(status)) return [providerEvent({ type: "compute-released", ctx, providerEventId: `${resourceId}:serverless-released:${status}`, detail: `serverless job ${status} — workers are terminal and scale to zero` })];
+        if (!live.has(status)) return failed(`provider state "${status || "unknown"}" is not safely classifiable`);
+        const cancelled = await ctx.fetchJson(`${RUNPOD_SERVERLESS_BASE}/${config.endpointId}/cancel/${resourceId}`, { method: "POST", headers: { Authorization: key } });
+        const cancelStatus = str(cancelled?.status).toUpperCase();
+        if (!["CANCELLED", "CANCELED"].includes(cancelStatus) && cancelled?.cancelled !== true) return failed(`provider did not confirm cancellation (status "${cancelStatus || "unknown"}")`);
+        const confirmed = await ctx.fetchJson(`${RUNPOD_SERVERLESS_BASE}/${config.endpointId}/status/${resourceId}`, { headers: { Authorization: key } });
+        const finalStatus = str(confirmed?.status).toUpperCase();
+        if (!terminal.has(finalStatus)) return failed(`post-cancel state "${finalStatus || "unknown"}" is not terminal`);
+        return [providerEvent({ type: "compute-released", ctx, providerEventId: `${resourceId}:serverless-released:${finalStatus}`, detail: `serverless release verified in terminal state ${finalStatus}` })];
+      } catch (error) {
+        return failed(`serverless release not confirmed: ${str(error?.message).slice(0, 160)}`);
+      }
     }
     try {
       await ctx.fetchJson(`${RUNPOD_REST_BASE}/pods/${resourceId}`, { method: "DELETE", headers: restHeaders(key) });

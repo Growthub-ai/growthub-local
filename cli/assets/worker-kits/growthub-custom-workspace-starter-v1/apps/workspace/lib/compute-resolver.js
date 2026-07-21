@@ -67,6 +67,20 @@ export function evaluateCandidateEligibility({ requirements, capacityProfileId, 
   if (!caps) {
     flag("capabilities-unavailable", "adapter capabilities not derivable");
   } else {
+    const allocationSafety = caps.allocationIdempotency && typeof caps.allocationIdempotency === "object"
+      ? caps.allocationIdempotency
+      : null;
+    if (providerId !== "local-machine"
+      && allocationSafety
+      && allocationSafety.guaranteed !== true
+      && quote?.allocationIdempotencyVerified !== true) {
+      flag(
+        "allocation-idempotency-unproven",
+        allocationSafety.evidence
+          ? `provider cannot safely recover the provider-accepted-before-persist crash window: ${allocationSafety.evidence}`
+          : "provider cannot prove deterministic allocation reconciliation",
+      );
+    }
     if (num(req.gpuCount) > 0) {
       if (num(caps.maxGpusPerWorker) > 0 && num(req.gpuCount) > num(caps.maxGpusPerWorker)) {
         flag("gpu-count-unsupported", `needs ${req.gpuCount} GPUs/worker — provider offers at most ${caps.maxGpusPerWorker}`);

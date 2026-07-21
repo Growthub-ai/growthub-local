@@ -167,6 +167,52 @@ export function normalizeComputeAllocation(raw) {
       ? { gpuType: str(raw.allocated.gpuType), gpuCount: Math.max(0, Math.floor(num(raw.allocated.gpuCount))), workers: Math.max(0, Math.floor(num(raw.allocated.workers))), region: str(raw.allocated.region) }
       : null,
     workSpecHash: str(raw.workSpecHash).trim(),
+    // An allocation adopted through deterministic provider reconciliation
+    // (after an ambiguous accept) keeps that fact in evidence — it is the
+    // proof no second paid resource was created for this run.
+    reconciled: raw.reconciled === true,
+  };
+}
+
+export function normalizeComputeDatasetEvidence(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    schema: str(raw.schema).trim(),
+    tokenId: str(raw.tokenId).trim(),
+    issuedAt: str(raw.issuedAt).trim(),
+    expiresAt: str(raw.expiresAt).trim(),
+    trainingRunId: str(raw.trainingRunId).trim(),
+    workSpecHash: str(raw.workSpecHash).trim(),
+    exportId: str(raw.exportId).trim(),
+    manifestHash: str(raw.manifestHash).trim(),
+    corpusSha256: str(raw.corpusSha256).trim(),
+    sizeBytes: Math.max(0, Math.floor(num(raw.sizeBytes))),
+    recordCount: Math.max(0, Math.floor(num(raw.recordCount))),
+    deliveryStatus: ["issued", "delivered", "unverified"].includes(raw.deliveryStatus) ? raw.deliveryStatus : "issued",
+    deliveredAt: str(raw.deliveredAt).trim(),
+    reasonCode: str(raw.reasonCode).trim(),
+  };
+}
+
+export function normalizeComputeObservationEvidence(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const status = String(raw.status || "").trim();
+  return {
+    schema: String(raw.schema || "").trim(),
+    mode: ["qstash", "manual"].includes(raw.mode) ? raw.mode : "manual",
+    status: ["scheduled", "delivered", "schedule-failed", "manual", "exhausted", "terminal"].includes(status) ? status : "manual",
+    attempt: Math.max(0, Math.floor(num(raw.attempt))),
+    nextAttempt: Math.max(0, Math.floor(num(raw.nextAttempt))),
+    maxAttempts: Math.max(0, Math.floor(num(raw.maxAttempts))),
+    requestId: str(raw.requestId).trim(),
+    messageId: str(raw.messageId).trim(),
+    scheduleId: str(raw.scheduleId).trim(),
+    scheduledAt: str(raw.scheduledAt).trim(),
+    nextObservationAt: str(raw.nextObservationAt).trim(),
+    lastObservedAt: str(raw.lastObservedAt).trim(),
+    lastErrorCode: str(raw.lastErrorCode).trim(),
+    authorityHash: str(raw.authorityHash).trim(),
+    workSpecHash: str(raw.workSpecHash).trim(),
   };
 }
 
@@ -181,9 +227,14 @@ export function normalizeComputeArtifactRef(raw) {
     evidenceObservedAt: str(raw.evidenceObservedAt).trim(),
     workSpecHash: str(raw.workSpecHash).trim(),
     requirementsHash: str(raw.requirementsHash).trim(),
+    corpusSha256: str(raw.corpusSha256 || raw.datasetSha256).trim(),
+    providerAttestationVerified: raw.providerAttestationVerified === true,
+    providerAttestationReason: str(raw.providerAttestationReason).trim(),
     verifiedSha256: str(raw.verifiedSha256).trim(),
     verificationKind: str(raw.verificationKind).trim(),
-    evaluationResults: Array.isArray(raw.evaluationResults) ? raw.evaluationResults : [],
+    // Provider-authored evaluation scores are intentionally NOT part of
+    // artifact evidence: the executor strips them at collection and only the
+    // workspace-canonical evaluator may mint benchmark verdicts.
   };
 }
 
@@ -215,7 +266,11 @@ export function normalizeComputeBlock(raw) {
     workSpecHash: str(raw.workSpecHash || raw.workSpec?.workSpecHash || raw.authority?.workSpecHash).trim(),
     policy: raw.policy && typeof raw.policy === "object" ? raw.policy : (raw.intent?.policy || raw.authority?.intent?.policy || null),
     capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : null,
+    observation: normalizeComputeObservationEvidence(raw.observation),
     evaluation: raw.evaluation && typeof raw.evaluation === "object" ? raw.evaluation : null,
+    // Receipt-safe data-plane evidence only. The bearer URI/token never enters
+    // the compute journal; adapters receive it through ephemeral call context.
+    dataset: normalizeComputeDatasetEvidence(raw.dataset),
     decision,
     allocation: normalizeComputeAllocation(raw.allocation),
     events: (Array.isArray(raw.events) ? raw.events : []).map(normalizeComputeEvent).filter(Boolean).slice(0, MAX_EVENTS),
@@ -420,6 +475,13 @@ export function deriveComputeArtifactHonesty({ lifecycle = null, artifact = null
   }
   if (!art.sha256) {
     return { promotable: false, reasonCode: "artifact-unproven", reason: "artifact has no sha256 identity — a claimed artifact is not a verified one" };
+  }
+  if (art.providerAttestationVerified !== true) {
+    return {
+      promotable: false,
+      reasonCode: "artifact-provider-attestation-missing",
+      reason: art.providerAttestationReason || "provider artifact does not attest the exact governed work-spec and corpus identities",
+    };
   }
   const expected = str(expectedSha256).trim();
   if (expected && expected !== art.sha256) {

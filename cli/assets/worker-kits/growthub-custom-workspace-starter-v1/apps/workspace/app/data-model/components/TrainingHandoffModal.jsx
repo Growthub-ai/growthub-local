@@ -72,8 +72,7 @@ import { deriveConfigureReadiness, labelStorageLocation } from "../../../lib/tra
 import { buildPreInitProbeScript, derivePreInitState, PREINIT_RUN_KIND, PREINIT_INTENT, OLLAMA_BIN_CANDIDATES } from "../../../lib/training-preinit-probe.js";
 import { PIPELINE_SCRIPTS } from "../../../lib/training-pipeline-scripts.js";
 import { buildMothershipProxyRow } from "../../../lib/distillation-fleet.js";
-
-const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
+import { trainingTraceToJsonlLine } from "../../../lib/training-dataset.js";
 const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "computePolicy", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
 const RUN_COLUMNS = [
   "trainingRunId", "modelTrainingRowId", "datasetExportId", "baseModel", "trainingProfile", "runnerMode",
@@ -149,7 +148,7 @@ function blockedTraceCount(workspaceConfig) {
 }
 
 function toJsonlLine(row) {
-  return `${JSON.stringify({ instruction: PHASE3_INSTRUCTION, input: String(row.inputPrompt), output: String(row.agentOutput) })}\n`;
+  return trainingTraceToJsonlLine(row);
 }
 
 /** Flatten a run receipt into the governed table row shape. */
@@ -1028,10 +1027,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       mothershipRow.executionLane = "sandbox-local";
       mothershipRow.description = `Governed serving identity for ${reservedTag}: verified student first, ${baseModel} fallback until promotion, every completed call harvested.`;
       const selectedIdx = new Set(selected.map(({ index }) => index));
+      const selectedOrder = new Map(selected.map(({ index }, ordinal) => [index, ordinal]));
 
       const fresh = await patchObjects((objects) => {
         let next = objects.map((o) => {
-          if (o?.id === TRACES_OBJECT_ID) return { ...o, rows: (o.rows || []).map((row, i) => (selectedIdx.has(i) ? { ...row, exported: "true" } : row)) };
+          if (o?.id === TRACES_OBJECT_ID) return {
+            ...o,
+            rows: (o.rows || []).map((row, i) => {
+              if (!selectedIdx.has(i)) return row;
+              const previousIds = Array.isArray(row?.trainingExportIds) ? row.trainingExportIds.map(String) : [];
+              return {
+                ...row,
+                exported: "true",
+                lastExportId: exportId,
+                datasetExportId: exportId,
+                exportOrdinal: selectedOrder.get(i),
+                trainingExportIds: [...new Set([...previousIds, exportId])].slice(-32),
+              };
+            }),
+          };
           if (o?.objectType === TRAINING_OBJECT_TYPE) return { ...o, rows: [...(o.rows || []), versionRow] };
           if (o?.objectType === "api-registry") {
             // Genome field visibility: now that a custom-model record is
@@ -1449,6 +1463,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     // Until then the handshake deadline governs; after, the run is genuinely
     // executing and polls for as long as the fine-tune needs.
     let sawStamp = false;
+    // Remote provider observation is a governed continuation, not one
+    // hour-long HTTP request. At most one continuation is in flight and the
+    // cadence is bounded independently of the five-second receipt refresh.
+    let observeInFlight = false;
+    let lastObserveAt = 0;
     pollRef.current = setInterval(async () => {
       try {
         const probe = await fetch("/api/workspace", { cache: "no-store" });
@@ -1475,6 +1494,40 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         // terminal stage — never inferred from another run's evidence.
         const remoteCompute = parseReceiptComputeBlock(rawRow);
         if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || remoteCompute?.decision || remoteCompute?.events?.length || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
+
+        // The executor intentionally observes only a few provider states per
+        // request. Continue the SAME run through sandbox-run while a remote
+        // allocation is active; the server reconciles by sealed authority +
+        // idempotency identity, so this can observe but cannot duplicate spend.
+        const remoteEvents = Array.isArray(remoteCompute?.events) ? remoteCompute.events : [];
+        const remoteTerminal = remoteEvents.some((event) => ["compute-completed", "compute-failed", "compute-cancelled"].includes(String(event?.type || "")));
+        const remoteSelected = String(remoteCompute?.decision?.selectedProviderId || remoteCompute?.providerRegistryId || "");
+        const remoteNeedsObservation = Boolean(remoteCompute?.allocation && remoteSelected && remoteSelected !== "local-machine" && !remoteTerminal);
+        const observeNow = Date.now();
+        if (remoteNeedsObservation && !observeInFlight && observeNow - lastObserveAt >= 10_000) {
+          observeInFlight = true;
+          lastObserveAt = observeNow;
+          void fetch("/api/workspace/sandbox-run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              objectId: TRAINING_RUNNER_SANDBOX_ID,
+              name: activeId,
+              computeAction: "observe",
+              intent: "model-training-observe",
+              actor: "training-runtime-modal",
+            }),
+          }).then(async (response) => {
+            // A non-2xx response is actionable; a provider-state uncertainty
+            // remains receipt-visible and retryable without demoting the run.
+            if (!response.ok) {
+              const detail = (await response.text()).slice(0, 240);
+              setError(`Remote observation failed: ${detail || response.status}`);
+            }
+          }).catch((observationError) => {
+            setError(`Remote observation failed: ${observationError instanceof Error ? observationError.message : String(observationError)}`);
+          }).finally(() => { observeInFlight = false; });
+        }
 
         if (myStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;

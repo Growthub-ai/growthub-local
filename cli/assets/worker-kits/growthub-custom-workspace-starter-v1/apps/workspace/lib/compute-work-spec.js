@@ -125,8 +125,11 @@ export function validateComputeBudgetPolicy(raw = {}) {
     reason: "budget valid",
     value: {
       mode,
-      maxTotalUsd: total.value,
-      maxHourlyUsd: hourly.value,
+      // Absent caps stay absent: the normalized value must revalidate under
+      // this same contract, so it never mints the outlawed 0-as-unlimited
+      // sentinel for a field the caller did not constrain.
+      ...(total.present ? { maxTotalUsd: total.value } : {}),
+      ...(hourly.present ? { maxHourlyUsd: hourly.value } : {}),
       allowUnknownCost: mode === "hard-cap" ? false : budget.allowUnknownCost === true,
     },
   };
