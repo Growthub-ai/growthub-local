@@ -18,6 +18,9 @@ on:
       - scripts/finalize-compute-evaluation-order.mjs
       - scripts/apply-compute-canonical-e2e.mjs
       - scripts/apply-compute-observation-hardening.mjs
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: write
@@ -30,8 +33,9 @@ concurrency:
 
 jobs:
   apply:
-    # Direct user/connector pushes activate the one-shot; the bot-authored
-    # implementation commit is deliberately prevented from recursively firing.
+    # Direct user/connector pushes and the same-repo draft PR activate the
+    # one-shot. The bot-authored implementation commit is prevented from
+    # recursively starting another run.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
