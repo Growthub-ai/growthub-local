@@ -24,9 +24,10 @@ const privateEnv = {
   GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1",
 };
 
-test("private/reserved address classifier covers loopback, metadata, RFC1918, ULA and public", () => {
+test("private/reserved classifier covers loopback, cloud metadata, RFC1918, ULA and public", () => {
   assert.equal(privateOrReservedAddress("127.0.0.1"), true);
   assert.equal(privateOrReservedAddress("169.254.169.254"), true);
+  assert.equal(privateOrReservedAddress("100.100.100.200"), true);
   assert.equal(privateOrReservedAddress("10.1.2.3"), true);
   assert.equal(privateOrReservedAddress("fc00::1"), true);
   assert.equal(privateOrReservedAddress("8.8.8.8"), false);
@@ -36,10 +37,35 @@ test("URL authorization rejects credentials, unsupported schemes, metadata, unal
   await assert.rejects(() => authorizeComputeUrl("ftp://example.com/x"), /HTTP\(S\)/);
   await assert.rejects(() => authorizeComputeUrl("https://u:p@example.com/x", { resolveHostname: async () => [{ address: "8.8.8.8", family: 4 }] }), /credentials/);
   await assert.rejects(() => authorizeComputeUrl("http://169.254.169.254/latest", { env: privateEnv }), /forbidden/);
+  await assert.rejects(() => authorizeComputeUrl("http://100.100.100.200/latest", { env: { GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "100.100.100.200", GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "100.100.100.200" } }), /forbidden/);
   await assert.rejects(() => authorizeComputeUrl("https://example.com/x", { resolveHostname: async () => [{ address: "8.8.8.8", family: 4 }] }), /operator allowlist/);
   await assert.rejects(() => authorizeComputeUrl("https://allowed.example/x", { env: { GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "allowed.example" }, resolveHostname: async () => [{ address: "10.0.0.1", family: 4 }] }), /private/);
   const approved = await authorizeComputeUrl("https://allowed.example/x", { env: { GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "allowed.example", GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "allowed.example" }, resolveHostname: async () => [{ address: "10.0.0.1", family: 4 }] });
   assert.equal(approved.address, "10.0.0.1");
+});
+
+test("DNS answers cannot launder metadata or mixed public/private rebinding targets", async () => {
+  const env = {
+    GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "allowed.example",
+    GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "allowed.example",
+  };
+  await assert.rejects(
+    () => authorizeComputeUrl("https://allowed.example/x", {
+      env,
+      resolveHostname: async () => [{ address: "100.100.100.200", family: 4 }],
+    }),
+    /metadata-service/,
+  );
+  await assert.rejects(
+    () => authorizeComputeUrl("https://allowed.example/x", {
+      env,
+      resolveHostname: async () => [
+        { address: "8.8.8.8", family: 4 },
+        { address: "10.0.0.1", family: 4 },
+      ],
+    }),
+    /mixed public\/private/,
+  );
 });
 
 test("governed JSON fetch pins an approved address, refuses redirects and bounds responses", async () => {
@@ -70,6 +96,23 @@ test("artifact verification streams approved HTTP bytes and refuses a hash misma
     assert.equal(verified.verifiedSha256, sha256);
     assert.equal(verified.verificationKind, "governed-http-stream");
     await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/artifact`, sha256: "0".repeat(64), sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env: privateEnv }), /does not match/);
+  } finally {
+    await close(server);
+  }
+});
+
+test("artifact verification refuses redirects, oversized bodies and ungoverned kinds", async () => {
+  const server = http.createServer((req, res) => {
+    if (req.url === "/redirect") { res.statusCode = 302; res.setHeader("location", "/artifact"); res.end(); return; }
+    if (req.url === "/large") { res.end(Buffer.alloc(2048)); return; }
+    res.end("x");
+  });
+  const port = await listen(server);
+  try {
+    const env = { ...privateEnv, GROWTHUB_COMPUTE_ARTIFACT_MAX_BYTES: "1024" };
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/redirect`, sha256: "0".repeat(64), kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /redirects are refused/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/large`, sha256: "0".repeat(64), kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /exceeds 1024 bytes/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/artifact`, sha256: "0".repeat(64), kind: "unexpected" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /not allowed by the work spec/);
   } finally {
     await close(server);
   }
