@@ -7,8 +7,7 @@ on:
       - claude/compute-authority-evidence-pr296-0u5msd
     paths:
       - .github/workflows/one-shot-compute-network-hardening.yml
-      - scripts/run-compute-network-hardening-idempotent.mjs
-      - scripts/apply-compute-network-hardening.mjs
+      - scripts/apply-compute-network-hardening-v2.mjs
       - scripts/repair-compute-data-plane-script.mjs
       - scripts/apply-compute-data-plane.mjs
       - scripts/finalize-compute-data-plane.mjs
@@ -47,7 +46,7 @@ jobs:
           node-version: 24
 
       - name: Apply governed network and resource-lifecycle wiring
-        run: node scripts/run-compute-network-hardening-idempotent.mjs
+        run: node scripts/apply-compute-network-hardening-v2.mjs
 
       - name: Tighten the data-plane applicator
         run: node scripts/repair-compute-data-plane-script.mjs
