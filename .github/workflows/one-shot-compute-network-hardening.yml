@@ -48,6 +48,7 @@ jobs:
           git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
           git add cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js \
+                  cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
                   scripts/e2e-compute-route-realization-loop.mjs \
                   scripts/run-compute-certification.mjs
           git commit -m "fix(compute): enforce governed network and continuation-safe execution"
