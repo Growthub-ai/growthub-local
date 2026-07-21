@@ -48,7 +48,7 @@ let resolver = read(resolverPath);
 resolver = replaceOrSkip(
   resolver,
   `  } else {\n    if (num(req.gpuCount) > 0) {`,
-  `  } else {\n    const allocationSafety = caps.allocationIdempotency && typeof caps.allocationIdempotency === "object"\n      ? caps.allocationIdempotency\n      : null;\n    if (providerId !== "local-machine"\n      && allocationSafety\n      && allocationSafety.guaranteed !== true\n      && quote?.allocationIdempotencyVerified !== true) {\n      flag(\n        "allocation-idempotency-unproven",\n        allocationSafety.evidence\n          ? \`provider cannot safely recover the provider-accepted-before-persist crash window: ${"${allocationSafety.evidence}"}\`\n          : "provider cannot prove deterministic allocation reconciliation",\n      );\n    }\n    if (num(req.gpuCount) > 0) {`,
+  `  } else {\n    const allocationSafety = caps.allocationIdempotency && typeof caps.allocationIdempotency === "object"\n      ? caps.allocationIdempotency\n      : null;\n    if (providerId !== "local-machine"\n      && allocationSafety\n      && allocationSafety.guaranteed !== true\n      && quote?.allocationIdempotencyVerified !== true) {\n      flag(\n        "allocation-idempotency-unproven",\n        allocationSafety.evidence\n          ? \`provider cannot safely recover the provider-accepted-before-persist crash window: ${allocationSafety.evidence}\`\n          : "provider cannot prove deterministic allocation reconciliation",\n      );\n    }\n    if (num(req.gpuCount) > 0) {`,
   `allocation-idempotency-unproven`,
   "resolver idempotency eligibility gate",
 );
@@ -88,8 +88,8 @@ modal = replaceOrSkip(
 );
 modal = replaceOrSkip(
   modal,
-  `        await ctx.fetchJson(\`${"${config.baseUrl}"}/health\`, { headers: authHeaders(ctx, config) });\n        reachable = true;`,
-  `        const health = await ctx.fetchJson(\`${"${config.baseUrl}"}/health\`, { headers: authHeaders(ctx, config) });\n        reachable = true;\n        allocationIdempotencyVerified = String(\n          health?.growthub?.allocationIdempotency || health?.allocationIdempotency || "",\n        ) === "growthub-idempotency-key-v1";`,
+  `        await ctx.fetchJson(\`${config.baseUrl}/health\`, { headers: authHeaders(ctx, config) });\n        reachable = true;`,
+  `        const health = await ctx.fetchJson(\`${config.baseUrl}/health\`, { headers: authHeaders(ctx, config) });\n        reachable = true;\n        allocationIdempotencyVerified = String(\n          health?.growthub?.allocationIdempotency || health?.allocationIdempotency || "",\n        ) === "growthub-idempotency-key-v1";`,
   `health?.growthub?.allocationIdempotency`,
   "Modal health attestation",
 );
@@ -140,4 +140,10 @@ if (!certification.includes("scripts/unit-compute-allocation-idempotency.test.mj
 }
 write(certificationPath, certification);
 
-console.log("[allocation-idempotency] remote placement now requires deterministic provider reconciliation");
+// The eligibility proof above prevents unsafe providers from being selected.
+// The runtime applicator below closes the remaining ambiguity window: when a
+// safe provider accepted capacity but its response was lost, adopt the exact
+// idempotency-bound resource or stay pending without a second paid create.
+await import("./apply-compute-allocation-reconciliation.mjs");
+
+console.log("[allocation-idempotency] remote placement requires deterministic eligibility and response reconciliation");
