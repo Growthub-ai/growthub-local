@@ -84,3 +84,27 @@ remote corpus/artifact byte data plane (authority binding is
 `metadata-only` until then), the provider-accepted-before-persist crash
 window + monotonic journal merge, asynchronous long-run observation,
 active-attempt resume/release safety, and strict hard-budget normalization.
+
+## Addendum 3 — production-hardening consolidation (every Addendum-2 open item closed)
+
+Each item listed as "still open" above is now implemented, committed
+directly in the production files, and certified by
+`npm run test:compute-certification` (29 suites / 217 tests / 0 failures
+plus both composed proofs — exact counts in EVIDENCE.md):
+
+| Open item (Addendum 2) | Closed by |
+| --- | --- |
+| Outbound provider/artifact network policy (SSRF boundary) | `lib/compute-network-policy.js` is the single outbound authority: DNS pinning, metadata-service blocking, public/private rebinding refusal, credential-bearing URL rejection, redirect refusal, bounded JSON, streaming SHA-256 artifact verification with governed artifact-root / expected-path / traversal / symlink / kind / size / work-spec / corpus binding checks; registered remote adapters always execute behind the governed transport (registry wrap test-pinned) |
+| Canonical workspace-owned evaluation | `lib/compute-canonical-evaluation.js` + executor wiring: only the existing eval-vs-base workflow over governed holdout traces mints benchmark verdicts; provider score rows are stripped at collection and cannot enter artifact evidence; promotion additionally requires live runtime proof of the exact artifact SHA |
+| Remote corpus/artifact byte data plane | `lib/compute-data-plane.js` + `lib/compute-data-store.js`: server-materialized export-tagged bytes, signed grants, receipts bound to run + work-spec + corpus + export, idempotent redelivery, durable Supabase Storage in production |
+| Provider-accepted-before-persist crash window | deterministic `adapter.reconcile` adoption (one provider create, `reconciled: true` survives normalization) + submission-bound dataset delivery evidence across the crash window (booted `route-crash` proof) |
+| Asynchronous long-run observation | bounded sandbox-run `observe` continuation + signed, deduplicated QStash scheduling; a pending provider run classifies as live (`pending`), never `failed` |
+| Active-attempt resume/release safety | release-before-evaluation ordering, foreign-workload allocation refusal, release-failure honesty (re-verified in this pass) |
+| Strict hard-budget normalization | `validateComputeBudgetPolicy`: positive finite JSON numbers only, zero is never unlimited, no unknown-cost opt-in under hard-cap, and validation is idempotent over its own normalized output (absent caps stay absent) |
+
+The staging machinery used to land this work — the one-shot workflow, the
+network-integration workflow, and every `apply-compute-*` /
+`repair-compute-*` / `run-compute-*-idempotent` script — was consumed and
+removed; the six core workflows are again the only CI. Remaining honestly
+open: live paid provider execution (real credentials/GPU capacity), tracked
+as the Unexecuted cells in PROOF-INDEX.md.

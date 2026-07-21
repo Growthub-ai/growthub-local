@@ -27,6 +27,59 @@ PROOF-INDEX.md for exact boundaries).
 | **Total focused compute tests** | **139 pass / 0 fail** |
 | `e2e-compute-realization-loop.mjs --write-evidence` (proofs A–J, real machine evidence) | **20 checks pass**; artifacts in `evidence/` |
 
+## Production hardening addendum — full certification at this branch head
+
+`npm run test:compute-certification` — **all 29 suites pass (217 tests, 0
+failures) plus both composed proofs** (booted durable route loop and the
+23-check A–J realization loop). Exact per-suite results:
+
+| Suite | Result |
+| --- | --- |
+| `unit-compute-contract` | 15 pass / 0 fail |
+| `unit-compute-capacity-profiles` | 15 pass / 0 fail |
+| `unit-compute-provider-registry` | 14 pass / 0 fail |
+| `unit-compute-resolver` | 14 pass / 0 fail |
+| `unit-compute-work-spec` | 5 pass / 0 fail |
+| `unit-compute-budget-policy` | 6 pass / 0 fail |
+| `unit-compute-authority` | 6 pass / 0 fail |
+| `unit-compute-authority-production` | 4 pass / 0 fail |
+| `unit-compute-network-policy` | 8 pass / 0 fail |
+| `unit-compute-outbound-policy` | 1 pass / 0 fail |
+| `unit-compute-data-plane` | 5 pass / 0 fail |
+| `unit-compute-data-store` | 4 pass / 0 fail |
+| `unit-compute-provider-attestation` | 2 pass / 0 fail |
+| `unit-compute-allocation-idempotency` | 5 pass / 0 fail |
+| `unit-compute-allocation-reconciliation` | 2 pass / 0 fail |
+| `unit-compute-execution` | 21 pass / 0 fail |
+| `unit-compute-runpod` | 11 pass / 0 fail |
+| `unit-compute-runpod-release` | 6 pass / 0 fail |
+| `unit-compute-modal` | 9 pass / 0 fail |
+| `unit-compute-ray` | 11 pass / 0 fail |
+| `unit-compute-customer-state` | 7 pass / 0 fail |
+| `unit-compute-canonical-evaluation` | 9 pass / 0 fail |
+| `unit-compute-evaluation-order` | 1 pass / 0 fail |
+| `unit-compute-adversarial` | 11 pass / 0 fail |
+| `unit-compute-route-wiring` | 4 pass / 0 fail |
+| `unit-compute-observation-wiring` | 1 pass / 0 fail |
+| `unit-compute-durable-observation` | 2 pass / 0 fail |
+| `unit-compute-observation-scheduler` | 5 pass / 0 fail |
+| `unit-training-evidence-completeness` | 13 pass / 0 fail |
+| `e2e-compute-route-realization-loop` (booted temp workspace) | passed — sealed authority, crash adoption without duplicate create, submission-bound delivery receipt across the crash window, bounded continuation, cancel/release, active resume resource, verified attested artifact, provider-score isolation, proof-gated evaluation pending on an unbound runtime, PATCH integrity, Mothership reload truth |
+| `e2e-compute-realization-loop` | 23/23 checks (incl. zero-hard-cap refusal, attested-artifact happy path under sealed authority, unattested-artifact refusal) |
+
+Production fixes landed by this hardening pass (beyond the staged
+applicator content): the budget validator is idempotent over its own
+normalized output (absent caps stay absent instead of minting the outlawed
+`0` sentinel); dataset delivery evidence follows the provider SUBMISSION
+across crash windows; `reconciled: true` survives allocation normalization;
+provider-authored evaluation scores can no longer persist inside artifact
+evidence; explicit customer evaluation holdouts bypass only the
+generic-sample floor; a pending provider-compute continuation classifies as
+a live `pending` run (never `failed`) in both the run classifier and the
+training-run row reconciler; the eval-vs-base tuned step carries the
+server-bounded `verificationProbe` so first-run verification evidence can
+exist.
+
 ## Adversarial case coverage map
 
 unknown provider → `unit-compute-provider-registry` (adapter-missing) + resolver `profile-unsupported` · missing credential → registry `credential-missing` (names only) · insufficient VRAM → capacity-profiles + resolver (`insufficient-vram`, both numbers named) · unknown cost under hard budget → resolver + e2e §D · quote expiry → resolver (`quote-expired`) · duplicate allocation → execution replay guard + Runpod name-reconcile + Ray submission_id adoption + duplicate-event-id refusal · provider timeout → adversarial suite (status unobservable → named failure + release attempt) · allocation evidence mismatch → adversarial (8-GPU ask answered with 4 → fail closed + release) · reported GPU mismatch → same · forged running event → execution suite (refused, state unmoved) · forged completion → execution suite · checkpoint missing → execution (resume refused) · wrong-checkpoint resume → adversarial (foreign-run checkpoint never resumable) · artifact missing → execution + e2e §G · artifact hash mismatch → adversarial + e2e §G · base-model mismatch → **Inherited** (`training-verification` demotion semantics, `unit-training-runtime` re-run green) · cancel failure → adversarial (risk stays visible) · release failure → execution + e2e §J · provider complete with no artifact → execution + e2e §G · promotion without evaluation win → adversarial (derived `promoted` only; flywheel step stays open; UI says Evaluating) · caller-planted self-consistent intent/work spec → adversarial (ignored; every provider boundary receives the server-compiled spec) · post-seal drift of policy/dataset/steps/output → authority + adversarial (refused before provider submission) · authority forgery/seal tampering/foreign key → authority suite (seal fails; recompilation governs) · direct PATCH forgery of compute evidence, allocation, evaluation/promotion, artifact identity, or evidence erasure — INCLUDING erasure by omission, row/object deletion, trainingRunId rename, status demotion, and post-journal request changes → patch-policy suite + booted route proof (11 live HTTP probes, all 422 `training_evidence_field`; byte-identical echo stays writable; local-runner lane preserved) · key rotation authority reset → adversarial + authority suites (identical content reseals explicitly, changed content refuses with zero provider calls; ephemeral key refuses remote outright) · forged persisted dataset manifest laundering through verification → adversarial suite (recompilation reads trusted server inputs only) · local-only ask probing remote adapters → execution suite (zero adapter contact) · changed workload adopting an unreleased resource → execution suite (workload-bound idempotency identity refuses).
