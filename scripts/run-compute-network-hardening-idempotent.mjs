@@ -36,6 +36,14 @@ if (network.includes("metadata-service address")) {
   );
 }
 
+// The applicator emits Runpod source code from template literals. Preserve the
+// provider module's constant reference as source text instead of evaluating it
+// inside the applicator process.
+applicator = applicator.replaceAll(
+  "${RUNPOD_SERVERLESS_BASE}",
+  "\\${RUNPOD_SERVERLESS_BASE}",
+);
+
 fs.writeFileSync(applicatorPath, applicator);
 try {
   await import(`${pathToFileURL(applicatorPath).href}?exactHead=${Date.now()}`);
