@@ -104,17 +104,23 @@ function run(adapter, priorCompute = null) {
     computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: PROVIDER_ID, selectionMode: "explicit", policy: sealed.intent.policy },
     priorCompute, requireAuthority: true, authority: sealed,
     datasetAccess: { uri: "https://workspace.example/dataset", corpusSha256: sealed.workSpec.dataset.corpusSha256 },
-    datasetAccessEvidence: { schema: "growthub-compute-dataset-access-v1", tokenId: "token-1", corpusSha256: sealed.workSpec.dataset.corpusSha256, deliveryStatus: "issued" },
+    datasetEvidence: { schema: "growthub-compute-dataset-access-v1", tokenId: "token-1", corpusSha256: sealed.workSpec.dataset.corpusSha256, deliveryStatus: "issued" },
     io: io(adapter),
   });
 }
 
-test("ambiguous provider acceptance is reconciled and adopted without a second allocation", async () => {
+test("ambiguous provider acceptance is reconciled and adopted without a second provider create", async () => {
   let accepted = false;
+  let providerCreates = 0;
   let allocateCalls = 0;
   let reconcileCalls = 0;
   const adapter = baseAdapter({
-    async allocate() { allocateCalls += 1; accepted = true; throw new Error("ECONNRESET after provider accepted allocation"); },
+    async allocate() {
+      allocateCalls += 1;
+      if (!accepted) providerCreates += 1;
+      accepted = true;
+      throw new Error("ECONNRESET after provider accepted allocation");
+    },
     async reconcile(ctx) {
       reconcileCalls += 1;
       if (!accepted) return null;
@@ -130,12 +136,14 @@ test("ambiguous provider acceptance is reconciled and adopted without a second a
   });
   const first = await run(adapter);
   assert.equal(allocateCalls, 1);
-  assert.ok(reconcileCalls >= 2, "preflight and post-error reconciliation both ran");
+  assert.equal(providerCreates, 1);
+  assert.equal(reconcileCalls, 1, "the ambiguous response is reconciled immediately");
   assert.equal(first.computeBlock.allocation.allocationId, "alloc-reconciled");
   assert.equal(first.computeBlock.allocation.reconciled, true);
   assert.equal(first.computeBlock.events.some((event) => event.type === "compute-failed"), false);
   await run(adapter, first.computeBlock);
   assert.equal(allocateCalls, 1, "continuation observes the adopted resource and never allocates again");
+  assert.equal(providerCreates, 1, "only one provider resource was ever created");
 });
 
 test("ambiguous allocation without reconciliation remains pending and is never retried automatically", async () => {
@@ -143,11 +151,13 @@ test("ambiguous allocation without reconciliation remains pending and is never r
   const adapter = baseAdapter({ async allocate() { allocateCalls += 1; throw new Error("timeout after submit"); } });
   delete adapter.reconcile;
   const first = await run(adapter);
-  assert.equal(first.result.ok, false);
+  assert.equal(first.result.ok, true, "the governed request is accepted but remains non-terminal");
   assert.equal(first.result.adapterMeta.compute.pending, true);
-  assert.match(first.result.error, /allocation-state-unverified/);
+  assert.equal(first.result.adapterMeta.compute.remoteStateUnverified, true);
+  assert.match(first.result.adapterMeta.compute.reason, /allocation-state-unverified/);
   assert.equal(allocateCalls, 1);
   const second = await run(adapter, first.computeBlock);
   assert.equal(second.result.adapterMeta.compute.pending, true);
+  assert.equal(second.result.adapterMeta.compute.remoteStateUnverified, true);
   assert.equal(allocateCalls, 1, "unverified prior acceptance blocks a second paid create");
 });
