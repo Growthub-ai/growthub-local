@@ -20,6 +20,13 @@ function replaceOrSkip(source, before, after, marker, label) {
   throw new Error(`[provider-attestation] neither old nor hardened form found: ${label}`);
 }
 
+function replaceAllExact(source, before, after, { min = 1, label } = {}) {
+  const parts = source.split(before);
+  const count = parts.length - 1;
+  if (count < min) throw new Error(`[provider-attestation] expected at least ${min} ${label || "matches"}, found ${count}`);
+  return parts.join(after);
+}
+
 const evidencePath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-evidence.js";
 let evidence = read(evidencePath);
 evidence = replaceOrSkip(
@@ -84,7 +91,7 @@ execution = replaceOrSkip(
       );
       const providerAttestationReason = providerAttestationVerified
         ? "provider artifact binds the exact governed work-spec and delivered corpus identities"
-        : \`provider artifact attestation mismatch: expected workSpec=${"${expectedWorkSpecHash || \"missing\"}"} corpus=${"${expectedCorpusSha256 || \"missing\"}"}; received workSpec=${"${reportedWorkSpecHash || \"missing\"}"} corpus=${"${reportedCorpusSha256 || \"missing\"}"}\`;
+        : `provider artifact attestation mismatch: expected workSpec=${expectedWorkSpecHash || "missing"} corpus=${expectedCorpusSha256 || "missing"}; received workSpec=${reportedWorkSpecHash || "missing"} corpus=${reportedCorpusSha256 || "missing"}`;
       const candidate = {
         ...artifactEvidence,
         workSpecHash: reportedWorkSpecHash,
@@ -161,9 +168,9 @@ const submittedAuthority = new Map();`,
 e2e = replaceOrSkip(
   e2e,
   `    datasetFetchCount += 1;
-    return json(200, { call_id: \`call-${"${body.workSpec.trainingRunId}"}\` });`,
+    return json(200, { call_id: `call-${body.workSpec.trainingRunId}` });`,
   `    datasetFetchCount += 1;
-    const callId = \`call-${"${body.workSpec.trainingRunId}"}\`;
+    const callId = `call-${body.workSpec.trainingRunId}`;
     submittedAuthority.set(callId, {
       workSpecHash: body.workSpec.workSpecHash,
       corpusSha256: body.datasetAccess.corpusSha256,
@@ -172,25 +179,20 @@ e2e = replaceOrSkip(
   `submittedAuthority.set(callId`,
   "remember provider-consumed identities",
 );
-e2e = replaceOrSkip(
-  e2e,
-  `    return json(200, { status: "success", artifact: { kind: "gguf", locator: \`${"${providerBase}"}/artifact\`, sha256: artifactSha, sizeBytes: artifactBytes.length }, evaluationResults: providerSelfScores });`,
-  `    const attestation = submittedAuthority.get(id) || {};
-    return json(200, {
-      status: "success",
-      artifact: {
-        kind: "gguf",
-        locator: \`${"${providerBase}"}/artifact\`,
-        sha256: artifactSha,
-        sizeBytes: artifactBytes.length,
-        workSpecHash: attestation.workSpecHash,
-        corpusSha256: attestation.corpusSha256,
-      },
-      evaluationResults: providerSelfScores,
-    });`,
-  `const attestation = submittedAuthority.get(id) || {};`,
-  "booted provider artifact attestation",
-);
+
+if (!e2e.includes("workSpecHash: submittedAuthority.get(id)?.workSpecHash")) {
+  const compactOld = `artifact: { kind: "gguf", locator: `${providerBase}/artifact`, sha256: artifactSha, sizeBytes: artifactBytes.length },`;
+  const expanded = `artifact: {
+          kind: "gguf",
+          locator: `${providerBase}/artifact`,
+          sha256: artifactSha,
+          sizeBytes: artifactBytes.length,
+          workSpecHash: submittedAuthority.get(id)?.workSpecHash || "",
+          corpusSha256: submittedAuthority.get(id)?.corpusSha256 || "",
+        },`;
+  e2e = replaceAllExact(e2e, compactOld, expanded, { min: 2, label: "booted provider success artifact branches" });
+}
+
 e2e = replaceOrSkip(
   e2e,
   `  assert.equal(successCompute.artifact.verifiedSha256, artifactSha);`,
@@ -208,8 +210,11 @@ let certification = read(certificationPath);
 if (!certification.includes("scripts/unit-compute-provider-attestation.test.mjs")) {
   certification = replaceOnce(
     certification,
-    `  "scripts/unit-compute-data-plane.test.mjs",\n`,
-    `  "scripts/unit-compute-data-plane.test.mjs",\n  "scripts/unit-compute-provider-attestation.test.mjs",\n`,
+    `  "scripts/unit-compute-data-plane.test.mjs",
+`,
+    `  "scripts/unit-compute-data-plane.test.mjs",
+  "scripts/unit-compute-provider-attestation.test.mjs",
+`,
     "provider attestation certification suite",
   );
 }
