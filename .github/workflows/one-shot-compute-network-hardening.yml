@@ -15,6 +15,7 @@ on:
       - scripts/apply-compute-provider-attestation.mjs
       - scripts/apply-compute-allocation-idempotency.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
+      - scripts/apply-compute-evaluation-runtime-binding.mjs
       - scripts/finalize-compute-evaluation-order.mjs
       - scripts/apply-compute-canonical-e2e.mjs
       - scripts/apply-compute-observation-hardening.mjs
@@ -72,6 +73,9 @@ jobs:
       - name: Apply workspace-owned canonical evaluation wiring
         run: node scripts/apply-compute-canonical-evaluation.mjs
 
+      - name: Bind canonical evaluation to the exact live artifact identity
+        run: node scripts/apply-compute-evaluation-runtime-binding.mjs
+
       - name: Release paid capacity before canonical evaluation
         run: node scripts/finalize-compute-evaluation-order.mjs
 
@@ -107,7 +111,7 @@ jobs:
       - name: Verify focused Runpod release policy
         run: node --test scripts/unit-compute-runpod-release.test.mjs
 
-      - name: Verify workspace-owned canonical evaluation
+      - name: Verify workspace-owned canonical evaluation and exact runtime binding
         run: node --test scripts/unit-compute-canonical-evaluation.test.mjs
 
       - name: Verify release-before-evaluation ordering
