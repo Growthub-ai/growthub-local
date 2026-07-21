@@ -3,14 +3,15 @@
  *
  * workspace-patch-policy.js validates rows that are present in the incoming
  * replacement dataModel. A replacement patch can also attempt to destroy
- * evidence by omitting a protected field, row, or the entire
- * model-training-run object. This module compares the current and incoming
- * dataModel sets so omission is treated exactly like an explicit rewrite.
+ * evidence by omitting a protected field, row, or entire object. This module
+ * compares current and incoming dataModel sets so omission is treated exactly
+ * like an explicit rewrite.
  *
- * Once a server-sealed authority exists, its customer request snapshot is
- * frozen on that run. Changing policy/provider/output inputs requires a new
- * governed run or explicit re-prepare action; direct PATCH cannot mutate the
- * inputs underneath already-sealed execution evidence.
+ * Once a server-sealed authority exists, both its customer request snapshot
+ * and the model-training version row it was compiled from are frozen for that
+ * run. Changing those inputs requires a new governed run or explicit
+ * re-prepare action; direct PATCH cannot mutate the lineage underneath
+ * already-sealed execution evidence.
  *
  * Dependency-free by design. Both the real PATCH route and patch/preflight
  * call this same function, so dry-run and write behavior cannot diverge.
@@ -25,6 +26,16 @@ const PROTECTED_ARTIFACT_FIELDS = Object.freeze([
   "artifactSourceBytes",
   "artifactArtifactBytes",
   "artifact",
+]);
+
+const PROTECTED_TRAINING_VERSION_FIELDS = Object.freeze([
+  "Name",
+  "lastExportId",
+  "baseModel",
+  "localModel",
+  "apiRegistryId",
+  "lastExportSummary",
+  "computePolicy",
 ]);
 
 const SUCCESS_STATUSES = new Set(["completed", "imported", "verified"]);
@@ -86,7 +97,7 @@ function computeBlock(row) {
   return parseJsonColumn(row?.compute);
 }
 
-function hasSealedAuthority(row) {
+function sealedAuthority(row) {
   const authority = computeBlock(row)?.authority;
   return Boolean(
     isPlainObject(authority)
@@ -94,7 +105,7 @@ function hasSealedAuthority(row) {
       && populated(authority.authorityHash)
       && populated(authority.keyId)
       && populated(authority.seal),
-  );
+  ) ? authority : null;
 }
 
 function hasRemoteComputeEvidence(row) {
@@ -130,6 +141,58 @@ function rowsByRunId(rows) {
     else map.set(id, row);
   }
   return { map, duplicates };
+}
+
+function modelTrainingRows(objects) {
+  return (Array.isArray(objects) ? objects : [])
+    .filter((object) => String(object?.objectType ?? "").trim() === "model-training")
+    .flatMap((object) => Array.isArray(object.rows) ? object.rows : []);
+}
+
+function matchingTrainingVersionRows(objects, binding) {
+  if (!isPlainObject(binding)) return [];
+  const rowName = String(binding.rowName ?? "").trim();
+  const exportId = String(binding.lastExportId ?? "").trim();
+  return modelTrainingRows(objects).filter((row) => {
+    const sameName = rowName && String(row?.Name ?? "").trim() === rowName;
+    const sameExport = exportId && String(row?.lastExportId ?? "").trim() === exportId;
+    return sameName || sameExport;
+  });
+}
+
+function protectTrainingVersionLineage({ authority, currentObjects, incomingObjects, rowPath, violations }) {
+  const binding = authority?.trainingRowBinding;
+  if (!isPlainObject(binding) || (!populated(binding.rowName) && !populated(binding.lastExportId))) return;
+
+  const currentMatches = matchingTrainingVersionRows(currentObjects, binding);
+  const incomingMatches = matchingTrainingVersionRows(incomingObjects, binding);
+  const bindingPath = `${rowPath}.authority.trainingRowBinding`;
+
+  if (currentMatches.length !== 1) {
+    violations.push(violation(
+      bindingPath,
+      `sealed authority requires exactly one current model-training version row for ${binding.rowName || binding.lastExportId}; found ${currentMatches.length}`,
+    ));
+    return;
+  }
+  if (incomingMatches.length !== 1) {
+    violations.push(violation(
+      bindingPath,
+      `the authority-bound model-training version row may not be deleted, duplicated, or renamed through direct PATCH; expected exactly one match, found ${incomingMatches.length}`,
+    ));
+    return;
+  }
+
+  const currentVersion = currentMatches[0];
+  const incomingVersion = incomingMatches[0];
+  for (const field of PROTECTED_TRAINING_VERSION_FIELDS) {
+    if (populated(currentVersion[field]) && !sameValue(incomingVersion[field], currentVersion[field])) {
+      violations.push(violation(
+        `${bindingPath}.${field}`,
+        `${field} is part of the server-sealed training lineage and may not be omitted, erased, or changed underneath an existing authority`,
+      ));
+    }
+  }
 }
 
 /**
@@ -202,11 +265,15 @@ function evaluateTrainingEvidencePatchCompleteness(currentConfig, patch) {
         ));
       }
 
-      if (hasSealedAuthority(currentRow) && !sameValue(incomingRow.computeRequest, currentRow.computeRequest)) {
+      const authority = sealedAuthority(currentRow);
+      if (authority && !sameValue(incomingRow.computeRequest, currentRow.computeRequest)) {
         violations.push(violation(
           `${rowPath}.computeRequest`,
           "the customer compute request is frozen once server authority is sealed — create a new governed run or explicitly re-prepare instead of mutating policy/provider/output inputs underneath existing evidence",
         ));
+      }
+      if (authority) {
+        protectTrainingVersionLineage({ authority, currentObjects, incomingObjects, rowPath, violations });
       }
 
       const currentWins = benchmarkWins(currentRow);
@@ -240,6 +307,7 @@ function combinePatchPolicyVerdicts(...verdicts) {
 
 export {
   PROTECTED_ARTIFACT_FIELDS,
+  PROTECTED_TRAINING_VERSION_FIELDS,
   combinePatchPolicyVerdicts,
   evaluateTrainingEvidencePatchCompleteness,
 };
