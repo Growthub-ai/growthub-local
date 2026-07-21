@@ -108,17 +108,47 @@ if (MODE_SCREENS) {
   const cfg = JSON.parse(fs.readFileSync(cfgFile, "utf8"));
   const objects = Array.isArray(cfg.dataModel?.objects) ? cfg.dataModel.objects : [];
   const runId = "runpod-live-observation";
+  const modelId = "workspace-local";
+  const modelName = "growthub-live-runpod:latest";
+  const registryId = "runpod-live-endpoint";
+  objects.push({
+    id: "model-training",
+    objectType: "model-training",
+    label: "Custom Models",
+    columns: ["Name", "status", "baseModel", "localModel", "lastExportSummary"],
+    rows: [{
+      Name: modelId,
+      status: "complete",
+      baseModel: "governed-base",
+      localModel: modelName,
+      lastExportSummary: JSON.stringify({ registryId }),
+    }],
+  });
   objects.push({
     id: "model-training-run",
     objectType: "model-training-run",
     label: "Training runs",
-    columns: [],
+    columns: ["trainingRunId", "modelTrainingRowId", "status", "compute"],
     rows: [{
       trainingRunId: runId,
-      modelTrainingRowId: "workspace-local",
+      modelTrainingRowId: modelId,
       status: summary.stopped ? "failed" : "running",
       blockedReason: "",
       compute: JSON.stringify(summary.computeBlock),
+    }],
+  });
+  objects.push({
+    id: "api-registry",
+    objectType: "api-registry",
+    label: "API Registry",
+    columns: ["integrationId", "Name", "kind", "status", "lastResponse", "lastTested"],
+    rows: [{
+      integrationId: registryId,
+      Name: "Runpod live endpoint",
+      kind: "custom-model",
+      status: "connected",
+      lastResponse: JSON.stringify({ model: modelName, choices: [{ message: { content: "Live governed Runpod compute proof" } }] }),
+      lastTested: summary.observedAt,
     }],
   });
   cfg.dataModel = { ...(cfg.dataModel || {}), objects };
@@ -143,14 +173,29 @@ if (MODE_SCREENS) {
     const browser = await chromium.launch({ executablePath: browserExecutable, headless: true, args: ["--no-proxy-server", "--no-sandbox"] });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     fs.mkdirSync(proofDir, { recursive: true });
-    await page.goto(`${base}/data-model`, { waitUntil: "networkidle" });
+    await page.goto(base, { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Open workspace helper" }).click();
+    const setup = page.getByRole("dialog", { name: "Set up workspace helper" });
+    if (await setup.isVisible()) {
+      await setup.getByRole("button", { name: "Next" }).click();
+      await setup.getByRole("button", { name: "Next" }).click();
+      await setup.getByRole("button", { name: "Save & open helper" }).click();
+    }
+    await page.getByRole("textbox", { name: "Helper prompt" }).fill("/custom-models");
+    await page.getByRole("option", { name: /\/custom-models/ }).click();
+    await page.locator("[data-custom-models-ledger]").waitFor();
+    await page.screenshot({ path: path.join(proofDir, "02-live-custom-models-cockpit.png"), fullPage: false });
+    console.log("  shot: 02-live-custom-models-cockpit.png");
+
+    await page.locator("[data-helper-sidecar]").getByRole("button", { name: "Close workspace helper" }).click();
+    await page.getByRole("link", { name: "Management" }).click();
+    await page.getByRole("button", { name: "Custom Models", exact: true }).click();
+    await page.getByRole("button", { name: "Training runs", exact: true }).click();
+    await page.getByRole("heading", { name: "Training runs" }).waitFor();
     await page.screenshot({ path: path.join(proofDir, "01-live-workspace-data-model.png"), fullPage: false });
     console.log("  shot: 01-live-workspace-data-model.png");
     const compute = await (await fetch(`${base}/api/workspace/compute`)).json();
     fs.writeFileSync(path.join(proofDir, "live-04-compute-read-surface.json"), `${JSON.stringify(compute, null, 2)}\n`);
-    await page.goto(`${base}/custom-models`, { waitUntil: "networkidle" });
-    await page.screenshot({ path: path.join(proofDir, "02-live-custom-models-cockpit.png"), fullPage: false });
-    console.log("  shot: 02-live-custom-models-cockpit.png");
     await browser.close();
     console.log("\n✅ live evidence screenshots captured into docs/proofs/governed-compute-realization/live-runpod/");
   } finally {

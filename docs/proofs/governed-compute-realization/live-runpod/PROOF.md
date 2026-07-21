@@ -15,7 +15,7 @@ evidence here.
 | --- | --- |
 | Harness (`scripts/e2e-compute-runpod-live-proof.mjs`) | **Complete** — offline self-test green (`--mock`: 5 checks; `--mock --release`: 6 checks) |
 | Live execution | **Passed (live)** — 5 checks banked 2026-07-21 against the operator-deployed Runpod pod |
-| Screenshots (`--screens`) | Pending capture-route correction; no invalid screenshots are banked |
+| Screenshots (`--screens`) | **Passed (rendered)** — normal user journey banked through Workspace home → Ask helper → `/custom-models`, then Management → Training runs |
 
 ## Live execution result
 
@@ -70,3 +70,7 @@ shared over chat or ticketing systems once testing completes.
 - `live-03-capabilities.json` — capability honesty snapshot
 - `live-04-compute-read-surface.json` — `GET /api/workspace/compute` readback (written by `--screens`)
 - `01-live-workspace-data-model.png`, `02-live-custom-models-cockpit.png` — golden screenshots of the workspace deriving customer state from the live evidence
+
+The rendered proof was also exercised manually in Codex IAB through the same
+normal user path. No direct `/custom-models` route or synthetic 404 page is
+used by the capture harness.

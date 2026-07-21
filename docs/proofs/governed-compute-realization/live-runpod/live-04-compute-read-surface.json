@@ -1,0 +1,96 @@
+{
+  "ok": true,
+  "contract": "growthub-compute-provider-v1",
+  "adapters": [
+    {
+      "id": "local-machine",
+      "label": "This machine",
+      "description": "Owned local hardware — capacity from the existing machine preflight evidence, execution through the existing local training runner.",
+      "locality": "local"
+    },
+    {
+      "id": "runpod-pods",
+      "label": "Runpod",
+      "description": "Runpod GPU pods + serverless jobs (REST v1 / api.runpod.ai v2). Single-worker up to 8 GPUs; checkpointing via network volumes.",
+      "locality": "remote"
+    },
+    {
+      "id": "modal-functions",
+      "label": "Modal",
+      "description": "Modal serverless GPU functions via a pre-deployed proxy-authed execution endpoint. Per-second billing, scale-to-zero, up to 8 GPUs/container (clustered attested via config).",
+      "locality": "remote"
+    },
+    {
+      "id": "ray-cluster",
+      "label": "Ray cluster",
+      "description": "Provider-neutral Ray Jobs + Ray Train distributed backend bound to an already-authorized cluster endpoint.",
+      "locality": "cluster"
+    },
+    {
+      "id": "aws-hyperpod-ray",
+      "label": "AWS SageMaker HyperPod (EKS + KubeRay)",
+      "description": "Ray-backed realization on an already-authorized HyperPod EKS cluster: KubeRay operator, FSx/S3 checkpoint storage, deep-health-checked nodes with automatic replacement (drive FailureConfig(max_failures=-1) for auto-resume).",
+      "locality": "cluster"
+    },
+    {
+      "id": "coreweave-ray",
+      "label": "CoreWeave CKS (KubeRay + Kueue)",
+      "description": "Ray-backed realization on an already-authorized CoreWeave CKS cluster: customer-installed KubeRay with Kueue gang admission (all-or-nothing RayCluster placement) on InfiniBand-backed GPU nodes.",
+      "locality": "cluster"
+    }
+  ],
+  "providers": [
+    {
+      "providerId": "local-machine",
+      "rowName": "",
+      "provenance": "builtin",
+      "adapterId": "local-machine",
+      "status": "ready",
+      "statusReason": "owned hardware — machine not measured yet; the preflight probe runs before anything trains",
+      "capacityProfiles": [
+        "harvest-only",
+        "serve-local",
+        "cpu-local-finetune",
+        "single-gpu-finetune"
+      ],
+      "availabilityModes": [
+        "local"
+      ],
+      "executionLane": "sandbox-local",
+      "requiredEnv": [],
+      "missingEnv": [],
+      "violations": [],
+      "preflightPresent": false
+    }
+  ],
+  "invalidRows": 0,
+  "capacity": {
+    "schema": "growthub-compute-capacity-plan-v1",
+    "requirements": {
+      "workloadKind": "harvest",
+      "acceleratorClass": "none",
+      "gpuCount": 0,
+      "minVramPerGpuGB": 0,
+      "minCpuCores": 1,
+      "minRamGB": 0,
+      "minDiskGB": 0,
+      "checkpointRequired": false,
+      "distributed": null,
+      "locality": {
+        "regions": [],
+        "dataResidency": ""
+      },
+      "estimatedDurationMinutes": 0
+    },
+    "capacityProfileId": "harvest-only",
+    "capacityProfileLabel": "Harvest only (train later)",
+    "profileReason": "plan asks for no execution capacity — harvesting continues",
+    "executes": false,
+    "local": {
+      "eligible": true,
+      "reasons": [],
+      "reasonCodes": []
+    }
+  },
+  "preflightPresent": false
+}
