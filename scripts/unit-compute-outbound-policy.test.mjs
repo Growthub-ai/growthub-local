@@ -145,27 +145,64 @@ test("HTTP artifact verifier stops oversized streams before hashing them as trus
 test("local artifact verification permits regular files only inside governed root and expected output path", async () => {
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), "gh-compute-outbound-"));
   try {
-    const root = path.join(tmp, "artifacts");
-    const expected = path.join(root, "model");
+    const rootDir = path.join(tmp, "artifacts");
+    const expected = path.join(rootDir, "model");
     await fsp.mkdir(expected, { recursive: true });
     const file = path.join(expected, "model.gguf");
     const bytes = Buffer.from("local governed artifact");
     await fsp.writeFile(file, bytes);
     const spec = workSpec({ output: { expectedKinds: ["gguf"], artifactPath: expected } });
     const artifact = { kind: "gguf", locator: file, sha256: sha(bytes), sizeBytes: bytes.length, workSpecHash: "a".repeat(64) };
-    const verified = await verifyComputeArtifactMaterialization(artifact, spec, { artifactRoot: root, maxBytes: 1024 });
+    const verified = await verifyComputeArtifactMaterialization(artifact, spec, { artifactRoot: rootDir, maxBytes: 1024 });
     assert.equal(verified.verificationKind, "streamed-file-sha256");
 
     const outside = path.join(tmp, "outside.gguf");
     await fsp.writeFile(outside, bytes);
-    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: outside }, spec, { artifactRoot: root, maxBytes: 1024 }), /escapes/);
-    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: `${expected}/../model/model.gguf` }, spec, { artifactRoot: root, maxBytes: 1024 }), /parent traversal/);
+    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: outside }, spec, { artifactRoot: rootDir, maxBytes: 1024 }), /escapes/);
+    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: `${expected}/../model/model.gguf` }, spec, { artifactRoot: rootDir, maxBytes: 1024 }), /parent traversal/);
 
     const symlink = path.join(expected, "link.gguf");
     await fsp.symlink(outside, symlink);
-    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: symlink }, spec, { artifactRoot: root, maxBytes: 1024 }), /escapes|symbolic link/);
-    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: expected }, spec, { artifactRoot: root, maxBytes: 1024 }), /regular file/);
+    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: symlink }, spec, { artifactRoot: rootDir, maxBytes: 1024 }), /escapes|symbolic link/);
+    await assert.rejects(() => verifyComputeArtifactMaterialization({ ...artifact, locator: expected }, spec, { artifactRoot: rootDir, maxBytes: 1024 }), /regular file/);
   } finally {
     await fsp.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("registered remote adapters replace caller fetch with the governed outbound transport", async () => {
+  const registryUrl = pathToFileURL(path.join(
+    root,
+    "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/compute/compute-adapter-registry.js",
+  )).href;
+  const { registerComputeProviderAdapter, getComputeProviderAdapter } = await import(registryUrl);
+  const methods = {
+    describeCapabilities: () => ({}),
+    inspectCapacity: async (ctx) => ctx.fetchJson("http://127.0.0.1:9/private"),
+    allocate: async () => ({}), execute: async () => [], status: async () => [],
+    resume: async () => [], cancel: async () => [], release: async () => [],
+  };
+  registerComputeProviderAdapter({ id: "outbound-policy-test", locality: "remote", ...methods });
+  const registered = getComputeProviderAdapter("outbound-policy-test");
+  let attackerFetchCalls = 0;
+  const previousComputeAllowlist = process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+  const previousInferenceAllowlist = process.env.GROWTHUB_INFERENCE_TEST_ALLOWLIST;
+  const previousNodeEnv = process.env.NODE_ENV;
+  delete process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+  delete process.env.GROWTHUB_INFERENCE_TEST_ALLOWLIST;
+  process.env.NODE_ENV = "production";
+  try {
+    await assert.rejects(
+      () => registered.inspectCapacity({ fetchJson: async () => { attackerFetchCalls += 1; return { bypass: true }; } }),
+      /private, loopback/,
+    );
+    assert.equal(attackerFetchCalls, 0, "caller-injected transport never executes");
+  } finally {
+    if (previousComputeAllowlist === undefined) delete process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+    else process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST = previousComputeAllowlist;
+    if (previousInferenceAllowlist === undefined) delete process.env.GROWTHUB_INFERENCE_TEST_ALLOWLIST;
+    else process.env.GROWTHUB_INFERENCE_TEST_ALLOWLIST = previousInferenceAllowlist;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
