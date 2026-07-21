@@ -3,9 +3,8 @@
  *
  * Dry-run for `PATCH /api/workspace`. Takes the exact body you intend to
  * PATCH and returns the structured result of every gate the real PATCH will
- * apply — allowlist + mutation policy (workspace-patch-policy.js) + full
- * schema validation of the merged config (workspace-schema.js) — without
- * ever writing.
+ * apply — allowlist + mutation policy + training-evidence completeness + full
+ * schema validation of the merged config — without ever writing.
  *
  * Always responds 200; `ok` is the verdict. Agents should preflight any
  * non-trivial patch (especially dataModel mutations) and fix every reason
@@ -33,6 +32,10 @@ import {
   evaluateWorkspacePatchPolicy,
   repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
+import {
+  combinePatchPolicyVerdicts,
+  evaluateTrainingEvidencePatchCompleteness
+} from "@/lib/workspace-training-evidence-policy";
 import { evaluateAppScope, requireAppScope } from "@/lib/workspace-app-registry";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { readWorkspaceSourceRecords } from "@/lib/workspace-config";
@@ -89,7 +92,10 @@ async function POST(request) {
     currentConfig = null;
   }
 
-  const policy = evaluateWorkspacePatchPolicy(currentConfig, patch);
+  const policy = combinePatchPolicyVerdicts(
+    evaluateWorkspacePatchPolicy(currentConfig, patch),
+    evaluateTrainingEvidencePatchCompleteness(currentConfig, patch),
+  );
 
   // Schema check uses writeWorkspaceConfig's EXACT merge step
   // (applyWorkspaceConfigPatch) — canvas patches merge over the current
@@ -123,9 +129,7 @@ async function POST(request) {
     schema = { ok: false, errors: ["patch must be a plain object"] };
   }
 
-  // Preflight mirrors PATCH exactly, INCLUDING the app-scope verdict
-  // (OpenClaw: preflight is the single source of truth — if appScopeVerdict
-  // is not allowed, the real PATCH with the same header will 422 the same way).
+  // Preflight mirrors PATCH exactly, INCLUDING the app-scope verdict.
   const scope = requireAppScope(request, currentConfig || {});
   let appScopeVerdict = null;
   if (scope.scoped) {

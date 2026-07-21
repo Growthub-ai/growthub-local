@@ -13,6 +13,7 @@ const suites = [
   "scripts/unit-compute-resolver.test.mjs",
   "scripts/unit-compute-work-spec.test.mjs",
   "scripts/unit-compute-authority.test.mjs",
+  "scripts/unit-compute-authority-production.test.mjs",
   "scripts/unit-compute-execution.test.mjs",
   "scripts/unit-compute-runpod.test.mjs",
   "scripts/unit-compute-modal.test.mjs",
@@ -20,6 +21,7 @@ const suites = [
   "scripts/unit-compute-customer-state.test.mjs",
   "scripts/unit-compute-adversarial.test.mjs",
   "scripts/unit-compute-route-wiring.test.mjs",
+  "scripts/unit-training-evidence-completeness.test.mjs",
 ];
 
 let failures = 0;

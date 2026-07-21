@@ -361,20 +361,6 @@ function requestIsRemoteCapable(computeRequestColumn) {
   return true;
 }
 
-/**
- * A run row whose evidence chain must never be deleted or renamed away:
- * it carries a server journal, a promotion verdict, or verified success
- * artifact identity.
- */
-function isProtectedTrainingRunRow(row) {
-  if (!isPlainObject(row)) return false;
-  if (populatedColumn(row.compute)) return true;
-  if (populatedColumn(parseJsonColumn(row.distillation)?.benchmarkWins)) return true;
-  const status = String(row.status ?? "").trim().toLowerCase();
-  if (TRAINING_SUCCESS_STATUSES.includes(status) && String(row.artifactSha256 ?? "").trim()) return true;
-  return false;
-}
-
 /** Two-way echo check: any semantic difference — including OMISSION of a
  *  populated persisted value (PATCH replaces dataModel wholesale, so an
  *  omitted field IS a deletion) — is a violation. */
@@ -553,44 +539,11 @@ function checkDataModel(dataModel, currentConfig, violations) {
     });
   });
 
-  // Deletion / rename detection. PATCH replaces dataModel wholesale, so a
-  // persisted evidence-bearing run row (or its whole object) that is simply
-  // MISSING from the incoming body is a deletion of server-owned evidence —
-  // and renaming trainingRunId is the same deletion wearing a new identity.
-  const incomingById = new Map(
-    (dataModel.objects ?? []).filter(isPlainObject).map((o) => [String(o.id ?? ""), o])
-  );
-  currentObjects.forEach((currentObject) => {
-    if (!isPlainObject(currentObject) || String(currentObject.objectType ?? "") !== "model-training-run") return;
-    const incomingObject = incomingById.get(String(currentObject.id ?? "")) ?? null;
-    const incomingRows = Array.isArray(incomingObject?.rows) ? incomingObject.rows.filter(isPlainObject) : [];
-    const incomingByRunId = new Map(
-      incomingRows
-        .filter((r) => String(r.trainingRunId ?? "").trim())
-        .map((r) => [String(r.trainingRunId).trim(), r])
-    );
-    (Array.isArray(currentObject.rows) ? currentObject.rows : []).forEach((currentRow) => {
-      if (!isProtectedTrainingRunRow(currentRow)) return;
-      const runId = String(currentRow?.trainingRunId ?? "").trim();
-      if (!incomingObject) {
-        violations.push(violation(
-          "training_evidence_field",
-          "dataModel.objects",
-          `model-training-run object "${String(currentObject.id ?? "")}" carries server-owned evidence ` +
-            `(run "${runId || "unnamed"}") and may not be deleted through direct PATCH`
-        ));
-        return;
-      }
-      if (!runId || !incomingByRunId.has(runId)) {
-        violations.push(violation(
-          "training_evidence_field",
-          "dataModel.objects",
-          `run row "${runId || "unnamed"}" carries server-owned evidence and may not be deleted or ` +
-            "renamed (trainingRunId is its identity) through direct PATCH"
-        ));
-      }
-    });
-  });
+  // Deletion-by-omission of evidence-bearing rows/objects (PATCH replaces
+  // dataModel wholesale) is owned by workspace-training-evidence-policy.js:
+  // both PATCH and patch/preflight combine that completeness verdict with
+  // this one (combinePatchPolicyVerdicts), so set-level erasure is refused
+  // there and never duplicated here.
 }
 
 /**

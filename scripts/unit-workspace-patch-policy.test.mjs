@@ -387,19 +387,30 @@ test("OMISSION IS DELETION — dropping compute, artifact fields, or success sta
   assert.ok(codes(evaluateWorkspacePatchPolicy(current, patchTrainingRows([erasedStatus]))).includes("training_evidence_field"), "omitting a server-stamped success status is refused");
 });
 
-test("OMISSION IS DELETION — dropping the evidence-bearing row, renaming it, or dropping the whole object fails", () => {
+test("OMISSION IS DELETION — dropping the evidence-bearing row, renaming it, or dropping the whole object fails at the route-visible verdict", async () => {
+  // Set-level completeness is owned by workspace-training-evidence-policy;
+  // both routes combine it with this policy, so the ROUTE-VISIBLE verdict is
+  // the combination — exactly what this proof evaluates.
+  const { evaluateTrainingEvidencePatchCompleteness, combinePatchPolicyVerdicts } = await import(
+    path.join(root, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/workspace-training-evidence-policy.js")
+  );
+  const routeVerdict = (current, patch) => combinePatchPolicyVerdicts(
+    evaluateWorkspacePatchPolicy(current, patch),
+    evaluateTrainingEvidencePatchCompleteness(current, patch),
+  );
+
   const current = trainingRunConfig({ compute: SEALED_COMPUTE });
-  const rowGone = evaluateWorkspacePatchPolicy(current, patchTrainingRows([]));
+  const rowGone = routeVerdict(current, patchTrainingRows([]));
   assert.equal(rowGone.ok, false);
   assert.ok(codes(rowGone).includes("training_evidence_field"));
 
-  const renamed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+  const renamed = routeVerdict(current, patchTrainingRows([
     { trainingRunId: "trainrun_1-evaded", modelTrainingRowId: "workspace-local", status: "running", compute: SEALED_COMPUTE, computeRequest: CLOUD_REQUEST },
   ]));
   assert.equal(renamed.ok, false, "renaming trainingRunId is deletion wearing a new identity");
   assert.ok(codes(renamed).includes("training_evidence_field"));
 
-  const objectGone = evaluateWorkspacePatchPolicy(current, {
+  const objectGone = routeVerdict(current, {
     dataModel: { objects: [{ id: "people", label: "People", rows: [{ Name: "a" }] }] },
   });
   assert.equal(objectGone.ok, false, "dropping the whole model-training-run object deletes the evidence chain");
@@ -407,7 +418,7 @@ test("OMISSION IS DELETION — dropping the evidence-bearing row, renaming it, o
 
   // A run row with NO protected evidence may still be cleaned up freely.
   const disposable = trainingRunConfig({});
-  assert.equal(evaluateWorkspacePatchPolicy(disposable, patchTrainingRows([])).ok, true);
+  assert.equal(routeVerdict(disposable, patchTrainingRows([])).ok, true);
 });
 
 test("on a provider-compute row, PATCH cannot mint imported/completed status or rewrite artifact identity", () => {
