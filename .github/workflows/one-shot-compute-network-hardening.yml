@@ -13,7 +13,7 @@ on:
       - scripts/finalize-compute-data-plane.mjs
       - scripts/apply-compute-durable-data-store.mjs
       - scripts/apply-compute-provider-attestation-v2.mjs
-      - scripts/apply-compute-allocation-idempotency.mjs
+      - scripts/apply-compute-allocation-idempotency-v2.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
       - scripts/apply-compute-evaluation-runtime-binding.mjs
       - scripts/finalize-compute-evaluation-order.mjs
@@ -68,7 +68,7 @@ jobs:
         run: node scripts/apply-compute-provider-attestation-v2.mjs
 
       - name: Require deterministic paid-allocation reconciliation
-        run: node scripts/apply-compute-allocation-idempotency.mjs
+        run: node scripts/apply-compute-allocation-idempotency-v2.mjs
 
       - name: Apply workspace-owned canonical evaluation wiring
         run: node scripts/apply-compute-canonical-evaluation.mjs
