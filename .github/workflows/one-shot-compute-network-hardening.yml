@@ -1,6 +1,7 @@
 name: One-shot compute network hardening
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - claude/compute-authority-evidence-pr296-0u5msd
@@ -48,7 +49,7 @@ jobs:
       - name: Commit implementation to the active PR branch
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "4189826+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
