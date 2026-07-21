@@ -24,8 +24,46 @@ const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 const { default: modalAdapter, MODAL_ADAPTER_ID, modalGpuFor, mapModalCallStatus, MODAL_GPU_CATALOG } = await import(lib("adapters/compute/modal-compute.js"));
 const { getComputeProviderAdapter } = await import(lib("adapters/compute/compute-adapter-registry.js"));
 const { executeProviderComputeRun } = await import(lib("compute-execution.js"));
+const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 
 const BASE = "https://acme--growthub-exec.modal.run";
+
+// The conformance lifecycle runs under a sealed authority — the production
+// remote contract requires an immutable work spec at the provider boundary,
+// and a promotable artifact must attest the sealed work-spec and corpus.
+const CONFORMANCE_CORPUS_SHA = "d".repeat(64);
+function conformanceAuthority(trainingRunId, requirements) {
+  const intent = buildComputeIntent({
+    adaptivePlan: { mode: "train-remote", tier: "small", baseModel: "gemma3:4b" },
+    capacityPlan: { capacityProfileId: "single-gpu-finetune", requirements },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "advisory" } },
+    trainingRunConfig: {
+      profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "provider-compute",
+      baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m",
+      steps: [{ stageId: "fine-tuning", label: "Fine tune", bin: "python", args: ["train.py"] }],
+      datasetPath: "data/conformance.jsonl", outputModelTag: "conformance-model",
+      artifactPath: "artifacts/conformance-model", importProof: { acceptedTypes: ["gguf"] },
+    },
+  });
+  const workSpec = buildComputeWorkSpec({
+    intent,
+    trainingRunConfig: { datasetPath: "data/conformance.jsonl" },
+    trainingRunId,
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: "export-conformance",
+    corpusSha256: CONFORMANCE_CORPUS_SHA,
+  });
+  return { schema: "growthub-compute-authority-v1", intent, workSpec, intentHash: intent.intentHash, requirementsHash: intent.requirementsHash, workSpecHash: workSpec.workSpecHash };
+}
+const conformanceDeliveredDataset = (trainingRunId) => ({
+  schema: "growthub-compute-dataset-access-v1",
+  tokenId: `token-${trainingRunId}`,
+  trainingRunId,
+  exportId: "export-conformance",
+  corpusSha256: CONFORMANCE_CORPUS_SHA,
+  deliveryStatus: "delivered",
+  deliveredAt: "2026-07-20T12:00:05.000Z",
+});
 const REQ = { workloadKind: "fine-tune", acceleratorClass: "datacenter-gpu", gpuCount: 1, minVramPerGpuGB: 80, minCpuCores: 4, minRamGB: 16, minDiskGB: 60, checkpointRequired: false, distributed: null, locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 60 };
 
 function fakeFetch(routes) {
@@ -59,7 +97,10 @@ function ctxWith({ fetchJson, config = {}, resourceId = "", requirements = REQ }
 // ---------------------------------------------------------------------------
 
 test("adapter registers; capabilities are attestation-gated and honest", () => {
-  assert.equal(getComputeProviderAdapter(MODAL_ADAPTER_ID), modalAdapter);
+  const registered = getComputeProviderAdapter(MODAL_ADAPTER_ID);
+  assert.equal(registered.id, modalAdapter.id);
+  assert.notEqual(registered, modalAdapter, "registration returns the governed-transport wrapper, never the raw adapter");
+  assert.equal(registered.execute.name, "governedAdapterMethod", "remote methods run behind the governed outbound policy");
   const plain = modalAdapter.describeCapabilities({ providerId: "modal-burst", baseUrl: BASE });
   assert.equal(plain.maxWorkers, 1, "no clustered attestation → single worker");
   assert.equal(plain.supportsGangScheduling, false);
@@ -168,15 +209,17 @@ test("release honesty on scale-to-zero: terminal call releases; live call cancel
 // ---------------------------------------------------------------------------
 
 test("CONFORMANCE — full governed lifecycle over the Modal adapter (faked transport, artifact returned)", async () => {
+  const authority = conformanceAuthority("trainrun_modal_e2e", { ...REQ, checkpointRequired: false });
   let statusCalls = 0;
   const fetchJson = fakeFetch([
-    ["/health", { reply: { ok: true } }],
+    ["/health", { reply: { ok: true, growthub: { allocationIdempotency: "growthub-idempotency-key-v1" } } }],
     ["/submit", { method: "POST", reply: { call_id: "fc-e2e" } }],
     ["/status", {
       reply: () => {
         statusCalls += 1;
         if (statusCalls === 1) return { status: "running" };
-        return { status: "success", artifact: { locator: "vol://out/student.q4_k_m.gguf", sha256: "e".repeat(64), sizeBytes: 42, kind: "gguf" } };
+        // An honest provider attests the exact sealed identities it executed.
+        return { status: "success", artifact: { locator: "vol://out/student.q4_k_m.gguf", sha256: "e".repeat(64), sizeBytes: 42, kind: "gguf", workSpecHash: authority.workSpecHash, corpusSha256: CONFORMANCE_CORPUS_SHA } };
       },
     }],
   ]);
@@ -209,6 +252,8 @@ test("CONFORMANCE — full governed lifecycle over the Modal adapter (faked tran
     trainingRunId: "trainrun_modal_e2e",
     computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "modal-burst", selectionMode: "explicit" },
     requirements: { ...REQ, checkpointRequired: false },
+    authority,
+    datasetEvidence: conformanceDeliveredDataset("trainrun_modal_e2e"),
     io: {
       getAdapter: (id) => (id === MODAL_ADAPTER_ID ? modalAdapter : null),
       listAdapterIds: () => [MODAL_ADAPTER_ID],

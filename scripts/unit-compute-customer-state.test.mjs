@@ -76,7 +76,10 @@ function blockWith({ events = [], checkpoints = [], artifact = null, decision = 
 }
 
 const PROVEN_CKPT = { checkpointId: "ck1", runRef: RUN_REF, locator: "s3://ck/1", sha256: "a".repeat(64), step: 100, sizeBytes: 1, createdAt: "t", evidenceObservedAt: "t" };
-const GOOD_ARTIFACT = { runRef: RUN_REF, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
+// A promotable artifact now attests the exact governed work-spec and corpus
+// identities in addition to byte identity — mirroring the provider
+// attestation gate in deriveComputeArtifactHonesty.
+const GOOD_ARTIFACT = { runRef: RUN_REF, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t", workSpecHash: "c".repeat(64), requirementsHash: "d".repeat(64), corpusSha256: "e".repeat(64), providerAttestationVerified: true };
 
 // ---------------------------------------------------------------------------
 

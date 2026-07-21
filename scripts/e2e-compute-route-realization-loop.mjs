@@ -34,8 +34,21 @@ const artifactSha = crypto.createHash("sha256").update(artifactBytes).digest("he
 let submitCount = 0;
 let resumeCount = 0;
 let cancelCount = 0;
+let datasetFetchCount = 0;
 let crashObservationEnabled = false;
 const statusCalls = new Map();
+const submittedAuthority = new Map();
+const attestedArtifact = (callId) => {
+  const attestation = submittedAuthority.get(callId) || {};
+  return {
+    kind: "gguf",
+    locator: `${providerBase}/artifact`,
+    sha256: artifactSha,
+    sizeBytes: artifactBytes.length,
+    workSpecHash: attestation.workSpecHash,
+    corpusSha256: attestation.corpusSha256,
+  };
+};
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -61,10 +74,12 @@ const waitHttp = async (url, timeout = 120000) => {
 
 const providerPort = await freePort();
 const providerBase = `http://127.0.0.1:${providerPort}`;
+// The provider self-scores intentionally prefer the base. They are
+// untrusted diagnostics and can never create canonical benchmarkWins.
 const fabricatedEvaluationResults = Array.from({ length: 6 }, (_, index) => ({
   taskId: `provider-controlled-${index}`,
-  student: { quality: 1, latencyMs: 1, costUsd: 0 },
-  baseline: { quality: 0, latencyMs: 100, costUsd: 100 },
+  student: { quality: 0, latencyMs: 100, costUsd: 100 },
+  baseline: { quality: 1, latencyMs: 1, costUsd: 0 },
 }));
 
 const provider = http.createServer(async (req, res) => {
@@ -80,15 +95,31 @@ const provider = http.createServer(async (req, res) => {
     res.end(JSON.stringify(value));
   };
 
-  if (url.pathname === "/health") return json(200, { ok: true });
+  if (url.pathname === "/health") return json(200, {
+    ok: true,
+    growthub: { allocationIdempotency: "growthub-idempotency-key-v1" },
+  });
   if (url.pathname === "/artifact") {
     res.writeHead(200, { "content-type": "application/octet-stream" });
     return res.end(artifactBytes);
   }
-  if (url.pathname === "/chat") {
+  if (["/chat", "/v1/chat/completions", "/chat/completions"].includes(url.pathname)) {
+    const requestedModel = String(body?.model || "");
+    if (requestedModel === "teacher-v1") {
+      // The canonical evaluator judge contract is available, but the booted
+      // generic student endpoint is deliberately NOT allowed to claim exact
+      // artifact identity. Evaluation must remain pending until a proof-gated
+      // runtime independently resolves the returned artifact SHA.
+      return json(200, {
+        model: "teacher-v1",
+        choices: [{ message: { role: "assistant", content: JSON.stringify({ winner: "tuned", score: 5, reason: "the tuned answer follows the governed workspace behavior more accurately" }) }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 10 },
+      });
+    }
+    const model = requestedModel || "student-v1";
     return json(200, {
-      model: "student-v1",
-      choices: [{ message: { role: "assistant", content: "verified student" }, finish_reason: "stop" }],
+      model,
+      choices: [{ message: { role: "assistant", content: model === "base-v1" ? "generic base answer" : "workspace-specific tuned answer" }, finish_reason: "stop" }],
       usage: { prompt_tokens: 1, completion_tokens: 2 },
     });
   }
@@ -96,7 +127,20 @@ const provider = http.createServer(async (req, res) => {
     submitCount += 1;
     assert.match(String(body.workSpec?.workSpecHash || ""), /^[0-9a-f]{64}$/);
     assert.equal(body.workSpec?.output?.modelTag, "student-v1");
-    return json(200, { call_id: `call-${body.workSpec.trainingRunId}` });
+    assert.equal(body.datasetAccess?.workSpecHash, body.workSpec.workSpecHash);
+    const corpusResponse = await fetch(body.datasetAccess?.uri);
+    assert.equal(corpusResponse.ok, true, "provider can retrieve the signed governed corpus");
+    const corpusBytes = Buffer.from(await corpusResponse.arrayBuffer());
+    const corpusSha = crypto.createHash("sha256").update(corpusBytes).digest("hex");
+    assert.equal(corpusSha, body.datasetAccess.corpusSha256);
+    assert.equal(corpusBytes.byteLength, body.datasetAccess.sizeBytes);
+    datasetFetchCount += 1;
+    const callId = `call-${body.workSpec.trainingRunId}`;
+    submittedAuthority.set(callId, {
+      workSpecHash: body.workSpec.workSpecHash,
+      corpusSha256: body.datasetAccess.corpusSha256,
+    });
+    return json(200, { call_id: callId });
   }
   if (url.pathname === "/resume") {
     resumeCount += 1;
@@ -118,7 +162,7 @@ const provider = http.createServer(async (req, res) => {
       if (count <= 2) return json(200, { status: "running" });
       return json(200, {
         status: "success",
-        artifact: { kind: "gguf", locator: `${providerBase}/artifact`, sha256: artifactSha, sizeBytes: artifactBytes.length },
+        artifact: attestedArtifact(id),
         evaluationResults: fabricatedEvaluationResults,
       });
     }
@@ -140,7 +184,7 @@ const provider = http.createServer(async (req, res) => {
     if (count === 1) return json(200, { status: "running" });
     return json(200, {
       status: "success",
-      artifact: { kind: "gguf", locator: `${providerBase}/artifact`, sha256: artifactSha, sizeBytes: artifactBytes.length },
+      artifact: attestedArtifact(id),
       evaluationResults: fabricatedEvaluationResults,
     });
   }
@@ -207,6 +251,7 @@ try {
     studentRegistryId: "student-model",
     fallbackBaseModel: "base-v1",
     fallbackBaseUrl: providerBase,
+    teacher: { providerId: "teacher-test", baseUrl: providerBase, modelTag: "teacher-v1", authEnvVar: "" },
   });
   let api = objects.find((object) => object.objectType === "api-registry");
   if (api) {
@@ -221,7 +266,37 @@ try {
     objects.push(api);
   }
 
+  // Canonical evaluation holdouts are server-owned workspace evidence and
+  // are deliberately not exported into the training corpus.
+  const holdoutRows = Array.from({ length: 6 }, (_, index) => ({
+    inputPrompt: `Canonical evaluation holdout ${index}: answer with the governed workspace behavior.`,
+    agentOutput: `reference ${index}`,
+    qualityScore: 5,
+    redactionStatus: "clear",
+    exported: "false",
+    evaluationHoldout: true,
+    sessionDate: `2026-07-${String(index + 1).padStart(2, "0")}`,
+  }));
+  const existingTraces = objects.find((object) => object.id === "training-traces" || object.objectType === "training-traces");
+  if (existingTraces) existingTraces.rows = [...(existingTraces.rows || []), ...holdoutRows];
+  else objects.push({ id: "training-traces", objectType: "training-traces", label: "Training Traces", columns: [], rows: holdoutRows });
+
   const runIds = ["route-crash", "route-resume", "route-cancel", "route-success"];
+  const corpusRows = runIds.flatMap((trainingRunId) => Array.from({ length: 2 }, (_, exportOrdinal) => ({
+    inputPrompt: `Training corpus ${trainingRunId} prompt ${exportOrdinal}`,
+    agentOutput: `Training corpus ${trainingRunId} answer ${exportOrdinal}`,
+    qualityScore: 5,
+    redactionStatus: "clear",
+    exported: "true",
+    lastExportId: `export-${trainingRunId}`,
+    datasetExportId: `export-${trainingRunId}`,
+    exportOrdinal,
+    trainingExportIds: [`export-${trainingRunId}`],
+  })));
+  const tracesObject = objects.find((object) => object.id === "training-traces" || object.objectType === "training-traces");
+  if (tracesObject) tracesObject.rows = [...(tracesObject.rows || []), ...corpusRows];
+  else objects.push({ id: "training-traces", objectType: "training-traces", label: "Training Traces", columns: [], rows: corpusRows });
+
   const runRows = runIds.map((trainingRunId) => ({
     schema: "growthub-local-model-training-run-v1",
     trainingRunId,
@@ -260,7 +335,7 @@ try {
       baseModel: "qwen3:141b",
       localModel: "student-v1",
       lastExportId: `export-${trainingRunId}`,
-      lastExportSummary: JSON.stringify({ recordCount: 40, path: `data/${trainingRunId}.jsonl`, registryId: "student-model", version: index + 1 }),
+      lastExportSummary: JSON.stringify({ recordCount: 2, path: `data/${trainingRunId}.jsonl`, registryId: "student-model", version: index + 1 }),
     })),
   });
   objects.push({ id: "model-training-run", objectType: "model-training-run", label: "Training runs", columns: [], rows: runRows });
@@ -297,6 +372,10 @@ try {
         MODAL_SECRET: "test-secret",
         GROWTHUB_INFERENCE_TEST_ALLOWLIST: "127.0.0.1",
         GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
+        GROWTHUB_COMPUTE_PUBLIC_BASE_URL: base,
+        GROWTHUB_COMPUTE_DATA_ROOT: path.join(tmp, "compute-data"),
+        GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "127.0.0.1",
+        GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1",
       },
     });
     await waitHttp(`${base}/api/workspace`);
@@ -340,11 +419,16 @@ try {
   assert.equal(recoveredCompute.allocation.allocationId, crashCompute.allocation.allocationId);
   assert.equal(recoveredRow.status, "imported");
   assert.equal(recoveredCompute.artifact.verifiedSha256, artifactSha);
+  assert.equal(recoveredCompute.dataset?.deliveryStatus, "delivered");
+  assert.match(String(recoveredCompute.dataset?.manifestHash || ""), /^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(recoveredCompute.dataset).includes("/api/workspace/compute-data/"), false, "bearer corpus URL never enters receipt evidence");
   assert.equal(recoveredCompute.evaluation, null, "provider-authored wins did not become canonical evaluation");
+  assert.equal(recovered.response.adapterMeta.compute.canonicalEvaluationPending, true);
+  assert.match(String(recovered.response.adapterMeta.compute.evaluationPendingReason || ""), /independently verify|unbound candidate runtime/);
 
   // A pending remote run remains live until the governed cancel action confirms cancellation/release.
   const pendingCancel = await (await run("route-cancel")).json();
-  assert.equal(pendingCancel.ok, true);
+  assert.equal(pendingCancel.ok, true, JSON.stringify(pendingCancel.response || pendingCancel).slice(0, 600));
   assert.equal(pendingCancel.response.exitCode, null);
   assert.equal(pendingCancel.response.adapterMeta.compute.pending, true);
   const cancelled = await (await run("route-cancel", { computeAction: "cancel" })).json();
@@ -376,11 +460,19 @@ try {
   assert.equal(successRow.status, "imported");
   assert.equal(successRow.artifactSha256, artifactSha);
   assert.equal(successCompute.artifact.verifiedSha256, artifactSha);
-  assert.equal(successCompute.evaluation, null);
+  assert.equal(successCompute.artifact.providerAttestationVerified, true);
+  assert.equal(successCompute.artifact.workSpecHash, successCompute.workSpecHash);
+  assert.equal(successCompute.artifact.corpusSha256, successCompute.workSpec.dataset.corpusSha256);
+  assert.equal(successCompute.dataset?.deliveryStatus, "delivered");
+  assert.equal(successCompute.dataset?.corpusSha256, successCompute.workSpec?.dataset?.corpusSha256);
+  assert.ok(datasetFetchCount >= 3, "remote providers fetched server-materialized corpus bytes before artifact import");
+  assert.equal(successCompute.evaluation, null, "tag-only endpoint cannot grade the returned artifact");
+  assert.equal(success.response.adapterMeta.compute.canonicalEvaluationPending, true);
+  assert.match(String(success.response.adapterMeta.compute.evaluationPendingReason || ""), /independently verify|unbound candidate runtime/);
   const successDistillation = typeof successRow.distillation === "string"
     ? JSON.parse(successRow.distillation)
     : successRow.distillation;
-  assert.equal(successDistillation?.benchmarkWins, undefined, "provider-controlled score rows never minted promotion");
+  assert.equal(successDistillation?.benchmarkWins, undefined, "provider-controlled score rows and tag-only runtime never minted promotion");
   assert.equal(successCompute.authority?.schema, "growthub-compute-authority-v1");
   assert.equal(successCompute.workSpecHash, successCompute.authority.workSpecHash);
   assert.equal(successCompute.requirementsHash, successCompute.authority.requirementsHash);
@@ -463,7 +555,7 @@ try {
   const serving = deriveProxyServingState({ workspaceConfig: finalCfg, baseModel: "base-v1" });
   assert.equal(serving.active?.target, "local-student");
 
-  console.log("compute route proof passed: sealed authority, crash adoption without duplicate create, bounded continuation, cancel/release, active resume resource, verified artifact, provider-score isolation, PATCH integrity, Mothership reload truth");
+  console.log("compute route proof passed: sealed authority, crash adoption without duplicate create, bounded continuation, cancel/release, active resume resource, verified artifact, provider-score isolation, proof-gated evaluation pending on an unbound runtime, PATCH integrity, Mothership reload truth");
 } finally {
   await stopNext();
   await new Promise((resolve) => provider.close(resolve));

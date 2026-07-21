@@ -35,7 +35,7 @@ const {
   normalizeComputeCheckpoint,
   computeIdempotencyKey,
 } = await import(lib("compute-evidence.js"));
-const { COMPUTE_AUTHORITY_SCHEMA } = await import(lib("compute-work-spec.js"));
+const { COMPUTE_AUTHORITY_SCHEMA, buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 const {
   compileComputeAuthority,
   verifyComputeAuthoritySeal,
@@ -213,6 +213,9 @@ function fakeAdapter(script = {}) {
         sha256: script.artifactSha ?? "b".repeat(64),
         sizeBytes: 4_000_000,
         evidenceObservedAt: "2026-07-20T12:09:00.000Z",
+        // An honest provider attests the exact sealed identities it executed.
+        workSpecHash: ctx.workSpec?.workSpecHash || "",
+        corpusSha256: ctx.workSpec?.dataset?.corpusSha256 || "",
         ...(Array.isArray(script.evaluationResults) ? { evaluationResults: script.evaluationResults } : {}),
       };
     },
@@ -333,12 +336,60 @@ function activePrior({ workSpecHash = "", idempotencyKeyHash = "", terminal = ""
 // Core lifecycle and paid-resource recovery
 // ---------------------------------------------------------------------------
 
+// Direct-executor tests run under a sealed authority (production remote
+// contract): the provider must attest the exact work-spec and corpus
+// identities, and dataset delivery must be proven, before an artifact can
+// verify.
+const DIRECT_CORPUS_SHA = "d".repeat(64);
+function directAuthority() {
+  const intent = buildComputeIntent({
+    adaptivePlan: { mode: "train-remote", tier: "small", baseModel: "gemma3:4b" },
+    capacityPlan: {
+      capacityProfileId: "single-gpu-finetune",
+      requirements: {
+        workloadKind: "fine-tune", acceleratorClass: "any-gpu", gpuCount: 1,
+        minVramPerGpuGB: 16, minCpuCores: 4, minRamGB: 16, minDiskGB: 60,
+        checkpointRequired: true, distributed: null,
+        locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 10,
+      },
+    },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "advisory" } },
+    trainingRunConfig: {
+      profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "provider-compute",
+      baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m",
+      steps: [{ stageId: "fine-tuning", label: "Fine tune", bin: "python", args: ["train.py"] }],
+      datasetPath: "data/train.jsonl", outputModelTag: "workspace-tuned-v1",
+      artifactPath: "artifacts/workspace-tuned-v1", importProof: { acceptedTypes: ["gguf"] },
+    },
+  });
+  const workSpec = buildComputeWorkSpec({
+    intent,
+    trainingRunConfig: { datasetPath: "data/train.jsonl" },
+    trainingRunId: RUN_ID,
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: "export-direct",
+    corpusSha256: DIRECT_CORPUS_SHA,
+  });
+  return { schema: "growthub-compute-authority-v1", intent, workSpec, intentHash: intent.intentHash, requirementsHash: intent.requirementsHash, workSpecHash: workSpec.workSpecHash };
+}
+const directDeliveredDataset = () => ({
+  schema: "growthub-compute-dataset-access-v1",
+  tokenId: "token-direct",
+  trainingRunId: RUN_ID,
+  exportId: "export-direct",
+  corpusSha256: DIRECT_CORPUS_SHA,
+  deliveryStatus: "delivered",
+  deliveredAt: "2026-07-20T12:00:05.000Z",
+});
+
 test("full lifecycle records allocation, verifies artifact, confirms release, and never fabricates promotion", async () => {
   const adapter = fakeAdapter();
   const outcome = await executeProviderComputeRun({
     workspaceConfig: directRegistryConfig({ receiptRow: receiptRowWith() }),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
+    authority: directAuthority(),
+    datasetEvidence: directDeliveredDataset(),
     io: makeIo(adapter),
   });
   assert.equal(outcome.localFallthrough, false);
@@ -372,6 +423,8 @@ test("provider-authored benchmark wins are discarded and cannot enter the traini
     workspaceConfig: directRegistryConfig({ receiptRow: receiptRowWith() }),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
+    authority: directAuthority(),
+    datasetEvidence: directDeliveredDataset(),
     io: makeIo(adapter),
   });
   assert.equal(outcome.result.ok, true);
@@ -387,18 +440,21 @@ test("provider-authored benchmark wins are discarded and cannot enter the traini
 
 test("an active allocation for the same workload is observed and completed without a second allocate or execute", async () => {
   const adapter = fakeAdapter();
+  const authority = directAuthority();
   const { hash } = computeIdempotencyKey({
     trainingRunId: RUN_ID,
     attempt: 1,
     capacityProfileId: "single-gpu-finetune",
     providerId: "fake-remote",
-    workSpecHash: "",
+    workSpecHash: authority.workSpecHash,
   });
-  const priorCompute = activePrior({ idempotencyKeyHash: hash });
+  const priorCompute = activePrior({ workSpecHash: authority.workSpecHash, idempotencyKeyHash: hash });
   const outcome = await executeProviderComputeRun({
     workspaceConfig: directRegistryConfig(),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
+    authority,
+    datasetEvidence: directDeliveredDataset(),
     priorCompute,
     io: makeIo(adapter),
   });
@@ -480,6 +536,8 @@ test("completed without an artifact is non-successful but release still runs", a
     workspaceConfig: directRegistryConfig(),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
+    authority: directAuthority(),
+    datasetEvidence: directDeliveredDataset(),
     io: makeIo(adapter),
   });
   assert.equal(outcome.result.ok, false);
@@ -767,10 +825,39 @@ function hookWorkspaceConfig(request = hookRequest(), compute = null) {
   };
 }
 
+const HOOK_MANIFEST = {
+  schema: "growthub-compute-dataset-manifest-v1",
+  exportId: "dataset-test",
+  manifestHash: "e".repeat(64),
+  corpusSha256: "f".repeat(64),
+  sizeBytes: 2048,
+  recordCount: 20,
+  binding: "materialized-bytes",
+};
+
 function hookIo(adapter, workspaceConfig, env = HOOK_ENV) {
   const io = makeIo(adapter);
   return {
     ...io,
+    // Server-owned data plane, stubbed at the same io seam the production
+    // route wires: materialized manifest → sealed grant → delivery receipt.
+    materializeDataset: async () => ({ ok: true, manifest: { ...HOOK_MANIFEST } }),
+    issueDatasetAccess: async ({ manifest, trainingRunId, workSpecHash }) => ({
+      ok: true,
+      access: { uri: "http://127.0.0.1:0/api/workspace/compute-data/test-token", workSpecHash, corpusSha256: manifest.corpusSha256, sizeBytes: manifest.sizeBytes },
+      evidence: {
+        schema: "growthub-compute-dataset-access-v1",
+        tokenId: "token-hook",
+        trainingRunId,
+        workSpecHash,
+        exportId: manifest.exportId,
+        corpusSha256: manifest.corpusSha256,
+        sizeBytes: manifest.sizeBytes,
+        recordCount: manifest.recordCount,
+        deliveryStatus: "issued",
+      },
+    }),
+    verifyDatasetDelivery: async () => ({ ok: true, receipt: { deliveredAt: "2026-07-20T12:00:06.000Z" } }),
     compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
       workspaceConfig,
       trainingRunId,
@@ -811,7 +898,7 @@ test("remote request is refused when the authority compiler is absent", async ()
     workspaceConfig,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io: makeIo(adapter),
+    io: { ...makeIo(adapter), materializeDataset: async () => ({ ok: true, manifest: { ...HOOK_MANIFEST } }) },
   });
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /authority compiler unavailable/);

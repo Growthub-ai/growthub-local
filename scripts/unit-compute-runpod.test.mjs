@@ -29,9 +29,46 @@ const {
 } = await import(lib("adapters/compute/runpod-compute.js"));
 const { getComputeProviderAdapter } = await import(lib("adapters/compute/compute-adapter-registry.js"));
 const { executeProviderComputeRun } = await import(lib("compute-execution.js"));
+const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 
 const RUN_REF = { trainingRunId: "trainrun_rp", modelTrainingRowId: "workspace-local", providerId: "runpod-burst", capacityProfileId: "single-gpu-finetune", providerResourceId: "" };
 const REQ = { workloadKind: "fine-tune", acceleratorClass: "any-gpu", gpuCount: 1, minVramPerGpuGB: 24, minCpuCores: 4, minRamGB: 16, minDiskGB: 60, checkpointRequired: true, distributed: null, locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 120 };
+
+// The conformance lifecycle runs under a sealed authority — the production
+// remote contract requires an immutable work spec at the provider boundary.
+const CONFORMANCE_CORPUS_SHA = "d".repeat(64);
+function conformanceAuthority(trainingRunId, requirements) {
+  const intent = buildComputeIntent({
+    adaptivePlan: { mode: "train-remote", tier: "small", baseModel: "gemma3:4b" },
+    capacityPlan: { capacityProfileId: "single-gpu-finetune", requirements },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "advisory" } },
+    trainingRunConfig: {
+      profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "provider-compute",
+      baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m",
+      steps: [{ stageId: "fine-tuning", label: "Fine tune", bin: "python", args: ["train.py"] }],
+      datasetPath: "data/conformance.jsonl", outputModelTag: "conformance-model",
+      artifactPath: "artifacts/conformance-model", importProof: { acceptedTypes: ["gguf"] },
+    },
+  });
+  const workSpec = buildComputeWorkSpec({
+    intent,
+    trainingRunConfig: { datasetPath: "data/conformance.jsonl" },
+    trainingRunId,
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: "export-conformance",
+    corpusSha256: CONFORMANCE_CORPUS_SHA,
+  });
+  return { schema: "growthub-compute-authority-v1", intent, workSpec, intentHash: intent.intentHash, requirementsHash: intent.requirementsHash, workSpecHash: workSpec.workSpecHash };
+}
+const conformanceDeliveredDataset = (trainingRunId) => ({
+  schema: "growthub-compute-dataset-access-v1",
+  tokenId: `token-${trainingRunId}`,
+  trainingRunId,
+  exportId: "export-conformance",
+  corpusSha256: CONFORMANCE_CORPUS_SHA,
+  deliveryStatus: "delivered",
+  deliveredAt: "2026-07-20T12:00:05.000Z",
+});
 
 /** Scripted transport: matchers list of [pattern, handler]. Records calls. */
 function fakeFetch(routes) {
@@ -76,7 +113,11 @@ const GRAPHQL_OK = {
 // ---------------------------------------------------------------------------
 
 test("adapter registers and declares HONEST capabilities", () => {
-  assert.equal(getComputeProviderAdapter(RUNPOD_ADAPTER_ID), runpodAdapter);
+  const registered = getComputeProviderAdapter(RUNPOD_ADAPTER_ID);
+  assert.equal(registered.id, runpodAdapter.id);
+  assert.notEqual(registered, runpodAdapter, "registration returns the governed-transport wrapper, never the raw adapter");
+  assert.equal(registered.execute.name, "governedAdapterMethod", "remote methods run behind the governed outbound policy");
+  assert.equal(registered.describeCapabilities.name, "governedDescribeCapabilities");
   const noVolume = runpodAdapter.describeCapabilities({ providerId: "runpod-burst" });
   assert.equal(noVolume.maxWorkers, 1, "no public cluster API → never claims multi-node");
   assert.equal(noVolume.supportsGangScheduling, false);
@@ -260,6 +301,8 @@ test("CONFORMANCE — full governed lifecycle over the Runpod adapter (faked tra
     trainingRunId: "trainrun_rp_e2e",
     computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "runpod-burst", selectionMode: "explicit" },
     requirements: { ...REQ, checkpointRequired: false },
+    authority: conformanceAuthority("trainrun_rp_e2e", { ...REQ, checkpointRequired: false }),
+    datasetEvidence: conformanceDeliveredDataset("trainrun_rp_e2e"),
     io: {
       getAdapter: (id) => (id === RUNPOD_ADAPTER_ID ? runpodAdapter : null),
       listAdapterIds: () => [RUNPOD_ADAPTER_ID],
@@ -281,7 +324,7 @@ test("CONFORMANCE — full governed lifecycle over the Runpod adapter (faked tra
   assert.ok(types.includes("compute-completed"));
   // Pods report no artifact through the API → completion is NON-promotable.
   assert.equal(outcome.result.ok, false);
-  assert.equal(outcome.result.adapterMeta.compute.promotable, false);
+  assert.equal(outcome.result.adapterMeta.compute.artifactVerified, false);
   assert.match(outcome.result.error, /no artifact/);
   // The full evidence trail is secret-free.
   assert.ok(!JSON.stringify(outcome.computeBlock).includes("test-key-value"));

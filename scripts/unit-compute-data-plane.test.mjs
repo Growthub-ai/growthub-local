@@ -91,7 +91,7 @@ test("signed delivery is bound to run, work spec and corpus, then receipt-verifi
   assert.equal(bytes.byteLength, staged.manifest.sizeBytes);
   assert.match(bytes.toString("utf8"), /first governed prompt/);
 
-  const receipt = await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: WORK_SPEC_HASH, dataset: { corpusSha256: staged.manifest.corpusSha256 } }, env });
+  const receipt = await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: WORK_SPEC_HASH, dataset: { exportId: EXPORT_ID, corpusSha256: staged.manifest.corpusSha256 } }, env });
   assert.equal(receipt.ok, true, receipt.reason);
   assert.equal(receipt.receipt.corpusSha256, staged.manifest.corpusSha256);
 
@@ -100,7 +100,7 @@ test("signed delivery is bound to run, work spec and corpus, then receipt-verifi
   const retry = await openComputeDatasetDelivery(token, { env, now: () => NOW + 2000 });
   assert.equal(retry.ok, true);
   await consume(retry.stream);
-  assert.equal((await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: WORK_SPEC_HASH, dataset: { corpusSha256: staged.manifest.corpusSha256 } }, env })).ok, true);
+  assert.equal((await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: WORK_SPEC_HASH, dataset: { exportId: EXPORT_ID, corpusSha256: staged.manifest.corpusSha256 } }, env })).ok, true);
 }));
 
 test("tampered, expired and foreign-work-spec grants fail closed", async () => withEnv(async ({ env }) => {
@@ -113,7 +113,7 @@ test("tampered, expired and foreign-work-spec grants fail closed", async () => w
 
   const delivery = await openComputeDatasetDelivery(token, { env, now: () => NOW + 1000 });
   await consume(delivery.stream);
-  const foreign = await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: "b".repeat(64), dataset: { corpusSha256: staged.manifest.corpusSha256 } }, env });
+  const foreign = await verifyComputeDatasetDelivery({ evidence: grant.evidence, workSpec: { trainingRunId: RUN_ID, workSpecHash: "b".repeat(64), dataset: { exportId: EXPORT_ID, corpusSha256: staged.manifest.corpusSha256 } }, env });
   assert.equal(foreign.ok, false);
   assert.equal(foreign.reasonCode, "dataset-delivery-mismatch");
 }));

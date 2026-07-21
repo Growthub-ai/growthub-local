@@ -251,7 +251,7 @@ test("ADVERSARIAL — a checkpoint from another run cannot satisfy resume", () =
 
 test("ADVERSARIAL — artifact hash mismatch is non-promotable", () => {
   const lifecycle = { terminal: "completed" };
-  const artifact = { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" };
+  const artifact = { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "b".repeat(64), verifiedSha256: "b".repeat(64), sizeBytes: 1, evidenceObservedAt: "t", providerAttestationVerified: true };
   const mismatch = deriveComputeArtifactHonesty({ lifecycle, artifact, expectedSha256: "c".repeat(64) });
   assert.equal(mismatch.promotable, false);
   assert.equal(mismatch.reasonCode, "artifact-hash-mismatch");
@@ -353,11 +353,40 @@ function authorityConfig({ request = authorityRequest(), compute = null, reserve
   };
 }
 
+const AUTH_MANIFEST = {
+  schema: "growthub-compute-dataset-manifest-v1",
+  exportId: "export-adv-1",
+  manifestHash: "e".repeat(64),
+  corpusSha256: "f".repeat(64),
+  sizeBytes: 2048,
+  recordCount: 20,
+  binding: "materialized-bytes",
+};
+
 function authorityIo(adapter, workspaceConfig, env = AUTH_ENV) {
   return {
     ...ioWith(adapter),
+    // Server-owned data plane, stubbed at the same io seam the production
+    // route wires: materialized manifest → sealed grant → delivery receipt.
+    materializeDataset: async () => ({ ok: true, manifest: { ...AUTH_MANIFEST } }),
+    issueDatasetAccess: async ({ manifest, trainingRunId, workSpecHash }) => ({
+      ok: true,
+      access: { uri: "http://127.0.0.1:0/api/workspace/compute-data/test-token", workSpecHash, corpusSha256: manifest.corpusSha256, sizeBytes: manifest.sizeBytes },
+      evidence: {
+        schema: "growthub-compute-dataset-access-v1",
+        tokenId: "token-adv",
+        trainingRunId,
+        workSpecHash,
+        exportId: manifest.exportId,
+        corpusSha256: manifest.corpusSha256,
+        sizeBytes: manifest.sizeBytes,
+        recordCount: manifest.recordCount,
+        deliveryStatus: "issued",
+      },
+    }),
+    verifyDatasetDelivery: async () => ({ ok: true, receipt: { deliveredAt: "2026-07-20T12:00:06.000Z" } }),
     compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, datasetManifest, now: "2026-07-20T12:00:00.000Z", env }),
-    verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, env }),
+    verifyAuthority: (authority, datasetManifest) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, datasetManifest, env }),
   };
 }
 
@@ -450,7 +479,9 @@ test("KEY ROTATION — identical content reseals, changed content refuses", asyn
   const KEY_A = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-a" };
   const KEY_B = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-b" };
   const baseConfig = authorityConfig();
-  const sealedUnderA = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, env: KEY_A });
+  // Production always compiles with the staged dataset manifest; the sealed
+  // baseline must carry the same manifest binding the rerun will stage.
+  const sealedUnderA = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, datasetManifest: AUTH_MANIFEST, env: KEY_A });
   assert.equal(sealedUnderA.ok, true);
 
   const unchanged = authorityConfig({ compute: { schema: "growthub-compute-evidence-v1", authority: sealedUnderA.authority } });
@@ -555,7 +586,7 @@ test("PROMOTION BOUNDARY — compute completion cannot promote without canonical
         { type: "compute-released", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "adv-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "r" }, providerEventId: "4", detail: "" },
       ],
       checkpoints: [],
-      artifact: { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "d".repeat(64), verifiedSha256: "d".repeat(64), sizeBytes: 1, evidenceObservedAt: "t" },
+      artifact: { runRef: {}, kind: "gguf", locator: "s3://out/m.gguf", sha256: "d".repeat(64), verifiedSha256: "d".repeat(64), sizeBytes: 1, evidenceObservedAt: "t", providerAttestationVerified: true },
       evidenceObservedAt: "t",
     },
     benchmarkWins: null,

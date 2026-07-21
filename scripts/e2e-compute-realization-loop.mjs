@@ -32,6 +32,7 @@ const {
   resumeProviderComputeRun,
 } = await import(lib("compute-execution.js"));
 const { deriveComputeLifecycle, deriveComputeArtifactHonesty } = await import(lib("compute-evidence.js"));
+const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 const { deriveBenchmarkWins } = await import(lib("distillation-eval-harness.js"));
 const { deriveActiveRoute } = await import(lib("distillation-fleet.js"));
 const { getComputeProviderAdapter, listComputeProviderAdapters } = await import(lib("adapters/compute/index.js"));
@@ -167,9 +168,17 @@ const budgetDecision = resolveCompute({
     "provider-b": mkQuote({ estimatedTotalUsd: 900 }),
     "provider-c": mkQuote(),
   },
-  budget: { mode: "hard-cap", maxTotalUsd: 100, maxHourlyUsd: 0, allowUnknownCost: false },
+  // Strict hard-cap contract: an unconstrained field is omitted, never 0.
+  budget: { mode: "hard-cap", maxTotalUsd: 100, allowUnknownCost: false },
 });
 eq("D: unknown/excess cost under hard cap selects nothing", budgetDecision.selectedProviderId, "");
+let zeroCapRefusal = null;
+try {
+  resolveCompute({ ...placementInput, budget: { mode: "hard-cap", maxTotalUsd: 100, maxHourlyUsd: 0, allowUnknownCost: false } });
+} catch (error) {
+  zeroCapRefusal = error;
+}
+eq("D: zero hard-cap sentinel is refused fail-closed", zeroCapRefusal?.code, "budget-zero-cap");
 ok("D: cost refusals are named", budgetDecision.candidates.some((candidate) => candidate.reasonCodes.includes("cost-unknown-under-hard-budget")) && budgetDecision.candidates.some((candidate) => candidate.reasonCodes.includes("over-budget")));
 evidence["proof-d-budget"] = budgetDecision;
 
@@ -240,6 +249,9 @@ function scriptedAdapter(script = {}) {
       sha256: script.artifactSha || "2".repeat(64),
       sizeBytes: 5,
       evidenceObservedAt: "t",
+      // An honest provider attests the exact sealed identities it executed.
+      workSpecHash: ctx.workSpec?.workSpecHash || "",
+      corpusSha256: ctx.workSpec?.dataset?.corpusSha256 || "",
       ...(script.providerScores ? { evaluationResults: script.providerScores } : {}),
     },
     cancel: async (ctx) => {
@@ -284,12 +296,50 @@ const e2eIo = (adapter, onPersist = null) => {
   };
 };
 
+// The verified happy path executes under a sealed server authority: the
+// provider must attest the exact work-spec and corpus identities, and the
+// dataset delivery receipt must already be proven, before an artifact can
+// verify. This mirrors the production sandbox-run route contract.
+const E2E_CORPUS_SHA = "d".repeat(64);
+const e2eAuthorityFor = (trainingRunId) => {
+  const intent = buildComputeIntent({
+    adaptivePlan: { mode: "train-remote", tier: "small", baseModel: "gemma3:4b" },
+    capacityPlan: { capacityProfileId: "single-gpu-finetune", requirements: req1 },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "advisory" } },
+    trainingRunConfig: {
+      profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "provider-compute",
+      baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m",
+      steps: [{ stageId: "fine-tuning", label: "Fine tune", bin: "python", args: ["train.py"] }],
+      datasetPath: "data/e2e.jsonl", outputModelTag: "e2e-model",
+      artifactPath: "artifacts/e2e-model", importProof: { acceptedTypes: ["gguf"] },
+    },
+  });
+  const workSpec = buildComputeWorkSpec({
+    intent,
+    trainingRunConfig: { datasetPath: "data/e2e.jsonl" },
+    trainingRunId,
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: "export-e2e",
+    corpusSha256: E2E_CORPUS_SHA,
+  });
+  return { schema: "growthub-compute-authority-v1", intent, workSpec, intentHash: intent.intentHash, requirementsHash: intent.requirementsHash, workSpecHash: workSpec.workSpecHash };
+};
+const e2eDeliveredDataset = () => ({
+  schema: "growthub-compute-dataset-access-v1",
+  tokenId: "token-e2e",
+  corpusSha256: E2E_CORPUS_SHA,
+  deliveryStatus: "delivered",
+});
+
 const firstAdapter = scriptedAdapter({ providerScores: Array.from({ length: 6 }, (_, index) => ({ taskId: `provider-${index}`, student: { quality: 1 }, baseline: { quality: 0 } })) });
+const runOneAuthority = e2eAuthorityFor("e2e-run-1");
 const lifecycleRun = await executeProviderComputeRun({
   workspaceConfig: e2eConfig,
   trainingRunId: "e2e-run-1",
-  computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "e2e-provider", selectionMode: "explicit" },
-  requirements: req1,
+  computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "e2e-provider", selectionMode: "explicit", policy: runOneAuthority.intent.policy },
+  requireAuthority: true,
+  authority: runOneAuthority,
+  datasetEvidence: e2eDeliveredDataset(),
   io: e2eIo(firstAdapter),
 });
 const lifecycleTypes = lifecycleRun.computeBlock.events.map((event) => event.type);
@@ -311,8 +361,10 @@ const continuationAdapter = scriptedAdapter({
 const continued = await executeProviderComputeRun({
   workspaceConfig: e2eConfig,
   trainingRunId: "e2e-run-1",
-  computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "e2e-provider", selectionMode: "explicit" },
-  requirements: req1,
+  computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "e2e-provider", selectionMode: "explicit", policy: runOneAuthority.intent.policy },
+  requireAuthority: true,
+  authority: runOneAuthority,
+  datasetEvidence: e2eDeliveredDataset(),
   priorCompute: partialPrior,
   io: e2eIo(continuationAdapter),
 });
@@ -327,7 +379,9 @@ const ghost = await executeProviderComputeRun({
   io: e2eIo(scriptedAdapter({ noArtifact: true })),
 });
 ok("G: provider complete without artifact remains non-successful", ghost.result.ok === false && ghost.result.adapterMeta.compute.artifactVerified === false);
-const wrongHash = deriveComputeArtifactHonesty({ lifecycle: { terminal: "completed" }, artifact: { locator: "s3://x", sha256: "3".repeat(64) }, expectedSha256: "4".repeat(64) });
+const wrongHash = deriveComputeArtifactHonesty({ lifecycle: { terminal: "completed" }, artifact: { locator: "s3://x", sha256: "3".repeat(64), providerAttestationVerified: true }, expectedSha256: "4".repeat(64) });
+const unattested = deriveComputeArtifactHonesty({ lifecycle: { terminal: "completed" }, artifact: { locator: "s3://x", sha256: "3".repeat(64) } });
+ok("G: artifact without provider attestation is named and non-promotable", !unattested.promotable && unattested.reasonCode === "artifact-provider-attestation-missing");
 ok("G: mismatched artifact hash is named and non-promotable", !wrongHash.promotable && wrongHash.reasonCode === "artifact-hash-mismatch");
 evidence["proof-g-artifact-honesty"] = { noArtifact: ghost.result.error, wrongHash };
 

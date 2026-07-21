@@ -35,6 +35,7 @@ const {
 } = await import(lib("adapters/compute/ray-cluster-compute.js"));
 const { getComputeProviderAdapter } = await import(lib("adapters/compute/compute-adapter-registry.js"));
 const { executeProviderComputeRun } = await import(lib("compute-execution.js"));
+const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
 
 const DASH = "http://ray-head.internal:8265";
 const DIST_REQ = {
@@ -82,9 +83,12 @@ function ctxWith({ fetchJson, config = {}, resourceId = "", requirements = DIST_
 // ---------------------------------------------------------------------------
 
 test("all three Ray-backed adapters register", () => {
-  assert.equal(getComputeProviderAdapter(RAY_ADAPTER_ID), rayAdapter);
-  assert.equal(getComputeProviderAdapter(HYPERPOD_ADAPTER_ID), hyperpodAdapter);
-  assert.equal(getComputeProviderAdapter(COREWEAVE_ADAPTER_ID), coreweaveAdapter);
+  for (const [adapterId, rawAdapter] of [[RAY_ADAPTER_ID, rayAdapter], [HYPERPOD_ADAPTER_ID, hyperpodAdapter], [COREWEAVE_ADAPTER_ID, coreweaveAdapter]]) {
+    const registered = getComputeProviderAdapter(adapterId);
+    assert.equal(registered.id, rawAdapter.id);
+    assert.notEqual(registered, rawAdapter, "registration returns the governed-transport wrapper, never the raw adapter");
+    assert.equal(registered.execute.name, "governedAdapterMethod", "remote methods run behind the governed outbound policy");
+  }
 });
 
 test("capabilities are attestation-gated: workers, checkpointing, gang, auth env", () => {
@@ -217,8 +221,33 @@ test("release honesty: terminal job → released with external-cluster-authority
 // ---------------------------------------------------------------------------
 
 test("CONFORMANCE — distributed lifecycle over the CoreWeave realization: queued → running + checkpoint → succeeded → artifact → released", async () => {
+  // The conformance lifecycle runs under a sealed authority — the production
+  // remote contract requires an immutable work spec at the provider boundary,
+  // and a promotable artifact must attest the sealed work-spec and corpus.
+  const CONFORMANCE_CORPUS_SHA = "d".repeat(64);
+  const intent = buildComputeIntent({
+    adaptivePlan: { mode: "train-remote", tier: "large", baseModel: "qwen3:141b" },
+    capacityPlan: { capacityProfileId: "distributed-training", requirements: DIST_REQ },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "hard-cap", maxTotalUsd: 500, allowUnknownCost: false } },
+    trainingRunConfig: {
+      profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "provider-compute",
+      baseModel: "qwen3:141b", teacherModel: "", quantization: "q4_k_m",
+      steps: [{ stageId: "fine-tuning", label: "Fine tune", bin: "python", args: ["train.py"] }],
+      datasetPath: "data/conformance.jsonl", outputModelTag: "conformance-model",
+      artifactPath: "artifacts/conformance-model", importProof: { acceptedTypes: ["gguf"] },
+    },
+  });
+  const workSpec = buildComputeWorkSpec({
+    intent,
+    trainingRunConfig: { datasetPath: "data/conformance.jsonl" },
+    trainingRunId: "trainrun_cw_e2e",
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: "export-conformance",
+    corpusSha256: CONFORMANCE_CORPUS_SHA,
+  });
+  const authority = { schema: "growthub-compute-authority-v1", intent, workSpec, intentHash: intent.intentHash, requirementsHash: intent.requirementsHash, workSpecHash: workSpec.workSpecHash };
   let statusCalls = 0;
-  const artifactLine = `GH_ARTIFACT ${JSON.stringify({ locator: "s3://growthub-ckpt/runs/final/model.gguf", sha256: "9".repeat(64), sizeBytes: 7, kind: "gguf" })}`;
+  const artifactLine = `GH_ARTIFACT ${JSON.stringify({ locator: "s3://growthub-ckpt/runs/final/model.gguf", sha256: "9".repeat(64), sizeBytes: 7, kind: "gguf", workSpecHash: workSpec.workSpecHash, corpusSha256: CONFORMANCE_CORPUS_SHA })}`;
   const checkpointLine = `GH_CHECKPOINT ${JSON.stringify({ checkpointId: "ck-500", locator: "s3://growthub-ckpt/runs/ck-500", sha256: "8".repeat(64), step: 500 })}`;
   const fetchJson = fakeFetch([
     ["/api/version", { reply: { version: "2.56.0" } }],
@@ -255,7 +284,16 @@ test("CONFORMANCE — distributed lifecycle over the CoreWeave realization: queu
     trainingRunId: "trainrun_cw_e2e",
     computeAsk: { capacityProfileId: "distributed-training", providerRegistryId: "coreweave-cluster", selectionMode: "explicit" },
     requirements: DIST_REQ,
-    budget: { mode: "hard-cap", maxTotalUsd: 500, maxHourlyUsd: 0, allowUnknownCost: false },
+    authority,
+    datasetEvidence: {
+      schema: "growthub-compute-dataset-access-v1",
+      tokenId: "token-trainrun_cw_e2e",
+      trainingRunId: "trainrun_cw_e2e",
+      exportId: "export-conformance",
+      corpusSha256: CONFORMANCE_CORPUS_SHA,
+      deliveryStatus: "delivered",
+      deliveredAt: "2026-07-20T12:00:05.000Z",
+    },
     io: {
       getAdapter: (id) => (id === COREWEAVE_ADAPTER_ID ? coreweaveAdapter : null),
       listAdapterIds: () => [COREWEAVE_ADAPTER_ID],
@@ -277,7 +315,7 @@ test("CONFORMANCE — distributed lifecycle over the CoreWeave realization: queu
   assert.ok(types.includes("compute-completed"));
   assert.ok(types.includes("compute-released"));
   assert.equal(outcome.computeBlock.artifact.sha256, "9".repeat(64));
-  assert.equal(outcome.result.adapterMeta.compute.promotable, true);
+  assert.equal(outcome.result.adapterMeta.compute.artifactVerified, true);
   // Budget was honored: $32/h × 8h = $256 ≤ $500 hard cap.
   const verdict = outcome.computeBlock.decision.candidates.find((c) => c.providerId === "coreweave-cluster");
   assert.equal(verdict.eligible, true);
