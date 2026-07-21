@@ -17,13 +17,20 @@ function replaceOnce(source, before, after, label) {
 function replaceOrSkip(source, before, after, marker, label) {
   if (source.includes(before)) return replaceOnce(source, before, after, label);
   if (marker && source.includes(marker)) return source;
-  throw new Error(`[provider-attestation] neither old nor hardened form found: ${label}`);
+  // Parallel applicators may have changed adjacency while preserving the same
+  // invariant. Do not die on formatting: final marker checks and behavioral
+  // certification below remain mandatory and fail the workflow if absent.
+  console.warn(`[provider-attestation] structural anchor moved: ${label}; validating final invariant instead`);
+  return source;
 }
 
 function replaceAllExact(source, before, after, { min = 1, label } = {}) {
   const parts = source.split(before);
   const count = parts.length - 1;
-  if (count < min) throw new Error(`[provider-attestation] expected at least ${min} ${label || "matches"}, found ${count}`);
+  if (count < min) {
+    console.warn(`[provider-attestation] expected ${min} ${label || "matches"}, found ${count}; validating final invariant instead`);
+    return source;
+  }
   return parts.join(after);
 }
 
@@ -91,7 +98,7 @@ execution = replaceOrSkip(
       );
       const providerAttestationReason = providerAttestationVerified
         ? "provider artifact binds the exact governed work-spec and delivered corpus identities"
-        : `provider artifact attestation mismatch: expected workSpec=${expectedWorkSpecHash || "missing"} corpus=${expectedCorpusSha256 || "missing"}; received workSpec=${reportedWorkSpecHash || "missing"} corpus=${reportedCorpusSha256 || "missing"}`;
+        : \`provider artifact attestation mismatch: expected workSpec=${expectedWorkSpecHash || "missing"} corpus=${expectedCorpusSha256 || "missing"}; received workSpec=${reportedWorkSpecHash || "missing"} corpus=${reportedCorpusSha256 || "missing"}\`;
       const candidate = {
         ...artifactEvidence,
         workSpecHash: reportedWorkSpecHash,
@@ -115,8 +122,6 @@ modal = replaceOrSkip(
   `      evidenceObservedAt: new Date().toISOString(),
       evaluationResults: Array.isArray(call?.evaluationResults) ? call.evaluationResults : [],`,
   `      evidenceObservedAt: new Date().toISOString(),
-      // A compliant worker computes these from the exact request it consumed;
-      // the workspace independently compares them with sealed authority.
       workSpecHash: str(artifact.workSpecHash || call?.workSpecHash),
       corpusSha256: str(artifact.corpusSha256 || call?.corpusSha256),
       evaluationResults: Array.isArray(call?.evaluationResults) ? call.evaluationResults : [],`,
@@ -168,9 +173,9 @@ const submittedAuthority = new Map();`,
 e2e = replaceOrSkip(
   e2e,
   `    datasetFetchCount += 1;
-    return json(200, { call_id: `call-${body.workSpec.trainingRunId}` });`,
+    return json(200, { call_id: \`call-${body.workSpec.trainingRunId}\` });`,
   `    datasetFetchCount += 1;
-    const callId = `call-${body.workSpec.trainingRunId}`;
+    const callId = \`call-${body.workSpec.trainingRunId}\`;
     submittedAuthority.set(callId, {
       workSpecHash: body.workSpec.workSpecHash,
       corpusSha256: body.datasetAccess.corpusSha256,
@@ -179,12 +184,11 @@ e2e = replaceOrSkip(
   `submittedAuthority.set(callId`,
   "remember provider-consumed identities",
 );
-
 if (!e2e.includes("workSpecHash: submittedAuthority.get(id)?.workSpecHash")) {
-  const compactOld = `artifact: { kind: "gguf", locator: `${providerBase}/artifact`, sha256: artifactSha, sizeBytes: artifactBytes.length },`;
+  const compactOld = `artifact: { kind: "gguf", locator: \`${providerBase}/artifact\`, sha256: artifactSha, sizeBytes: artifactBytes.length },`;
   const expanded = `artifact: {
           kind: "gguf",
-          locator: `${providerBase}/artifact`,
+          locator: \`${providerBase}/artifact\`,
           sha256: artifactSha,
           sizeBytes: artifactBytes.length,
           workSpecHash: submittedAuthority.get(id)?.workSpecHash || "",
@@ -192,7 +196,6 @@ if (!e2e.includes("workSpecHash: submittedAuthority.get(id)?.workSpecHash")) {
         },`;
   e2e = replaceAllExact(e2e, compactOld, expanded, { min: 2, label: "booted provider success artifact branches" });
 }
-
 e2e = replaceOrSkip(
   e2e,
   `  assert.equal(successCompute.artifact.verifiedSha256, artifactSha);`,
@@ -210,14 +213,26 @@ let certification = read(certificationPath);
 if (!certification.includes("scripts/unit-compute-provider-attestation.test.mjs")) {
   certification = replaceOnce(
     certification,
-    `  "scripts/unit-compute-data-plane.test.mjs",
-`,
-    `  "scripts/unit-compute-data-plane.test.mjs",
-  "scripts/unit-compute-provider-attestation.test.mjs",
-`,
+    `  "scripts/unit-compute-data-plane.test.mjs",\n`,
+    `  "scripts/unit-compute-data-plane.test.mjs",\n  "scripts/unit-compute-provider-attestation.test.mjs",\n`,
     "provider attestation certification suite",
   );
 }
 write(certificationPath, certification);
 
-console.log("[provider-attestation] artifact import now requires exact work-spec and corpus identities reported by the provider worker");
+const invariants = [
+  [evidencePath, "artifact-provider-attestation-missing"],
+  [evidencePath, "providerAttestationVerified: raw.providerAttestationVerified === true"],
+  [executionPath, "providerAttestationVerified && deliveryVerified"],
+  [modalPath, "corpusSha256: str(artifact.corpusSha256 || call?.corpusSha256)"],
+  [runpodPath, "corpusSha256: str(out.corpusSha256 || job?.output?.corpusSha256)"],
+  [rayPath, "corpusSha256: str(artifact.corpusSha256 || artifact.datasetSha256)"],
+  [e2ePath, "workSpecHash: submittedAuthority.get(id)?.workSpecHash"],
+  [e2ePath, "successCompute.artifact.providerAttestationVerified"],
+  [certificationPath, "scripts/unit-compute-provider-attestation.test.mjs"],
+];
+for (const [file, marker] of invariants) {
+  if (!read(file).includes(marker)) throw new Error(`[provider-attestation] final invariant missing in ${file}: ${marker}`);
+}
+
+console.log("[provider-attestation] artifact import requires exact work-spec and corpus identities on every completion path");
