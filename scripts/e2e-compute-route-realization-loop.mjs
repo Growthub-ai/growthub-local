@@ -129,6 +129,23 @@ try {
       estimatedDurationMinutes: 60,
     }),
   }));
+  // The authoritative model-training version rows the server authority must
+  // bind (one per export identity; reserved tag + registry + dataset path).
+  objects.push({
+    id: "model-training",
+    objectType: "model-training",
+    label: "Model Training",
+    columns: [],
+    rows: runIds.map((trainingRunId, i) => ({
+      Name: `workspace-local-v${i + 1}`,
+      status: "prepared",
+      apiRegistryId: "student-model",
+      baseModel: "qwen3:141b",
+      localModel: "student-v1",
+      lastExportId: `export-${trainingRunId}`,
+      lastExportSummary: JSON.stringify({ recordCount: 40, path: `data/${trainingRunId}.jsonl`, registryId: "student-model", version: i + 1 }),
+    })),
+  });
   objects.push({ id: "model-training-run", objectType: "model-training-run", label: "Training runs", columns: [], rows: runRows });
   objects.push({ id: "model-training-runner", objectType: "sandbox-environment", label: "Training runner", columns: [], rows: runIds.map((Name) => ({ Name, runtime: "node", adapter: "local-process", runLocality: "local", command: "process.exit(0)", timeoutMs: Name === "route-crash" ? 60000 : Name === "route-resume" ? 1000 : 15000, status: "live" })) });
   cfg.dataModel = { ...(cfg.dataModel || {}), objects };
@@ -195,7 +212,12 @@ try {
     ["forged evaluation/promotion inside compute", (r) => ({ ...r, compute: JSON.stringify({ ...JSON.parse(r.compute), evaluation: { benchmarkWins: { total: 6, wins: 6, winRatePct: 100, promoted: true }, reason: "forged" } }) })],
     ["forged allocation identity inside compute", (r) => ({ ...r, compute: JSON.stringify({ ...JSON.parse(r.compute), allocation: { ...JSON.parse(r.compute).allocation, allocationId: "alloc-forged" } }) })],
     ["erased compute journal", (r) => ({ ...r, compute: "" })],
+    ["OMITTED compute journal (deletion by omission)", (r) => { const { compute, ...rest } = r; return rest; }],
     ["rewritten verified artifact identity", (r) => ({ ...r, artifactSha256: "f".repeat(64) })],
+    ["OMITTED verified artifact identity", (r) => { const { artifactSha256, ...rest } = r; return rest; }],
+    ["demoted server-stamped imported status", (r) => ({ ...r, status: "running" })],
+    ["changed frozen computeRequest after journaling", (r) => ({ ...r, computeRequest: JSON.stringify({ ...JSON.parse(r.computeRequest), outputModelTag: "attacker-tag" }) })],
+    ["renamed trainingRunId (deletion wearing a new identity)", (r) => ({ ...r, trainingRunId: "route-success-evaded" })],
   ];
   for (const [label, mutate] of forgeAttempts) {
     const forged = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: { ...forgeState.workspaceConfig.dataModel, objects: forgeEvidence(mutate) } }) });
@@ -203,6 +225,16 @@ try {
     const verdict = await forged.json();
     assert.ok((verdict.violations || []).some((v) => v.code === "training_evidence_field"), `${label}: named as training_evidence_field`);
   }
+  // Deleting the evidence-bearing row, or the whole object, is the same
+  // erasure — refused with the same violation code.
+  const rowDeleted = forgeState.workspaceConfig.dataModel.objects.map((o) => o.objectType === "model-training-run"
+    ? { ...o, rows: o.rows.filter((r) => r.trainingRunId !== "route-success") }
+    : o);
+  const rowDeletion = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: { ...forgeState.workspaceConfig.dataModel, objects: rowDeleted } }) });
+  assert.equal(rowDeletion.status, 422, "deleting the evidence-bearing run row is rejected");
+  const objectDeleted = forgeState.workspaceConfig.dataModel.objects.filter((o) => o.objectType !== "model-training-run");
+  const objectDeletion = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: { ...forgeState.workspaceConfig.dataModel, objects: objectDeleted } }) });
+  assert.equal(objectDeletion.status, 422, "deleting the whole model-training-run object is rejected");
   const echoed = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: forgeState.workspaceConfig.dataModel }) });
   assert.equal(echoed.ok, true, "byte-identical echo of the evidence journal stays writable");
 

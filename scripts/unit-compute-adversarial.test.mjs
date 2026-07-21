@@ -21,7 +21,7 @@ const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-works
 const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
 const { executeProviderComputeRun, cancelProviderComputeRun, maybeExecuteProviderComputeForSandboxRun } = await import(lib("compute-execution.js"));
-const { COMPUTE_AUTHORITY_KEY_ENV, compileComputeAuthority, verifyComputeAuthoritySeal } = await import(lib("compute-authority.js"));
+const { COMPUTE_AUTHORITY_KEY_ENV, compileComputeAuthority, verifyComputeAuthorityAgainstWorkspace } = await import(lib("compute-authority.js"));
 const { hashComputeValue } = await import(lib("compute-work-spec.js"));
 const { deriveComputeLifecycle, deriveComputeArtifactHonesty } = await import(lib("compute-evidence.js"));
 const { deriveBenchmarkWins } = await import(lib("distillation-eval-harness.js"));
@@ -198,11 +198,23 @@ function authorityRequest(overrides = {}) {
   };
 }
 
-function authorityConfig({ request = authorityRequest(), compute = null } = {}) {
+function authorityConfig({ request = authorityRequest(), compute = null, reservedTag = "tuned-adv-v1" } = {}) {
   return {
     dataModel: {
       objects: [
         { id: "api-registry", objectType: "api-registry", rows: [providerRow()] },
+        {
+          id: "model-training",
+          objectType: "model-training",
+          rows: [{
+            Name: "workspace-local-v1",
+            baseModel: "gemma3:4b",
+            localModel: reservedTag,
+            apiRegistryId: "",
+            lastExportId: "export-adv-1",
+            lastExportSummary: JSON.stringify({ recordCount: 6, path: "", version: 1 }),
+          }],
+        },
         {
           id: "model-training-run",
           objectType: "model-training-run",
@@ -223,11 +235,11 @@ function authorityConfig({ request = authorityRequest(), compute = null } = {}) 
   };
 }
 
-function authorityIo(adapter, workspaceConfig) {
+function authorityIo(adapter, workspaceConfig, env = AUTH_ENV) {
   return {
     ...ioWith(adapter),
-    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env: AUTH_ENV }),
-    verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority, AUTH_ENV),
+    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env }),
+    verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, env }),
     verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
   };
 }
@@ -281,6 +293,7 @@ test("ADVERSARIAL — governed inputs changed after sealing fail closed BEFORE p
 
   const driftedConfig = authorityConfig({
     request: authorityRequest({ outputModelTag: "tuned-adv-v2" }),
+    reservedTag: "tuned-adv-v2",
     compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealed.authority },
   });
   const adapter = adapterWith({
@@ -295,6 +308,68 @@ test("ADVERSARIAL — governed inputs changed after sealing fail closed BEFORE p
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /changed after compute authority was sealed/);
   assert.equal(outcome.result.adapterMeta.compute.authorityRefused, true);
+});
+
+test("KEY ROTATION — unchanged governed inputs under a NEW key reseal explicitly and execute; changed inputs refuse", async () => {
+  const KEY_A = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-a" };
+  const KEY_B = { [COMPUTE_AUTHORITY_KEY_ENV]: "rotation-key-b" };
+  const baseConfig = authorityConfig({});
+  const sealedUnderA = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, now: "t", env: KEY_A });
+  assert.equal(sealedUnderA.ok, true, sealedUnderA.reason);
+
+  // Rotation with IDENTICAL content: the old seal no longer verifies, but
+  // the content identity reproduces — an explicit reseal proceeds and the
+  // journal records the new keyId.
+  const unchangedConfig = authorityConfig({
+    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealedUnderA.authority },
+  });
+  const adapter = adapterWith({
+    async execute(ctx) { return [{ type: "compute-queued", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "q-rotate", detail: "" }]; },
+    async allocate(ctx) {
+      return { allocationId: "alloc-rotate", runRef: { ...ctx.runRef, providerResourceId: "res-rotate" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" } };
+    },
+  });
+  const resealed = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig: unchangedConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: authorityIo(adapter, unchangedConfig, KEY_B),
+  });
+  assert.ok(resealed, "the run proceeds under the rotated key");
+  assert.notEqual(resealed.result.error || "", `governed inputs changed`, "no drift refusal for identical content");
+  assert.equal(resealed.computeBlock.authority.authorityHash, sealedUnderA.authority.authorityHash, "content identity is unchanged");
+  assert.notEqual(resealed.computeBlock.authority.keyId, sealedUnderA.authority.keyId, "the reseal is visible through the new keyId");
+
+  // Rotation combined with CHANGED request: the old seal is unverifiable AND
+  // the content no longer reproduces — zero provider calls.
+  const changedConfig = authorityConfig({
+    request: authorityRequest({ outputModelTag: "tuned-adv-v2" }),
+    reservedTag: "tuned-adv-v2",
+    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealedUnderA.authority },
+  });
+  const trapped = adapterWith({
+    async allocate() { throw new Error("allocate must never be reached on a rotated+changed authority"); },
+  });
+  const refused = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig: changedConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: authorityIo(trapped, changedConfig, KEY_B),
+  });
+  assert.equal(refused.result.ok, false);
+  assert.match(refused.result.error, /changed after compute authority was sealed/);
+});
+
+test("ADVERSARIAL — a forged persisted dataset manifest cannot launder itself through verification recompilation", () => {
+  const baseConfig = authorityConfig({});
+  const { authority } = compileComputeAuthority({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, now: "t", env: AUTH_ENV });
+  // Attacker-shaped persisted authority: bad seal, poisoned corpus manifest.
+  const poisoned = { ...authority, dataset: { ...authority.dataset, corpusSha256: "0".repeat(64), sizeBytes: 1, binding: "manifest" }, seal: "0".repeat(64) };
+  const verdict = verifyComputeAuthorityAgainstWorkspace({ workspaceConfig: baseConfig, trainingRunId: RUN_ID, authority: poisoned, env: AUTH_ENV });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.recompiled, "current truth recompiles from trusted inputs");
+  assert.equal(verdict.recompiled.dataset.corpusSha256, "", "the recompiled authority uses ONLY the trusted server manifest — never the poisoned persisted one");
+  assert.equal(verdict.recompiled.dataset.binding, "metadata-only");
 });
 
 test("ADVERSARIAL — authority compilation failure (missing output identity) refuses remote compute before any provider call", async () => {

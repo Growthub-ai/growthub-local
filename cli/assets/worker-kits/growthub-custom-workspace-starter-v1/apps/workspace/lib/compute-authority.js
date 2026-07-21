@@ -51,10 +51,9 @@ import {
   verifyComputeAuthority,
 } from "./compute-work-spec.js";
 import { buildAdaptiveStudentPlan } from "./distillation-student-plan.js";
-import { deriveCapacityPlan, resolveCapacityProfile } from "./compute-capacity-profiles.js";
+import { deriveCapacityPlan, normalizeRequirementsForProfile, paramsForBaseModel, resolveCapacityProfile } from "./compute-capacity-profiles.js";
 import { buildTrainingRunConfig } from "./training-runtime-profiles.js";
 import { parseJsonColumn } from "./compute-evidence.js";
-import { findTrainingRunReceiptRow } from "./compute-execution.js";
 
 export const COMPUTE_AUTHORITY_KEY_ENV = "GROWTHUB_COMPUTE_AUTHORITY_KEY";
 /** The workspace signing key the inference manifest seam already uses. */
@@ -65,6 +64,14 @@ const str = (v) => String(v ?? "").trim();
 
 /** Domain-separated, non-secret key identity (manifest.js keyId pattern). */
 const authorityKeyId = (key) => sha256Hex(`growthub-compute-authority-key:${key}`).slice(0, 16);
+
+/** Params (B) parsed from an ollama-style tag suffix ("qwen3:141b" → 141)
+ *  for base models the student sizing ladder does not enumerate. */
+function paramsFromTagSuffix(tag) {
+  const suffix = String(tag || "").trim().split(":").pop() || "";
+  const match = /(\d+(?:\.\d+)?)\s*b$/i.exec(suffix);
+  return match ? Number(match[1]) : 0;
+}
 
 let ephemeralAuthorityKey = null;
 
@@ -85,8 +92,20 @@ export function resolveComputeAuthorityKey(env = process.env) {
   return { key: ephemeralAuthorityKey, keyId: `boot-${authorityKeyId(ephemeralAuthorityKey)}`, source: "ephemeral" };
 }
 
+/**
+ * Cryptographic domain separation for the shared workspace key: the HMAC
+ * message is prefixed with a fixed compute-authority domain string, so a
+ * manifest signature and an authority seal can never be valid for each
+ * other's bytes even under the same key. The distinct keyId remains
+ * observability evidence, not the separation mechanism.
+ */
+const AUTHORITY_SEAL_DOMAIN = "growthub-compute-authority-seal-v1\n";
+
 function hmacSeal(key, authorityWithoutSeal) {
-  return createHmac("sha256", key).update(stableComputeStringify(authorityWithoutSeal), "utf8").digest("hex");
+  return createHmac("sha256", key)
+    .update(AUTHORITY_SEAL_DOMAIN, "utf8")
+    .update(stableComputeStringify(authorityWithoutSeal), "utf8")
+    .digest("hex");
 }
 
 /** Seal a compiled authority with the server key. Pure aside from the key. */
@@ -116,21 +135,27 @@ export function verifyComputeAuthoritySeal(authority, env = process.env) {
   return { ok: true, reasonCode: "", reason: "seal verified" };
 }
 
-/** The authoritative model-training version row bound by dataset export id. */
-function findTrainingVersionRow(workspaceConfig, datasetExportId) {
-  const exportId = str(datasetExportId);
-  if (!exportId) return null;
+/** ALL rows of an objectType matching a predicate — ambiguity detection. */
+function collectRows(workspaceConfig, objectType, predicate) {
   const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
+  const matches = [];
   for (const object of objects) {
-    if (object?.objectType !== "model-training") continue;
-    const rows = Array.isArray(object.rows) ? object.rows : [];
-    const match = rows.find((r) => str(r?.lastExportId) === exportId);
-    if (match) return match;
+    if (object?.objectType !== objectType) continue;
+    for (const row of Array.isArray(object.rows) ? object.rows : []) {
+      if (row && typeof row === "object" && predicate(row)) matches.push(row);
+    }
   }
-  return null;
+  return matches;
 }
 
-const failure = (reasonCode, reason) => ({ ok: false, reasonCode, reason, authority: null });
+/** The api-registry row a version row binds through `apiRegistryId`. */
+function findRegistryRow(workspaceConfig, integrationId) {
+  const id = str(integrationId);
+  if (!id) return null;
+  return collectRows(workspaceConfig, "api-registry", (r) => str(r?.integrationId) === id)[0] || null;
+}
+
+const failure = (reasonCode, reason) => ({ ok: false, reasonCode, reason, authority: null, keySource: "" });
 
 /**
  * Compile the canonical, server-owned compute authority for one governed
@@ -157,8 +182,12 @@ export function compileComputeAuthority({
   now = "",
   env = process.env,
 } = {}) {
-  const row = findTrainingRunReceiptRow(workspaceConfig, trainingRunId);
-  if (!row) return failure("receipt-missing", `no model-training-run receipt for "${str(trainingRunId)}"`);
+  // Exactly ONE run row may claim the identity — a duplicate is either a
+  // corrupted store or an attempt to shadow the governed row.
+  const runRows = collectRows(workspaceConfig, "model-training-run", (r) => str(r?.trainingRunId) === str(trainingRunId));
+  if (runRows.length === 0) return failure("receipt-missing", `no model-training-run receipt for "${str(trainingRunId)}"`);
+  if (runRows.length > 1) return failure("run-identity-ambiguous", `${runRows.length} model-training-run rows claim "${str(trainingRunId)}" — refusing ambiguous run identity`);
+  const row = runRows[0];
 
   const req = normalizeComputeRequest(request || parseJsonColumn(row.computeRequest));
   if (!req) return failure("request-missing", "no customer compute request snapshot on the receipt row — nothing to compile authority from");
@@ -187,34 +216,95 @@ export function compileComputeAuthority({
     return failure("dataset-identity-conflict", `request dataset export "${req.datasetExportId}" contradicts the governed receipt's "${str(row.datasetExportId)}"`);
   }
 
-  const versionRow = findTrainingVersionRow(workspaceConfig, datasetExportId);
-  const trainingRowBinding = versionRow
-    ? { rowName: str(versionRow.Name), lastExportId: str(versionRow.lastExportId), baseModel: str(versionRow.baseModel) }
-    : null;
-  if (trainingRowBinding?.baseModel && trainingRowBinding.baseModel !== baseModel) {
+  // The authoritative `model-training` version row is REQUIRED and must be
+  // unique for the export identity: authority is compiled from real
+  // training-version lineage, never from a free-floating run row.
+  const versionRows = collectRows(workspaceConfig, "model-training", (r) => str(r?.lastExportId) === datasetExportId);
+  if (versionRows.length === 0) return failure("training-row-missing", `no model-training version row carries export "${datasetExportId}" — a run without training-version lineage cannot be granted authority`);
+  if (versionRows.length > 1) return failure("training-row-ambiguous", `${versionRows.length} model-training version rows claim export "${datasetExportId}" — refusing ambiguous lineage`);
+  const versionRow = versionRows[0];
+  const modelTrainingRowId = str(row.modelTrainingRowId);
+  const versionRowName = str(versionRow.Name);
+  if (modelTrainingRowId && !new RegExp(`^${modelTrainingRowId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-v\\d+$`).test(versionRowName)) {
+    return failure("training-row-binding", `model-training row "${versionRowName}" does not belong to training identity "${modelTrainingRowId}"`);
+  }
+  const trainingRowBinding = {
+    rowName: versionRowName,
+    lastExportId: str(versionRow.lastExportId),
+    baseModel: str(versionRow.baseModel),
+    localModel: str(versionRow.localModel),
+    apiRegistryId: str(versionRow.apiRegistryId),
+  };
+  if (trainingRowBinding.baseModel && trainingRowBinding.baseModel !== baseModel) {
     return failure("training-row-stale", `model-training row "${trainingRowBinding.rowName}" carries base model "${trainingRowBinding.baseModel}", receipt claims "${baseModel}" — stale or tampered lineage`);
+  }
+  // Output identity must agree with the version row's reserved tag AND the
+  // API Registry row the version binds (its expected served tag).
+  if (trainingRowBinding.localModel && trainingRowBinding.localModel !== outputModelTag) {
+    return failure("output-identity-conflict", `requested output tag "${outputModelTag}" contradicts the model-training row's reserved tag "${trainingRowBinding.localModel}"`);
+  }
+  const registryRow = findRegistryRow(workspaceConfig, trainingRowBinding.apiRegistryId);
+  const expectedTag = str(registryRow?.expectedModelTag);
+  if (expectedTag && expectedTag !== outputModelTag) {
+    return failure("output-identity-conflict", `requested output tag "${outputModelTag}" contradicts API Registry "${trainingRowBinding.apiRegistryId}" expected tag "${expectedTag}"`);
+  }
+  // Dataset path must agree with the version row's export summary when it
+  // records one — the run cannot silently point the workload at other bytes.
+  const exportSummary = parseJsonColumn(versionRow.lastExportSummary);
+  const summaryPath = str(exportSummary?.path);
+  if (summaryPath && req.datasetPath && summaryPath !== req.datasetPath) {
+    return failure("dataset-path-conflict", `requested dataset path "${req.datasetPath}" contradicts the export summary's "${summaryPath}"`);
   }
 
   // Server-side recompilation of the exact workload from PURE derivers over
-  // durable evidence (never from a caller-supplied plan or step list).
+  // durable evidence (never from a caller-supplied plan or step list). The
+  // preflight anchor is request-lane input for the FIRST compile; once any
+  // journal exists the PATCH policy freezes it and drift detection refuses
+  // later changes — it is never treated as unforgeable machine truth.
   const preflight = row.preflight && typeof row.preflight === "object" ? row.preflight : null;
   const adaptivePlan = buildAdaptiveStudentPlan({ preflight, requestedBaseModel: baseModel });
   const capacityPlan = deriveCapacityPlan({
     plan: adaptivePlan,
     preflight,
     workloadKind: "fine-tune",
+    // Size from the GOVERNED base model, not the adaptive local-fit student:
+    // the remote workload fine-tunes the receipt's base model, so its
+    // parameter count drives the derived floor the requested profile must
+    // meet or exceed (ladder first, tag-suffix fallback for off-ladder tags).
+    paramsB: paramsForBaseModel(baseModel) || paramsFromTagSuffix(baseModel),
     // Quote-estimation input from the customer request; 0 keeps total cost
     // unknown, which the resolver refuses under a hard cap (never zero).
     estimatedDurationMinutes: req.estimatedDurationMinutes,
   });
-  const capacityProfileId = req.capacityProfileId && resolveCapacityProfile(req.capacityProfileId)
-    ? req.capacityProfileId
-    : capacityPlan.capacityProfileId;
+  // A requested profile may only TIGHTEN the derived plan. Profile floors
+  // only ever raise minimums, so comparing floors applied to the derived
+  // requirements cannot reveal a weaker profile — compare the profiles'
+  // INTRINSIC floors (floors over an empty ask) instead. A weaker or
+  // contradictory profile is refused, never silently substituted.
+  let capacityProfileId = capacityPlan.capacityProfileId;
+  if (req.capacityProfileId && req.capacityProfileId !== capacityPlan.capacityProfileId) {
+    if (!resolveCapacityProfile(req.capacityProfileId)) {
+      return failure("capacity-profile-unknown", `unknown requested capacity profile "${req.capacityProfileId}"`);
+    }
+    const bareAsk = { workloadKind: str(capacityPlan.requirements?.workloadKind) || "fine-tune" };
+    const derivedFloor = normalizeRequirementsForProfile(bareAsk, capacityPlan.capacityProfileId);
+    const requestedFloor = normalizeRequirementsForProfile(bareAsk, req.capacityProfileId);
+    const dims = ["gpuCount", "minVramPerGpuGB", "minCpuCores", "minRamGB", "minDiskGB"];
+    const weaker = dims.filter((dim) => (Number(requestedFloor?.[dim]) || 0) < (Number(derivedFloor?.[dim]) || 0));
+    const derivedWorkers = Number(derivedFloor?.distributed?.workers) || 1;
+    const requestedWorkers = Number(requestedFloor?.distributed?.workers) || 1;
+    if (requestedWorkers < derivedWorkers) weaker.push("distributed.workers");
+    if (derivedFloor?.checkpointRequired === true && requestedFloor?.checkpointRequired !== true) weaker.push("checkpointRequired");
+    if (weaker.length > 0) {
+      return failure("capacity-profile-downgrade", `requested profile "${req.capacityProfileId}" is weaker than the derived "${capacityPlan.capacityProfileId}" on ${weaker.join(", ")} — a profile override may only tighten the plan`);
+    }
+    capacityProfileId = req.capacityProfileId;
+  }
 
   const runConfig = buildTrainingRunConfig({
     profileId: trainingProfileId,
     baseModel,
-    datasetPath: req.datasetPath || `dataset/${datasetExportId}.jsonl`,
+    datasetPath: req.datasetPath || summaryPath || `dataset/${datasetExportId}.jsonl`,
     outputModelTag,
     artifactPath: req.artifactPath || `artifacts/${outputModelTag}`,
     ...(req.teacherModel ? { teacherModel: req.teacherModel } : {}),
@@ -254,6 +344,10 @@ export function compileComputeAuthority({
       exportId: datasetExportId,
       corpusSha256: str(datasetManifest?.corpusSha256),
       sizeBytes: Math.max(0, Math.floor(Number(datasetManifest?.sizeBytes) || 0)),
+      // HONEST classification: without a server-materialized corpus manifest
+      // (the remote data-plane workstream) this authority binds dataset
+      // METADATA/identity only — it does not claim byte-level authority.
+      binding: str(datasetManifest?.corpusSha256) ? "manifest" : "metadata-only",
     },
     intent,
     workSpec,
@@ -266,8 +360,12 @@ export function compileComputeAuthority({
   // Content identity excludes the compile timestamp so re-compilation over
   // unchanged inputs is hash-stable (drift detection = hash comparison).
   const authorityHash = hashComputeValue({ ...body, compiledAt: undefined });
-  const authority = sealComputeAuthority({ ...body, authorityHash }, resolveComputeAuthorityKey(env));
-  return { ok: true, reasonCode: "", reason: "authority compiled and sealed", authority };
+  const sealingKey = resolveComputeAuthorityKey(env);
+  const authority = sealComputeAuthority({ ...body, authorityHash }, sealingKey);
+  // keySource lets the execution seam refuse paid boundaries under the
+  // ephemeral per-process key: a seal that cannot outlive a restart must
+  // never authorize remote spend.
+  return { ok: true, reasonCode: "", reason: "authority compiled and sealed", authority, keySource: sealingKey.source };
 }
 
 /**
@@ -276,42 +374,52 @@ export function compileComputeAuthority({
  * from current authoritative inputs reproduces the same content identity.
  * A caller-supplied object that is merely self-consistent fails here.
  *
- * Returns `{ ok, reasonCode, reason, recompiled }` where `recompiled` is the
- * freshly compiled authority (usable when the caller wants to proceed with
- * current truth after a seal-only failure).
+ * The recompilation NEVER reads fields of the authority under verification
+ * (in particular not its dataset manifest — a forged persisted manifest
+ * must not launder itself into a freshly sealed authority). The trusted
+ * manifest, when one exists, is supplied explicitly by the caller from
+ * server-owned records.
+ *
+ * Returns `{ ok, reasonCode, reason, recompiled, contentMatches }`.
+ * `recompiled` is compiled from trusted inputs only, so it is safe to use
+ * as current truth; `contentMatches` distinguishes a seal-only failure with
+ * identical content (safe explicit reseal) from real drift (fail closed).
  */
 export function verifyComputeAuthorityAgainstWorkspace({
   workspaceConfig = null,
   trainingRunId = "",
   authority = null,
+  datasetManifest = null,
   env = process.env,
   now = "",
 } = {}) {
   const recompileResult = compileComputeAuthority({
     workspaceConfig,
     trainingRunId,
-    datasetManifest: authority?.dataset,
+    datasetManifest,
     now,
     env,
   });
   const recompiled = recompileResult.ok ? recompileResult.authority : null;
+  const contentMatches = Boolean(recompiled && str(recompiled.authorityHash) === str(authority?.authorityHash));
 
   const seal = verifyComputeAuthoritySeal(authority, env);
-  if (!seal.ok) return { ok: false, reasonCode: seal.reasonCode, reason: seal.reason, recompiled };
+  if (!seal.ok) return { ok: false, reasonCode: seal.reasonCode, reason: seal.reason, recompiled, contentMatches };
 
   const internal = verifyComputeAuthority({ intent: authority.intent, workSpec: authority.workSpec });
-  if (!internal.ok) return { ok: false, reasonCode: "authority-inconsistent", reason: "sealed authority failed internal intent/work-spec lineage validation", recompiled };
+  if (!internal.ok) return { ok: false, reasonCode: "authority-inconsistent", reason: "sealed authority failed internal intent/work-spec lineage validation", recompiled, contentMatches };
 
   if (!recompileResult.ok) {
-    return { ok: false, reasonCode: recompileResult.reasonCode, reason: `authoritative inputs no longer compile: ${recompileResult.reason}`, recompiled };
+    return { ok: false, reasonCode: recompileResult.reasonCode, reason: `authoritative inputs no longer compile: ${recompileResult.reason}`, recompiled, contentMatches };
   }
-  if (str(recompiled.authorityHash) !== str(authority.authorityHash)) {
+  if (!contentMatches) {
     return {
       ok: false,
       reasonCode: "authority-drift",
       reason: "governed inputs changed after sealing (training row, dataset identity, policy, ordered steps, or output identity) — refusing the stale authority",
       recompiled,
+      contentMatches,
     };
   }
-  return { ok: true, reasonCode: "", reason: "seal verified and recompilation matches", recompiled };
+  return { ok: true, reasonCode: "", reason: "seal verified and recompilation matches", recompiled, contentMatches };
 }

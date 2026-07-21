@@ -330,56 +330,144 @@ test("forging, altering, or erasing the compute journal on an existing run row f
   assert.ok(codes(created).includes("training_evidence_field"));
 });
 
-test("echoing the persisted compute journal byte-identically succeeds, and computeRequest stays freely PATCHable", () => {
+const CLOUD_REQUEST = JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "cloud" } });
+const LOCAL_REQUEST = JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "local" }, providerRegistryId: "local-machine" });
+
+test("byte-identical echo of a journaled row succeeds; the request is frozen after the first journal write", () => {
   const current = trainingRunConfig({ compute: SEALED_COMPUTE });
-  const result = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+  const echoed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
     {
       trainingRunId: "trainrun_1",
+      modelTrainingRowId: "workspace-local",
       status: "running",
       compute: SEALED_COMPUTE, // echo
-      computeRequest: JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "automatic" }, outputModelTag: "tuned-v2" }),
-      progress: { stageId: "fine-tuning", pct: 40 },
+      computeRequest: CLOUD_REQUEST, // echo
+      progress: { stageId: "fine-tuning", pct: 40 }, // live progress stays writable
     },
   ]));
-  assert.equal(result.ok, true, JSON.stringify(result.violations));
+  assert.equal(echoed.ok, true, JSON.stringify(echoed.violations));
+
+  // Changing (or omitting) the request after the server journaled anything
+  // is an authority reset attempt — a new run must be prepared instead.
+  const changedRequest = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", compute: SEALED_COMPUTE, computeRequest: JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "automatic" }, outputModelTag: "tuned-v2" }) },
+  ]));
+  assert.equal(changedRequest.ok, false);
+  assert.ok(codes(changedRequest).includes("training_evidence_field"));
+  const omittedRequest = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", compute: SEALED_COMPUTE },
+  ]));
+  assert.equal(omittedRequest.ok, false, "omitting the frozen request is erasure");
+
+  // BEFORE any journal the request is the customer's to edit freely.
+  const preJournal = evaluateWorkspacePatchPolicy(trainingRunConfig({}), patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", computeRequest: JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "automatic" } }) },
+  ]));
+  assert.equal(preJournal.ok, true, JSON.stringify(preJournal.violations));
+});
+
+test("OMISSION IS DELETION — dropping compute, artifact fields, or success status from a locked row fails", () => {
+  const current = trainingRunConfig({ compute: SEALED_COMPUTE, status: "imported", artifactSha256: "e".repeat(64), artifactPath: "/m.gguf" });
+  const echoRow = { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "imported", compute: SEALED_COMPUTE, computeRequest: CLOUD_REQUEST, artifactSha256: "e".repeat(64), artifactPath: "/m.gguf" };
+  assert.equal(evaluateWorkspacePatchPolicy(current, patchTrainingRows([echoRow])).ok, true, "full echo passes");
+
+  const dropCompute = { ...echoRow };
+  delete dropCompute.compute;
+  assert.ok(codes(evaluateWorkspacePatchPolicy(current, patchTrainingRows([dropCompute]))).includes("training_evidence_field"), "omitting compute erases the journal");
+
+  const dropArtifact = { ...echoRow };
+  delete dropArtifact.artifactSha256;
+  assert.ok(codes(evaluateWorkspacePatchPolicy(current, patchTrainingRows([dropArtifact]))).includes("training_evidence_field"), "omitting artifact identity erases verification evidence");
+
+  const demoted = { ...echoRow, status: "running" };
+  assert.ok(codes(evaluateWorkspacePatchPolicy(current, patchTrainingRows([demoted]))).includes("training_evidence_field"), "demoting a server-stamped success is refused");
+
+  const erasedStatus = { ...echoRow };
+  delete erasedStatus.status;
+  assert.ok(codes(evaluateWorkspacePatchPolicy(current, patchTrainingRows([erasedStatus]))).includes("training_evidence_field"), "omitting a server-stamped success status is refused");
+});
+
+test("OMISSION IS DELETION — dropping the evidence-bearing row, renaming it, or dropping the whole object fails", () => {
+  const current = trainingRunConfig({ compute: SEALED_COMPUTE });
+  const rowGone = evaluateWorkspacePatchPolicy(current, patchTrainingRows([]));
+  assert.equal(rowGone.ok, false);
+  assert.ok(codes(rowGone).includes("training_evidence_field"));
+
+  const renamed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1-evaded", modelTrainingRowId: "workspace-local", status: "running", compute: SEALED_COMPUTE, computeRequest: CLOUD_REQUEST },
+  ]));
+  assert.equal(renamed.ok, false, "renaming trainingRunId is deletion wearing a new identity");
+  assert.ok(codes(renamed).includes("training_evidence_field"));
+
+  const objectGone = evaluateWorkspacePatchPolicy(current, {
+    dataModel: { objects: [{ id: "people", label: "People", rows: [{ Name: "a" }] }] },
+  });
+  assert.equal(objectGone.ok, false, "dropping the whole model-training-run object deletes the evidence chain");
+  assert.ok(codes(objectGone).includes("training_evidence_field"));
+
+  // A run row with NO protected evidence may still be cleaned up freely.
+  const disposable = trainingRunConfig({});
+  assert.equal(evaluateWorkspacePatchPolicy(disposable, patchTrainingRows([])).ok, true);
 });
 
 test("on a provider-compute row, PATCH cannot mint imported/completed status or rewrite artifact identity", () => {
   const current = trainingRunConfig({ compute: SEALED_COMPUTE, artifactSha256: "e".repeat(64) });
-  const minted = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
-    { trainingRunId: "trainrun_1", status: "imported", compute: SEALED_COMPUTE, artifactSha256: "e".repeat(64) },
-  ]));
+  const echo = { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", compute: SEALED_COMPUTE, computeRequest: CLOUD_REQUEST, artifactSha256: "e".repeat(64) };
+  const minted = evaluateWorkspacePatchPolicy(current, patchTrainingRows([{ ...echo, status: "imported" }]));
   assert.equal(minted.ok, false);
   assert.ok(codes(minted).includes("training_evidence_field"));
 
-  const rewritten = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
-    { trainingRunId: "trainrun_1", status: "running", compute: SEALED_COMPUTE, artifactSha256: "f".repeat(64) },
-  ]));
+  const rewritten = evaluateWorkspacePatchPolicy(current, patchTrainingRows([{ ...echo, status: "running", artifactSha256: "f".repeat(64) }]));
   assert.equal(rewritten.ok, false);
   assert.ok(codes(rewritten).includes("training_evidence_field"));
 
   // Honest failure reporting stays possible for the client.
-  const failed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
-    { trainingRunId: "trainrun_1", status: "failed", compute: SEALED_COMPUTE, artifactSha256: "e".repeat(64), blockedReason: "operator abort" },
-  ]));
+  const failed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([{ ...echo, status: "failed", blockedReason: "operator abort" }]));
   assert.equal(failed.ok, true, JSON.stringify(failed.violations));
 });
 
-test("the LOCAL runner lane is preserved: a run row without compute evidence may stamp imported + artifact identity", () => {
+test("a remote-capable request cannot mint success claims through PATCH before a server-journaled local decision", () => {
+  // Existing cloud-request row, no journal yet: imported cannot be minted.
   const current = trainingRunConfig({});
-  const result = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+  const minted = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "imported", computeRequest: CLOUD_REQUEST, artifactSha256: "a".repeat(64) },
+  ]));
+  assert.equal(minted.ok, false);
+  assert.ok(codes(minted).includes("training_evidence_field"));
+
+  // Creating a cloud/reserved run row ALREADY marked imported with artifact
+  // identity is the same forgery at birth.
+  const born = evaluateWorkspacePatchPolicy({}, patchTrainingRows([
+    { trainingRunId: "trainrun_new", status: "imported", computeRequest: JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "reserved-cluster" } }), artifactSha256: "a".repeat(64), artifactPath: "/m.gguf" },
+  ]));
+  assert.equal(born.ok, false);
+  assert.ok(codes(born).includes("training_evidence_field"));
+});
+
+test("the LOCAL runner lane is preserved: local-mode (or request-free) rows may stamp imported + artifact identity", () => {
+  const localRequestRow = trainingRunConfig({ computeRequest: LOCAL_REQUEST });
+  const local = evaluateWorkspacePatchPolicy(localRequestRow, patchTrainingRows([
     {
       trainingRunId: "trainrun_1",
+      modelTrainingRowId: "workspace-local",
       status: "imported",
       completedAt: "2026-07-21T00:00:00.000Z",
       artifactType: "gguf",
       artifactPath: "/models/tuned.gguf",
       artifactSha256: "a".repeat(64),
       artifactArtifactBytes: 4096,
-      computeRequest: JSON.stringify({ schema: "growthub-compute-request-v1", policy: { mode: "cloud" } }),
+      computeRequest: LOCAL_REQUEST,
     },
   ]));
-  assert.equal(result.ok, true, JSON.stringify(result.violations));
+  assert.equal(local.ok, true, JSON.stringify(local.violations));
+
+  // Legacy pre-compute rows (no request at all) keep the existing lane.
+  const legacyConfig = trainingRunConfig({});
+  delete legacyConfig.dataModel.objects[0].rows[0].computeRequest;
+  const legacy = evaluateWorkspacePatchPolicy(legacyConfig, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "imported", artifactType: "gguf", artifactPath: "/models/tuned.gguf", artifactSha256: "a".repeat(64) },
+  ]));
+  assert.equal(legacy.ok, true, JSON.stringify(legacy.violations));
 });
 
 test("an automatic-policy run that resolved to the LOCAL machine keeps the local runner lane writable", () => {
@@ -397,8 +485,11 @@ test("an automatic-policy run that resolved to the LOCAL machine keeps the local
   const result = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
     {
       trainingRunId: "trainrun_1",
+      modelTrainingRowId: "workspace-local",
       status: "imported",
       compute: localDecision, // echo
+      computeRequest: CLOUD_REQUEST, // echo (frozen but unchanged)
+      preflight: { ok: true, ramGB: 32 }, // the runner's stage-0 stamp stays writable pre-remote
       artifactType: "gguf",
       artifactPath: "/models/tuned.gguf",
       artifactSha256: "a".repeat(64),
@@ -407,19 +498,32 @@ test("an automatic-policy run that resolved to the LOCAL machine keeps the local
   assert.equal(result.ok, true, JSON.stringify(result.violations));
 });
 
-test("benchmarkWins/promotion is a derived verdict — PATCH may echo it but never write it", () => {
+test("benchmarkWins/promotion is a derived verdict — PATCH may neither write NOR remove it", () => {
   const wins = { total: 6, wins: 6, winRatePct: 100, promoted: true };
   const forged = evaluateWorkspacePatchPolicy(trainingRunConfig({}), patchTrainingRows([
-    { trainingRunId: "trainrun_1", status: "running", distillation: JSON.stringify({ teacherModel: "t", benchmarkWins: wins }) },
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", computeRequest: CLOUD_REQUEST, distillation: JSON.stringify({ teacherModel: "t", benchmarkWins: wins }) },
   ]));
   assert.equal(forged.ok, false);
   assert.ok(codes(forged).includes("training_evidence_field"));
 
   const current = trainingRunConfig({ distillation: JSON.stringify({ teacherModel: "t", benchmarkWins: wins }) });
   const echoed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
-    { trainingRunId: "trainrun_1", status: "running", distillation: JSON.stringify({ teacherModel: "t", benchmarkWins: wins }) },
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", computeRequest: CLOUD_REQUEST, distillation: JSON.stringify({ teacherModel: "t", benchmarkWins: wins }) },
   ]));
   assert.equal(echoed.ok, true, JSON.stringify(echoed.violations));
+
+  // REMOVING the verdict (replacing distillation without it, or omitting
+  // the column entirely) is erasing the promotion evidence.
+  const removed = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", computeRequest: CLOUD_REQUEST, distillation: JSON.stringify({ teacherModel: "t" }) },
+  ]));
+  assert.equal(removed.ok, false);
+  assert.ok(codes(removed).includes("training_evidence_field"));
+  const omitted = evaluateWorkspacePatchPolicy(current, patchTrainingRows([
+    { trainingRunId: "trainrun_1", modelTrainingRowId: "workspace-local", status: "running", computeRequest: CLOUD_REQUEST },
+  ]));
+  assert.equal(omitted.ok, false);
+  assert.ok(codes(omitted).includes("training_evidence_field"));
 });
 
 // ── repair guidance ────────────────────────────────────────────────────────

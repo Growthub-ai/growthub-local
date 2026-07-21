@@ -76,13 +76,16 @@ export function parseJsonColumn(value) {
 
 /**
  * The deterministic idempotency key for one governed allocation request.
- * Same governed request (same run, attempt, profile, provider) → same key →
- * the execution seam can refuse a silent duplicate allocation. `attempt` is
+ * Same governed request (same run, attempt, profile, provider, AND sealed
+ * workload identity) → same key → the execution seam can refuse a silent
+ * duplicate allocation. Binding `workSpecHash` in means a changed work spec
+ * mints a different identity, so provider-native reconciliation can never
+ * adopt a resource that was created for a different workload. `attempt` is
  * incremented ONLY by an explicit governed retry decision, never by a
  * network replay.
  */
-export function computeIdempotencyKey({ trainingRunId = "", attempt = 1, capacityProfileId = "", providerId = "" } = {}) {
-  const canonical = `${str(trainingRunId)}|${Math.max(1, Math.floor(num(attempt, 1)))}|${str(capacityProfileId)}|${str(providerId)}`;
+export function computeIdempotencyKey({ trainingRunId = "", attempt = 1, capacityProfileId = "", providerId = "", workSpecHash = "" } = {}) {
+  const canonical = `${str(trainingRunId)}|${Math.max(1, Math.floor(num(attempt, 1)))}|${str(capacityProfileId)}|${str(providerId)}|${str(workSpecHash)}`;
   return { key: canonical, hash: sha256Hex(canonical) };
 }
 

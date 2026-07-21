@@ -237,3 +237,41 @@ test("quote timestamps and idempotency fields are first-class contract fields", 
     assert.ok(dts.includes(field), `dist/compute.d.ts must declare ${field}`);
   }
 });
+
+test("request/authority split ships in the public contract with parity to the workspace runtime", async () => {
+  const {
+    COMPUTE_REQUEST_SCHEMA,
+    COMPUTE_AUTHORITY_SCHEMA,
+    isComputeRequest,
+    isComputeAuthority,
+  } = contract;
+  assert.equal(COMPUTE_REQUEST_SCHEMA, "growthub-compute-request-v1");
+  assert.equal(COMPUTE_AUTHORITY_SCHEMA, "growthub-compute-authority-v1");
+
+  // Parity with the shipped workspace runtime constants.
+  const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
+  const workSpec = await import(pathToFileURL(path.join(kitApp, "lib/compute-work-spec.js")).href);
+  assert.equal(workSpec.COMPUTE_REQUEST_SCHEMA, COMPUTE_REQUEST_SCHEMA);
+  assert.equal(workSpec.COMPUTE_AUTHORITY_SCHEMA, COMPUTE_AUTHORITY_SCHEMA);
+
+  assert.equal(isComputeRequest({ schema: COMPUTE_REQUEST_SCHEMA, policy: { mode: "cloud" }, selectionMode: "auto" }), true);
+  assert.equal(isComputeRequest({ schema: "other", policy: {}, selectionMode: "auto" }), false);
+  assert.equal(isComputeAuthority({
+    schema: COMPUTE_AUTHORITY_SCHEMA,
+    trainingRunId: "r",
+    authorityHash: "a".repeat(64),
+    workSpecHash: "b".repeat(64),
+    seal: "c".repeat(64),
+    keyId: "env-abc",
+    intent: {},
+    workSpec: {},
+  }), true);
+  assert.equal(isComputeAuthority({ schema: COMPUTE_AUTHORITY_SCHEMA, trainingRunId: "r" }), false, "an unsealed shape is not an authority");
+
+  // The evidence declaration carries the authority fields for SDK consumers.
+  const fs = await import("node:fs");
+  const dts = fs.readFileSync(path.join(repoRoot, "packages/api-contract/dist/compute.d.ts"), "utf8");
+  for (const field of ["authority?", "authorityHash?", "authorityKeyId?", "ComputeRequest", "ComputeAuthority", "binding: \"manifest\" | \"metadata-only\""]) {
+    assert.ok(dts.includes(field), `dist/compute.d.ts must declare ${field}`);
+  }
+});

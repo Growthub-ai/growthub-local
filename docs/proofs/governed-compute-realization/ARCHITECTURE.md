@@ -111,19 +111,32 @@ governed traces → corpus → adaptive student plan (WHAT)
     receipts; there is no compute progress percentage anywhere.
 11. **No caller-authored authority.** The browser persists only the
     customer request snapshot (`computeRequest`); execution authority is
-    compiled server-side from the governed rows and HMAC-sealed with a
-    server-owned key (`GROWTHUB_COMPUTE_AUTHORITY_KEY`, falling back to the
-    SAME `GROWTHUB_WORKSPACE_SIGNING_KEY` the inference manifest seam uses
-    — one operator key by default, domain-separated keyIds — then to an
-    ephemeral per-boot key that fails closed to recompilation).
-    Verification recomputes from current authoritative inputs — a
-    self-consistent caller-supplied spec, or a sealed authority whose
-    governed inputs drifted, is refused before any provider boundary.
-12. **Evidence is server-owned through PATCH.** The `model-training-run`
-    `compute` journal (authority, decision, allocation/resource ids,
-    idempotency identities, events, checkpoints, artifact verification,
-    canonical evaluation) is echo-only through direct PATCH
-    (`training_evidence_field`); on provider-compute rows the
-    imported/completed/verified status and artifact identity claims are
-    also echo-only. The local runner's receipt lane (no compute evidence)
-    is unchanged.
+    compiled server-side and HMAC-sealed with cryptographic DOMAIN
+    SEPARATION (a fixed compute-authority prefix in the MAC message) under
+    `GROWTHUB_COMPUTE_AUTHORITY_KEY`, falling back to the SAME
+    `GROWTHUB_WORKSPACE_SIGNING_KEY` the inference manifest seam uses, then
+    to a per-process ephemeral key. An EPHEMERAL key never authorizes a
+    remote/paid boundary. Compilation requires exactly one run row and
+    exactly one bound `model-training` version row per export identity, and
+    cross-checks base model, reserved output tag, API Registry expected
+    tag, and dataset path; a requested capacity profile may only tighten
+    the derived plan. Authority CONTINUITY is decided by content identity,
+    never by seal validity: key rotation with identical governed inputs
+    reseals explicitly (new keyId in the journal); any drift — policy,
+    dataset, steps, output, preflight anchor — fails closed before any
+    provider action, and the customer request is frozen (echo-only) from
+    the first journal write onward. Verification recompiles ONLY from
+    trusted server inputs (never from fields of the authority under
+    verification, including its dataset manifest).
+12. **Evidence is server-owned through PATCH — and omission is deletion.**
+    PATCH replaces `dataModel` wholesale, so the policy treats an omitted
+    protected value exactly like an explicit erasure. The
+    `model-training-run` `compute` journal, `distillation.benchmarkWins`,
+    and (on rows with remote compute evidence) success statuses, artifact
+    identity, and the stamped preflight anchor are echo-only in BOTH
+    directions (`training_evidence_field`): no minting, no rewriting, no
+    erasing, no demotion. Evidence-bearing rows cannot be deleted or
+    renamed (`trainingRunId` is identity), nor can their object be dropped.
+    A remote-capable request cannot mint success claims before a
+    server-journaled `local-machine` decision; the local runner's lane
+    (local-mode, request-free, or journaled-local rows) is unchanged.

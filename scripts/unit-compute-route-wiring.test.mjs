@@ -17,12 +17,15 @@ test("real sandbox route owns progressive journal, lifecycle controls, byte veri
   assert.match(route, /computeAction/);
   assert.match(route, /checkpointId/);
   assert.match(route, /effectiveAdapterId === "provider-compute" \? await readWorkspaceConfig/);
-  // Server-owned authority: the route injects the compiler + seal verifier
-  // from lib/compute-authority.js into the execution seam.
+  // Server-owned authority: the route injects the compiler + the ONE
+  // production verification function from lib/compute-authority.js into the
+  // execution seam, re-reading CURRENT config for both (no stale snapshot),
+  // and refuses to journal a stale authority beside a changed request.
   assert.match(route, /compileComputeAuthority/);
-  assert.match(route, /verifyComputeAuthoritySeal/);
-  assert.match(route, /compileAuthority:/);
-  assert.match(route, /verifyAuthoritySeal:/);
+  assert.match(route, /verifyComputeAuthorityAgainstWorkspace/);
+  assert.match(route, /compileAuthority: async/);
+  assert.match(route, /verifyAuthority: async/);
+  assert.match(route, /refusing to journal a stale authority/);
 });
 
 test("the browser persists only the customer compute request — never intent/work-spec authority", () => {

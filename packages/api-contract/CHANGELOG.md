@@ -39,6 +39,20 @@ promotion stays evaluation-gated.
   `COMPUTE_EVIDENCE_SCHEMA`.
 - Runtime guards `isComputeProviderRowMetadata`, `isComputeDecision`,
   `isComputeEvent`, and `WORKSPACE_COMPUTE_CONTRACT_VERSION = 1`.
+- **Server-owned authority split** (same unreleased minor):
+  `ComputeRequest` + `COMPUTE_REQUEST_SCHEMA`
+  (`growthub-compute-request-v1`) — the customer-authored, PATCHable request
+  snapshot that grants nothing; `ComputeAuthority` +
+  `COMPUTE_AUTHORITY_SCHEMA` (`growthub-compute-authority-v1`) — the
+  server-compiled, HMAC-SHA256-sealed execution authority with training-row
+  binding, dataset binding classification (`manifest` vs `metadata-only`),
+  content identity (`authorityHash`), and non-secret `keyId`; runtime guards
+  `isComputeRequest` / `isComputeAuthority`. `ComputeEvidence` gains
+  `authority`, `authorityHash`, `authorityKeyId`, `providerRegistryId`,
+  `selectionMode`, `idempotencyKeyHash`, `policy`, `capabilities`, and
+  `evaluation`. `ComputeAllocation.idempotencyKeyHash` is documented as the
+  SHA-256 of run + attempt + profile + provider + sealed `workSpecHash`, so a
+  changed work spec can never adopt a resource minted for another workload.
 
 ## 1.7.0
 

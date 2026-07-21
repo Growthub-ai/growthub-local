@@ -35,7 +35,7 @@ const {
 } = await import(lib("compute-execution.js"));
 const { deriveComputeLifecycle, normalizeComputeCheckpoint, computeIdempotencyKey } = await import(lib("compute-evidence.js"));
 const { COMPUTE_AUTHORITY_SCHEMA } = await import(lib("compute-work-spec.js"));
-const { compileComputeAuthority, verifyComputeAuthoritySeal } = await import(lib("compute-authority.js"));
+const { compileComputeAuthority, verifyComputeAuthoritySeal, verifyComputeAuthorityAgainstWorkspace } = await import(lib("compute-authority.js"));
 const { default: localAdapter } = await import(lib("adapters/compute/default-local-machine.js"));
 
 const NOW0 = Date.parse("2026-07-20T12:00:00.000Z");
@@ -469,9 +469,10 @@ test("compute block round-trips through the governed receipt row (JSON column)",
   assert.ok(!JSON.stringify(parsed).includes("FAKE_REMOTE_KEY_VALUE"));
 });
 
-test("a receipt carrying a CUSTOMER compute request compiles SERVER authority and executes through the route hook", async () => {
-  const adapter = fakeAdapter();
-  const computeRequest = {
+const HOOK_ENV = { GROWTHUB_COMPUTE_AUTHORITY_KEY: "exec-suite-authority-key" };
+
+function hookRequest(overrides = {}) {
+  return {
     schema: "growthub-compute-request-v1",
     policy: { mode: "cloud", excludeLocal: true },
     selectionMode: "explicit",
@@ -483,8 +484,12 @@ test("a receipt carrying a CUSTOMER compute request compiles SERVER authority an
     datasetPath: "data/train.jsonl",
     outputModelTag: "workspace-tuned-v1",
     artifactPath: "artifacts/run",
+    ...overrides,
   };
-  const workspaceConfig = workspaceConfigWith({
+}
+
+function hookWorkspaceConfig(computeRequest = hookRequest()) {
+  const config = workspaceConfigWith({
     receiptRow: {
       ...receiptRowWith(null),
       baseModel: "gemma3:4b",
@@ -493,37 +498,51 @@ test("a receipt carrying a CUSTOMER compute request compiles SERVER authority an
       computeRequest: JSON.stringify(computeRequest),
     },
   });
-  const io = {
+  // The authoritative model-training version row the authority must bind.
+  config.dataModel.objects.push({
+    id: "model-training",
+    objectType: "model-training",
+    rows: [{
+      Name: "workspace-local-v1",
+      baseModel: "gemma3:4b",
+      localModel: "workspace-tuned-v1",
+      apiRegistryId: "",
+      lastExportId: "dataset-test",
+      lastExportSummary: JSON.stringify({ recordCount: 8, path: "data/train.jsonl", version: 1 }),
+    }],
+  });
+  return config;
+}
+
+function hookIo(adapter, workspaceConfig, env = HOOK_ENV) {
+  return {
     ...makeIo(adapter),
-    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z" }),
-    verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority),
+    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env }),
+    verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, env }),
   };
+}
+
+test("a receipt carrying a CUSTOMER compute request compiles SERVER authority and executes through the route hook", async () => {
+  const adapter = fakeAdapter();
+  const workspaceConfig = hookWorkspaceConfig();
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io,
+    io: hookIo(adapter, workspaceConfig),
   });
   assert.ok(outcome, "customer request engages the provider-compute lane");
   assert.equal(outcome.result.ok, true, outcome.result.error);
   assert.equal(outcome.computeBlock.decision.selectionMode, "explicit");
   assert.equal(outcome.computeBlock.authority?.schema, COMPUTE_AUTHORITY_SCHEMA, "server-compiled authority journaled");
   assert.ok(outcome.computeBlock.authority.seal, "authority is sealed");
-  assert.equal(verifyComputeAuthoritySeal(outcome.computeBlock.authority).ok, true, "journaled authority seal verifies");
+  assert.equal(verifyComputeAuthoritySeal(outcome.computeBlock.authority, HOOK_ENV).ok, true, "journaled authority seal verifies");
   assert.equal(adapter.calls.release, 1, "capacity released after completion");
 });
 
 test("the route hook refuses a remote-capable request when no authority compiler is available", async () => {
   const adapter = fakeAdapter();
-  const workspaceConfig = workspaceConfigWith({
-    receiptRow: {
-      ...receiptRowWith(null),
-      baseModel: "gemma3:4b",
-      trainingProfile: "unsloth-qlora-quantize-pipeline",
-      datasetExportId: "dataset-test",
-      computeRequest: JSON.stringify({ policy: { mode: "cloud" }, selectionMode: "explicit", providerRegistryId: "fake-remote", capacityProfileId: "single-gpu-finetune", outputModelTag: "workspace-tuned-v1" }),
-    },
-  });
+  const workspaceConfig = hookWorkspaceConfig();
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig,
     objectId: "model-training-runner",
@@ -533,4 +552,94 @@ test("the route hook refuses a remote-capable request when no authority compiler
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /authority compiler unavailable/);
   assert.equal(adapter.calls.allocate, 0, "no provider call after authority refusal");
+});
+
+test("the route hook refuses remote execution under a per-process EPHEMERAL sealing key", async () => {
+  const adapter = fakeAdapter();
+  const workspaceConfig = hookWorkspaceConfig();
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: hookIo(adapter, workspaceConfig, {}), // no durable key configured
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /ephemeral key/);
+  assert.equal(adapter.calls.allocate, 0, "the paid boundary is never crossed under an ephemeral key");
+  assert.equal(adapter.calls.status, 0);
+});
+
+test("a LOCAL-only ask never contacts a remote adapter — not even for capabilities or quotes", async () => {
+  const adapter = fakeAdapter();
+  adapter.describeCapabilities = () => { throw new Error("remote adapter contacted for a local-only ask"); };
+  adapter.inspectCapacity = async () => { throw new Error("remote adapter quoted for a local-only ask"); };
+  const workspaceConfig = hookWorkspaceConfig(hookRequest({
+    policy: { mode: "local", localOnly: true },
+    selectionMode: "explicit",
+    providerRegistryId: "local-machine",
+    capacityProfileId: "cpu-local-finetune",
+  }));
+  // A machine the local provider is actually eligible on (same shape as the
+  // resolver-picks-local fallthrough proof above).
+  const runObject = workspaceConfig.dataModel.objects.find((o) => o.objectType === "model-training-run");
+  runObject.rows[0].preflight = { ramGB: 32, diskFreeGB: 500, gpu: { present: false, name: "", vramFreeGB: 0 } };
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: { ...makeIo(adapter, { withLocal: true }) }, // no authority needed for local
+  });
+  assert.equal(outcome, null, "local ask falls through to the existing local pipeline");
+  assert.equal(adapter.calls.allocate, 0);
+});
+
+test("CONCURRENCY — a journal-boundary refusal (request changed mid-run) fails closed before any allocation", async () => {
+  // The route's persistCompute compares the LIVE row's request hash against
+  // the compiled authority and throws on mismatch; the decision journal is
+  // written BEFORE allocate, so the paid boundary is never crossed.
+  const adapter = fakeAdapter();
+  const workspaceConfig = hookWorkspaceConfig();
+  const io = {
+    ...hookIo(adapter, workspaceConfig),
+    persistCompute: async () => { throw new Error("governed compute request changed while the authority was being compiled — refusing to journal a stale authority"); },
+  };
+  await assert.rejects(
+    () => maybeExecuteProviderComputeForSandboxRun({ workspaceConfig, objectId: "model-training-runner", name: RUN_ID, io }),
+    /request changed/
+  );
+  assert.equal(adapter.calls.allocate, 0, "no provider call once the journal refuses the stale authority");
+});
+
+test("an unreleased allocation for a DIFFERENT sealed workload refuses a changed-workload run", async () => {
+  const adapter = fakeAdapter();
+  const workspaceConfig = hookWorkspaceConfig();
+  const priorCompute = {
+    capacityProfileId: "single-gpu-finetune",
+    providerRegistryId: "fake-remote",
+    workSpecHash: "e".repeat(64), // a different sealed workload minted this
+    allocation: {
+      allocationId: "alloc-other-workload",
+      runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "pod-9" },
+      status: "running",
+      idempotencyKeyHash: "f".repeat(64),
+      availabilityMode: "on-demand",
+      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
+      requestedAt: "", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: null,
+    },
+    events: [],
+  };
+  const compiled = compileComputeAuthority({ workspaceConfig, trainingRunId: RUN_ID, now: "t", env: HOOK_ENV });
+  assert.equal(compiled.ok, true, compiled.reason);
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig,
+    trainingRunId: RUN_ID,
+    computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "fake-remote", selectionMode: "explicit", policy: { mode: "cloud", excludeLocal: true } },
+    priorCompute,
+    requireAuthority: true,
+    authority: compiled.authority,
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /different sealed workload/);
+  assert.equal(adapter.calls.allocate, 0, "a changed workload never allocates beside or adopts the unreleased resource");
 });

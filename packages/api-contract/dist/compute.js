@@ -94,6 +94,34 @@ export const COMPUTE_PROVIDER_ROW_SCHEMA = "growthub-compute-provider-v1";
 export const COMPUTE_DECISION_SCHEMA = "growthub-compute-decision-v1";
 /** Schema id of the composed receipt evidence block. */
 export const COMPUTE_EVIDENCE_SCHEMA = "growthub-compute-evidence-v1";
+/** Schema id of the customer-authored compute request snapshot. */
+export const COMPUTE_REQUEST_SCHEMA = "growthub-compute-request-v1";
+/** Schema id of the server-compiled sealed compute authority. */
+export const COMPUTE_AUTHORITY_SCHEMA = "growthub-compute-authority-v1";
+/** Runtime guard for a customer compute request snapshot. */
+export function isComputeRequest(value) {
+    if (!value || typeof value !== "object")
+        return false;
+    const v = value;
+    return (v.schema === COMPUTE_REQUEST_SCHEMA &&
+        typeof v.policy === "object" &&
+        v.policy !== null &&
+        (v.selectionMode === "auto" || v.selectionMode === "explicit"));
+}
+/** Runtime guard for a server-compiled sealed compute authority. */
+export function isComputeAuthority(value) {
+    if (!value || typeof value !== "object")
+        return false;
+    const v = value;
+    return (v.schema === COMPUTE_AUTHORITY_SCHEMA &&
+        typeof v.trainingRunId === "string" &&
+        typeof v.authorityHash === "string" &&
+        typeof v.workSpecHash === "string" &&
+        typeof v.seal === "string" &&
+        typeof v.keyId === "string" &&
+        typeof v.intent === "object" &&
+        typeof v.workSpec === "object");
+}
 /** Runtime guard for a governed compute-provider metadata block. */
 export function isComputeProviderRowMetadata(value) {
     if (!value || typeof value !== "object")

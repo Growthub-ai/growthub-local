@@ -320,16 +320,14 @@ function populatedColumn(value) {
 }
 
 /**
- * Does the persisted row carry server-journaled REMOTE provider-compute
- * evidence? A decision that selected the local machine (automatic policy
- * falling through to the local pipeline) journals a decision block too —
- * that run still finishes through the local runner's PATCH lane, so only
- * remote execution evidence (an allocation, provider events, or a non-local
- * selected provider) locks the row's success claims.
+ * Remote provider-compute evidence on the persisted journal: an allocation,
+ * provider events, or a decision that selected a NON-local provider. A
+ * decision selecting the local machine (automatic policy falling through to
+ * the local pipeline) is not remote evidence — that run still finishes
+ * through the local runner's PATCH lane.
  */
-function hasServerComputeEvidence(currentRow) {
-  const compute = parseJsonColumn(currentRow?.compute);
-  if (!compute) return false;
+function hasRemoteComputeEvidence(compute) {
+  if (!isPlainObject(compute)) return false;
   if (isPlainObject(compute.allocation)) return true;
   if (Array.isArray(compute.events) && compute.events.length > 0) return true;
   const selected = String(compute.decision?.selectedProviderId ?? "").trim();
@@ -338,73 +336,161 @@ function hasServerComputeEvidence(currentRow) {
   return Boolean(selected && selected !== "local-machine");
 }
 
+/** Any server journal at all (decision, authority, allocation, events). */
+function hasAnyComputeJournal(compute) {
+  if (!isPlainObject(compute)) return false;
+  return Boolean(
+    isPlainObject(compute.decision)
+      || isPlainObject(compute.authority)
+      || isPlainObject(compute.allocation)
+      || (Array.isArray(compute.events) && compute.events.length > 0)
+  );
+}
+
+/**
+ * Is a compute request remote-capable? Everything except an explicit local
+ * policy (or a request pinned to the local machine) can reach a paid
+ * provider, so its success claims must come from the server, not PATCH.
+ */
+function requestIsRemoteCapable(computeRequestColumn) {
+  const request = parseJsonColumn(computeRequestColumn);
+  if (!request) return false;
+  const mode = String(request.policy?.mode ?? "").trim().toLowerCase();
+  if (mode === "local" || request.policy?.localOnly === true) return false;
+  if (!mode && String(request.providerRegistryId ?? "").trim() === "local-machine") return false;
+  return true;
+}
+
+/**
+ * A run row whose evidence chain must never be deleted or renamed away:
+ * it carries a server journal, a promotion verdict, or verified success
+ * artifact identity.
+ */
+function isProtectedTrainingRunRow(row) {
+  if (!isPlainObject(row)) return false;
+  if (populatedColumn(row.compute)) return true;
+  if (populatedColumn(parseJsonColumn(row.distillation)?.benchmarkWins)) return true;
+  const status = String(row.status ?? "").trim().toLowerCase();
+  if (TRAINING_SUCCESS_STATUSES.includes(status) && String(row.artifactSha256 ?? "").trim()) return true;
+  return false;
+}
+
+/** Two-way echo check: any semantic difference — including OMISSION of a
+ *  populated persisted value (PATCH replaces dataModel wholesale, so an
+ *  omitted field IS a deletion) — is a violation. */
+function evidenceFieldViolation(row, currentRow, field, incomingValue, currentValue) {
+  if (sameValue(incomingValue ?? null, currentValue ?? null)) return false;
+  return populatedColumn(incomingValue) || populatedColumn(currentValue);
+}
+
 function checkTrainingRunRow(row, currentRow, path, violations) {
   const isNewRow = !currentRow;
+  const currentCompute = parseJsonColumn(currentRow?.compute);
+  const remoteLocked = hasRemoteComputeEvidence(currentCompute);
+  const journaled = hasAnyComputeJournal(currentCompute);
+  const push = (fieldPath, message) => violations.push(violation("training_evidence_field", fieldPath, message));
 
-  // The server compute journal is never caller-writable: creating it,
-  // altering it, or erasing it through PATCH is forging (or destroying)
-  // execution evidence — sealed authority, decision, allocation, events,
-  // checkpoints, artifact verification, canonical evaluation all live here.
-  const incomingCompute = row.compute;
+  // 1. The server compute journal is never caller-writable: creating,
+  // altering, or ERASING it (including by omitting the field from the
+  // replacement row) forges or destroys execution evidence — sealed
+  // authority, decision, allocation, events, checkpoints, artifact
+  // verification, canonical evaluation all live here.
   if (isNewRow) {
-    if (populatedColumn(incomingCompute)) {
-      violations.push(violation(
-        "training_evidence_field",
-        `${path}.compute`,
+    if (populatedColumn(row.compute)) {
+      push(`${path}.compute`,
         "compute evidence may not be created through direct PATCH — the sandbox-run route journals it " +
-          "server-side; persist only the customer computeRequest snapshot"
-      ));
+          "server-side; persist only the customer computeRequest snapshot");
     }
-  } else if (incomingCompute !== undefined && !sameValue(incomingCompute, currentRow.compute)) {
-    // A populated persisted block may not be changed OR erased; an absent /
-    // empty persisted block may not be populated.
-    if (populatedColumn(incomingCompute) || populatedColumn(currentRow.compute)) {
-      violations.push(violation(
-        "training_evidence_field",
-        `${path}.compute`,
-        "compute evidence is server-owned — direct PATCH may only echo the persisted value; " +
-          "run/cancel/resume through POST /api/workspace/sandbox-run to change it"
-      ));
+  } else if (evidenceFieldViolation(row, currentRow, "compute", row.compute, currentRow.compute)) {
+    push(`${path}.compute`,
+      "compute evidence is server-owned — direct PATCH may only echo the persisted value (omission is " +
+        "erasure); run/cancel/resume through POST /api/workspace/sandbox-run to change it");
+  }
+
+  // 2. The promotion verdict is a derived evaluation outcome, never an
+  // input: benchmarkWins is echo-only in BOTH directions on every run row —
+  // it may not be added, modified, or removed (incl. by replacing or
+  // omitting the distillation column).
+  const incomingWins = parseJsonColumn(row.distillation)?.benchmarkWins;
+  const currentWins = parseJsonColumn(currentRow?.distillation)?.benchmarkWins;
+  if (isNewRow ? populatedColumn(incomingWins) : evidenceFieldViolation(row, currentRow, "distillation", incomingWins, currentWins)) {
+    push(`${path}.distillation.benchmarkWins`,
+      "benchmarkWins/promotion is a derived evaluation verdict — direct PATCH may only echo it exactly " +
+        "(adding, changing, or removing it is refused); it is written by the evaluation boundary");
+  }
+
+  // 3. Once the server journals ANYTHING for a run, the request and identity
+  // fields the authority was compiled from are frozen: an intentional change
+  // mints a NEW governed run through the preparation flow, never a silent
+  // in-place authority reset (the key-rotation reset defense).
+  if (!isNewRow && journaled) {
+    for (const field of ["computeRequest", "baseModel", "trainingProfile", "datasetExportId", "modelTrainingRowId"]) {
+      if (evidenceFieldViolation(row, currentRow, field, row[field], currentRow[field])) {
+        push(`${path}.${field}`,
+          `${field} is frozen once the server has journaled compute evidence for this run — ` +
+            "prepare a new governed run to change the request or its identities");
+      }
     }
   }
 
-  // The promotion verdict is a derived evaluation outcome, never an input:
-  // benchmarkWins (and with it `promoted`) is echo-only on every run row.
-  const incomingDistillation = parseJsonColumn(row.distillation);
-  const currentDistillation = parseJsonColumn(currentRow?.distillation);
-  const incomingWins = incomingDistillation?.benchmarkWins;
-  if (row.distillation !== undefined
-    && populatedColumn(incomingWins)
-    && !sameValue(incomingWins, currentDistillation?.benchmarkWins)) {
-    violations.push(violation(
-      "training_evidence_field",
-      `${path}.distillation.benchmarkWins`,
-      "benchmarkWins/promotion is a derived evaluation verdict — direct PATCH may only echo it; " +
-        "it is written by the evaluation boundary after a verified artifact import"
-    ));
-  }
+  const incomingStatus = String(row.status ?? "").trim().toLowerCase();
+  const currentStatus = String(currentRow?.status ?? "").trim().toLowerCase();
 
-  // Once a row carries provider-compute evidence, its execution-derived
-  // success claims are server-stamped: a caller may not move the status into
-  // a success state or rewrite artifact identity out from under the journal.
-  if (!isNewRow && hasServerComputeEvidence(currentRow)) {
-    const incomingStatus = String(row.status ?? "").trim().toLowerCase();
-    const currentStatus = String(currentRow.status ?? "").trim().toLowerCase();
-    if (incomingStatus !== currentStatus && TRAINING_SUCCESS_STATUSES.includes(incomingStatus)) {
-      violations.push(violation(
-        "training_evidence_field",
-        `${path}.status`,
-        `status "${incomingStatus}" is execution-derived on a provider-compute run — only the sandbox-run ` +
-          "route may stamp it after verified artifact import"
-      ));
+  // 4. Remote-locked rows: execution-derived state is echo-only in BOTH
+  // directions. A caller may not mint success, may not erase or demote a
+  // server-stamped success, and may not touch artifact identity or the
+  // stamped preflight anchor.
+  if (!isNewRow && remoteLocked) {
+    const statusChanged = incomingStatus !== currentStatus;
+    if (statusChanged && (TRAINING_SUCCESS_STATUSES.includes(incomingStatus) || TRAINING_SUCCESS_STATUSES.includes(currentStatus))) {
+      push(`${path}.status`,
+        "imported/completed/verified status is execution-derived on a provider-compute run — direct PATCH " +
+          "may neither mint nor erase/demote it; only the sandbox-run route stamps it");
     }
     for (const field of TRAINING_ARTIFACT_CLAIM_FIELDS) {
-      if (row[field] !== undefined && !sameValue(row[field], currentRow[field])) {
-        violations.push(violation(
-          "training_evidence_field",
-          `${path}.${field}`,
-          `${field} is verification evidence on a provider-compute run — direct PATCH may only echo it`
-        ));
+      if (evidenceFieldViolation(row, currentRow, field, row[field], currentRow[field])) {
+        push(`${path}.${field}`,
+          `${field} is verification evidence on a provider-compute run — direct PATCH may only echo it ` +
+            "(omission is erasure)");
+      }
+    }
+    if (evidenceFieldViolation(row, currentRow, "preflight", row.preflight, currentRow.preflight)) {
+      push(`${path}.preflight`,
+        "preflight is the stamped machine-evidence anchor of a provider-compute run — echo-only once " +
+          "remote evidence exists");
+    }
+    return;
+  }
+
+  // 5. Success claims through PATCH belong to the LOCAL runner lane only.
+  // The lane is keyed to a SERVER-journaled decision that selected the local
+  // machine — or to a request that cannot reach a provider at all (explicit
+  // local mode / no compute request). A remote-capable request without a
+  // journaled local decision may be created and edited freely, but may not
+  // arrive pre-imported or grow success/artifact claims via PATCH.
+  const effectiveRequest = row.computeRequest !== undefined ? row.computeRequest : currentRow?.computeRequest;
+  const remoteCapableRequest = requestIsRemoteCapable(effectiveRequest);
+  const localDecisionJournaled = journaled
+    && String(currentCompute?.decision?.selectedProviderId ?? "").trim() === "local-machine";
+  const localLaneOpen = !remoteCapableRequest || localDecisionJournaled;
+  if (!localLaneOpen) {
+    const mintsSuccess = isNewRow
+      ? TRAINING_SUCCESS_STATUSES.includes(incomingStatus)
+      : incomingStatus !== currentStatus && TRAINING_SUCCESS_STATUSES.includes(incomingStatus);
+    if (mintsSuccess) {
+      push(`${path}.status`,
+        "a remote-capable compute request cannot be marked imported/completed/verified through direct " +
+          "PATCH before the server journals a local-machine placement decision — run it through " +
+          "POST /api/workspace/sandbox-run");
+    }
+    for (const field of TRAINING_ARTIFACT_CLAIM_FIELDS) {
+      const incomingValue = row[field];
+      const currentValue = currentRow?.[field];
+      const introduces = isNewRow ? populatedColumn(incomingValue) : evidenceFieldViolation(row, currentRow, field, incomingValue, currentValue);
+      if (introduces && populatedColumn(incomingValue)) {
+        push(`${path}.${field}`,
+          `${field} is an execution claim — a remote-capable request may not carry caller-authored ` +
+            "artifact identity before the server journals a local-machine placement decision");
       }
     }
   }
@@ -463,6 +549,45 @@ function checkDataModel(dataModel, currentConfig, violations) {
       }
       if (objectType === "model-training-run") {
         checkTrainingRunRow(row, currentRow, rowPath, violations);
+      }
+    });
+  });
+
+  // Deletion / rename detection. PATCH replaces dataModel wholesale, so a
+  // persisted evidence-bearing run row (or its whole object) that is simply
+  // MISSING from the incoming body is a deletion of server-owned evidence —
+  // and renaming trainingRunId is the same deletion wearing a new identity.
+  const incomingById = new Map(
+    (dataModel.objects ?? []).filter(isPlainObject).map((o) => [String(o.id ?? ""), o])
+  );
+  currentObjects.forEach((currentObject) => {
+    if (!isPlainObject(currentObject) || String(currentObject.objectType ?? "") !== "model-training-run") return;
+    const incomingObject = incomingById.get(String(currentObject.id ?? "")) ?? null;
+    const incomingRows = Array.isArray(incomingObject?.rows) ? incomingObject.rows.filter(isPlainObject) : [];
+    const incomingByRunId = new Map(
+      incomingRows
+        .filter((r) => String(r.trainingRunId ?? "").trim())
+        .map((r) => [String(r.trainingRunId).trim(), r])
+    );
+    (Array.isArray(currentObject.rows) ? currentObject.rows : []).forEach((currentRow) => {
+      if (!isProtectedTrainingRunRow(currentRow)) return;
+      const runId = String(currentRow?.trainingRunId ?? "").trim();
+      if (!incomingObject) {
+        violations.push(violation(
+          "training_evidence_field",
+          "dataModel.objects",
+          `model-training-run object "${String(currentObject.id ?? "")}" carries server-owned evidence ` +
+            `(run "${runId || "unnamed"}") and may not be deleted through direct PATCH`
+        ));
+        return;
+      }
+      if (!runId || !incomingByRunId.has(runId)) {
+        violations.push(violation(
+          "training_evidence_field",
+          "dataModel.objects",
+          `run row "${runId || "unnamed"}" carries server-owned evidence and may not be deleted or ` +
+            "renamed (trainingRunId is its identity) through direct PATCH"
+        ));
       }
     });
   });

@@ -301,10 +301,12 @@ export const COMPUTE_ALLOCATION_STATUSES = [
 ] as const;
 
 /**
- * A governed capacity allocation. `idempotencyKeyHash` is the hash of the
+ * A governed capacity allocation. `idempotencyKeyHash` is the SHA-256 of the
  * deterministic allocation identity (trainingRunId + attempt + profile +
- * provider): a replayed governed request MUST resolve to the same hash so a
- * duplicate expensive allocation can be refused instead of silently created.
+ * provider + sealed workSpecHash): a replayed governed request MUST resolve
+ * to the same hash so a duplicate expensive allocation can be refused
+ * instead of silently created, and a CHANGED work spec mints a different
+ * identity so it can never adopt a resource created for another workload.
  * `releaseConfirmed=false` on a terminal state means capacity may still
  * exist and cost may still be accruing — the honest failure surface.
  */
@@ -428,6 +430,83 @@ export interface ComputeArtifactRef {
   verificationKind?: string;
 }
 
+/**
+ * The CUSTOMER-authored compute request snapshot (`row.computeRequest`).
+ * PATCHable by design and grants nothing: it records what was asked for —
+ * policy mode, budget, locality, preemptible choice, provider preference,
+ * training profile, export identity, output tag, duration estimate. The
+ * workspace server compiles execution authority FROM it and rejects it when
+ * the governed records disagree. Frozen (echo-only) once the server has
+ * journaled any compute evidence for the run.
+ */
+export interface ComputeRequest {
+  schema: "growthub-compute-request-v1";
+  policy: Record<string, unknown>;
+  selectionMode: "auto" | "explicit";
+  providerRegistryId: string;
+  capacityProfileId: string;
+  trainingProfileId: string;
+  baseModel: string;
+  teacherModel: string;
+  quantization: string;
+  datasetExportId: string;
+  datasetPath: string;
+  outputModelTag: string;
+  artifactPath: string;
+  /** Customer duration estimate for quote math; 0 keeps cost UNKNOWN (and
+   *  unknown cost fails closed under a hard budget cap). */
+  estimatedDurationMinutes: number;
+  requestedAt: string;
+}
+
+/**
+ * The SERVER-compiled, HMAC-SHA256-sealed execution authority
+ * (`compute.authority`). Compiled inside the workspace server from the
+ * governed `model-training-run` row, the unique bound `model-training`
+ * version row, and the customer request — never from caller-supplied
+ * objects. `authorityHash` is the content identity (compile-timestamp
+ * excluded) so unchanged inputs recompile to the same hash; verification
+ * recompiles from current governed inputs and checks the seal, failing
+ * closed on drift. `keyId` is non-secret key-identity evidence; the key
+ * resolves from `GROWTHUB_COMPUTE_AUTHORITY_KEY`, falling back to the
+ * workspace signing key, then a per-process ephemeral key that may never
+ * authorize a remote/paid boundary.
+ */
+export interface ComputeAuthority {
+  schema: "growthub-compute-authority-v1";
+  version: number;
+  trainingRunId: string;
+  modelTrainingRowId: string;
+  trainingRowBinding: {
+    rowName: string;
+    lastExportId: string;
+    baseModel: string;
+    localModel: string;
+    apiRegistryId: string;
+  } | null;
+  request: ComputeRequest;
+  requestHash: string;
+  dataset: {
+    exportId: string;
+    corpusSha256: string;
+    sizeBytes: number;
+    /** "manifest" only when a server-materialized corpus manifest was bound;
+     *  "metadata-only" states honestly that byte-level dataset authority is
+     *  NOT claimed (the remote data-plane workstream). */
+    binding: "manifest" | "metadata-only";
+  };
+  intent: ComputeIntent;
+  workSpec: ComputeWorkSpec;
+  intentHash: string;
+  requirementsHash: string;
+  workSpecHash: string;
+  authorityHash: string;
+  compiledBy: string;
+  compiledAt: string;
+  keyId: string;
+  seal: string;
+}
+
 export interface ComputeIntent {
   schema: "growthub-compute-intent-v1";
   capacityProfileId: ComputeCapacityProfileId;
@@ -497,6 +576,21 @@ export interface ComputeEvidence {
   events: ComputeEvent[];
   checkpoints: ComputeCheckpointRef[];
   artifact: ComputeArtifactRef | null;
+  /** Selected provider row + selection mode of the journaled run. */
+  providerRegistryId?: string;
+  selectionMode?: "auto" | "explicit";
+  /** Deterministic allocation identity hash (see ComputeAllocation). */
+  idempotencyKeyHash?: string;
+  /** The SERVER-compiled sealed authority. Carried as evidence; the
+   *  execution seam recompiles + seal-verifies before trusting it. */
+  authority?: ComputeAuthority | null;
+  authorityHash?: string;
+  /** Non-secret sealing-key identity (env-/wsk-/boot- prefixed). */
+  authorityKeyId?: string;
+  policy?: Record<string, unknown> | null;
+  capabilities?: Record<string, unknown> | null;
+  /** Evaluation lineage journaled after verified artifact import. */
+  evaluation?: Record<string, unknown> | null;
   intent?: ComputeIntent | null;
   workSpec?: ComputeWorkSpec | null;
   intentHash?: string;
@@ -563,6 +657,40 @@ export const COMPUTE_DECISION_SCHEMA = "growthub-compute-decision-v1" as const;
 
 /** Schema id of the composed receipt evidence block. */
 export const COMPUTE_EVIDENCE_SCHEMA = "growthub-compute-evidence-v1" as const;
+
+/** Schema id of the customer-authored compute request snapshot. */
+export const COMPUTE_REQUEST_SCHEMA = "growthub-compute-request-v1" as const;
+
+/** Schema id of the server-compiled sealed compute authority. */
+export const COMPUTE_AUTHORITY_SCHEMA = "growthub-compute-authority-v1" as const;
+
+/** Runtime guard for a customer compute request snapshot. */
+export function isComputeRequest(value: unknown): value is ComputeRequest {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.schema === COMPUTE_REQUEST_SCHEMA &&
+    typeof v.policy === "object" &&
+    v.policy !== null &&
+    (v.selectionMode === "auto" || v.selectionMode === "explicit")
+  );
+}
+
+/** Runtime guard for a server-compiled sealed compute authority. */
+export function isComputeAuthority(value: unknown): value is ComputeAuthority {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.schema === COMPUTE_AUTHORITY_SCHEMA &&
+    typeof v.trainingRunId === "string" &&
+    typeof v.authorityHash === "string" &&
+    typeof v.workSpecHash === "string" &&
+    typeof v.seal === "string" &&
+    typeof v.keyId === "string" &&
+    typeof v.intent === "object" &&
+    typeof v.workSpec === "object"
+  );
+}
 
 /**
  * Governed compute-provider row metadata (`row.metadata.computeProvider`).

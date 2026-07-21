@@ -58,12 +58,26 @@ function requestWith(overrides = {}) {
   };
 }
 
-function configWith({ request = requestWith(), rowOverrides = {}, versionRow = null } = {}) {
+/** The authoritative model-training version row a compile must bind. */
+function versionRowWith(overrides = {}) {
+  return {
+    Name: "workspace-local-v1",
+    status: "prepared",
+    apiRegistryId: "workspace-local-model",
+    baseModel: "gemma3:4b",
+    localModel: "tuned-authority-v1",
+    lastExportId: "export-authority-1",
+    lastExportSummary: JSON.stringify({ recordCount: 12, path: "data/export-authority-1.jsonl", registryId: "workspace-local-model", version: 1 }),
+    ...overrides,
+  };
+}
+
+function configWith({ request = requestWith(), rowOverrides = {}, versionRow = versionRowWith(), versionRows = null, runRows = null, registryRows = null } = {}) {
   const objects = [
     {
       id: "model-training-run",
       objectType: "model-training-run",
-      rows: [{
+      rows: runRows || [{
         trainingRunId: RUN_ID,
         modelTrainingRowId: "workspace-local",
         datasetExportId: "export-authority-1",
@@ -76,7 +90,9 @@ function configWith({ request = requestWith(), rowOverrides = {}, versionRow = n
       }],
     },
   ];
-  if (versionRow) objects.push({ id: "model-training", objectType: "model-training", rows: [versionRow] });
+  const trainingRows = versionRows || (versionRow ? [versionRow] : []);
+  if (trainingRows.length) objects.push({ id: "model-training", objectType: "model-training", rows: trainingRows });
+  if (registryRows) objects.push({ id: "api-registry", objectType: "api-registry", rows: registryRows });
   return { dataModel: { objects } };
 }
 
@@ -123,7 +139,7 @@ test("compilation fails closed on missing identities and contradictory requests"
   assert.equal(baseConflict.reasonCode, "base-model-conflict");
 
   const staleTrainingRow = compileComputeAuthority({
-    workspaceConfig: configWith({ versionRow: { Name: "workspace-local-v1", lastExportId: "export-authority-1", baseModel: "some-other-base:1b" } }),
+    workspaceConfig: configWith({ versionRow: versionRowWith({ baseModel: "some-other-base:1b" }) }),
     trainingRunId: RUN_ID,
     env: ENV,
   });
@@ -133,6 +149,89 @@ test("compilation fails closed on missing identities and contradictory requests"
   const missingRow = compileComputeAuthority({ workspaceConfig: { dataModel: { objects: [] } }, trainingRunId: RUN_ID, env: ENV });
   assert.equal(missingRow.ok, false);
   assert.equal(missingRow.reasonCode, "receipt-missing");
+});
+
+test("BINDING — authority requires exactly one authoritative training-version row and consistent identities", () => {
+  // No version row: a run without training-version lineage gets NO authority.
+  const missing = compileComputeAuthority({ workspaceConfig: configWith({ versionRow: null }), trainingRunId: RUN_ID, env: ENV });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.reasonCode, "training-row-missing");
+
+  // Two version rows claiming the same export identity: ambiguous lineage.
+  const ambiguous = compileComputeAuthority({
+    workspaceConfig: configWith({ versionRows: [versionRowWith(), versionRowWith({ Name: "workspace-local-v2" })] }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(ambiguous.ok, false);
+  assert.equal(ambiguous.reasonCode, "training-row-ambiguous");
+
+  // Two run rows claiming the same trainingRunId: ambiguous run identity.
+  const runRow = { trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", datasetExportId: "export-authority-1", baseModel: "gemma3:4b", trainingProfile: "unsloth-qlora-quantize-pipeline", status: "running", computeRequest: JSON.stringify(requestWith()) };
+  const dupRuns = compileComputeAuthority({ workspaceConfig: configWith({ runRows: [runRow, { ...runRow }] }), trainingRunId: RUN_ID, env: ENV });
+  assert.equal(dupRuns.ok, false);
+  assert.equal(dupRuns.reasonCode, "run-identity-ambiguous");
+
+  // A version row that belongs to a DIFFERENT training identity.
+  const foreign = compileComputeAuthority({
+    workspaceConfig: configWith({ versionRow: versionRowWith({ Name: "other-slug-v1" }) }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(foreign.ok, false);
+  assert.equal(foreign.reasonCode, "training-row-binding");
+
+  // Output tag contradicting the version row's reserved tag.
+  const tagConflict = compileComputeAuthority({
+    workspaceConfig: configWith({ versionRow: versionRowWith({ localModel: "someone-elses-tag" }) }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(tagConflict.ok, false);
+  assert.equal(tagConflict.reasonCode, "output-identity-conflict");
+
+  // Output tag contradicting the bound API Registry expected served tag.
+  const registryConflict = compileComputeAuthority({
+    workspaceConfig: configWith({ registryRows: [{ integrationId: "workspace-local-model", expectedModelTag: "registry-says-otherwise" }] }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(registryConflict.ok, false);
+  assert.equal(registryConflict.reasonCode, "output-identity-conflict");
+
+  // Dataset path contradicting the export summary.
+  const pathConflict = compileComputeAuthority({
+    workspaceConfig: configWith({ request: requestWith({ datasetPath: "data/other-bytes.jsonl" }) }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(pathConflict.ok, false);
+  assert.equal(pathConflict.reasonCode, "dataset-path-conflict");
+
+  // A WEAKER requested capacity profile can never downgrade the derived plan.
+  const bigPreflight = { ramGB: 256, diskFreeGB: 2000, gpu: { present: true, name: "H100", vramFreeGB: 80 } };
+  const downgrade = compileComputeAuthority({
+    workspaceConfig: configWith({
+      request: requestWith({ baseModel: "qwen3:141b", capacityProfileId: "cpu-local-finetune" }),
+      rowOverrides: { baseModel: "qwen3:141b", preflight: bigPreflight },
+      versionRow: versionRowWith({ baseModel: "qwen3:141b" }),
+    }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(downgrade.ok, false);
+  assert.equal(downgrade.reasonCode, "capacity-profile-downgrade");
+
+  // A correctly bound prepared run (matching registry included) compiles.
+  const bound = compileComputeAuthority({
+    workspaceConfig: configWith({ registryRows: [{ integrationId: "workspace-local-model", expectedModelTag: "tuned-authority-v1" }] }),
+    trainingRunId: RUN_ID,
+    env: ENV,
+  });
+  assert.equal(bound.ok, true, bound.reason);
+  assert.equal(bound.keySource, "env");
+  assert.equal(bound.authority.trainingRowBinding.rowName, "workspace-local-v1");
+  assert.equal(bound.authority.dataset.binding, "metadata-only", "without a server corpus manifest the authority claims metadata identity only");
 });
 
 test("ADVERSARIAL — any post-seal mutation breaks the seal; a self-consistent forgery cannot mint one", () => {
@@ -166,9 +265,16 @@ test("ADVERSARIAL — post-seal drift of policy, dataset, steps, or output fails
 
   const cases = [
     ["policy changed", configWith({ request: requestWith({ policy: { mode: "cloud", budget: { mode: "unlimited" } } }) })],
-    ["output identity changed", configWith({ request: requestWith({ outputModelTag: "tuned-authority-v2", artifactPath: "artifacts/tuned-authority-v2" }) })],
+    ["output identity changed", configWith({
+      request: requestWith({ outputModelTag: "tuned-authority-v2", artifactPath: "artifacts/tuned-authority-v2" }),
+      versionRow: versionRowWith({ localModel: "tuned-authority-v2" }),
+    })],
     ["ordered steps changed via training profile", configWith({ request: requestWith({ trainingProfileId: "compatible-runtime-endpoint" }), rowOverrides: { trainingProfile: "compatible-runtime-endpoint" } })],
-    ["dataset identity changed", configWith({ request: requestWith({ datasetExportId: "export-authority-2", datasetPath: "data/export-authority-2.jsonl" }), rowOverrides: { datasetExportId: "export-authority-2" } })],
+    ["dataset identity changed", configWith({
+      request: requestWith({ datasetExportId: "export-authority-2", datasetPath: "data/export-authority-2.jsonl" }),
+      rowOverrides: { datasetExportId: "export-authority-2" },
+      versionRow: versionRowWith({ Name: "workspace-local-v2", lastExportId: "export-authority-2", lastExportSummary: JSON.stringify({ recordCount: 12, path: "data/export-authority-2.jsonl", version: 2 }) }),
+    })],
     ["provider preference changed", configWith({ request: requestWith({ providerRegistryId: "another-provider" }) })],
   ];
   for (const [label, driftedConfig] of cases) {

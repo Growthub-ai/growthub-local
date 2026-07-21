@@ -189,10 +189,21 @@ export async function executeProviderComputeRun({
     envPresent: io.envPresent || (() => false),
     preflight,
   });
+  // Policy pre-filter BEFORE any adapter contact: a local-only ask must not
+  // make remote health/quote calls (there is no provider boundary without
+  // sealed authority), an exclude-local ask never probes the local machine,
+  // and an explicit pin inspects only the pinned provider.
+  const pinnedProviderId = str(ask.providerRegistryId).trim();
+  const inspectable = providersState.providers.filter((provider) => {
+    if (provider.status !== "ready") return false;
+    if (policy?.localOnly) return provider.providerId === LOCAL_PROVIDER_ID;
+    if (policy?.excludeLocal && provider.providerId === LOCAL_PROVIDER_ID) return false;
+    if (ask.selectionMode === "explicit" && pinnedProviderId) return provider.providerId === pinnedProviderId;
+    return true;
+  });
   const capabilitiesById = {};
   const quotesById = {};
-  for (const provider of providersState.providers) {
-    if (provider.status !== "ready") continue;
+  for (const provider of inspectable) {
     const adapter = io.getAdapter(provider.adapterId);
     if (!adapter) continue;
     const providerConfig = { ...(provider.config || {}), providerId: provider.providerId, preflight };
@@ -248,8 +259,31 @@ export async function executeProviderComputeRun({
   const providerConfig = { ...(provider.config || {}), providerId: provider.providerId, preflight };
 
   // 4. Deterministic allocation identity + replay protection.
-  const { hash: idempotencyKeyHash } = computeIdempotencyKey({ trainingRunId, attempt, capacityProfileId, providerId: selectedId });
+  // The identity is bound to the SEALED WORKLOAD (workSpecHash), not only
+  // the run/attempt/profile/provider tuple: a changed work spec can never
+  // silently adopt (or collide with) a resource minted for another workload.
+  const { hash: idempotencyKeyHash } = computeIdempotencyKey({ trainingRunId, attempt, capacityProfileId, providerId: selectedId, workSpecHash: workSpec?.workSpecHash || "" });
   const prior = normalizeComputeBlock(priorCompute);
+  if (prior?.allocation && !prior.allocation.releaseConfirmed
+    && str(prior.workSpecHash) !== str(workSpec?.workSpecHash || "")) {
+    // An UNRELEASED allocation exists for a DIFFERENT sealed workload. A
+    // changed work spec must never allocate beside — or adopt — a resource
+    // minted for another workload; only the SAME workload may be explicitly
+    // retried (a new governed attempt) while release is unconfirmed.
+    return {
+      localFallthrough: false,
+      computeBlock: prior,
+      result: {
+        ok: false,
+        exitCode: null,
+        durationMs: 0,
+        stdout: "",
+        stderr: "",
+        error: `allocation refused: unreleased allocation ${prior.allocation.allocationId || "(unnamed)"} belongs to a different sealed workload — release or reconcile it before running a changed workload`,
+        adapterMeta: { adapter: "provider-compute", providerId: selectedId, compute: { foreignAllocationRefused: true } },
+      },
+    };
+  }
   if (prior?.allocation && prior.allocation.idempotencyKeyHash === idempotencyKeyHash && !prior.allocation.releaseConfirmed) {
     // The same governed request already allocated capacity that is not
     // provably released. Exactly-once cannot be proven from here, so the
@@ -614,21 +648,27 @@ export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig
   if (!compiled?.ok || !compiled.authority) {
     return refusal(`compute authority compilation failed (${str(compiled?.reasonCode) || "unknown"}): ${str(compiled?.reason) || "no detail"}`);
   }
+  if (str(compiled.keySource) === "ephemeral") {
+    // A seal that cannot outlive a process restart must never authorize a
+    // paid provider boundary: after the restart the workload could be
+    // silently replaced. Development/local evidence only.
+    return refusal("compute authority is sealed with a per-process ephemeral key — remote execution requires a durable key; set GROWTHUB_COMPUTE_AUTHORITY_KEY or GROWTHUB_WORKSPACE_SIGNING_KEY");
+  }
   const authority = compiled.authority;
   if (prior?.authority) {
-    const sealCheck = typeof io.verifyAuthoritySeal === "function"
-      ? io.verifyAuthoritySeal(prior.authority)
-      : { ok: false };
-    if (sealCheck?.ok && str(prior.authority.authorityHash).trim() !== str(authority.authorityHash).trim()) {
-      // The previously sealed authority no longer matches the governed
-      // inputs: training row, dataset identity, policy, ordered steps, or
-      // output identity changed after sealing. Fail closed before the
-      // provider boundary — the operator re-prepares the run explicitly.
-      return refusal("governed inputs changed after compute authority was sealed — refusing before provider submission; re-prepare the run to compile a new authority");
+    // Authority CONTINUITY, decided by content — never by whether the old
+    // seal still verifies. Key rotation or a restart must not become
+    // permission to change workload semantics: if the journaled authority's
+    // content identity cannot be reproduced from current governed inputs,
+    // fail closed BEFORE any provider action; if it matches, proceed under
+    // an explicit reseal (the journal records the new keyId).
+    if (typeof io.verifyAuthority !== "function") {
+      return refusal("compute authority verifier unavailable — refusing to supersede a journaled authority without verification");
     }
-    // A stored authority whose seal does not verify is untrusted evidence
-    // (restart, key rotation, or forgery); the freshly compiled authority
-    // governs and the stale object is superseded in the next journal write.
+    const verdict = await io.verifyAuthority(prior.authority);
+    if (!verdict || verdict.contentMatches !== true) {
+      return refusal(`governed inputs changed after compute authority was sealed (${str(verdict?.reasonCode) || "unreproducible"}) — refusing before provider submission; prepare a new governed run to change the workload`);
+    }
   }
   const outcome = await executeProviderComputeRun({
     workspaceConfig,

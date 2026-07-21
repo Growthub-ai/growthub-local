@@ -99,8 +99,11 @@ import {
 // verifies through these two functions before any provider boundary.
 import {
   compileComputeAuthority,
-  verifyComputeAuthoritySeal
+  verifyComputeAuthorityAgainstWorkspace
 } from "@/lib/compute-authority";
+import { findTrainingRunReceiptRow } from "@/lib/compute-execution";
+import { parseJsonColumn } from "@/lib/compute-evidence";
+import { hashComputeValue, normalizeComputeRequest } from "@/lib/compute-work-spec";
 import {
   classifySandboxRunResult,
   runOrchestrationGraphIfPresent
@@ -393,6 +396,23 @@ function reconcileModelTrainingRunnerResult({ workspaceConfig, objectId, name, r
 /** Durable compute journal on the existing model-training-run receipt. */
 async function persistComputeReceipt(trainingRunId, computeBlock) {
   const current = await readWorkspaceConfig();
+  // Compare-and-refuse: a concurrent PATCH that changed the customer request
+  // between authority compilation and this journal write must not get a
+  // stale authority journaled beside the changed row. (After the first
+  // journal write the PATCH policy freezes the request outright; this guard
+  // closes the compile→first-write window.)
+  const authorityRequestHash = String(computeBlock?.authority?.requestHash || "");
+  if (authorityRequestHash) {
+    const liveRow = findTrainingRunReceiptRow(current, trainingRunId);
+    const liveColumn = liveRow?.computeRequest;
+    if (liveColumn !== undefined && String(liveColumn ?? "").trim() !== "") {
+      const liveRequest = normalizeComputeRequest(parseJsonColumn(liveColumn));
+      const liveHash = liveRequest ? hashComputeValue(liveRequest) : "";
+      if (liveHash !== authorityRequestHash) {
+        throw new Error("governed compute request changed while the authority was being compiled — refusing to journal a stale authority; re-run to compile fresh");
+      }
+    }
+  }
   const objects = Array.isArray(current?.dataModel?.objects) ? current.dataModel.objects : [];
   const nextObjects = applyComputeBlockToReceiptRows(objects, trainingRunId, computeBlock);
   if (!nextObjects) throw new Error(`training receipt ${trainingRunId} disappeared during compute execution`);
@@ -990,15 +1010,27 @@ async function executeSandboxRun(body, {
           sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
           // Server-owned authority seam: compile fresh execution authority
           // from the governed rows (never from caller-supplied objects) and
-          // seal-verify anything read back from the caller-reachable store.
-          compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
-            workspaceConfig,
+          // verify anything read back from the caller-reachable store with
+          // the ONE production verification function. Both re-read the
+          // CURRENT config — never the request-start snapshot — so a
+          // concurrent PATCH cannot slip a stale row past compilation.
+          compileAuthority: async ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
+            workspaceConfig: await readWorkspaceConfig(),
             trainingRunId,
             request,
             datasetManifest,
             now: new Date().toISOString(),
           }),
-          verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority),
+          verifyAuthority: async (authority) => verifyComputeAuthorityAgainstWorkspace({
+            workspaceConfig: await readWorkspaceConfig(),
+            trainingRunId: rowForRun.Name || name,
+            authority,
+            // The trusted dataset manifest comes from server-owned records
+            // only (remote data-plane workstream); never from the authority
+            // under verification.
+            datasetManifest: null,
+            now: new Date().toISOString(),
+          }),
           persistCompute: (computeBlock) => persistComputeReceipt(rowForRun.Name || name, computeBlock),
           verifyArtifact: verifyComputeArtifactBytes,
           // Bound remote observation to the row's own timeout budget.

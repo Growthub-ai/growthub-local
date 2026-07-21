@@ -63,9 +63,24 @@ execution authority. Corrected in this pass:
 | What verification proves | internal self-hash equality of a caller-supplied object | seal verification AND recompilation from current authoritative inputs (`verifyComputeAuthorityAgainstWorkspace`); drift of policy/dataset/steps/output fails closed before provider submission |
 | PATCH exposure of evidence | `model-training-run` evidence fields freely PATCHable | `compute` journal echo-only (`training_evidence_field`); success statuses + artifact identity echo-only on provider-compute rows; `distillation.benchmarkWins` echo-only everywhere; the local runner's receipt lane (no compute evidence) unchanged |
 
-Still open from the same review (tracked, honestly NOT claimed here):
-outbound provider/artifact network policy (SSRF boundary), canonical
+## Addendum 2 — review of head `428e980` closed
+
+| Finding | Correction |
+| --- | --- |
+| PATCH protection bypassable by omission / row deletion / object deletion / identity rename | Omission of a populated protected value IS erasure (two-way echo-only for `compute`, `benchmarkWins`, and on remote-locked rows: status/artifact/preflight); evidence-bearing rows and their object cannot be deleted or renamed; a remote-capable request cannot mint success claims before a server-journaled `local-machine` decision; the local lane keys to that journaled decision |
+| Authority reset via key rotation / ephemeral restart | Continuity decided by CONTENT identity regardless of seal state (identical content under a new key → explicit reseal, visible via keyId; drift → fail closed before any provider action); remote execution refuses the ephemeral key outright; `computeRequest` + identity fields frozen after the first journal write |
+| Compiler succeeded without authoritative training binding | Exactly one run row + exactly one bound `model-training` version row required; binding checks for `modelTrainingRowId` prefix, reserved `localModel` tag, API Registry `expectedModelTag`, and `lastExportSummary.path`; requested profile must be equal-or-stricter than the derived plan (intrinsic-floor comparison); dataset binding honestly classified `manifest` vs `metadata-only` |
+| Verification reused untrusted persisted dataset fields | `verifyComputeAuthorityAgainstWorkspace` takes an explicit trusted `datasetManifest` and never reads fields of the authority under verification |
+| Stale request-start snapshot | `compileAuthority` / `verifyAuthority` re-read CURRENT config; the journal write compares the live request hash against the compiled authority and throws on mismatch (before allocation, which follows the first journal write) |
+| Local-only asks touched remote adapters | Policy pre-filter before ANY adapter contact: `localOnly` inspects only the local provider; explicit pins inspect only the pinned provider |
+| Idempotency unbound from the workload | Identity = run + attempt + profile + provider + sealed `workSpecHash`; an unreleased allocation from a DIFFERENT sealed workload refuses a new run (same-workload explicit retry stays sanctioned) |
+| Public contract stale | `@growthub/api-contract/compute` 1.8.0 (unreleased) gains `ComputeRequest`/`ComputeAuthority` + schemas + guards; `ComputeEvidence` carries the authority fields; dist rebuilt with pinned tsc |
+| keyId-only domain separation | The HMAC message itself is domain-prefixed (`growthub-compute-authority-seal-v1`); keyId remains observability evidence |
+
+Still open from the original PR #296 review (tracked, honestly NOT claimed
+here): outbound provider/artifact network policy (SSRF boundary), canonical
 workspace-owned evaluation replacing provider-returned score rows, the
-remote corpus/artifact byte data plane, the provider-accepted-before-persist
-crash window + monotonic journal merge, asynchronous long-run observation,
-and strict hard-budget normalization.
+remote corpus/artifact byte data plane (authority binding is
+`metadata-only` until then), the provider-accepted-before-persist crash
+window + monotonic journal merge, asynchronous long-run observation,
+active-attempt resume/release safety, and strict hard-budget normalization.
