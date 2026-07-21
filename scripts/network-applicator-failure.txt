@@ -1,5 +1,5 @@
 ReferenceError: RUNPOD_SERVERLESS_BASE is not defined
-    at file:///home/runner/work/growthub-local/growthub-local/scripts/apply-compute-network-hardening.mjs?exactHead=1784602585741:228:43
+    at file:///home/runner/work/growthub-local/growthub-local/scripts/apply-compute-network-hardening.mjs?exactHead=1784602646361:228:43
     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
     at async node:internal/modules/esm/loader:643:26
     at async file:///home/runner/work/growthub-local/growthub-local/scripts/run-compute-network-hardening-idempotent.mjs:41:3
