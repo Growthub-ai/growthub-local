@@ -46,9 +46,7 @@ if (!execution.includes("const providerAttestationVerified = Boolean(")) {
   const verifiedStart = prefix.lastIndexOf("      const verified = ");
   if (verifiedStart < 0) fail("artifact verifier declaration not found");
   const replacement = `      const { evaluationResults: _untrustedEvaluation, ...artifactEvidence } = collected;\n      const reportedWorkSpecHash = str(artifactEvidence.workSpecHash);\n      const reportedCorpusSha256 = str(artifactEvidence.corpusSha256 || artifactEvidence.datasetSha256);\n      const expectedWorkSpecHash = str(workSpec?.workSpecHash);\n      const expectedCorpusSha256 = str(workSpec?.dataset?.corpusSha256);\n      const providerAttestationVerified = Boolean(\n        reportedWorkSpecHash\n          && reportedCorpusSha256\n          && reportedWorkSpecHash === expectedWorkSpecHash\n          && reportedCorpusSha256 === expectedCorpusSha256,\n      );\n      const providerAttestationReason = providerAttestationVerified\n        ? "provider artifact binds the exact governed work-spec and corpus identities"\n        : \`provider artifact attestation mismatch: expected workSpec=\${expectedWorkSpecHash || "missing"} corpus=\${expectedCorpusSha256 || "missing"}; received workSpec=\${reportedWorkSpecHash || "missing"} corpus=\${reportedCorpusSha256 || "missing"}\`;\n      const candidate = {\n        ...artifactEvidence,\n        workSpecHash: reportedWorkSpecHash,\n        corpusSha256: reportedCorpusSha256,\n        requirementsHash: intent?.requirementsHash || "",\n        providerAttestationVerified,\n        providerAttestationReason,\n      };\n      const verified = providerAttestationVerified && deliveryVerified && typeof io.verifyArtifact === "function"\n        ? await safeCall(() => io.verifyArtifact(candidate, workSpec))\n        : null;\n`;
-  execution = `${execution.slice(0, start)}${replacement}${execution.slice(start + verifiedStart + (prefix.length - verifiedStart))}`;
-  // The splice above intentionally replaces the full pre-artifact-assignment
-  // prefix. Verify no duplicate candidate/verifier declaration survived.
+  execution = `${execution.slice(0, start)}${replacement}${execution.slice(end)}`;
   const window = execution.slice(start, execution.indexOf(endMarker, start));
   if ((window.match(/const candidate =/g) || []).length !== 1 || (window.match(/const verified =/g) || []).length !== 1) {
     fail("artifact attestation block was not replaced exactly once");
@@ -97,11 +95,11 @@ if (!e2e.includes("const attestedArtifact = (callId)")) {
   e2e = replaceOnce(
     e2e,
     "const submittedAuthority = new Map();",
-    `const submittedAuthority = new Map();\nconst attestedArtifact = (callId) => {\n  const attestation = submittedAuthority.get(callId) || {};\n  return {\n    kind: "gguf",\n    locator: \`${providerBase}/artifact\`,\n    sha256: artifactSha,\n    sizeBytes: artifactBytes.length,\n    workSpecHash: attestation.workSpecHash,\n    corpusSha256: attestation.corpusSha256,\n  };\n};`,
+    `const submittedAuthority = new Map();\nconst attestedArtifact = (callId) => {\n  const attestation = submittedAuthority.get(callId) || {};\n  return {\n    kind: "gguf",\n    locator: \`\${providerBase}/artifact\`,\n    sha256: artifactSha,\n    sizeBytes: artifactBytes.length,\n    workSpecHash: attestation.workSpecHash,\n    corpusSha256: attestation.corpusSha256,\n  };\n};`,
     "attested artifact factory",
   );
 }
-const oldArtifact = `artifact: { kind: "gguf", locator: \`${providerBase}/artifact\`, sha256: artifactSha, sizeBytes: artifactBytes.length }`;
+const oldArtifact = `artifact: { kind: "gguf", locator: \`\${providerBase}/artifact\`, sha256: artifactSha, sizeBytes: artifactBytes.length }`;
 const occurrences = e2e.split(oldArtifact).length - 1;
 if (occurrences > 0) e2e = e2e.split(oldArtifact).join("artifact: attestedArtifact(id)");
 if (!e2e.includes("artifact: attestedArtifact(id)")) fail("booted provider responses do not carry attested artifacts");
