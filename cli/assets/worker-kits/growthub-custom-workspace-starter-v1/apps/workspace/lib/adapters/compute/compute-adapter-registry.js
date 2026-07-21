@@ -1,49 +1,15 @@
 /**
  * Compute Provider Adapter Registry — provider-agnostic dispatch layer for
- * the Governed Compute Realization. Mirrors the sandbox adapter registry
- * philosophy exactly: one global Map, adapters register once at module load,
- * consumers reference the registry only and know nothing about any specific
- * provider.
+ * Governed Compute Realization.
  *
- * A compute provider adapter realizes the `ComputeProviderAdapter` contract
- * (`@growthub/api-contract/compute`). Adapters are the ONLY provider-specific
- * layer in the product: they map Capacity Profiles to their own catalog
- * INTERNALLY and normalize every provider response into contract shapes
- * (quotes, allocations, the 12 normalized compute events).
- *
- * Contract — every adapter must call `registerComputeProviderAdapter()` once
- * at module load with the shape:
- *
- *   {
- *     id:          string,      // stable adapter slug, e.g. "local-machine", "runpod-pods"
- *     label:       string,
- *     description: string,
- *     locality:    "local" | "remote" | "cluster",
- *     describeCapabilities(config) => ComputeProviderCapabilities  // static truth, no IO
- *     inspectCapacity(ctx)  => Promise<ComputeProviderQuote>       // observe only, never allocate
- *     allocate(ctx)         => Promise<ComputeAllocation>          // idempotency-honoring
- *     execute(ctx)          => Promise<ComputeEvent[]>             // submit exact ctx.workSpec
- *     status(ctx)           => Promise<ComputeEvent[]>
- *     resume(ctx, checkpoint) => Promise<ComputeEvent[]>           // fail closed when unsupported
- *     cancel(ctx)           => Promise<ComputeEvent[]>
- *     release(ctx)          => Promise<ComputeEvent[]>
- *   }
- *
- * ctx is a ComputeAdapterContext: { runRef, requirements, capacityProfileId,
- * idempotencyKeyHash, providerConfig, resolveEnv(name), fetchJson(url, init) }.
- * `resolveEnv` hands secret VALUES to the adapter at call time by env NAME —
- * secrets never live in rows, receipts, or adapter state, and adapters MUST
- * NOT log them, even on error paths.
- *
- * Adapters MUST NOT:
- *   - mutate growthub.config.json / source records (the execution seam owns
- *     persistence);
- *   - advance lifecycle without provider evidence (a normalized event always
- *     carries what the provider actually said);
- *   - leak provider-native fields into portable plans or receipts outside the
- *     adapterMeta of their own events;
- *   - promote, verify, or evaluate a model — those authorities live upstream.
+ * Remote and cluster adapters are wrapped at registration time so every HTTP
+ * call crosses the server-owned outbound policy. Direct adapter module exports
+ * remain untouched for deterministic unit tests; the production route obtains
+ * adapters only through this registry. Local adapters perform no remote IO and
+ * retain object identity with their exported adapter.
  */
+
+import { fetchComputeJson } from "../../compute-outbound-policy.js";
 
 if (!globalThis.__growthubComputeAdapterRegistry) {
   globalThis.__growthubComputeAdapterRegistry = new Map();
@@ -51,6 +17,34 @@ if (!globalThis.__growthubComputeAdapterRegistry) {
 const registry = globalThis.__growthubComputeAdapterRegistry;
 
 const REQUIRED_METHODS = ["describeCapabilities", "inspectCapacity", "allocate", "execute", "status", "resume", "cancel", "release"];
+const CONTEXT_METHODS = ["inspectCapacity", "allocate", "execute", "status", "resume", "cancel", "release", "collectArtifact"];
+const wrappedByOriginal = new WeakMap();
+
+function contextWithGovernedOutboundPolicy(ctx) {
+  const input = ctx && typeof ctx === "object" ? ctx : {};
+  return {
+    ...input,
+    // Caller-injected fetch functions are evidence-shaped test plumbing, not
+    // a production network authority. Registered remote adapters always use
+    // the DNS-pinned, redirect-revalidating, bounded server transport.
+    fetchJson: (url, init) => fetchComputeJson(url, init),
+  };
+}
+
+function wrapRemoteAdapter(adapter) {
+  if (adapter.locality === "local") return adapter;
+  const existing = wrappedByOriginal.get(adapter);
+  if (existing) return existing;
+  const wrapped = { ...adapter };
+  for (const method of CONTEXT_METHODS) {
+    if (typeof adapter[method] !== "function") continue;
+    wrapped[method] = function governedAdapterMethod(ctx, ...args) {
+      return adapter[method].call(adapter, contextWithGovernedOutboundPolicy(ctx), ...args);
+    };
+  }
+  wrappedByOriginal.set(adapter, wrapped);
+  return wrapped;
+}
 
 function registerComputeProviderAdapter(adapter) {
   if (!adapter || typeof adapter !== "object") {
@@ -64,7 +58,7 @@ function registerComputeProviderAdapter(adapter) {
       throw new Error(`registerComputeProviderAdapter(${adapter.id}): adapter.${method} must be a function`);
     }
   }
-  registry.set(adapter.id.trim(), adapter);
+  registry.set(adapter.id.trim(), wrapRemoteAdapter(adapter));
 }
 
 function getComputeProviderAdapter(id) {
@@ -89,5 +83,5 @@ export {
   describeRegisteredComputeProviderAdapters,
   getComputeProviderAdapter,
   listComputeProviderAdapters,
-  registerComputeProviderAdapter
+  registerComputeProviderAdapter,
 };
