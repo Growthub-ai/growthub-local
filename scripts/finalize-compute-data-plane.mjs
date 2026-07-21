@@ -55,7 +55,7 @@ const replacement = `async function writeDeliveryReceipt(payload, env = process.
   const body = { ...immutable, deliveredAt: new Date().toISOString() };
   const record = { ...body, signature: deliverySignature(body, key) };
   try {
-    await atomicWrite(receiptPath, Buffer.from(\`${JSON.stringify(record, null, 2)}\\n\`, "utf8"));
+    await atomicWrite(receiptPath, Buffer.from(\`\${JSON.stringify(record, null, 2)}\\n\`, "utf8"));
     return record;
   } catch (error) {
     if (error?.code !== "EEXIST") throw error;
