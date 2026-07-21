@@ -9,6 +9,8 @@ on:
       - .github/workflows/one-shot-compute-network-hardening.yml
       - scripts/apply-compute-network-hardening.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
+      - scripts/apply-compute-canonical-e2e.mjs
+      - scripts/apply-compute-observation-hardening.mjs
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ jobs:
     # implementation commit is deliberately prevented from recursively firing.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,6 +44,12 @@ jobs:
       - name: Apply workspace-owned canonical evaluation wiring
         run: node scripts/apply-compute-canonical-evaluation.mjs
 
+      - name: Apply canonical evaluation to the booted route proof
+        run: node scripts/apply-compute-canonical-e2e.mjs
+
+      - name: Apply governed long-run observation continuation
+        run: node scripts/apply-compute-observation-hardening.mjs
+
       - name: Verify focused network policy
         run: node --test scripts/unit-compute-network-policy.test.mjs
 
@@ -50,6 +58,9 @@ jobs:
 
       - name: Verify workspace-owned canonical evaluation
         run: node --test scripts/unit-compute-canonical-evaluation.test.mjs
+
+      - name: Verify governed long-run observation wiring
+        run: node --test scripts/unit-compute-observation-wiring.test.mjs
 
       - name: Verify full compute certification
         run: npm run test:compute-certification
@@ -62,6 +73,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js \
+                  cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/data-model/components/TrainingHandoffModal.jsx \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/custom-model-inference.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
@@ -73,5 +85,5 @@ jobs:
             echo "[one-shot] branch already contains the hardened implementation"
             exit 0
           fi
-          git commit -m "fix(compute): enforce governed network and canonical evaluation"
+          git commit -m "fix(compute): enforce governed network, evaluation, and long-run observation"
           git push origin HEAD:claude/compute-authority-evidence-pr296-0u5msd
