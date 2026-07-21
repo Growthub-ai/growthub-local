@@ -8,7 +8,9 @@ on:
     paths:
       - .github/workflows/one-shot-compute-network-hardening.yml
       - scripts/apply-compute-network-hardening.mjs
+      - scripts/repair-compute-data-plane-script.mjs
       - scripts/apply-compute-data-plane.mjs
+      - scripts/finalize-compute-data-plane.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
       - scripts/apply-compute-canonical-e2e.mjs
       - scripts/apply-compute-observation-hardening.mjs
@@ -42,8 +44,14 @@ jobs:
       - name: Apply governed network and resource-lifecycle wiring
         run: node scripts/apply-compute-network-hardening.mjs
 
+      - name: Tighten the data-plane applicator
+        run: node scripts/repair-compute-data-plane-script.mjs
+
       - name: Apply signed remote corpus data plane
         run: node scripts/apply-compute-data-plane.mjs
+
+      - name: Finalize dataset capability and delivery invariants
+        run: node scripts/finalize-compute-data-plane.mjs
 
       - name: Apply workspace-owned canonical evaluation wiring
         run: node scripts/apply-compute-canonical-evaluation.mjs
