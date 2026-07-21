@@ -7,6 +7,11 @@
  * model-training-run object. This module compares the current and incoming
  * dataModel sets so omission is treated exactly like an explicit rewrite.
  *
+ * Once a server-sealed authority exists, its customer request snapshot is
+ * frozen on that run. Changing policy/provider/output inputs requires a new
+ * governed run or explicit re-prepare action; direct PATCH cannot mutate the
+ * inputs underneath already-sealed execution evidence.
+ *
  * Dependency-free by design. Both the real PATCH route and patch/preflight
  * call this same function, so dry-run and write behavior cannot diverge.
  */
@@ -77,8 +82,23 @@ function benchmarkWins(row) {
   return parseJsonColumn(row?.distillation)?.benchmarkWins;
 }
 
+function computeBlock(row) {
+  return parseJsonColumn(row?.compute);
+}
+
+function hasSealedAuthority(row) {
+  const authority = computeBlock(row)?.authority;
+  return Boolean(
+    isPlainObject(authority)
+      && String(authority.schema ?? "") === "growthub-compute-authority-v1"
+      && populated(authority.authorityHash)
+      && populated(authority.keyId)
+      && populated(authority.seal),
+  );
+}
+
 function hasRemoteComputeEvidence(row) {
-  const compute = parseJsonColumn(row?.compute);
+  const compute = computeBlock(row);
   if (!compute) return false;
   if (isPlainObject(compute.allocation)) return true;
   if (Array.isArray(compute.events) && compute.events.length > 0) return true;
@@ -179,6 +199,13 @@ function evaluateTrainingEvidencePatchCompleteness(currentConfig, patch) {
         violations.push(violation(
           `${rowPath}.compute`,
           "compute evidence is server-owned — omission, erasure, and replacement are all refused; direct PATCH may only echo the persisted value",
+        ));
+      }
+
+      if (hasSealedAuthority(currentRow) && !sameValue(incomingRow.computeRequest, currentRow.computeRequest)) {
+        violations.push(violation(
+          `${rowPath}.computeRequest`,
+          "the customer compute request is frozen once server authority is sealed — create a new governed run or explicitly re-prepare instead of mutating policy/provider/output inputs underneath existing evidence",
         ));
       }
 
