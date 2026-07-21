@@ -18,6 +18,8 @@ concurrency:
 
 jobs:
   apply:
+    # Direct user/connector pushes activate the one-shot; the bot-authored
+    # implementation commit is deliberately prevented from recursively firing.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
