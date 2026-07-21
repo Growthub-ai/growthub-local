@@ -17,6 +17,10 @@ import {
   evaluateWorkspacePatchPolicy,
   repairPlanForViolations
 } from "@/lib/workspace-patch-policy";
+import {
+  combinePatchPolicyVerdicts,
+  evaluateTrainingEvidencePatchCompleteness
+} from "@/lib/workspace-training-evidence-policy";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { evaluateAppScope } from "@/lib/workspace-app-registry";
 
@@ -25,10 +29,10 @@ import { evaluateAppScope } from "@/lib/workspace-app-registry";
 // on GET for runtime hydration only; they are deliberately NOT in this set.
 // Sidecar writes flow through POST /api/workspace/refresh-sources.
 //
-// Mutation policy (workspace-patch-policy.js) runs before any write: live
-// workflow fields are publish-owned (POST /api/workspace/workflow/publish),
-// size ceilings apply, and history blobs never enter dataModel. Dry-run the
-// same checks via POST /api/workspace/patch/preflight.
+// Mutation policy runs before any write: live workflow fields are publish-
+// owned, size ceilings apply, history blobs never enter dataModel, and the
+// completeness guard refuses deletion-by-omission of server-owned training
+// evidence. Dry-run the same checks via POST /api/workspace/patch/preflight.
 const ALLOWED_PATCH_FIELDS = new Set(WORKSPACE_PATCH_ALLOWED_FIELDS);
 
 async function GET() {
@@ -103,7 +107,10 @@ async function PATCH(request) {
   } catch {
     currentConfig = null;
   }
-  const policy = evaluateWorkspacePatchPolicy(currentConfig, patch);
+  const policy = combinePatchPolicyVerdicts(
+    evaluateWorkspacePatchPolicy(currentConfig, patch),
+    evaluateTrainingEvidencePatchCompleteness(currentConfig, patch),
+  );
   if (!policy.ok) {
     const repairPlan = repairPlanForViolations(policy.violations);
     await appendOutcomeReceipt({
