@@ -18,6 +18,9 @@ on:
       - scripts/finalize-compute-evaluation-order.mjs
       - scripts/apply-compute-canonical-e2e.mjs
       - scripts/apply-compute-observation-hardening.mjs
+      - scripts/apply-compute-durable-observation.mjs
+      - scripts/unit-compute-observation-scheduler.test.mjs
+      - scripts/unit-compute-durable-observation.test.mjs
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, edited]
@@ -75,8 +78,11 @@ jobs:
       - name: Apply canonical evaluation to the booted route proof
         run: node scripts/apply-compute-canonical-e2e.mjs
 
-      - name: Apply governed long-run observation continuation
+      - name: Apply bounded manual observation continuation
         run: node scripts/apply-compute-observation-hardening.mjs
+
+      - name: Replace browser-only observation with signed durable QStash continuation
+        run: node scripts/apply-compute-durable-observation.mjs
 
       - name: Verify focused network policy
         run: node --test scripts/unit-compute-network-policy.test.mjs
@@ -107,8 +113,14 @@ jobs:
       - name: Verify release-before-evaluation ordering
         run: node --test scripts/unit-compute-evaluation-order.test.mjs
 
-      - name: Verify governed long-run observation wiring
+      - name: Verify bounded manual observation wiring
         run: node --test scripts/unit-compute-observation-wiring.test.mjs
+
+      - name: Verify signed durable observation scheduler
+        run: node --test scripts/unit-compute-observation-scheduler.test.mjs
+
+      - name: Verify paid-boundary durable observation guard
+        run: node --test scripts/unit-compute-durable-observation.test.mjs
 
       - name: Verify full compute certification
         run: npm run test:compute-certification
@@ -130,6 +142,7 @@ jobs:
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-data-plane.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-data-store.js \
+                  cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-observation-scheduler.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/training-dataset.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-canonical-evaluation.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/compute/compute-adapter-registry.js \
