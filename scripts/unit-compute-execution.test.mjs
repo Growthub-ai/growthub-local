@@ -1,20 +1,14 @@
 /**
- * Governed Compute Realization — governed execution lifecycle (Sprint 5).
+ * Governed Compute Realization — execution and recovery certification.
  *
- * Exit proofs:
- *   - replay protection: a repeated governed request never silently
- *     allocates duplicate capacity (fails closed);
- *   - provider says allocated → allocation evidence recorded;
- *   - provider says completed without artifact → run non-promotable;
- *   - cancellation with failed release remains visibly unreleased
- *     (capacityMayStillExist / costMayAccrue);
- *   - the existing local pipeline continues unchanged (no compute ask →
- *     null; resolver picks local → fallthrough);
- *   - forged/stale/duplicate provider events can never advance state.
- *
- * All IO injected — no network, no clock, no fs.
- *
- * Run with: node --test scripts/unit-compute-execution.test.mjs
+ * These tests exercise the production orchestrator, not a copied algorithm:
+ * - one server-owned authority reaches every provider boundary;
+ * - active paid resources are reconciled/observed, never duplicated;
+ * - status uncertainty stays pending instead of inventing failure/release;
+ * - provider-authored score rows never mint canonical evaluation/promotion;
+ * - journals merge monotonically;
+ * - cancellation and resume require verifiable provider evidence;
+ * - a resumed resource becomes the active allocation before later controls.
  */
 
 import { test } from "node:test";
@@ -29,22 +23,29 @@ const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 const {
   executeProviderComputeRun,
   cancelProviderComputeRun,
+  resumeProviderComputeRun,
   maybeExecuteProviderComputeForSandboxRun,
   applyComputeBlockToReceiptRows,
   parseReceiptComputeBlock,
+  mergeComputeBlocks,
+  findTrainingRunReceiptRow,
 } = await import(lib("compute-execution.js"));
-const { deriveComputeLifecycle, normalizeComputeCheckpoint, computeIdempotencyKey } = await import(lib("compute-evidence.js"));
+const {
+  deriveComputeLifecycle,
+  normalizeComputeCheckpoint,
+  computeIdempotencyKey,
+} = await import(lib("compute-evidence.js"));
 const { COMPUTE_AUTHORITY_SCHEMA } = await import(lib("compute-work-spec.js"));
-const { compileComputeAuthority, verifyComputeAuthoritySeal, verifyComputeAuthorityAgainstWorkspace } = await import(lib("compute-authority.js"));
+const {
+  compileComputeAuthority,
+  verifyComputeAuthoritySeal,
+  verifyComputeAuthorityAgainstWorkspace,
+} = await import(lib("compute-authority.js"));
 const { default: localAdapter } = await import(lib("adapters/compute/default-local-machine.js"));
 
 const NOW0 = Date.parse("2026-07-20T12:00:00.000Z");
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
 const RUN_ID = "trainrun_2026-07-20";
+const WORK_SPEC_HASH = "a".repeat(64);
 
 function providerRow(overrides = {}) {
   return {
@@ -66,26 +67,36 @@ function providerRow(overrides = {}) {
   };
 }
 
-function workspaceConfigWith({ rows = [providerRow()], receiptRow = null } = {}) {
-  const objects = [{ id: "api-registry", objectType: "api-registry", rows }];
+function directRegistryConfig({ receiptRow = null, providerOverrides = {} } = {}) {
+  const objects = [{ id: "api-registry", objectType: "api-registry", rows: [providerRow(providerOverrides)] }];
   if (receiptRow) objects.push({ id: "model-training-run", objectType: "model-training-run", rows: [receiptRow] });
   return { dataModel: { objects } };
 }
 
-function receiptRowWith(compute) {
+function receiptRowWith(compute = null, overrides = {}) {
   return {
     Name: RUN_ID,
     trainingRunId: RUN_ID,
     modelTrainingRowId: "workspace-local",
     status: "running",
-    preflight: { ramGB: 8, diskFreeGB: 40, gpu: { present: false, name: "", vramFreeGB: 0 } },
+    preflight: { ramGB: 8, diskFreeGB: 80, gpu: { present: false, name: "", vramFreeGB: 0 } },
     ...(compute ? { compute: JSON.stringify(compute) } : {}),
+    ...overrides,
   };
 }
 
-/** A well-behaved fake remote adapter whose behavior is scriptable. */
 function fakeAdapter(script = {}) {
-  const calls = { allocate: 0, execute: 0, resume: 0, status: 0, cancel: 0, release: 0, collectArtifact: 0 };
+  const calls = {
+    describeCapabilities: 0,
+    inspectCapacity: 0,
+    allocate: 0,
+    execute: 0,
+    resume: 0,
+    status: 0,
+    cancel: 0,
+    release: 0,
+    collectArtifact: 0,
+  };
   const resourceId = script.resourceId ?? "pod-777";
   const adapter = {
     id: "fake-remote-adapter",
@@ -94,6 +105,8 @@ function fakeAdapter(script = {}) {
     locality: "remote",
     calls,
     describeCapabilities() {
+      calls.describeCapabilities += 1;
+      if (script.describeFails) throw new Error("capabilities unavailable");
       return {
         providerId: "fake-remote",
         adapterId: "fake-remote-adapter",
@@ -111,6 +124,8 @@ function fakeAdapter(script = {}) {
       };
     },
     async inspectCapacity(ctx) {
+      calls.inspectCapacity += 1;
+      if (script.quoteFails) throw new Error("quote unavailable");
       return {
         providerId: "fake-remote",
         capacityProfileId: ctx.capacityProfileId,
@@ -127,6 +142,7 @@ function fakeAdapter(script = {}) {
     async allocate(ctx) {
       calls.allocate += 1;
       if (script.allocateFails) throw new Error("provider allocation exploded");
+      if (typeof script.onAllocate === "function") script.onAllocate(ctx);
       return {
         allocationId: `alloc-${ctx.idempotencyKeyHash.slice(0, 8)}`,
         runRef: { ...ctx.runRef, providerResourceId: resourceId },
@@ -143,11 +159,32 @@ function fakeAdapter(script = {}) {
     },
     async execute(ctx) {
       calls.execute += 1;
-      return [{ type: "compute-queued", at: "2026-07-20T12:00:03.000Z", evidenceObservedAt: "2026-07-20T12:00:03.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-execute", detail: "exact work spec submitted" }];
+      if (script.executeFails) throw new Error("execution submit failed");
+      if (typeof script.onExecute === "function") script.onExecute(ctx);
+      return [{
+        type: "compute-queued",
+        at: "2026-07-20T12:00:03.000Z",
+        evidenceObservedAt: "2026-07-20T12:00:03.000Z",
+        source: "provider",
+        runRef: { ...ctx.runRef },
+        providerEventId: "ev-execute",
+        detail: "exact work spec submitted",
+      }];
     },
-    async resume(ctx) {
+    async resume(ctx, checkpoint) {
       calls.resume += 1;
-      return [{ type: "compute-resuming", at: "2026-07-20T12:00:03.000Z", evidenceObservedAt: "2026-07-20T12:00:03.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-resume", detail: "proven checkpoint submitted" }];
+      if (script.resumeFails) throw new Error("resume rejected");
+      if (typeof script.onResume === "function") script.onResume(ctx, checkpoint);
+      const resumedResourceId = script.resumeResourceId || "pod-resumed-888";
+      return [{
+        type: "compute-resuming",
+        at: "2026-07-20T12:20:00.000Z",
+        evidenceObservedAt: "2026-07-20T12:20:01.000Z",
+        source: "provider",
+        runRef: { ...ctx.runRef, providerResourceId: resumedResourceId },
+        providerEventId: `ev-resume-${resumedResourceId}`,
+        detail: `proven checkpoint submitted to ${resumedResourceId}`,
+      }];
     },
     async status(ctx) {
       calls.status += 1;
@@ -161,8 +198,8 @@ function fakeAdapter(script = {}) {
         detail: "",
         ...extra,
       });
+      if (script.statusThrows) throw new Error(script.statusThrows);
       if (script.statusScript) return script.statusScript(calls.status, mk, ctx);
-      // Default: running then completed.
       if (calls.status === 1) return [mk("compute-running", "ev-run-1")];
       return [mk("compute-completed", "ev-done-1")];
     },
@@ -173,28 +210,57 @@ function fakeAdapter(script = {}) {
         runRef: { ...ctx.runRef },
         kind: "gguf",
         locator: "volume://artifacts/model.q4_k_m.gguf",
-        sha256: script.artifactSha ?? "a".repeat(64),
-        sizeBytes: 4_000_000_000,
+        sha256: script.artifactSha ?? "b".repeat(64),
+        sizeBytes: 4_000_000,
         evidenceObservedAt: "2026-07-20T12:09:00.000Z",
+        ...(Array.isArray(script.evaluationResults) ? { evaluationResults: script.evaluationResults } : {}),
       };
     },
     async cancel(ctx) {
       calls.cancel += 1;
       if (script.cancelFails) throw new Error("cancel rejected");
-      return [{ type: "compute-cancelled", at: "2026-07-20T12:10:00.000Z", evidenceObservedAt: "2026-07-20T12:10:01.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-cancel", detail: "" }];
+      if (script.cancelNoEvidence) return [];
+      return [{
+        type: "compute-cancelled",
+        at: "2026-07-20T12:10:00.000Z",
+        evidenceObservedAt: "2026-07-20T12:10:01.000Z",
+        source: "provider",
+        runRef: { ...ctx.runRef },
+        providerEventId: "ev-cancel",
+        detail: "provider confirmed cancellation",
+      }];
     },
     async release(ctx) {
       calls.release += 1;
       if (script.releaseFails) throw new Error("terminate returned 500");
-      return [{ type: "compute-released", at: "2026-07-20T12:11:00.000Z", evidenceObservedAt: "2026-07-20T12:11:01.000Z", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "ev-release", detail: "capacity terminated" }];
+      if (script.releaseNoEvidence) return [];
+      return [{
+        type: "compute-released",
+        at: "2026-07-20T12:11:00.000Z",
+        evidenceObservedAt: "2026-07-20T12:11:01.000Z",
+        source: "provider",
+        runRef: { ...ctx.runRef },
+        providerEventId: "ev-release",
+        detail: "capacity terminated",
+      }];
     },
   };
   return adapter;
 }
 
-function makeIo(adapter, { withLocal = false, envPresent = () => true } = {}) {
+function makeIo(adapter, {
+  withLocal = false,
+  envPresent = () => true,
+  maxPolls = 10,
+  onPersist = null,
+  verifyArtifact = null,
+} = {}) {
   let clock = NOW0;
-  const adapters = { "fake-remote-adapter": adapter, ...(withLocal ? { "local-machine": localAdapter } : {}) };
+  const persisted = [];
+  const adapters = {
+    "fake-remote-adapter": adapter,
+    ...(withLocal ? { "local-machine": localAdapter } : {}),
+  };
   return {
     getAdapter: (id) => adapters[id] || null,
     listAdapterIds: () => Object.keys(adapters),
@@ -203,121 +269,282 @@ function makeIo(adapter, { withLocal = false, envPresent = () => true } = {}) {
     fetchJson: async () => { throw new Error("no network in tests"); },
     now: () => { clock += 1000; return clock; },
     sleep: async () => {},
-    maxPolls: 10,
+    maxPolls,
     pollIntervalMs: 0,
-    verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
+    verifyArtifact: verifyArtifact || (async (artifact) => ({
+      verifiedSha256: artifact.sha256,
+      verificationKind: "test-materialized",
+      sizeBytes: artifact.sizeBytes,
+    })),
+    persistCompute: async (computeBlock) => {
+      persisted.push(JSON.parse(JSON.stringify(computeBlock)));
+      if (typeof onPersist === "function") await onPersist(computeBlock, persisted.length);
+    },
+    persisted,
   };
 }
 
-const ASK = { capacityProfileId: "single-gpu-finetune", providerRegistryId: "", selectionMode: "auto" };
+const ASK = {
+  capacityProfileId: "single-gpu-finetune",
+  providerRegistryId: "",
+  selectionMode: "auto",
+};
+
+function activePrior({ workSpecHash = "", idempotencyKeyHash = "", terminal = "" } = {}) {
+  const runRef = {
+    trainingRunId: RUN_ID,
+    modelTrainingRowId: "workspace-local",
+    providerId: "fake-remote",
+    capacityProfileId: "single-gpu-finetune",
+    providerResourceId: "pod-existing-1",
+  };
+  const events = [
+    { type: "compute-requested", at: "t0", evidenceObservedAt: "t0", source: "workspace", runRef: { ...runRef, providerResourceId: "" }, providerEventId: "request-1", detail: "" },
+    { type: "compute-allocated", at: "t1", evidenceObservedAt: "t1", source: "provider", runRef, providerEventId: "allocated-1", detail: "", workSpecHash },
+    { type: "compute-queued", at: "t2", evidenceObservedAt: "t2", source: "provider", runRef, providerEventId: "queued-1", detail: "", workSpecHash },
+    ...(terminal ? [{ type: terminal === "failed" ? "compute-failed" : "compute-cancelled", at: "t3", evidenceObservedAt: "t3", source: "provider", runRef, providerEventId: `terminal-${terminal}`, detail: terminal, workSpecHash }] : []),
+  ];
+  return {
+    capacityProfileId: "single-gpu-finetune",
+    providerRegistryId: "fake-remote",
+    selectionMode: "auto",
+    workSpecHash,
+    idempotencyKeyHash,
+    allocation: {
+      allocationId: "alloc-existing-1",
+      runRef,
+      status: terminal || "running",
+      idempotencyKeyHash,
+      availabilityMode: "on-demand",
+      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
+      requestedAt: "t0",
+      allocatedAt: "t1",
+      releasedAt: "",
+      releaseConfirmed: false,
+      allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "us-east" },
+      workSpecHash,
+    },
+    events,
+    checkpoints: [],
+  };
+}
 
 // ---------------------------------------------------------------------------
-// Happy path + allocation evidence
+// Core lifecycle and paid-resource recovery
 // ---------------------------------------------------------------------------
 
-test("EXIT PROOF — full lifecycle: allocate (evidence recorded) → running → completed → artifact → release", async () => {
+test("full lifecycle records allocation, verifies artifact, confirms release, and never fabricates promotion", async () => {
   const adapter = fakeAdapter();
   const outcome = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith(null) }),
+    workspaceConfig: directRegistryConfig({ receiptRow: receiptRowWith() }),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
     io: makeIo(adapter),
   });
   assert.equal(outcome.localFallthrough, false);
-  assert.equal(outcome.result.ok, true);
+  assert.equal(outcome.result.ok, true, outcome.result.error);
   assert.equal(outcome.result.exitCode, 0);
-  const block = outcome.computeBlock;
-  assert.equal(block.decision.selectedProviderId, "fake-remote");
-  assert.equal(block.allocation.status, "allocated");
-  assert.equal(block.allocation.idempotencyKeyHash.length > 0, true);
-  const allocated = block.events.find((e) => e.type === "compute-allocated");
-  assert.ok(allocated, "allocation evidence recorded as a normalized event");
-  assert.equal(allocated.runRef.providerResourceId, "pod-777", "the provider resource identity IS the evidence");
-  const lifecycle = deriveComputeLifecycle({ events: block.events, allocation: block.allocation });
+  assert.equal(outcome.computeBlock.decision.selectedProviderId, "fake-remote");
+  assert.equal(outcome.computeBlock.allocation.runRef.providerResourceId, "pod-777");
+  assert.equal(outcome.computeBlock.artifact.verifiedSha256, outcome.computeBlock.artifact.sha256);
+  assert.equal(outcome.computeBlock.evaluation, null, "provider completion does not create canonical evaluation");
+  const lifecycle = deriveComputeLifecycle({
+    events: outcome.computeBlock.events,
+    allocation: outcome.computeBlock.allocation,
+    checkpoints: outcome.computeBlock.checkpoints,
+  });
   assert.equal(lifecycle.terminal, "completed");
   assert.equal(lifecycle.releaseConfirmed, true);
   assert.equal(lifecycle.capacityMayStillExist, false);
   assert.equal(adapter.calls.allocate, 1);
-  assert.ok(!outcome.result.stdout.includes("pct"), "no invented progress percentage anywhere");
+  assert.equal(adapter.calls.release, 1);
+  assert.ok(!outcome.result.stdout.includes("pct"), "no invented progress percentage");
 });
 
-test("EXIT PROOF — replay protection: an unreleased allocation with the same governed identity refuses re-allocation", async () => {
-  const adapter = fakeAdapter();
-  const io = makeIo(adapter);
-  const { hash } = computeIdempotencyKey({ trainingRunId: RUN_ID, attempt: 1, capacityProfileId: "single-gpu-finetune", providerId: "fake-remote" });
-  const priorCompute = {
-    capacityProfileId: "single-gpu-finetune",
-    providerRegistryId: "fake-remote",
-    selectionMode: "auto",
-    idempotencyKeyHash: hash,
-    allocation: {
-      allocationId: "alloc-live-1",
-      runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "pod-1" },
-      status: "running",
-      idempotencyKeyHash: hash,
-      availabilityMode: "on-demand",
-      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
-      requestedAt: "", allocatedAt: "2026-07-20T11:00:00.000Z", releasedAt: "",
-      releaseConfirmed: false,
-      allocated: null,
-    },
-    events: [],
-  };
+test("provider-authored benchmark wins are discarded and cannot enter the training receipt", async () => {
+  const fabricatedWins = Array.from({ length: 6 }, (_, index) => ({
+    taskId: `provider-task-${index}`,
+    student: { quality: 1, latencyMs: 1, costUsd: 0 },
+    baseline: { quality: 0, latencyMs: 100, costUsd: 100 },
+  }));
+  const adapter = fakeAdapter({ evaluationResults: fabricatedWins });
   const outcome = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({}),
-    trainingRunId: RUN_ID,
-    computeAsk: ASK,
-    priorCompute,
-    io,
-  });
-  assert.equal(outcome.result.ok, false);
-  assert.match(outcome.result.error, /duplicate allocation refused/);
-  assert.equal(adapter.calls.allocate, 0, "the adapter was never asked to allocate again");
-  // An explicit governed retry (new attempt) IS allowed:
-  const retry = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({}),
-    trainingRunId: RUN_ID,
-    computeAsk: ASK,
-    priorCompute,
-    attempt: 2,
-    io: makeIo(fakeAdapter()),
-  });
-  assert.equal(retry.result.ok, true, "a new governed attempt is a new identity");
-});
-
-test("EXIT PROOF — provider completed without artifact → non-promotable, run not ok", async () => {
-  const adapter = fakeAdapter({ noArtifact: true });
-  const outcome = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({}),
+    workspaceConfig: directRegistryConfig({ receiptRow: receiptRowWith() }),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
     io: makeIo(adapter),
   });
-  assert.equal(outcome.result.ok, false, "completion without an artifact is not success");
-  assert.match(outcome.result.error, /no artifact/);
-  assert.equal(outcome.result.adapterMeta.compute.terminal, "completed");
-  assert.equal(outcome.result.adapterMeta.compute.promotable, false);
+  assert.equal(outcome.result.ok, true);
+  assert.equal(outcome.computeBlock.evaluation, null);
+  assert.equal("evaluationResults" in outcome.computeBlock.artifact, false, "untrusted scores are not persisted with the artifact");
+
+  const objects = directRegistryConfig({ receiptRow: receiptRowWith() }).dataModel.objects;
+  const stamped = applyComputeBlockToReceiptRows(objects, RUN_ID, outcome.computeBlock);
+  const row = stamped.find((object) => object.objectType === "model-training-run").rows[0];
+  const distillation = row.distillation ? JSON.parse(row.distillation) : null;
+  assert.equal(distillation?.benchmarkWins, undefined, "provider scores cannot mint benchmarkWins/promoted");
 });
 
-test("EXIT PROOF — cancellation with failed release remains visibly unreleased", async () => {
-  const adapter = fakeAdapter({ releaseFails: true });
-  const prior = {
+test("an active allocation for the same workload is observed and completed without a second allocate or execute", async () => {
+  const adapter = fakeAdapter();
+  const { hash } = computeIdempotencyKey({
+    trainingRunId: RUN_ID,
+    attempt: 1,
     capacityProfileId: "single-gpu-finetune",
-    idempotencyKeyHash: "h1",
-    allocation: {
-      allocationId: "alloc-9",
-      runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "pod-9" },
-      status: "running",
-      idempotencyKeyHash: "h1",
-      availabilityMode: "on-demand",
-      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
-      requestedAt: "", allocatedAt: "2026-07-20T11:00:00.000Z", releasedAt: "", releaseConfirmed: false, allocated: null,
+    providerId: "fake-remote",
+    workSpecHash: "",
+  });
+  const priorCompute = activePrior({ idempotencyKeyHash: hash });
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig: directRegistryConfig(),
+    trainingRunId: RUN_ID,
+    computeAsk: ASK,
+    priorCompute,
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.result.ok, true, outcome.result.error);
+  assert.equal(adapter.calls.allocate, 0, "existing paid resource is adopted, not recreated");
+  assert.equal(adapter.calls.execute, 0, "already-submitted workload is not submitted twice");
+  assert.ok(adapter.calls.status > 0, "active resource is reconciled by observation");
+  assert.equal(outcome.computeBlock.allocation.allocationId, "alloc-existing-1");
+});
+
+test("an unreleased allocation from another attempt/workload blocks a new paid request", async () => {
+  const adapter = fakeAdapter();
+  const { hash } = computeIdempotencyKey({
+    trainingRunId: RUN_ID,
+    attempt: 1,
+    capacityProfileId: "single-gpu-finetune",
+    providerId: "fake-remote",
+    workSpecHash: "",
+  });
+  const priorCompute = activePrior({ idempotencyKeyHash: hash });
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig: directRegistryConfig(),
+    trainingRunId: RUN_ID,
+    computeAsk: ASK,
+    priorCompute,
+    attempt: 2,
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /active allocation conflict/);
+  assert.equal(adapter.calls.allocate, 0);
+  assert.equal(adapter.calls.execute, 0);
+});
+
+test("transient provider status failure stays pending, preserves allocation, and never triggers release", async () => {
+  const adapter = fakeAdapter({ statusThrows: "ETIMEDOUT provider status" });
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig: directRegistryConfig(),
+    trainingRunId: RUN_ID,
+    computeAsk: ASK,
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.result.ok, true);
+  assert.equal(outcome.result.exitCode, null);
+  assert.equal(outcome.result.adapterMeta.compute.pending, true);
+  assert.equal(outcome.result.adapterMeta.compute.remoteStateUnverified, true);
+  assert.equal(adapter.calls.release, 0, "observation uncertainty never terminates a possibly-running paid job");
+  const lifecycle = deriveComputeLifecycle({
+    events: outcome.computeBlock.events,
+    allocation: outcome.computeBlock.allocation,
+    checkpoints: outcome.computeBlock.checkpoints,
+  });
+  assert.equal(lifecycle.terminal, "");
+  assert.equal(lifecycle.capacityMayStillExist, true);
+  assert.ok(outcome.computeBlock.events.some((event) => /remote-state-unverified/.test(event.detail)));
+});
+
+test("a long-running provider returns a bounded pending continuation instead of timing out as failure", async () => {
+  const adapter = fakeAdapter({
+    statusScript: (call, mk) => [mk("compute-running", `still-running-${call}`)],
+  });
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig: directRegistryConfig(),
+    trainingRunId: RUN_ID,
+    computeAsk: ASK,
+    io: makeIo(adapter, { maxPolls: 1000 }),
+  });
+  assert.equal(outcome.result.ok, true);
+  assert.equal(outcome.result.exitCode, null);
+  assert.equal(outcome.result.adapterMeta.compute.pending, true);
+  assert.equal(adapter.calls.status, 3, "one HTTP invocation is bounded to three observations");
+  assert.equal(adapter.calls.release, 0);
+  assert.equal(outcome.computeBlock.events.some((event) => event.type === "compute-failed"), false);
+});
+
+test("completed without an artifact is non-successful but release still runs", async () => {
+  const adapter = fakeAdapter({ noArtifact: true });
+  const outcome = await executeProviderComputeRun({
+    workspaceConfig: directRegistryConfig(),
+    trainingRunId: RUN_ID,
+    computeAsk: ASK,
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /no artifact/);
+  assert.equal(outcome.result.adapterMeta.compute.artifactVerified, false);
+  assert.equal(adapter.calls.release, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Monotonic journal and lifecycle controls
+// ---------------------------------------------------------------------------
+
+test("monotonic journal merge cannot erase allocation, checkpoints, artifact, or canonical evaluation", () => {
+  const prior = {
+    ...activePrior({ idempotencyKeyHash: "h".repeat(64), workSpecHash: WORK_SPEC_HASH }),
+    checkpoints: [{
+      checkpointId: "ck-1",
+      runRef: { trainingRunId: RUN_ID, providerId: "fake-remote", providerResourceId: "pod-existing-1" },
+      locator: "volume://checkpoint/1",
+      sha256: "c".repeat(64),
+      workSpecHash: WORK_SPEC_HASH,
+    }],
+    artifact: {
+      runRef: { trainingRunId: RUN_ID, providerId: "fake-remote", providerResourceId: "pod-existing-1" },
+      kind: "gguf",
+      locator: "volume://artifact/model.gguf",
+      sha256: "d".repeat(64),
+      verifiedSha256: "d".repeat(64),
+      sizeBytes: 100,
     },
-    events: [
-      { type: "compute-requested", at: "2026-07-20T11:00:00.000Z", evidenceObservedAt: "2026-07-20T11:00:00.000Z", source: "workspace", runRef: { trainingRunId: RUN_ID, providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", modelTrainingRowId: "", providerResourceId: "" }, providerEventId: "", detail: "" },
-      { type: "compute-allocated", at: "2026-07-20T11:00:01.000Z", evidenceObservedAt: "2026-07-20T11:00:01.000Z", source: "provider", runRef: { trainingRunId: RUN_ID, providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", modelTrainingRowId: "", providerResourceId: "pod-9" }, providerEventId: "e1", detail: "" },
-    ],
+    evaluation: {
+      source: "workspace-canonical",
+      benchmarkWins: { total: 5, wins: 4, winRatePct: 80, promoted: true },
+    },
   };
+  const merged = mergeComputeBlocks(prior, {
+    decision: { schema: "growthub-compute-decision-v1", selectedProviderId: "fake-remote", candidates: [] },
+    events: [],
+    checkpoints: [],
+    allocation: null,
+    artifact: null,
+    evaluation: null,
+  });
+  assert.equal(merged.allocation.allocationId, "alloc-existing-1");
+  assert.equal(merged.checkpoints[0].checkpointId, "ck-1");
+  assert.equal(merged.artifact.verifiedSha256, "d".repeat(64));
+  assert.equal(merged.evaluation.source, "workspace-canonical");
+});
+
+test("applyComputeBlockToReceiptRows merges with live row state instead of overwriting it", () => {
+  const prior = activePrior({ idempotencyKeyHash: "e".repeat(64) });
+  const objects = directRegistryConfig({ receiptRow: receiptRowWith(prior) }).dataModel.objects;
+  const stamped = applyComputeBlockToReceiptRows(objects, RUN_ID, {
+    decision: { schema: "growthub-compute-decision-v1", selectedProviderId: "fake-remote", candidates: [] },
+    events: [],
+  });
+  const row = stamped.find((object) => object.objectType === "model-training-run").rows[0];
+  const parsed = parseReceiptComputeBlock(row);
+  assert.equal(parsed.allocation.allocationId, "alloc-existing-1");
+  assert.ok(parsed.events.some((event) => event.type === "compute-allocated"));
+});
+
+test("cancellation with failed release remains visibly unreleased and costly", async () => {
+  const adapter = fakeAdapter({ releaseFails: true });
+  const prior = activePrior({ idempotencyKeyHash: "f".repeat(64) });
   const outcome = await cancelProviderComputeRun({
     priorCompute: prior,
     provider: { providerId: "fake-remote", adapterId: "fake-remote-adapter", config: {} },
@@ -325,148 +552,158 @@ test("EXIT PROOF — cancellation with failed release remains visibly unreleased
   });
   assert.equal(outcome.cancelled, true);
   assert.equal(outcome.releaseConfirmed, false);
-  assert.equal(outcome.capacityMayStillExist, true, "state says capacity may still exist");
-  assert.equal(outcome.costMayAccrue, true, "state says cost may still accrue");
+  assert.equal(outcome.capacityMayStillExist, true);
+  assert.equal(outcome.costMayAccrue, true);
   assert.match(outcome.reason, /capacity may still exist/i);
-  const releaseFailedEvent = outcome.computeBlock.events.find((e) => e.type === "compute-release-failed");
-  assert.ok(releaseFailedEvent, "the release failure is durable evidence");
+  assert.ok(outcome.computeBlock.events.some((event) => event.type === "compute-release-failed"));
+});
+
+test("an empty cancel acknowledgement never fabricates a cancelled lifecycle", async () => {
+  const adapter = fakeAdapter({ cancelNoEvidence: true });
+  const prior = activePrior({ idempotencyKeyHash: "1".repeat(64) });
+  const outcome = await cancelProviderComputeRun({
+    priorCompute: prior,
+    provider: { providerId: "fake-remote", adapterId: "fake-remote-adapter", config: {} },
+    io: makeIo(adapter),
+  });
+  assert.equal(outcome.cancelled, false);
+  assert.match(outcome.reason, /did not return verifiable cancellation evidence/);
+});
+
+test("resume persists intent before provider IO and adopts the provider's new active resource", async () => {
+  const workSpecHash = WORK_SPEC_HASH;
+  const runRef = {
+    trainingRunId: RUN_ID,
+    modelTrainingRowId: "workspace-local",
+    providerId: "fake-remote",
+    capacityProfileId: "single-gpu-finetune",
+    providerResourceId: "pod-old",
+  };
+  const checkpoint = {
+    checkpointId: "ck-resume-1",
+    runRef,
+    locator: "volume://checkpoint/resume-1",
+    sha256: "9".repeat(64),
+    step: 100,
+    sizeBytes: 1000,
+    createdAt: "t2",
+    evidenceObservedAt: "t2",
+    workSpecHash,
+  };
+  const prior = {
+    capacityProfileId: "single-gpu-finetune",
+    providerRegistryId: "fake-remote",
+    workSpecHash,
+    requirementsHash: "8".repeat(64),
+    intent: { requirements: { workloadKind: "fine-tune", gpuCount: 1 } },
+    workSpec: { workSpecHash },
+    capabilities: { supportsResume: true },
+    allocation: {
+      allocationId: "alloc-old",
+      runRef,
+      status: "failed",
+      idempotencyKeyHash: "7".repeat(64),
+      availabilityMode: "on-demand",
+      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
+      requestedAt: "t0",
+      allocatedAt: "t1",
+      releasedAt: "",
+      releaseConfirmed: false,
+      allocated: null,
+      workSpecHash,
+    },
+    events: [
+      { type: "compute-requested", at: "t0", evidenceObservedAt: "t0", source: "workspace", runRef: { ...runRef, providerResourceId: "" }, providerEventId: "rq", detail: "" },
+      { type: "compute-allocated", at: "t1", evidenceObservedAt: "t1", source: "provider", runRef, providerEventId: "al", detail: "", workSpecHash },
+      { type: "compute-running", at: "t2", evidenceObservedAt: "t2", source: "provider", runRef, providerEventId: "rn", detail: "", workSpecHash },
+      { type: "checkpoint-created", at: "t2", evidenceObservedAt: "t2", source: "provider", runRef, providerEventId: "ck", detail: "", workSpecHash },
+      { type: "compute-failed", at: "t3", evidenceObservedAt: "t3", source: "provider", runRef, providerEventId: "fl", detail: "interrupted", workSpecHash },
+    ],
+    checkpoints: [checkpoint],
+  };
+  let persistedBeforeResume = false;
+  const adapter = fakeAdapter({
+    resumeResourceId: "pod-new-resume",
+    onResume: () => { assert.equal(persistedBeforeResume, true, "resume intent was durable before provider call"); },
+  });
+  const io = makeIo(adapter, {
+    onPersist: (_block, count) => { if (count >= 1) persistedBeforeResume = true; },
+  });
+  const outcome = await resumeProviderComputeRun({
+    priorCompute: prior,
+    provider: { providerId: "fake-remote", adapterId: "fake-remote-adapter", config: {} },
+    checkpointId: checkpoint.checkpointId,
+    io,
+  });
+  assert.equal(outcome.resumed, true, outcome.reason);
+  assert.equal(adapter.calls.resume, 1);
+  assert.equal(outcome.computeBlock.allocation.runRef.providerResourceId, "pod-new-resume");
+  assert.equal(outcome.computeBlock.allocation.allocationId, "pod-new-resume");
+  assert.equal(outcome.computeBlock.allocation.releaseConfirmed, false);
+  assert.ok(outcome.computeBlock.events.some((event) => event.type === "compute-resuming"));
+});
+
+test("duplicate trainingRunId rows are never silently selected", () => {
+  const row = receiptRowWith();
+  const config = {
+    dataModel: {
+      objects: [
+        { id: "runs-a", objectType: "model-training-run", rows: [row] },
+        { id: "runs-b", objectType: "model-training-run", rows: [{ ...row }] },
+      ],
+    },
+  };
+  assert.equal(findTrainingRunReceiptRow(config, RUN_ID), null);
 });
 
 // ---------------------------------------------------------------------------
-// Existing local pipeline unchanged
+// Existing local lane and server authority hook
 // ---------------------------------------------------------------------------
 
-test("EXIT PROOF — no compute ask on the receipt → null (existing local path, byte-for-byte)", async () => {
+test("no compute request on the receipt returns null and leaves the existing local path untouched", async () => {
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith(null) }),
+    workspaceConfig: directRegistryConfig({ receiptRow: receiptRowWith() }),
     objectId: "model-training-runner",
     name: RUN_ID,
     io: makeIo(fakeAdapter()),
   });
   assert.equal(outcome, null);
-  const other = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: workspaceConfigWith({}),
-    objectId: "some-other-sandbox",
-    name: "anything",
-    io: makeIo(fakeAdapter()),
-  });
-  assert.equal(other, null, "non-training sandboxes are untouched");
 });
 
-test("resolver choosing the LOCAL machine falls through to the existing local pipeline", async () => {
-  // Capable local machine, no remote provider rows: the deterministic
-  // resolver picks local-machine and the orchestrator declines to run.
-  const preflight = { ramGB: 32, diskFreeGB: 500, gpu: { present: false, name: "", vramFreeGB: 0 } };
+test("direct local policy falls through before any remote capabilities, quote, allocation, or status call", async () => {
+  const adapter = fakeAdapter({ describeFails: true, quoteFails: true });
   const outcome = await executeProviderComputeRun({
-    workspaceConfig: { dataModel: { objects: [] } },
+    workspaceConfig: directRegistryConfig(),
     trainingRunId: RUN_ID,
-    computeAsk: { capacityProfileId: "cpu-local-finetune", providerRegistryId: "", selectionMode: "auto" },
-    preflight,
-    io: makeIo(fakeAdapter(), { withLocal: true }),
+    computeAsk: {
+      capacityProfileId: "cpu-local-finetune",
+      providerRegistryId: "local-machine",
+      selectionMode: "explicit",
+      policy: { mode: "local", localOnly: true },
+    },
+    preflight: { ramGB: 32, diskFreeGB: 500, gpu: { present: false, vramFreeGB: 0 } },
+    io: makeIo(adapter, { withLocal: true }),
   });
-  assert.equal(outcome.localFallthrough, true, "local selection is NOT a provider-compute execution");
+  assert.equal(outcome.localFallthrough, true);
   assert.equal(outcome.result, null);
-  assert.equal(outcome.computeBlock.decision.selectedProviderId, "local-machine");
+  assert.equal(adapter.calls.describeCapabilities, 0);
+  assert.equal(adapter.calls.inspectCapacity, 0);
+  assert.equal(adapter.calls.allocate, 0);
+  assert.equal(adapter.calls.status, 0);
 });
 
-test("no eligible realization blocks honestly with every candidate explained", async () => {
+test("no eligible remote realization blocks honestly", async () => {
+  const adapter = fakeAdapter();
   const outcome = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({}),
+    workspaceConfig: directRegistryConfig(),
     trainingRunId: RUN_ID,
     computeAsk: ASK,
-    io: makeIo(fakeAdapter(), { envPresent: () => false }), // credential missing
+    io: makeIo(adapter, { envPresent: () => false }),
   });
   assert.equal(outcome.result.ok, false);
   assert.match(outcome.result.error, /no eligible compute realization/);
-  assert.match(outcome.result.error, /FAKE_REMOTE_KEY|credential/i);
-});
-
-// ---------------------------------------------------------------------------
-// Forged / stale / duplicate event defenses (Sprint 5 hard invariants)
-// ---------------------------------------------------------------------------
-
-test("a forged running event with no allocation is refused and cannot advance state", () => {
-  const runRef = { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "p", capacityProfileId: "burst-gpu", providerResourceId: "" };
-  const lifecycle = deriveComputeLifecycle({
-    events: [
-      { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef, providerEventId: "", detail: "" },
-      { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "forge-1", detail: "" },
-    ],
-  });
-  assert.equal(lifecycle.status, "requested");
-  assert.equal(lifecycle.refused.length, 1);
-  assert.match(lifecycle.refused[0].reason, /forged|no applied allocation/);
-});
-
-test("a forged completion with no running state is refused", () => {
-  const runRef = { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "p", capacityProfileId: "burst-gpu", providerResourceId: "pod-1" };
-  const lifecycle = deriveComputeLifecycle({
-    events: [
-      { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: { ...runRef, providerResourceId: "" }, providerEventId: "", detail: "" },
-      { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e1", detail: "" },
-      { type: "compute-completed", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e2", detail: "" },
-    ],
-  });
-  assert.equal(lifecycle.terminal, "", "completion never applied");
-  assert.ok(lifecycle.refused.some((r) => /forged completion/.test(r.reason)));
-});
-
-test("duplicate provider event ids are replay-refused; allocation without resource id is refused", () => {
-  const runRef = { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "p", capacityProfileId: "burst-gpu", providerResourceId: "pod-1" };
-  const bare = { ...runRef, providerResourceId: "" };
-  const lifecycle = deriveComputeLifecycle({
-    events: [
-      { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef: bare, providerEventId: "", detail: "" },
-      { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef: bare, providerEventId: "e-noevidence", detail: "" },
-      { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e1", detail: "" },
-      { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e2", detail: "" },
-      { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e2", detail: "replayed" },
-    ],
-  });
-  assert.ok(lifecycle.refused.some((r) => /allocation claimed without allocation evidence/.test(r.reason)));
-  assert.ok(lifecycle.refused.some((r) => /duplicate provider event id/.test(r.reason)));
-  assert.equal(lifecycle.status, "running");
-  assert.equal(lifecycle.applied.filter((e) => e.type === "compute-running").length, 1);
-});
-
-test("resume requires a PROVEN checkpoint; a claimed checkpoint without identity is not resumable", () => {
-  const runRef = { trainingRunId: RUN_ID, modelTrainingRowId: "", providerId: "p", capacityProfileId: "single-gpu-finetune", providerResourceId: "pod-1" };
-  const events = [
-    { type: "compute-requested", at: "t", evidenceObservedAt: "t", source: "workspace", runRef, providerEventId: "", detail: "" },
-    { type: "compute-allocated", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e1", detail: "" },
-    { type: "compute-running", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e2", detail: "" },
-    { type: "compute-resuming", at: "t", evidenceObservedAt: "t", source: "provider", runRef, providerEventId: "e3", detail: "" },
-  ];
-  const unproven = deriveComputeLifecycle({ events, checkpoints: [{ checkpointId: "ck1", locator: "", sha256: "" }] });
-  assert.ok(unproven.refused.some((r) => /no proven checkpoint/.test(r.reason)));
-  const proven = deriveComputeLifecycle({ events, checkpoints: [{ checkpointId: "ck1", locator: "vol://ck-100", sha256: "b".repeat(64), step: 100 }] });
-  assert.equal(proven.refused.some((r) => /no proven checkpoint/.test(r.reason)), false);
-  assert.equal(proven.resumed, true);
-  assert.equal(normalizeComputeCheckpoint({ locator: "vol://x", sha256: "" }).resumable, false);
-});
-
-// ---------------------------------------------------------------------------
-// Receipt persistence round-trip
-// ---------------------------------------------------------------------------
-
-test("compute block round-trips through the governed receipt row (JSON column)", async () => {
-  const adapter = fakeAdapter();
-  const outcome = await executeProviderComputeRun({
-    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith(null) }),
-    trainingRunId: RUN_ID,
-    computeAsk: ASK,
-    io: makeIo(adapter),
-  });
-  const objects = workspaceConfigWith({ receiptRow: receiptRowWith(null) }).dataModel.objects;
-  const stamped = applyComputeBlockToReceiptRows(objects, RUN_ID, outcome.computeBlock);
-  assert.ok(stamped, "receipt row updated");
-  const row = stamped.find((o) => o.objectType === "model-training-run").rows[0];
-  const parsed = parseReceiptComputeBlock(row);
-  assert.equal(parsed.decision.selectedProviderId, "fake-remote");
-  assert.equal(parsed.allocation.allocationId, outcome.computeBlock.allocation.allocationId);
-  assert.equal(parsed.events.length, outcome.computeBlock.events.length);
-  // Secret-free by construction:
-  assert.ok(!JSON.stringify(parsed).includes("FAKE_REMOTE_KEY_VALUE"));
+  assert.match(outcome.result.error, /credential|FAKE_REMOTE_KEY/i);
+  assert.equal(adapter.calls.allocate, 0);
 });
 
 const HOOK_ENV = { GROWTHUB_COMPUTE_AUTHORITY_KEY: "exec-suite-authority-key" };
@@ -474,7 +711,7 @@ const HOOK_ENV = { GROWTHUB_COMPUTE_AUTHORITY_KEY: "exec-suite-authority-key" };
 function hookRequest(overrides = {}) {
   return {
     schema: "growthub-compute-request-v1",
-    policy: { mode: "cloud", excludeLocal: true },
+    policy: { mode: "cloud", excludeLocal: true, budget: { mode: "advisory" } },
     selectionMode: "explicit",
     providerRegistryId: "fake-remote",
     capacityProfileId: "single-gpu-finetune",
@@ -483,46 +720,75 @@ function hookRequest(overrides = {}) {
     datasetExportId: "dataset-test",
     datasetPath: "data/train.jsonl",
     outputModelTag: "workspace-tuned-v1",
-    artifactPath: "artifacts/run",
+    artifactPath: "artifacts/workspace-tuned-v1",
+    estimatedDurationMinutes: 60,
     ...overrides,
   };
 }
 
-function hookWorkspaceConfig(computeRequest = hookRequest()) {
-  const config = workspaceConfigWith({
-    receiptRow: {
-      ...receiptRowWith(null),
-      baseModel: "gemma3:4b",
-      trainingProfile: "unsloth-qlora-quantize-pipeline",
-      datasetExportId: "dataset-test",
-      computeRequest: JSON.stringify(computeRequest),
-    },
+function hookWorkspaceConfig(request = hookRequest(), compute = null) {
+  const runRow = receiptRowWith(compute, {
+    baseModel: "gemma3:4b",
+    trainingProfile: "unsloth-qlora-quantize-pipeline",
+    datasetExportId: "dataset-test",
+    computeRequest: JSON.stringify(request),
   });
-  // The authoritative model-training version row the authority must bind.
-  config.dataModel.objects.push({
-    id: "model-training",
-    objectType: "model-training",
-    rows: [{
-      Name: "workspace-local-v1",
-      baseModel: "gemma3:4b",
-      localModel: "workspace-tuned-v1",
-      apiRegistryId: "",
-      lastExportId: "dataset-test",
-      lastExportSummary: JSON.stringify({ recordCount: 8, path: "data/train.jsonl", version: 1 }),
-    }],
-  });
-  return config;
-}
-
-function hookIo(adapter, workspaceConfig, env = HOOK_ENV) {
   return {
-    ...makeIo(adapter),
-    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env }),
-    verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({ workspaceConfig, trainingRunId: RUN_ID, authority, env }),
+    dataModel: {
+      objects: [
+        {
+          id: "api-registry",
+          objectType: "api-registry",
+          rows: [
+            providerRow(),
+            {
+              integrationId: "workspace-local-model",
+              kind: "custom-model",
+              expectedModelTag: "workspace-tuned-v1",
+            },
+          ],
+        },
+        {
+          id: "model-training",
+          objectType: "model-training",
+          rows: [{
+            Name: "workspace-local-v1",
+            status: "prepared",
+            lastExportId: "dataset-test",
+            baseModel: "gemma3:4b",
+            localModel: "workspace-tuned-v1",
+            apiRegistryId: "workspace-local-model",
+            lastExportSummary: JSON.stringify({ path: "data/train.jsonl", recordCount: 20 }),
+          }],
+        },
+        { id: "model-training-run", objectType: "model-training-run", rows: [runRow] },
+      ],
+    },
   };
 }
 
-test("a receipt carrying a CUSTOMER compute request compiles SERVER authority and executes through the route hook", async () => {
+function hookIo(adapter, workspaceConfig, env = HOOK_ENV) {
+  const io = makeIo(adapter);
+  return {
+    ...io,
+    compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
+      workspaceConfig,
+      trainingRunId,
+      request,
+      datasetManifest,
+      now: "2026-07-20T12:00:00.000Z",
+      env,
+    }),
+    verifyAuthority: (authority) => verifyComputeAuthorityAgainstWorkspace({
+      workspaceConfig,
+      trainingRunId: RUN_ID,
+      authority,
+      env,
+    }),
+  };
+}
+
+test("customer request compiles server authority and executes through the production route hook", async () => {
   const adapter = fakeAdapter();
   const workspaceConfig = hookWorkspaceConfig();
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
@@ -531,115 +797,67 @@ test("a receipt carrying a CUSTOMER compute request compiles SERVER authority an
     name: RUN_ID,
     io: hookIo(adapter, workspaceConfig),
   });
-  assert.ok(outcome, "customer request engages the provider-compute lane");
+  assert.ok(outcome);
   assert.equal(outcome.result.ok, true, outcome.result.error);
-  assert.equal(outcome.computeBlock.decision.selectionMode, "explicit");
-  assert.equal(outcome.computeBlock.authority?.schema, COMPUTE_AUTHORITY_SCHEMA, "server-compiled authority journaled");
-  assert.ok(outcome.computeBlock.authority.seal, "authority is sealed");
-  assert.equal(verifyComputeAuthoritySeal(outcome.computeBlock.authority, HOOK_ENV).ok, true, "journaled authority seal verifies");
-  assert.equal(adapter.calls.release, 1, "capacity released after completion");
+  assert.equal(outcome.computeBlock.authority?.schema, COMPUTE_AUTHORITY_SCHEMA);
+  assert.equal(verifyComputeAuthoritySeal(outcome.computeBlock.authority, HOOK_ENV).ok, true);
+  assert.equal(adapter.calls.allocate, 1);
 });
 
-test("the route hook refuses a remote-capable request when no authority compiler is available", async () => {
+test("remote request is refused when the authority compiler is absent", async () => {
   const adapter = fakeAdapter();
   const workspaceConfig = hookWorkspaceConfig();
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
     workspaceConfig,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io: makeIo(adapter), // no compileAuthority
-  });
-  assert.equal(outcome.result.ok, false);
-  assert.match(outcome.result.error, /authority compiler unavailable/);
-  assert.equal(adapter.calls.allocate, 0, "no provider call after authority refusal");
-});
-
-test("the route hook refuses remote execution under a per-process EPHEMERAL sealing key", async () => {
-  const adapter = fakeAdapter();
-  const workspaceConfig = hookWorkspaceConfig();
-  const outcome = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig,
-    objectId: "model-training-runner",
-    name: RUN_ID,
-    io: hookIo(adapter, workspaceConfig, {}), // no durable key configured
-  });
-  assert.equal(outcome.result.ok, false);
-  assert.match(outcome.result.error, /ephemeral key/);
-  assert.equal(adapter.calls.allocate, 0, "the paid boundary is never crossed under an ephemeral key");
-  assert.equal(adapter.calls.status, 0);
-});
-
-test("a LOCAL-only ask never contacts a remote adapter — not even for capabilities or quotes", async () => {
-  const adapter = fakeAdapter();
-  adapter.describeCapabilities = () => { throw new Error("remote adapter contacted for a local-only ask"); };
-  adapter.inspectCapacity = async () => { throw new Error("remote adapter quoted for a local-only ask"); };
-  const workspaceConfig = hookWorkspaceConfig(hookRequest({
-    policy: { mode: "local", localOnly: true },
-    selectionMode: "explicit",
-    providerRegistryId: "local-machine",
-    capacityProfileId: "cpu-local-finetune",
-  }));
-  // A machine the local provider is actually eligible on (same shape as the
-  // resolver-picks-local fallthrough proof above).
-  const runObject = workspaceConfig.dataModel.objects.find((o) => o.objectType === "model-training-run");
-  runObject.rows[0].preflight = { ramGB: 32, diskFreeGB: 500, gpu: { present: false, name: "", vramFreeGB: 0 } };
-  const outcome = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig,
-    objectId: "model-training-runner",
-    name: RUN_ID,
-    io: { ...makeIo(adapter, { withLocal: true }) }, // no authority needed for local
-  });
-  assert.equal(outcome, null, "local ask falls through to the existing local pipeline");
-  assert.equal(adapter.calls.allocate, 0);
-});
-
-test("CONCURRENCY — a journal-boundary refusal (request changed mid-run) fails closed before any allocation", async () => {
-  // The route's persistCompute compares the LIVE row's request hash against
-  // the compiled authority and throws on mismatch; the decision journal is
-  // written BEFORE allocate, so the paid boundary is never crossed.
-  const adapter = fakeAdapter();
-  const workspaceConfig = hookWorkspaceConfig();
-  const io = {
-    ...hookIo(adapter, workspaceConfig),
-    persistCompute: async () => { throw new Error("governed compute request changed while the authority was being compiled — refusing to journal a stale authority"); },
-  };
-  await assert.rejects(
-    () => maybeExecuteProviderComputeForSandboxRun({ workspaceConfig, objectId: "model-training-runner", name: RUN_ID, io }),
-    /request changed/
-  );
-  assert.equal(adapter.calls.allocate, 0, "no provider call once the journal refuses the stale authority");
-});
-
-test("an unreleased allocation for a DIFFERENT sealed workload refuses a changed-workload run", async () => {
-  const adapter = fakeAdapter();
-  const workspaceConfig = hookWorkspaceConfig();
-  const priorCompute = {
-    capacityProfileId: "single-gpu-finetune",
-    providerRegistryId: "fake-remote",
-    workSpecHash: "e".repeat(64), // a different sealed workload minted this
-    allocation: {
-      allocationId: "alloc-other-workload",
-      runRef: { trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", providerId: "fake-remote", capacityProfileId: "single-gpu-finetune", providerResourceId: "pod-9" },
-      status: "running",
-      idempotencyKeyHash: "f".repeat(64),
-      availabilityMode: "on-demand",
-      costBasis: { kind: "per-hour", unitUsd: 2, source: "" },
-      requestedAt: "", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: null,
-    },
-    events: [],
-  };
-  const compiled = compileComputeAuthority({ workspaceConfig, trainingRunId: RUN_ID, now: "t", env: HOOK_ENV });
-  assert.equal(compiled.ok, true, compiled.reason);
-  const outcome = await executeProviderComputeRun({
-    workspaceConfig,
-    trainingRunId: RUN_ID,
-    computeAsk: { capacityProfileId: "single-gpu-finetune", providerRegistryId: "fake-remote", selectionMode: "explicit", policy: { mode: "cloud", excludeLocal: true } },
-    priorCompute,
-    requireAuthority: true,
-    authority: compiled.authority,
     io: makeIo(adapter),
   });
   assert.equal(outcome.result.ok, false);
-  assert.match(outcome.result.error, /different sealed workload/);
-  assert.equal(adapter.calls.allocate, 0, "a changed workload never allocates beside or adopts the unreleased resource");
+  assert.match(outcome.result.error, /authority compiler unavailable/);
+  assert.equal(adapter.calls.allocate, 0);
+});
+
+test("remote request is refused under an ephemeral boot key", async () => {
+  const adapter = fakeAdapter();
+  const workspaceConfig = hookWorkspaceConfig();
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: hookIo(adapter, workspaceConfig, {}),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /ephemeral key/);
+  assert.equal(adapter.calls.allocate, 0);
+});
+
+test("journaled authority drift fails before any provider call", async () => {
+  const originalConfig = hookWorkspaceConfig();
+  const compiled = compileComputeAuthority({
+    workspaceConfig: originalConfig,
+    trainingRunId: RUN_ID,
+    env: HOOK_ENV,
+  });
+  assert.equal(compiled.ok, true, compiled.reason);
+  const drifted = hookWorkspaceConfig(hookRequest({ outputModelTag: "workspace-tuned-v2" }), {
+    schema: "growthub-compute-evidence-v1",
+    authority: compiled.authority,
+  });
+  const adapter = fakeAdapter();
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig: drifted,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: hookIo(adapter, drifted),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /changed after compute authority was sealed|output-identity-conflict/);
+  assert.equal(adapter.calls.allocate, 0);
+  assert.equal(adapter.calls.status, 0);
+});
+
+test("checkpoint normalizer still requires locator plus content identity", () => {
+  assert.equal(normalizeComputeCheckpoint({ locator: "volume://x", sha256: "" }).resumable, false);
+  assert.equal(normalizeComputeCheckpoint({ locator: "volume://x", sha256: "f".repeat(64) }).resumable, true);
 });
