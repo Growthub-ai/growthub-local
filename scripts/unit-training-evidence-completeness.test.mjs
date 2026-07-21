@@ -31,10 +31,18 @@ const SEALED_COMPUTE = JSON.stringify({
   events: [{ type: "compute-allocated", providerEventId: "evt-1" }],
 });
 
+const COMPUTE_REQUEST = JSON.stringify({
+  schema: "growthub-compute-request-v1",
+  policy: { mode: "cloud", excludeLocal: true },
+  providerRegistryId: "remote-provider",
+  outputModelTag: "workspace-tuned-v1",
+});
+
 function runRow(overrides = {}) {
   return {
     trainingRunId: "trainrun-1",
     status: "imported",
+    computeRequest: COMPUTE_REQUEST,
     compute: SEALED_COMPUTE,
     artifactType: "gguf",
     artifactPath: "/governed/artifacts/model.gguf",
@@ -92,6 +100,21 @@ test("omitting compute from an existing protected row is rejected", () => {
   const result = verdict(current, patch([incoming]));
   assert.equal(result.ok, false);
   assert.ok(paths(result).some((value) => value.endsWith(".compute")));
+});
+
+test("changing computeRequest after server authority is sealed is rejected", () => {
+  const current = config();
+  const incoming = runRow({
+    computeRequest: JSON.stringify({
+      schema: "growthub-compute-request-v1",
+      policy: { mode: "cloud", excludeLocal: true },
+      providerRegistryId: "attacker-selected-provider",
+      outputModelTag: "attacker-output",
+    }),
+  });
+  const result = verdict(current, patch([incoming]));
+  assert.equal(result.ok, false);
+  assert.ok(paths(result).some((value) => value.endsWith(".computeRequest")));
 });
 
 test("omitting benchmarkWins from distillation is rejected", () => {
