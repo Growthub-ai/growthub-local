@@ -12,7 +12,7 @@ on:
       - scripts/apply-compute-data-plane.mjs
       - scripts/finalize-compute-data-plane.mjs
       - scripts/apply-compute-durable-data-store.mjs
-      - scripts/apply-compute-provider-attestation.mjs
+      - scripts/apply-compute-provider-attestation-v2.mjs
       - scripts/apply-compute-allocation-idempotency.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
       - scripts/apply-compute-evaluation-runtime-binding.mjs
@@ -65,7 +65,7 @@ jobs:
         run: node scripts/apply-compute-durable-data-store.mjs
 
       - name: Require provider work-spec and corpus attestation
-        run: node scripts/apply-compute-provider-attestation.mjs
+        run: node scripts/apply-compute-provider-attestation-v2.mjs
 
       - name: Require deterministic paid-allocation reconciliation
         run: node scripts/apply-compute-allocation-idempotency.mjs
