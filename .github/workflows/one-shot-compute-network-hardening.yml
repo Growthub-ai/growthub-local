@@ -7,6 +7,7 @@ on:
       - claude/compute-authority-evidence-pr296-0u5msd
     paths:
       - .github/workflows/one-shot-compute-network-hardening.yml
+      - scripts/repair-compute-network-script.mjs
       - scripts/apply-compute-network-hardening.mjs
       - scripts/repair-compute-data-plane-script.mjs
       - scripts/apply-compute-data-plane.mjs
@@ -48,6 +49,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Make network applicator current-head idempotent
+        run: node scripts/repair-compute-network-script.mjs
 
       - name: Apply governed network and resource-lifecycle wiring
         run: node scripts/apply-compute-network-hardening.mjs
