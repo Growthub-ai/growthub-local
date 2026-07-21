@@ -16,6 +16,7 @@ const suites = [
   "scripts/unit-compute-authority.test.mjs",
   "scripts/unit-compute-authority-production.test.mjs",
   "scripts/unit-compute-network-policy.test.mjs",
+  "scripts/unit-compute-outbound-policy.test.mjs",
   "scripts/unit-compute-data-plane.test.mjs",
   "scripts/unit-compute-execution.test.mjs",
   "scripts/unit-compute-runpod.test.mjs",
