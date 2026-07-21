@@ -1,0 +1,12 @@
+{
+  "mode": "live",
+  "observedAt": "2026-07-21T04:50:39.689Z",
+  "podCount": 1,
+  "target": {
+    "id": "x09405suvupalc",
+    "name": "Growthub-local-compute",
+    "desiredStatus": "RUNNING",
+    "costPerHr": 1.99,
+    "gpuType": ""
+  }
+}

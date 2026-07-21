@@ -27,6 +27,8 @@ import {
   deriveCustomModelFocusActions,
 } from "../../../lib/custom-models-ledger.js";
 import { buildCustomModelWorkflowProposal } from "../../../lib/custom-model-workflow-proposal.js";
+import { deriveComputeCustomerState } from "../../../lib/compute-customer-state.js";
+import { parseReceiptComputeBlock } from "../../../lib/compute-execution.js";
 import TrainingLedger from "./TrainingLedger.jsx";
 
 /**
@@ -107,6 +109,27 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
     [model, workspaceConfig],
   );
   const chatAction = suggested.actions.find((a) => a.variant === "chat") || null;
+  // Compute realization line (Sprint 10) — evidence-gated: renders only when
+  // a governed run receipt for this model carries compute evidence, derived
+  // by the SAME deriver the training modal renders. Pre-compute cockpits are
+  // unchanged.
+  const computeState = useMemo(() => {
+    const rows = (workspaceConfig?.dataModel?.objects || [])
+      .filter((o) => o?.objectType === "model-training-run")
+      .flatMap((o) => (Array.isArray(o.rows) ? o.rows : []))
+      .filter((r) => String(r?.modelTrainingRowId || "") === String(model.id || model.name || ""));
+    const receipt = rows.filter((r) => r?.compute).at(-1) || null;
+    if (!receipt) return null;
+    let distillation = receipt.distillation;
+    if (typeof distillation === "string") { try { distillation = JSON.parse(distillation); } catch { distillation = null; } }
+    return deriveComputeCustomerState({
+      capacityPlan: null,
+      computeBlock: parseReceiptComputeBlock(receipt),
+      providers: [],
+      benchmarkWins: distillation?.benchmarkWins || null,
+      runtimeStage: "",
+    });
+  }, [workspaceConfig, model.id, model.name]);
   const [busyAction, setBusyAction] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const runAction = async (action) => {
@@ -195,6 +218,17 @@ function ModelCockpitCard({ model, workspaceConfig, workspaceSourceRecords }) {
           {" · "}{(cockpit.usage.promptTokens + cockpit.usage.completionTokens) > 0 ? `${cockpit.usage.promptTokens + cockpit.usage.completionTokens} tokens (${cockpit.usage.promptTokens} in / ${cockpit.usage.completionTokens} out)` : "— tokens"}
           {" · "}{cockpit.usage.permissions.executionLane} · network {cockpit.usage.permissions.networkAllow ? "allowed" : "off"}
         </p>
+
+        {/* Compute realization — evidence-gated: only when a governed receipt
+            carries compute evidence; the release-risk warning is the honest
+            "capacity may still cost money" surface. */}
+        {computeState ? (
+          <p className="dm-cockpit-meta-line" data-model-compute="" data-compute-state={computeState.stateId}>
+            {"compute "}<strong>{computeState.realization || "—"}</strong>
+            {" · "}{computeState.label}
+            {computeState.release?.risk ? <strong data-compute-release-risk="true">{" · "}{computeState.release.label}</strong> : null}
+          </p>
+        ) : null}
 
         {/* Utilization — one primary click (create-or-open, never a dead
             redirect) + the other governed closed loops in the cockpit-steps

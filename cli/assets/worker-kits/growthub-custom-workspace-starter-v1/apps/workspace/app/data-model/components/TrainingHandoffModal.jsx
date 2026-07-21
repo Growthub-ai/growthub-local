@@ -51,6 +51,17 @@ import {
   rebindCustomModelServingIdentity,
 } from "../../../lib/adapters/fine-tune-targets.js";
 import { TRAINING_RUNTIME_PROFILES, resolveTrainingProfile, buildTrainingRunConfig } from "../../../lib/training-runtime-profiles.js";
+import { deriveComputeCustomerState, computeAskForPolicy } from "../../../lib/compute-customer-state.js";
+import { deriveCapacityPlan } from "../../../lib/compute-capacity-profiles.js";
+import { buildAdaptiveStudentPlan } from "../../../lib/distillation-student-plan.js";
+import { parseReceiptComputeBlock } from "../../../lib/compute-execution.js";
+// The browser persists ONLY the customer compute request snapshot
+// (growthub-compute-request-v1). Execution authority — intent, ordered
+// steps, work spec, hashes — is compiled and sealed SERVER-SIDE
+// (lib/compute-authority.js); nothing this modal writes is trusted as
+// authority, so it never builds or hashes an intent/work spec.
+import { buildComputeRequest, normalizeComputePolicy } from "../../../lib/compute-work-spec.js";
+import ComputeRealizationPanel from "./ComputeRealizationPanel.jsx";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
 import { verifyTunedResponse } from "../../../lib/training-verification.js";
@@ -61,16 +72,17 @@ import { deriveConfigureReadiness, labelStorageLocation } from "../../../lib/tra
 import { buildPreInitProbeScript, derivePreInitState, PREINIT_RUN_KIND, PREINIT_INTENT, OLLAMA_BIN_CANDIDATES } from "../../../lib/training-preinit-probe.js";
 import { PIPELINE_SCRIPTS } from "../../../lib/training-pipeline-scripts.js";
 import { buildMothershipProxyRow } from "../../../lib/distillation-fleet.js";
-
-const PHASE3_INSTRUCTION = "You are growthub-local-expert. Respect AWaC V2 invariants and the PATCH allowlist.";
-const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
+import { trainingTraceToJsonlLine } from "../../../lib/training-dataset.js";
+const TRAINING_COLUMNS = ["Name", "status", "baseModel", "localModel", "computePolicy", "lastExportAt", "lastExportId", "lastSourceId", "lastExportSummary", "description"];
 const RUN_COLUMNS = [
   "trainingRunId", "modelTrainingRowId", "datasetExportId", "baseModel", "trainingProfile", "runnerMode",
   "status", "startedAt", "completedAt", "artifactType", "artifactModelTag", "artifactPath", "artifactSha256", "artifactQuantization",
   // Quant proof (fp16 → quantized bytes) + live thin-delta progress / preflight
   // the local runner stamps each stage boundary. runKind/preinit distinguish
   // Finalize's pre-init probe receipts from real training runs.
-  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "schema",
+  // computeRequest is the CUSTOMER ask (PATCHable); compute is the server-
+  // owned evidence journal (echo-only through PATCH — sandbox-run writes it).
+  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "computeRequest", "compute", "schema",
 ];
 const SLUG = "workspace-local";
 /** Human labels for raw artifact types — the customer never sees bare "gguf". */
@@ -136,7 +148,7 @@ function blockedTraceCount(workspaceConfig) {
 }
 
 function toJsonlLine(row) {
-  return `${JSON.stringify({ instruction: PHASE3_INSTRUCTION, input: String(row.inputPrompt), output: String(row.agentOutput) })}\n`;
+  return trainingTraceToJsonlLine(row);
 }
 
 /** Flatten a run receipt into the governed table row shape. */
@@ -160,6 +172,11 @@ function runReceiptToRow(receipt) {
     // the declared level survived a manual/import path too, not just the runner.
     artifactSourceBytes: receipt.artifact?.sourceBytes || 0,
     artifactArtifactBytes: receipt.artifact?.artifactBytes || 0,
+    // The customer request snapshot is the ONLY compute-shaped column the
+    // browser writes. `compute` (the server evidence journal) is deliberately
+    // never emitted here: it is server-owned, PATCH-protected, and an upsert
+    // spreading it would wipe durable evidence.
+    ...(receipt.computeRequest ? { computeRequest: JSON.stringify(receipt.computeRequest) } : {}),
     schema: receipt.schema,
   };
 }
@@ -515,6 +532,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const [excluded, setExcluded] = useState(() => new Set());
   const [targetId, setTargetId] = useState(FINE_TUNE_TARGETS[0].id);
   const [profileId, setProfileId] = useState(TRAINING_RUNTIME_PROFILES[0].id);
+  // Governed compute policy (Sprint 10). "local" preserves the existing
+  // local pipeline byte-for-byte; other policies stamp a compute ask on the
+  // receipt so the run resolves through the deterministic compute resolver.
+  const [computePolicy, setComputePolicy] = useState("local");
+  const [computePolicySnapshot, setComputePolicySnapshot] = useState({ mode: "local" });
   const [tunedTag, setTunedTag] = useState("");
   const [progress, setProgress] = useState({ pct: 0, stage: "", stageId: "", converted: 0 });
   const [trainPhase, setTrainPhase] = useState("idle"); // idle|starting|running
@@ -601,6 +623,18 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     })();
     return () => { cancelled = true; };
   }, [open]);
+
+  // React mirrors the durable model-training policy; reload never resets it.
+  useEffect(() => {
+    if (!open) return;
+    const rows = (workspaceConfig?.dataModel?.objects || []).filter((o) => o?.objectType === TRAINING_OBJECT_TYPE).flatMap((o) => o.rows || []);
+    const saved = [...rows].reverse().find((row) => row?.computePolicy)?.computePolicy;
+    if (!saved) return;
+    try {
+      const parsed = typeof saved === "string" ? JSON.parse(saved) : saved;
+      if (["automatic", "local", "cloud", "reserved-cluster"].includes(parsed?.mode)) { setComputePolicy(parsed.mode); setComputePolicySnapshot(parsed); }
+    } catch { /* malformed legacy field remains inert */ }
+  }, [open, workspaceConfig]);
 
   // Probe the local substrate when the configuration step opens — one bounded
   // read-only GET; a failure surfaces as an honest "couldn't check" row (the
@@ -707,7 +741,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Artifact root = the user's chosen training folder (workspace fallback when
   // none picked yet) + the tuned tag — the runner mkdir -p's it on preflight.
   const artifactRootPath = chosenFolder?.path ? String(chosenFolder.path).replace(/\/+$/, "") : "./artifacts";
-  const runConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
+  const adaptivePlan = buildAdaptiveStudentPlan({ preflight: readinessProbe?.preflight || null, requestedBaseModel: baseModel });
+  const preparedCapacityPlan = deriveCapacityPlan({ plan: adaptivePlan, preflight: readinessProbe?.preflight || null, workloadKind: "fine-tune" });
+  const baseRunConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
+  const computeAsk = computeAskForPolicy(computePolicy, { capacityProfileId: preparedCapacityPlan.capacityProfileId, portablePolicy: computePolicySnapshot });
+  // Customer request snapshot only — what was asked for, not what may run.
+  // The server compiles/seals the actual execution authority from this plus
+  // the governed rows; a datasetExportId is bound in at prepare/run time.
+  const computeRequestDraft = buildComputeRequest({
+    policy: computeAsk.policy,
+    selectionMode: computeAsk.selectionMode,
+    providerRegistryId: computeAsk.providerRegistryId,
+    capacityProfileId: computeAsk.capacityProfileId,
+    trainingProfileId: profile.id,
+    baseModel,
+    datasetPath,
+    outputModelTag: reservedTag,
+    artifactPath: `${artifactRootPath}/${reservedTag}`,
+  });
+  const runConfig = { ...baseRunConfig, computeRequest: computeRequestDraft };
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -764,10 +816,42 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   // Wait-state for the control plane: stage/status + BAR all come from ONE
   // deriver over the governed receipt. barPct is the single progress truth.
   const liveWaitState = deriveTrainingWaitState(liveRunRow, Date.now());
+  // Governed compute customer state (Sprint 10): the capacity plan from the
+  // SAME preflight evidence the probes stamp + the live receipt's compute
+  // block — one deriver feeds this modal AND the /custom-models cockpit, so
+  // no surface can invent a compute state the receipts don't prove.
+  const computePreflight = (liveRunRow?.preflight && typeof liveRunRow.preflight === "object" ? liveRunRow.preflight : null)
+    || (readinessProbe?.preflight && typeof readinessProbe.preflight === "object" ? readinessProbe.preflight : null);
+  const liveComputeBlock = parseReceiptComputeBlock(liveRunRow);
+  const receiptCapacityPlan = liveComputeBlock?.intent ? {
+    schema: "growthub-compute-capacity-plan-v1",
+    requirements: liveComputeBlock.intent.requirements,
+    capacityProfileId: liveComputeBlock.intent.capacityProfileId,
+    capacityProfileLabel: liveComputeBlock.intent.capacityProfileId,
+    local: preparedCapacityPlan.local,
+    executes: true,
+  } : null;
+  const computeCustomerState = deriveComputeCustomerState({
+    capacityPlan: receiptCapacityPlan || deriveCapacityPlan({
+      plan: buildAdaptiveStudentPlan({ preflight: computePreflight, requestedBaseModel: baseModel }),
+      preflight: computePreflight,
+      workloadKind: "fine-tune",
+    }),
+    computeBlock: liveComputeBlock,
+    providers: [],
+    benchmarkWins: (() => {
+      let d = liveRunRow?.distillation;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch { d = null; } }
+      return d?.benchmarkWins || null;
+    })(),
+    runtimeStage: liveRuntime.runState?.stage || "",
+    policy: computePolicy,
+  });
   const runnerWaiting = trainPhase === "running"
     && Number(liveWaitState.barPct || 0) === 0
     && !liveRunRow?.progress?.stageId
-    && String(liveRunRow?.status || "").toLowerCase() === "running";
+    && String(liveRunRow?.status || "").toLowerCase() === "running"
+    && !(liveComputeBlock?.decision || liveComputeBlock?.events?.length || liveComputeBlock?.allocation);
   const runnerEndpoint = liveRegistryRow?.baseUrl
     ? `${String(liveRegistryRow.baseUrl).replace(/\/+$/, "")}${String(liveRegistryRow.endpoint || "/chat/completions").startsWith("/") ? liveRegistryRow.endpoint : `/${liveRegistryRow.endpoint || "chat/completions"}`}`
     : "the configured local endpoint";
@@ -906,9 +990,16 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // version row carries the dataset export + base model so the lifecycle links.
       versionRow.baseModel = baseModel;
       versionRow.lastExportId = exportId;
+      versionRow.computePolicy = JSON.stringify(normalizeComputePolicy(computeRequestDraft.policy));
       const preparedReceipt = buildTrainingRunReceipt({
         modelTrainingRowId: SLUG, datasetExportId: exportId, baseModel,
         trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared",
+        // The governed CUSTOMER compute request (still present for the pure-
+        // local policy, where it pins the local machine): the sandbox-run
+        // seam compiles the sealed server authority from it at execution
+        // time. No compute EVIDENCE is written from the browser — that
+        // journal is server-owned and PATCH-protected.
+        computeRequest: { ...computeRequestDraft, datasetExportId: exportId },
       });
       // Atomic proof-chain links on the API Registry row (§7/§11): the row
       // references the model-training row, the training run, and the tuned tag
@@ -936,10 +1027,25 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       mothershipRow.executionLane = "sandbox-local";
       mothershipRow.description = `Governed serving identity for ${reservedTag}: verified student first, ${baseModel} fallback until promotion, every completed call harvested.`;
       const selectedIdx = new Set(selected.map(({ index }) => index));
+      const selectedOrder = new Map(selected.map(({ index }, ordinal) => [index, ordinal]));
 
       const fresh = await patchObjects((objects) => {
         let next = objects.map((o) => {
-          if (o?.id === TRACES_OBJECT_ID) return { ...o, rows: (o.rows || []).map((row, i) => (selectedIdx.has(i) ? { ...row, exported: "true" } : row)) };
+          if (o?.id === TRACES_OBJECT_ID) return {
+            ...o,
+            rows: (o.rows || []).map((row, i) => {
+              if (!selectedIdx.has(i)) return row;
+              const previousIds = Array.isArray(row?.trainingExportIds) ? row.trainingExportIds.map(String) : [];
+              return {
+                ...row,
+                exported: "true",
+                lastExportId: exportId,
+                datasetExportId: exportId,
+                exportOrdinal: selectedOrder.get(i),
+                trainingExportIds: [...new Set([...previousIds, exportId])].slice(-32),
+              };
+            }),
+          };
           if (o?.objectType === TRAINING_OBJECT_TYPE) return { ...o, rows: [...(o.rows || []), versionRow] };
           if (o?.objectType === "api-registry") {
             // Genome field visibility: now that a custom-model record is
@@ -1209,6 +1315,10 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       const runningReceipt = buildTrainingRunReceipt({
         trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
+        // Carry the governed CUSTOMER compute request onto the RUNNING
+        // receipt so the sandbox-run seam compiles server authority and
+        // resolves placement for THIS run id. Never compute evidence.
+        computeRequest: { ...computeRequestDraft, datasetExportId: exportId },
       });
       const activeResult = { ...result, trainingRunId, exportId };
       setResult(activeResult);
@@ -1271,6 +1381,21 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       return false;
     }
     return true;
+  }
+
+  async function controlProviderCompute(computeAction, checkpointId = "") {
+    const trainingRunId = result?.trainingRunId;
+    if (!trainingRunId) return;
+    setError("");
+    const res = await fetch("/api/workspace/sandbox-run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectId: TRAINING_RUNNER_SANDBOX_ID, name: trainingRunId, computeAction, checkpointId, intent: `model-training-${computeAction}`, actor: "training-runtime-modal" }),
+    });
+    const data = await res.json().catch(() => null);
+    const fresh = await fetch("/api/workspace", { cache: "no-store" }).then((response) => response.json()).catch(() => null);
+    if (fresh?.workspaceConfig) { setLiveConfig(fresh.workspaceConfig); if (typeof onApplied === "function") onApplied(fresh.workspaceConfig); }
+    if (!res.ok || data?.ok === false) setError(String(data?.response?.error || data?.error || `${computeAction} failed`));
   }
 
   async function reconcileRunnerResult(trainingRunId, response, fallbackMessage = "") {
@@ -1338,6 +1463,11 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     // Until then the handshake deadline governs; after, the run is genuinely
     // executing and polls for as long as the fine-tune needs.
     let sawStamp = false;
+    // Remote provider observation is a governed continuation, not one
+    // hour-long HTTP request. At most one continuation is in flight and the
+    // cadence is bounded independently of the five-second receipt refresh.
+    let observeInFlight = false;
+    let lastObserveAt = 0;
     pollRef.current = setInterval(async () => {
       try {
         const probe = await fetch("/api/workspace", { cache: "no-store" });
@@ -1362,7 +1492,42 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
         const myStage = mine?.stage || (String(rawRow.status || "").toLowerCase() === "running" ? "running" : "prepared");
         // Handshaked once THIS run stamps preflight/progress or reaches a
         // terminal stage — never inferred from another run's evidence.
-        if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
+        const remoteCompute = parseReceiptComputeBlock(rawRow);
+        if (String(rawRow?.progress?.stageId || "").trim() || rawRow?.preflight || remoteCompute?.decision || remoteCompute?.events?.length || ["trained", "imported", "failed"].includes(myStage)) sawStamp = true;
+
+        // The executor intentionally observes only a few provider states per
+        // request. Continue the SAME run through sandbox-run while a remote
+        // allocation is active; the server reconciles by sealed authority +
+        // idempotency identity, so this can observe but cannot duplicate spend.
+        const remoteEvents = Array.isArray(remoteCompute?.events) ? remoteCompute.events : [];
+        const remoteTerminal = remoteEvents.some((event) => ["compute-completed", "compute-failed", "compute-cancelled"].includes(String(event?.type || "")));
+        const remoteSelected = String(remoteCompute?.decision?.selectedProviderId || remoteCompute?.providerRegistryId || "");
+        const remoteNeedsObservation = Boolean(remoteCompute?.allocation && remoteSelected && remoteSelected !== "local-machine" && !remoteTerminal);
+        const observeNow = Date.now();
+        if (remoteNeedsObservation && !observeInFlight && observeNow - lastObserveAt >= 10_000) {
+          observeInFlight = true;
+          lastObserveAt = observeNow;
+          void fetch("/api/workspace/sandbox-run", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              objectId: TRAINING_RUNNER_SANDBOX_ID,
+              name: activeId,
+              computeAction: "observe",
+              intent: "model-training-observe",
+              actor: "training-runtime-modal",
+            }),
+          }).then(async (response) => {
+            // A non-2xx response is actionable; a provider-state uncertainty
+            // remains receipt-visible and retryable without demoting the run.
+            if (!response.ok) {
+              const detail = (await response.text()).slice(0, 240);
+              setError(`Remote observation failed: ${detail || response.status}`);
+            }
+          }).catch((observationError) => {
+            setError(`Remote observation failed: ${observationError instanceof Error ? observationError.message : String(observationError)}`);
+          }).finally(() => { observeInFlight = false; });
+        }
 
         if (myStage === "failed") {
           clearInterval(pollRef.current); pollRef.current = null;
@@ -1866,6 +2031,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 );
               })()}
 
+              {/* Governed compute realization (Sprint 10): where this run may
+                  execute — policy, required capacity, selected realization,
+                  budget/checkpoint/release state. Rendered ONLY from the
+                  shared deriver over receipts + machine evidence. */}
+              <ComputeRealizationPanel
+                state={computeCustomerState}
+                policy={computePolicy}
+                onPolicyChange={(mode) => { setComputePolicy(mode); setComputePolicySnapshot((current) => ({ ...current, mode })); }}
+                showPolicyPicker
+              />
+
               <details className="training-advanced" data-handoff-runconfig="">
                 <summary>Advanced · exact command preview</summary>
                 {runConfig.commands.length ? runConfig.commands.map((c, i) => (
@@ -1989,6 +2165,12 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
                 <span className="dm-cockpit-field"><b>connection</b>{result.integrationId}</span>
                 <span className="dm-cockpit-field"><b>expects</b>{result.modelTag}</span>
               </div>
+
+              {/* Compute realization state — read-only here; every visible
+                  value derives from the SAME receipts the runtime writes. */}
+              {computePolicy !== "local" || computeCustomerState.stateId !== "local-eligible" ? (
+                <ComputeRealizationPanel state={computeCustomerState} policy={computePolicy} onCancel={() => controlProviderCompute("cancel")} onResume={(checkpointId) => controlProviderCompute("resume", checkpointId)} />
+              ) : null}
 
               {runConfig.commands.length ? (
                 <details className="training-advanced" data-train-command="">

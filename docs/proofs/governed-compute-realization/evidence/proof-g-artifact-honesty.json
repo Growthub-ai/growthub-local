@@ -1,0 +1,8 @@
+{
+  "noArtifact": "provider reports completed but no artifact was returned — non-promotable",
+  "wrongHash": {
+    "promotable": false,
+    "reasonCode": "artifact-hash-mismatch",
+    "reason": "artifact sha256 333333333333… does not match the expected 444444444444… — non-promotable"
+  }
+}

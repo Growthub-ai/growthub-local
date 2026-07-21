@@ -409,10 +409,22 @@ test("sandbox run classification leaves ordinary completed runs unchanged", () =
   assert.deepEqual(classifySandboxRunResult({ exitCode: 0, stdout: "done" }), {
     awaitingToolResult: false,
     auditUnpersisted: false,
+    computePending: false,
     runOk: true,
     executionStatus: "completed",
     rowStatus: "connected",
     outcomeStatus: "tested",
+  });
+  // A pending provider-compute continuation is a live governed run: it keeps
+  // the row pending and never classifies as failed or mints a tested claim.
+  assert.deepEqual(classifySandboxRunResult({ exitCode: null, adapterMeta: { compute: { pending: true } } }), {
+    awaitingToolResult: false,
+    auditUnpersisted: false,
+    computePending: true,
+    runOk: true,
+    executionStatus: "pending",
+    rowStatus: "pending",
+    outcomeStatus: "drafted",
   });
 });
 
@@ -425,6 +437,7 @@ test("custom-model success is demoted when its governed audit receipt is not dur
     {
       awaitingToolResult: false,
       auditUnpersisted: true,
+      computePending: false,
       runOk: false,
       executionStatus: "audit_unpersisted",
       rowStatus: "failed",

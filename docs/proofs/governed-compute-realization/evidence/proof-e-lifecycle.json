@@ -1,0 +1,249 @@
+{
+  "schema": "growthub-compute-evidence-v1",
+  "capacityProfileId": "single-gpu-finetune",
+  "providerRegistryId": "e2e-provider",
+  "selectionMode": "explicit",
+  "idempotencyKeyHash": "0672abd710f50adc",
+  "decision": {
+    "schema": "growthub-compute-decision-v1",
+    "capacityProfileId": "single-gpu-finetune",
+    "requirements": {
+      "workloadKind": "fine-tune",
+      "acceleratorClass": "high-memory-gpu",
+      "gpuCount": 1,
+      "minVramPerGpuGB": 80,
+      "minCpuCores": 4,
+      "minRamGB": 16,
+      "minDiskGB": 20,
+      "checkpointRequired": true,
+      "distributed": null,
+      "locality": {
+        "regions": [],
+        "dataResidency": ""
+      },
+      "estimatedDurationMinutes": 0
+    },
+    "budget": {
+      "mode": "advisory",
+      "maxTotalUsd": 0,
+      "maxHourlyUsd": 0,
+      "allowUnknownCost": false
+    },
+    "selectionMode": "explicit",
+    "selectedProviderId": "e2e-provider",
+    "selectedReasons": [
+      "explicitly selected by policy",
+      "capacity availability proven by observation",
+      "estimated $4.00 total",
+      "supports checkpoint + resume"
+    ],
+    "candidates": [
+      {
+        "providerId": "e2e-provider",
+        "eligible": true,
+        "reasonCodes": [],
+        "reasons": [],
+        "rank": 0,
+        "quote": {
+          "available": true,
+          "availabilityMode": "on-demand",
+          "costBasis": {
+            "kind": "per-hour",
+            "unitUsd": 2,
+            "source": "s"
+          },
+          "estimatedTotalUsd": 4,
+          "queueLatencySeconds": 10,
+          "quoteObservedAt": "2026-07-20T20:46:40.458Z",
+          "quoteExpiresAt": "2026-07-20T20:56:40.458Z",
+          "quoteRef": "",
+          "providerId": "e2e-provider",
+          "capacityProfileId": "single-gpu-finetune"
+        }
+      },
+      {
+        "providerId": "local-machine",
+        "eligible": false,
+        "reasonCodes": [
+          "not-selected-by-policy"
+        ],
+        "reasons": [
+          "selection mode is explicit — policy pins \"e2e-provider\""
+        ],
+        "rank": -1,
+        "quote": null
+      }
+    ],
+    "decidedAt": "2026-07-20T20:46:40.956Z",
+    "evidenceObservedAt": "2026-07-20T20:46:40.956Z"
+  },
+  "allocation": {
+    "allocationId": "alloc-e2e",
+    "runRef": {
+      "trainingRunId": "e2e-run-1",
+      "modelTrainingRowId": "",
+      "providerId": "e2e-provider",
+      "capacityProfileId": "single-gpu-finetune",
+      "providerResourceId": "res-e2e"
+    },
+    "status": "allocated",
+    "idempotencyKeyHash": "0672abd710f50adc",
+    "availabilityMode": "on-demand",
+    "costBasis": {
+      "kind": "per-hour",
+      "unitUsd": 2,
+      "source": "s"
+    },
+    "requestedAt": "t",
+    "allocatedAt": "t",
+    "releasedAt": "",
+    "releaseConfirmed": false,
+    "allocated": {
+      "gpuType": "A100",
+      "gpuCount": 1,
+      "workers": 1,
+      "region": "us-east"
+    }
+  },
+  "events": [
+    {
+      "type": "compute-requested",
+      "at": "2026-07-20T20:46:41.956Z",
+      "evidenceObservedAt": "2026-07-20T20:46:41.956Z",
+      "source": "workspace",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "",
+      "detail": "governed compute request for profile single-gpu-finetune via e2e-provider"
+    },
+    {
+      "type": "compute-allocated",
+      "at": "2026-07-20T20:46:42.456Z",
+      "evidenceObservedAt": "2026-07-20T20:46:42.456Z",
+      "source": "provider",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "",
+      "detail": "allocation alloc-e2e verified"
+    },
+    {
+      "type": "compute-running",
+      "at": "2026-07-20T20:46:40.459Z",
+      "evidenceObservedAt": "2026-07-20T20:46:40.459Z",
+      "source": "provider",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "s1",
+      "detail": ""
+    },
+    {
+      "type": "checkpoint-created",
+      "at": "2026-07-20T20:46:40.459Z",
+      "evidenceObservedAt": "2026-07-20T20:46:40.459Z",
+      "source": "provider",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "s2",
+      "detail": ""
+    },
+    {
+      "type": "compute-completed",
+      "at": "2026-07-20T20:46:40.459Z",
+      "evidenceObservedAt": "2026-07-20T20:46:40.459Z",
+      "source": "provider",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "s3",
+      "detail": ""
+    },
+    {
+      "type": "compute-release-requested",
+      "at": "2026-07-20T20:46:42.956Z",
+      "evidenceObservedAt": "2026-07-20T20:46:42.956Z",
+      "source": "workspace",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "",
+      "detail": "governed release of provider capacity"
+    },
+    {
+      "type": "compute-released",
+      "at": "2026-07-20T20:46:40.460Z",
+      "evidenceObservedAt": "2026-07-20T20:46:40.460Z",
+      "source": "provider",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "providerEventId": "rel",
+      "detail": "released"
+    }
+  ],
+  "checkpoints": [
+    {
+      "checkpointId": "ck-1",
+      "runRef": {
+        "trainingRunId": "e2e-run-1",
+        "modelTrainingRowId": "",
+        "providerId": "e2e-provider",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "res-e2e"
+      },
+      "locator": "s3://ck/1",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "step": 100,
+      "sizeBytes": 0,
+      "createdAt": "",
+      "evidenceObservedAt": "",
+      "resumable": true
+    }
+  ],
+  "artifact": {
+    "runRef": {
+      "trainingRunId": "e2e-run-1",
+      "modelTrainingRowId": "",
+      "providerId": "e2e-provider",
+      "capacityProfileId": "single-gpu-finetune",
+      "providerResourceId": "res-e2e"
+    },
+    "kind": "gguf",
+    "locator": "s3://out/model.gguf",
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "sizeBytes": 5,
+    "evidenceObservedAt": "t"
+  },
+  "evidenceObservedAt": "2026-07-20T20:46:43.456Z"
+}

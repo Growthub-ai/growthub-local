@@ -1,0 +1,96 @@
+{
+  "decision": {
+    "schema": "growthub-compute-decision-v1",
+    "capacityProfileId": "single-gpu-finetune",
+    "requirements": {
+      "workloadKind": "fine-tune",
+      "acceleratorClass": "none",
+      "gpuCount": 0,
+      "minVramPerGpuGB": 0,
+      "minCpuCores": 2,
+      "minRamGB": 16,
+      "minDiskGB": 20,
+      "checkpointRequired": true,
+      "distributed": null,
+      "locality": {
+        "regions": [],
+        "dataResidency": ""
+      },
+      "estimatedDurationMinutes": 0
+    },
+    "budget": {
+      "mode": "advisory",
+      "maxTotalUsd": 0,
+      "maxHourlyUsd": 0,
+      "allowUnknownCost": false
+    },
+    "selectionMode": "auto",
+    "selectedProviderId": "local-machine",
+    "selectedReasons": [
+      "locally owned hardware — zero marginal cost",
+      "capacity availability proven by observation",
+      "no cost accrues",
+      "supports checkpoint + resume"
+    ],
+    "candidates": [
+      {
+        "providerId": "local-machine",
+        "eligible": true,
+        "reasonCodes": [],
+        "reasons": [],
+        "rank": 0,
+        "quote": {
+          "providerId": "local-machine",
+          "capacityProfileId": "single-gpu-finetune",
+          "available": true,
+          "availabilityMode": "local",
+          "costBasis": {
+            "kind": "owned-hardware",
+            "unitUsd": 0,
+            "source": "local-machine-evidence"
+          },
+          "estimatedTotalUsd": 0,
+          "queueLatencySeconds": 0,
+          "quoteObservedAt": "2026-07-20T20:46:40.452Z",
+          "quoteExpiresAt": "2026-07-20T20:56:40.452Z",
+          "quoteRef": "",
+          "adapterMeta": {
+            "reasons": [],
+            "reasonCodes": [],
+            "preflightPresent": true
+          }
+        }
+      }
+    ],
+    "decidedAt": "2026-07-20T20:46:40.452Z",
+    "evidenceObservedAt": "2026-07-20T20:46:40.452Z"
+  },
+  "allocation": {
+    "allocationId": "local_e2e-local",
+    "runRef": {
+      "trainingRunId": "e2e-local-run",
+      "providerId": "local-machine",
+      "capacityProfileId": "single-gpu-finetune",
+      "modelTrainingRowId": "workspace-local",
+      "providerResourceId": ""
+    },
+    "status": "allocated",
+    "idempotencyKeyHash": "e2e-local",
+    "availabilityMode": "local",
+    "costBasis": {
+      "kind": "owned-hardware",
+      "unitUsd": 0,
+      "source": "local-machine-evidence"
+    },
+    "requestedAt": "2026-07-20T20:46:40.454Z",
+    "allocatedAt": "2026-07-20T20:46:40.454Z",
+    "releasedAt": "",
+    "releaseConfirmed": false,
+    "allocated": {
+      "gpuType": "",
+      "gpuCount": 0,
+      "workers": 1,
+      "region": "local"
+    }
+  }
+}

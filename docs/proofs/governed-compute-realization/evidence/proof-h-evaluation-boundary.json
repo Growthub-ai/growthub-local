@@ -1,0 +1,12 @@
+{
+  "loser": {
+    "promoted": false,
+    "reason": "won 0/6 tasks (0%) — below the 50% promotion floor",
+    "routeTarget": "local-base"
+  },
+  "winner": {
+    "promoted": true,
+    "reason": "won 6/6 tasks (100%)",
+    "routeTarget": "local-student"
+  }
+}

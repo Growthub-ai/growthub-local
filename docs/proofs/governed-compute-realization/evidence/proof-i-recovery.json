@@ -1,0 +1,10 @@
+{
+  "interruptedAttempt": {
+    "terminal": "completed",
+    "provenCheckpoints": 1
+  },
+  "resumedAttempt": {
+    "resumed": true,
+    "terminal": "completed"
+  }
+}

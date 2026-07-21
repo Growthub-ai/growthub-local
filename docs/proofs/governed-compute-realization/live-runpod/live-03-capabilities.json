@@ -1,0 +1,39 @@
+{
+  "mode": "live",
+  "capabilities": {
+    "providerId": "runpod-live",
+    "adapterId": "runpod-pods",
+    "capacityProfiles": [
+      "burst-gpu",
+      "warm-inference",
+      "single-gpu-finetune",
+      "multi-gpu-finetune"
+    ],
+    "availabilityModes": [
+      "on-demand"
+    ],
+    "acceleratorClasses": [
+      "any-gpu",
+      "consumer-gpu",
+      "datacenter-gpu",
+      "high-memory-gpu"
+    ],
+    "maxVramPerGpuGB": 141,
+    "maxGpusPerWorker": 8,
+    "maxWorkers": 1,
+    "supportsCheckpointing": false,
+    "supportsResume": false,
+    "supportsGangScheduling": false,
+    "regions": [],
+    "requiredEnv": [
+      "RUNPOD_API_KEY"
+    ],
+    "allocationIdempotency": {
+      "guaranteed": true,
+      "mode": "reconcile-before-create",
+      "evidence": "deterministic pod name from the sealed idempotency hash; GET /pods?name runs before POST /pods"
+    },
+    "maxRamGB": 0,
+    "maxDiskGB": 0
+  }
+}
