@@ -11,6 +11,7 @@ on:
       - scripts/repair-compute-data-plane-script.mjs
       - scripts/apply-compute-data-plane.mjs
       - scripts/finalize-compute-data-plane.mjs
+      - scripts/apply-compute-provider-attestation.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
       - scripts/apply-compute-canonical-e2e.mjs
       - scripts/apply-compute-observation-hardening.mjs
@@ -53,6 +54,9 @@ jobs:
       - name: Finalize dataset capability and delivery invariants
         run: node scripts/finalize-compute-data-plane.mjs
 
+      - name: Require provider work-spec and corpus attestation
+        run: node scripts/apply-compute-provider-attestation.mjs
+
       - name: Apply workspace-owned canonical evaluation wiring
         run: node scripts/apply-compute-canonical-evaluation.mjs
 
@@ -65,8 +69,14 @@ jobs:
       - name: Verify focused network policy
         run: node --test scripts/unit-compute-network-policy.test.mjs
 
+      - name: Verify single outbound-policy authority
+        run: node --test scripts/unit-compute-outbound-policy.test.mjs
+
       - name: Verify signed remote corpus data plane
         run: node --test scripts/unit-compute-data-plane.test.mjs
+
+      - name: Verify provider artifact attestation
+        run: node --test scripts/unit-compute-provider-attestation.test.mjs
 
       - name: Verify focused Runpod release policy
         run: node --test scripts/unit-compute-runpod-release.test.mjs
