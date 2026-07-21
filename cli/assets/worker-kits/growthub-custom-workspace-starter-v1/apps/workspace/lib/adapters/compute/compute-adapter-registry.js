@@ -3,13 +3,13 @@
  * Governed Compute Realization.
  *
  * Remote and cluster adapters are wrapped at registration time so every HTTP
- * call crosses the server-owned outbound policy. Direct adapter module exports
- * remain untouched for deterministic unit tests; the production route obtains
- * adapters only through this registry. Local adapters perform no remote IO and
- * retain object identity with their exported adapter.
+ * call crosses the single server-owned network policy. Direct adapter module
+ * exports remain untouched for deterministic unit tests; the production route
+ * obtains adapters only through this registry. Local adapters perform no remote
+ * IO and retain object identity with their exported adapter.
  */
 
-import { fetchComputeJson } from "../../compute-outbound-policy.js";
+import { createGovernedComputeFetchJson } from "../../compute-network-policy.js";
 
 if (!globalThis.__growthubComputeAdapterRegistry) {
   globalThis.__growthubComputeAdapterRegistry = new Map();
@@ -22,12 +22,13 @@ const wrappedByOriginal = new WeakMap();
 
 function contextWithGovernedOutboundPolicy(ctx) {
   const input = ctx && typeof ctx === "object" ? ctx : {};
+  const fetchJson = createGovernedComputeFetchJson();
   return {
     ...input,
     // Caller-injected fetch functions are evidence-shaped test plumbing, not
     // a production network authority. Registered remote adapters always use
-    // the DNS-pinned, redirect-revalidating, bounded server transport.
-    fetchJson: (url, init) => fetchComputeJson(url, init),
+    // DNS pinning, explicit host policy, redirect refusal, and response bounds.
+    fetchJson,
   };
 }
 
