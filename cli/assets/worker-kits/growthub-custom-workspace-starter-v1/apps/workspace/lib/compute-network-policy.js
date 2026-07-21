@@ -1,8 +1,8 @@
 /**
  * Server-owned outbound network and artifact verification policy for governed
- * compute providers. This module is Node-only by design: DNS pinning, TLS
- * verification, bounded streaming, realpath checks, and file-type checks must
- * happen on the server rather than inside provider adapters or browser code.
+ * compute providers. Node-only by design: DNS pinning, TLS verification,
+ * bounded streaming, realpath checks, and file-type checks happen on the
+ * server rather than inside provider adapters or browser code.
  */
 
 import { createHash } from "node:crypto";
@@ -22,6 +22,7 @@ export const COMPUTE_ARTIFACT_MAX_BYTES_ENV = "GROWTHUB_COMPUTE_ARTIFACT_MAX_BYT
 const DEFAULT_JSON_MAX_BYTES = 1024 * 1024;
 const DEFAULT_ARTIFACT_MAX_BYTES = 20 * 1024 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 const BUILTIN_PUBLIC_HOSTS = Object.freeze([
   "rest.runpod.io",
   "api.runpod.io",
@@ -29,10 +30,16 @@ const BUILTIN_PUBLIC_HOSTS = Object.freeze([
 ]);
 const FORBIDDEN_METADATA_HOSTS = new Set([
   "169.254.169.254",
+  "100.100.100.200",
   "metadata.google.internal",
   "metadata.google",
   "metadata.aws.internal",
   "instance-data.ec2.internal",
+]);
+const FORBIDDEN_METADATA_ADDRESSES = new Set([
+  "169.254.169.254",
+  "100.100.100.200",
+  "fd00:ec2::254",
 ]);
 
 function str(value) {
@@ -94,17 +101,30 @@ export function privateOrReservedAddress(address) {
   }
   if (family === 6) {
     if (value === "::" || value === "::1") return true;
-    if (/^f[cd]/.test(value) || /^fe[89ab]/.test(value) || /^ff/.test(value)) return true;
+    if (/^f[cd]/.test(value) || /^fe[89ab]/.test(value) || /^ff/.test(value) || /^2001:db8(?::|$)/.test(value)) return true;
     const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     return mapped ? privateOrReservedAddress(mapped[1]) : false;
   }
   return true;
 }
 
+function metadataServiceAddress(address) {
+  return FORBIDDEN_METADATA_ADDRESSES.has(normalizeHost(address));
+}
+
 function boundedPositiveInteger(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return Math.min(Math.floor(parsed), maximum);
+}
+
+function normalizeResolvedAddresses(addresses) {
+  return addresses
+    .map((entry) => ({
+      address: normalizeHost(typeof entry === "string" ? entry : entry?.address),
+      family: Number(typeof entry === "object" ? entry?.family : 0) || isIP(typeof entry === "string" ? entry : entry?.address),
+    }))
+    .filter((entry) => entry.address && [4, 6].includes(entry.family));
 }
 
 export async function authorizeComputeUrl(rawUrl, {
@@ -139,27 +159,58 @@ export async function authorizeComputeUrl(rawUrl, {
       throw new Error(`compute outbound hostname "${hostname}" did not resolve`);
     }
   }
-  if (!Array.isArray(addresses) || addresses.length === 0) throw new Error(`compute outbound hostname "${hostname}" did not resolve`);
+  const normalizedAddresses = normalizeResolvedAddresses(Array.isArray(addresses) ? addresses : []);
+  if (normalizedAddresses.length === 0) throw new Error(`compute outbound hostname "${hostname}" did not resolve`);
+  if (normalizedAddresses.some((entry) => metadataServiceAddress(entry.address))) {
+    throw new Error(`compute outbound hostname "${hostname}" resolves to a metadata-service address`);
+  }
+
+  const privateFlags = normalizedAddresses.map((entry) => privateOrReservedAddress(entry.address));
+  const hasPrivate = privateFlags.some(Boolean);
+  const hasPublic = privateFlags.some((flag) => !flag);
+  if (hasPrivate && hasPublic) {
+    throw new Error(`compute outbound hostname "${hostname}" returned mixed public/private DNS answers — possible rebinding refused`);
+  }
 
   const privateRules = parseComputeHostAllowList(env?.[COMPUTE_PRIVATE_NETWORK_ALLOWLIST_ENV]);
   const privateApproved = hostMatches(hostname, privateRules);
-  const normalizedAddresses = addresses.map((entry) => ({
-    address: normalizeHost(entry?.address),
-    family: Number(entry?.family) || isIP(entry?.address),
-  }));
-  if (normalizedAddresses.some((entry) => privateOrReservedAddress(entry.address)) && !privateApproved) {
+  if (hasPrivate && !privateApproved) {
     throw new Error(`compute outbound hostname "${hostname}" resolves to a private, loopback, link-local, or reserved address`);
   }
 
-  return { url, hostname, address: normalizedAddresses[0].address, family: normalizedAddresses[0].family || isIP(normalizedAddresses[0].address) };
+  const selected = normalizedAddresses[0];
+  return { url, hostname, address: selected.address, family: selected.family };
+}
+
+function normalizeHeaders(headers = {}) {
+  const output = {};
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
+    for (const [key, value] of headers.entries()) output[key] = value;
+    return output;
+  }
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) output[String(key)] = String(value);
+    return output;
+  }
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (value !== undefined) output[key] = String(value);
+  }
+  return output;
 }
 
 function pinnedRequest({ authorization, init = {}, timeoutMs, maxBytes, onChunk }) {
   const { url, hostname, address, family } = authorization;
   const transport = url.protocol === "https:" ? https : http;
   const method = str(init.method || "GET").toUpperCase();
-  const headers = { ...(init.headers || {}) };
-  const body = init.body == null ? null : Buffer.isBuffer(init.body) ? init.body : Buffer.from(String(init.body));
+  const headers = normalizeHeaders(init.headers);
+  const body = init.body == null
+    ? null
+    : Buffer.isBuffer(init.body)
+      ? init.body
+      : init.body instanceof Uint8Array
+        ? Buffer.from(init.body)
+        : Buffer.from(String(init.body));
+  if (body && body.byteLength > MAX_REQUEST_BYTES) throw new Error(`compute outbound request body exceeds ${MAX_REQUEST_BYTES} bytes`);
   if (body && headers["content-length"] === undefined && headers["Content-Length"] === undefined) headers["content-length"] = String(body.byteLength);
 
   return new Promise((resolve, reject) => {
@@ -170,13 +221,22 @@ function pinnedRequest({ authorization, init = {}, timeoutMs, maxBytes, onChunk 
       method,
       path: `${url.pathname}${url.search}`,
       headers,
-      servername: url.protocol === "https:" ? hostname : undefined,
-      lookup: (_hostname, _options, callback) => callback(null, address, family),
+      servername: url.protocol === "https:" && !isIP(hostname) ? hostname : undefined,
+      lookup: (_hostname, options, callback) => {
+        if (options?.all) callback(null, [{ address, family }]);
+        else callback(null, address, family);
+      },
     }, (response) => {
       const status = Number(response.statusCode) || 0;
       if (status >= 300 && status < 400) {
         response.resume();
         reject(new Error(`compute outbound redirects are refused (HTTP ${status})`));
+        return;
+      }
+      const encoding = str(response.headers["content-encoding"] || "identity").toLowerCase();
+      if (encoding && encoding !== "identity") {
+        response.resume();
+        reject(new Error(`compute outbound content-encoding "${encoding}" is unsupported`));
         return;
       }
       const declaredLength = Number(response.headers["content-length"]);
@@ -215,10 +275,16 @@ export function createGovernedComputeFetchJson({
   return async function governedComputeFetchJson(rawUrl, init = {}) {
     const authorization = await authorizeComputeUrl(rawUrl, { env, resolveHostname });
     const chunks = [];
-    const response = await pinnedRequest({ authorization, init: { ...init, redirect: "manual" }, timeoutMs: timeout, maxBytes: responseLimit, onChunk: (chunk) => chunks.push(Buffer.from(chunk)) });
+    const response = await pinnedRequest({ authorization, init, timeoutMs: timeout, maxBytes: responseLimit, onChunk: (chunk) => chunks.push(Buffer.from(chunk)) });
     const text = Buffer.concat(chunks).toString("utf8");
     let parsed = null;
-    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("compute provider returned invalid JSON");
+      }
+    }
     if (response.status < 200 || response.status >= 300) {
       const detail = str(parsed?.message || parsed?.error || text.slice(0, 200));
       const error = new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
@@ -266,9 +332,22 @@ async function hashLocalArtifact(filePath, maxBytes) {
 async function hashHttpArtifact(locator, { env, resolveHostname, maxBytes, timeoutMs }) {
   const authorization = await authorizeComputeUrl(locator, { env, resolveHostname });
   const hash = createHash("sha256");
-  const response = await pinnedRequest({ authorization, init: { method: "GET", redirect: "manual" }, timeoutMs, maxBytes, onChunk: (chunk) => hash.update(chunk) });
+  const response = await pinnedRequest({ authorization, init: { method: "GET" }, timeoutMs, maxBytes, onChunk: (chunk) => hash.update(chunk) });
   if (response.status < 200 || response.status >= 300) throw new Error(`artifact readback HTTP ${response.status}`);
   return { verifiedSha256: hash.digest("hex"), sizeBytes: response.received, verificationKind: "governed-http-stream" };
+}
+
+function localArtifactPath(locator) {
+  if (locator.toLowerCase().startsWith("file://")) {
+    const url = new URL(locator);
+    if (url.username || url.password || (url.hostname && url.hostname !== "localhost")) throw new Error("artifact file URL is invalid");
+    return fileURLToPath(url);
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(locator)) {
+    throw new Error("artifact locator scheme is unsupported until the governed remote data plane is configured");
+  }
+  if (locator.split(/[\\/]+/).includes("..")) throw new Error("artifact locator may not contain parent traversal");
+  return locator;
 }
 
 export async function verifyGovernedComputeArtifact({
@@ -282,6 +361,8 @@ export async function verifyGovernedComputeArtifact({
   const claimedSha = str(artifact?.sha256).toLowerCase();
   if (!locator) throw new Error("artifact locator missing");
   if (!/^[a-f0-9]{64}$/.test(claimedSha)) throw new Error("artifact SHA-256 claim must be a 64-character lowercase hex digest");
+  if (!workSpec || typeof workSpec !== "object" || !str(workSpec.workSpecHash)) throw new Error("server-owned work spec is required for artifact verification");
+  if (artifact?.workSpecHash && str(artifact.workSpecHash) !== str(workSpec.workSpecHash)) throw new Error("artifact work-spec lineage mismatch");
   const expectedKinds = Array.isArray(workSpec?.output?.expectedKinds) ? workSpec.output.expectedKinds.map(String).filter(Boolean) : [];
   if (expectedKinds.length && !expectedKinds.includes(str(artifact?.kind))) throw new Error(`artifact kind "${str(artifact?.kind)}" is not allowed by the work spec`);
 
@@ -290,10 +371,7 @@ export async function verifyGovernedComputeArtifact({
   if (/^https?:\/\//i.test(locator)) {
     verification = await hashHttpArtifact(locator, { env, resolveHostname, maxBytes, timeoutMs: boundedPositiveInteger(timeoutMs, DEFAULT_TIMEOUT_MS, 120_000) });
   } else {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(locator) && !locator.toLowerCase().startsWith("file://")) {
-      throw new Error("artifact locator scheme is unsupported until the governed remote data plane is configured");
-    }
-    const lexicalPath = locator.toLowerCase().startsWith("file://") ? fileURLToPath(locator) : locator;
+    const lexicalPath = localArtifactPath(locator);
     const candidate = path.resolve(lexicalPath);
     const expectedPath = str(workSpec?.output?.artifactPath);
     if (!expectedPath) throw new Error("work spec output artifactPath is required for local artifact verification");
