@@ -23,11 +23,17 @@
  * stale training row, missing dataset identity, changed policy, changed
  * ordered steps, changed output identity.
  *
- * Key material: `GROWTHUB_COMPUTE_AUTHORITY_KEY` (operator-provided). When
- * absent, a per-process ephemeral key is generated — seals then do not
- * survive a restart, which fails closed to RECOMPILATION (never to trusting
- * the caller). The key never appears in receipts; only the non-secret keyId
- * does.
+ * Key material, in precedence order:
+ *   1. `GROWTHUB_COMPUTE_AUTHORITY_KEY` — dedicated override;
+ *   2. `GROWTHUB_WORKSPACE_SIGNING_KEY` — the SAME workspace signing key the
+ *      inference evidentiary backbone already asks operators to configure
+ *      (lib/adapters/inference/manifest.js), so one server key covers both
+ *      sealed domains by default. The keyId derivation string
+ *      (`growthub-compute-authority-key:`) domain-separates this seal from
+ *      manifest signatures;
+ *   3. a per-process ephemeral key — seals then do not survive a restart,
+ *      which fails closed to RECOMPILATION (never to trusting the caller).
+ * The key never appears in receipts; only the non-secret keyId does.
  *
  * Node-only on purpose (node:crypto): this module must never be importable
  * into a browser bundle that could then pretend to seal.
@@ -47,11 +53,18 @@ import {
 import { buildAdaptiveStudentPlan } from "./distillation-student-plan.js";
 import { deriveCapacityPlan, resolveCapacityProfile } from "./compute-capacity-profiles.js";
 import { buildTrainingRunConfig } from "./training-runtime-profiles.js";
+import { parseJsonColumn } from "./compute-evidence.js";
+import { findTrainingRunReceiptRow } from "./compute-execution.js";
 
 export const COMPUTE_AUTHORITY_KEY_ENV = "GROWTHUB_COMPUTE_AUTHORITY_KEY";
+/** The workspace signing key the inference manifest seam already uses. */
+export const WORKSPACE_SIGNING_KEY_ENV = "GROWTHUB_WORKSPACE_SIGNING_KEY";
 export const COMPUTE_AUTHORITY_VERSION = 1;
 
 const str = (v) => String(v ?? "").trim();
+
+/** Domain-separated, non-secret key identity (manifest.js keyId pattern). */
+const authorityKeyId = (key) => sha256Hex(`growthub-compute-authority-key:${key}`).slice(0, 16);
 
 let ephemeralAuthorityKey = null;
 
@@ -60,12 +73,16 @@ let ephemeralAuthorityKey = null;
  * `keyId` is non-secret evidence safe to persist alongside the seal.
  */
 export function resolveComputeAuthorityKey(env = process.env) {
-  const configured = str(env?.[COMPUTE_AUTHORITY_KEY_ENV]);
-  if (configured) {
-    return { key: configured, keyId: `env-${sha256Hex(configured).slice(0, 12)}`, source: "env" };
+  const dedicated = str(env?.[COMPUTE_AUTHORITY_KEY_ENV]);
+  if (dedicated) {
+    return { key: dedicated, keyId: `env-${authorityKeyId(dedicated)}`, source: "env" };
+  }
+  const workspaceKey = str(env?.[WORKSPACE_SIGNING_KEY_ENV]);
+  if (workspaceKey) {
+    return { key: workspaceKey, keyId: `wsk-${authorityKeyId(workspaceKey)}`, source: "workspace-signing-key" };
   }
   if (!ephemeralAuthorityKey) ephemeralAuthorityKey = randomBytes(32).toString("hex");
-  return { key: ephemeralAuthorityKey, keyId: `boot-${sha256Hex(ephemeralAuthorityKey).slice(0, 12)}`, source: "ephemeral" };
+  return { key: ephemeralAuthorityKey, keyId: `boot-${authorityKeyId(ephemeralAuthorityKey)}`, source: "ephemeral" };
 }
 
 function hmacSeal(key, authorityWithoutSeal) {
@@ -97,24 +114,6 @@ export function verifyComputeAuthoritySeal(authority, env = process.env) {
     return { ok: false, reasonCode: "seal-invalid", reason: "authority seal does not verify — stored authority is not server-written" };
   }
   return { ok: true, reasonCode: "", reason: "seal verified" };
-}
-
-function parseJsonColumn(value) {
-  if (value && typeof value === "object") return value;
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function findReceiptRow(workspaceConfig, trainingRunId) {
-  const objects = Array.isArray(workspaceConfig?.dataModel?.objects) ? workspaceConfig.dataModel.objects : [];
-  const object = objects.find((o) => o?.objectType === "model-training-run");
-  const rows = Array.isArray(object?.rows) ? object.rows : [];
-  return rows.find((r) => str(r?.trainingRunId) === str(trainingRunId)) || null;
 }
 
 /** The authoritative model-training version row bound by dataset export id. */
@@ -158,7 +157,7 @@ export function compileComputeAuthority({
   now = "",
   env = process.env,
 } = {}) {
-  const row = findReceiptRow(workspaceConfig, trainingRunId);
+  const row = findTrainingRunReceiptRow(workspaceConfig, trainingRunId);
   if (!row) return failure("receipt-missing", `no model-training-run receipt for "${str(trainingRunId)}"`);
 
   const req = normalizeComputeRequest(request || parseJsonColumn(row.computeRequest));

@@ -53,6 +53,23 @@ function num(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Parse a receipt column that stores an object either inline or as a JSON
+ * string (the Data Model grid convention). Returns null for anything that
+ * is not (or does not parse to) a plain object. Shared by the execution
+ * seam and the authority compiler so both read columns identically.
+ */
+export function parseJsonColumn(value) {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Deterministic allocation identity
 // ---------------------------------------------------------------------------

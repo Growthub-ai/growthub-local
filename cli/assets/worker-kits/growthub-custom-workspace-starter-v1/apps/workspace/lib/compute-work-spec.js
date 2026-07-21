@@ -37,6 +37,12 @@ export function stableComputeStringify(value) {
 // Canonical SHA-256 (dependency-free, browser + node). Authority and content
 // identities use SHA-256, not FNV-1a: content identity must be collision
 // resistant when it participates in a sealed authority chain.
+//
+// Deliberately NOT the node:crypto sha256Hex from
+// lib/adapters/inference/contracts.js: this module is imported by the
+// client-side TrainingHandoffModal (for the request builder), so it must
+// not pull node:crypto into a browser bundle. Output equality with
+// node:crypto is pinned by scripts/unit-compute-work-spec.test.mjs.
 // ---------------------------------------------------------------------------
 
 const SHA256_K = new Uint32Array([

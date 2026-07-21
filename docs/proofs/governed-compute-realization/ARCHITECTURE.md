@@ -112,11 +112,13 @@ governed traces → corpus → adaptive student plan (WHAT)
 11. **No caller-authored authority.** The browser persists only the
     customer request snapshot (`computeRequest`); execution authority is
     compiled server-side from the governed rows and HMAC-sealed with a
-    server-owned key (`GROWTHUB_COMPUTE_AUTHORITY_KEY`, ephemeral per-boot
-    fallback that fails closed to recompilation). Verification recomputes
-    from current authoritative inputs — a self-consistent caller-supplied
-    spec, or a sealed authority whose governed inputs drifted, is refused
-    before any provider boundary.
+    server-owned key (`GROWTHUB_COMPUTE_AUTHORITY_KEY`, falling back to the
+    SAME `GROWTHUB_WORKSPACE_SIGNING_KEY` the inference manifest seam uses
+    — one operator key by default, domain-separated keyIds — then to an
+    ephemeral per-boot key that fails closed to recompilation).
+    Verification recomputes from current authoritative inputs — a
+    self-consistent caller-supplied spec, or a sealed authority whose
+    governed inputs drifted, is refused before any provider boundary.
 12. **Evidence is server-owned through PATCH.** The `model-training-run`
     `compute` journal (authority, decision, allocation/resource ids,
     idempotency identities, events, checkpoints, artifact verification,

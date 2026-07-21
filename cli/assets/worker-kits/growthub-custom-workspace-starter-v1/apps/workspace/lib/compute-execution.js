@@ -42,6 +42,7 @@ import {
   deriveComputeArtifactHonesty,
   deriveComputeLifecycle,
   normalizeComputeBlock,
+  parseJsonColumn,
 } from "./compute-evidence.js";
 import { deriveComputeRequirements, normalizeRequirementsForProfile, resolveCapacityProfileForRequirements } from "./compute-capacity-profiles.js";
 import { LOCAL_PROVIDER_ID } from "./compute-provider-registry.js";
@@ -65,11 +66,7 @@ export function findTrainingRunReceiptRow(workspaceConfig, trainingRunId) {
 
 /** Parse the receipt row's compute block (stored inline or as a JSON column). */
 export function parseReceiptComputeBlock(row) {
-  let compute = row?.compute;
-  if (typeof compute === "string") {
-    try { compute = JSON.parse(compute); } catch { compute = null; }
-  }
-  return normalizeComputeBlock(compute);
+  return normalizeComputeBlock(parseJsonColumn(row?.compute));
 }
 
 /**
@@ -529,18 +526,6 @@ function baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainin
     resolveEnv: typeof io.resolveEnv === "function" ? io.resolveEnv : () => "",
     fetchJson: typeof io.fetchJson === "function" ? io.fetchJson : async () => { throw new Error("fetchJson not provided"); },
   };
-}
-
-/** Parse a JSON-string-or-object receipt column. */
-function parseJsonColumn(value) {
-  if (value && typeof value === "object") return value;
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 /**

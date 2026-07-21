@@ -58,7 +58,7 @@ execution authority. Corrected in this pass:
 
 | Concern | Before | Now |
 | --- | --- | --- |
-| Who authors the intent/work spec | `TrainingHandoffModal.jsx` (browser), persisted via PATCH, self-hashed with FNV-1a | `lib/compute-authority.js` compiles it SERVER-SIDE from the governed rows + the customer request; SHA-256 lineage; HMAC-SHA256 seal (`GROWTHUB_COMPUTE_AUTHORITY_KEY`, ephemeral per-boot fallback) |
+| Who authors the intent/work spec | `TrainingHandoffModal.jsx` (browser), persisted via PATCH, self-hashed with FNV-1a | `lib/compute-authority.js` compiles it SERVER-SIDE from the governed rows + the customer request; SHA-256 lineage; HMAC-SHA256 seal (`GROWTHUB_COMPUTE_AUTHORITY_KEY` → `GROWTHUB_WORKSPACE_SIGNING_KEY` (the inference-manifest signing key, domain-separated keyId) → ephemeral per-boot fallback) |
 | What the browser persists | full compute ask incl. intent/workSpec/hashes | `computeRequest` (`growthub-compute-request-v1`) only — policy, budget, locality, preemptible, provider preference, profile, export identity, output tag, duration estimate |
 | What verification proves | internal self-hash equality of a caller-supplied object | seal verification AND recompilation from current authoritative inputs (`verifyComputeAuthorityAgainstWorkspace`); drift of policy/dataset/steps/output fails closed before provider submission |
 | PATCH exposure of evidence | `model-training-run` evidence fields freely PATCHable | `compute` journal echo-only (`training_evidence_field`); success statuses + artifact identity echo-only on provider-compute rows; `distillation.benchmarkWins` echo-only everywhere; the local runner's receipt lane (no compute evidence) unchanged |

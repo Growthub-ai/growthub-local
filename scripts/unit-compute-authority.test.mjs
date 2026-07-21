@@ -29,6 +29,7 @@ const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
 const {
   COMPUTE_AUTHORITY_KEY_ENV,
+  WORKSPACE_SIGNING_KEY_ENV,
   compileComputeAuthority,
   sealComputeAuthority,
   resolveComputeAuthorityKey,
@@ -179,15 +180,30 @@ test("ADVERSARIAL — post-seal drift of policy, dataset, steps, or output fails
   }
 });
 
-test("key handling: env key gives stable non-secret keyId; without env an ephemeral per-process key still refuses foreign seals", () => {
+test("key handling: dedicated env key, workspace-signing-key fallback, then ephemeral — all with non-secret keyIds", () => {
   const envKey = resolveComputeAuthorityKey(ENV);
   assert.equal(envKey.source, "env");
-  assert.match(envKey.keyId, /^env-[0-9a-f]{12}$/);
+  assert.match(envKey.keyId, /^env-[0-9a-f]{16}$/);
   assert.ok(!envKey.keyId.includes(ENV[COMPUTE_AUTHORITY_KEY_ENV]), "keyId never leaks key material");
+
+  // One operator key by default: the SAME workspace signing key the
+  // inference manifest seam uses (GROWTHUB_WORKSPACE_SIGNING_KEY) seals
+  // compute authority when no dedicated key is set. Domain-separated keyId.
+  const shared = { [WORKSPACE_SIGNING_KEY_ENV]: "shared-workspace-signing-key" };
+  const wsk = resolveComputeAuthorityKey(shared);
+  assert.equal(wsk.source, "workspace-signing-key");
+  assert.match(wsk.keyId, /^wsk-[0-9a-f]{16}$/);
+  const dedicatedWins = resolveComputeAuthorityKey({ ...shared, ...ENV });
+  assert.equal(dedicatedWins.source, "env", "the dedicated key overrides the shared one");
 
   const ephemeral = resolveComputeAuthorityKey({});
   assert.equal(ephemeral.source, "ephemeral");
   assert.equal(resolveComputeAuthorityKey({}).keyId, ephemeral.keyId, "stable within the process");
+
+  // Sealed under the shared workspace key: verifies with it, refused without.
+  const sealedUnderWsk = compileComputeAuthority({ workspaceConfig: configWith({}), trainingRunId: RUN_ID, now: "t", env: shared });
+  assert.equal(verifyComputeAuthoritySeal(sealedUnderWsk.authority, shared).ok, true);
+  assert.equal(verifyComputeAuthoritySeal(sealedUnderWsk.authority, ENV).ok, false);
 
   // Sealed under env key, verified without it (restart / rotation): the
   // stored object is refused — fails closed to recompilation, never trust.
