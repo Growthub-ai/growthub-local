@@ -11,6 +11,7 @@ on:
       - scripts/repair-compute-data-plane-script.mjs
       - scripts/apply-compute-data-plane.mjs
       - scripts/finalize-compute-data-plane.mjs
+      - scripts/apply-compute-durable-data-store.mjs
       - scripts/apply-compute-provider-attestation.mjs
       - scripts/apply-compute-canonical-evaluation.mjs
       - scripts/apply-compute-canonical-e2e.mjs
@@ -21,8 +22,8 @@ permissions:
 
 concurrency:
   group: one-shot-compute-production-hardening
-  # This workflow is an implementation bridge, not a permanent queue. Only
-  # the newest exact-head run may commit; stale attempts are cancelled.
+  # Source commits are still landing in parallel. Cancel stale applicator runs;
+  # the newest exact-head run is the only run allowed to publish production wiring.
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +32,7 @@ jobs:
     # implementation commit is deliberately prevented from recursively firing.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +55,9 @@ jobs:
       - name: Finalize dataset capability and delivery invariants
         run: node scripts/finalize-compute-data-plane.mjs
 
+      - name: Bind data plane to durable deployment storage
+        run: node scripts/apply-compute-durable-data-store.mjs
+
       - name: Require provider work-spec and corpus attestation
         run: node scripts/apply-compute-provider-attestation.mjs
 
@@ -74,6 +78,9 @@ jobs:
 
       - name: Verify signed remote corpus data plane
         run: node --test scripts/unit-compute-data-plane.test.mjs
+
+      - name: Verify durable compute data stores
+        run: node --test scripts/unit-compute-data-store.test.mjs
 
       - name: Verify provider artifact attestation
         run: node --test scripts/unit-compute-provider-attestation.test.mjs
@@ -105,6 +112,7 @@ jobs:
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-evidence.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-data-plane.js \
+                  cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-data-store.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/training-dataset.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-canonical-evaluation.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/compute/modal-compute.js \
@@ -117,5 +125,5 @@ jobs:
             echo "[one-shot] branch already contains the hardened implementation"
             exit 0
           fi
-          git commit -m "fix(compute): close governed network, data, evaluation, and observation loops"
+          git commit -m "fix(compute): close governed network, durable data, evaluation, and observation loops"
           git push origin HEAD:claude/compute-authority-evidence-pr296-0u5msd
