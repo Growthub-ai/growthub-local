@@ -36,6 +36,9 @@ jobs:
       - name: Verify focused network policy
         run: node --test scripts/unit-compute-network-policy.test.mjs
 
+      - name: Verify focused Runpod release policy
+        run: node --test scripts/unit-compute-runpod-release.test.mjs
+
       - name: Verify full compute certification
         run: npm run test:compute-certification
 
@@ -49,7 +52,12 @@ jobs:
           git add cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js \
                   cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js \
+                  cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/compute/runpod-compute.js \
                   scripts/e2e-compute-route-realization-loop.mjs \
                   scripts/run-compute-certification.mjs
+          if git diff --cached --quiet; then
+            echo "[one-shot] branch already contains the hardened implementation"
+            exit 0
+          fi
           git commit -m "fix(compute): enforce governed network and continuation-safe execution"
           git push origin HEAD:claude/compute-authority-evidence-pr296-0u5msd
