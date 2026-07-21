@@ -14,9 +14,15 @@ function replaceOnce(source, before, after, label) {
   return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
+function replaceOrSkip(source, before, after, alreadyMarker, label) {
+  if (source.includes(before)) return replaceOnce(source, before, after, label);
+  if (alreadyMarker && source.includes(alreadyMarker)) return source;
+  throw new Error(`[one-shot] neither old nor hardened form found: ${label}`);
+}
+
 const routePath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js";
 let route = read(routePath);
-route = replaceOnce(
+route = replaceOrSkip(
   route,
   `import {
   compileComputeAuthority,
@@ -30,9 +36,10 @@ import {
   createGovernedComputeFetchJson,
   verifyGovernedComputeArtifact
 } from "@/lib/compute-network-policy";`,
+  `from "@/lib/compute-network-policy"`,
   "compute network policy import",
 );
-route = replaceOnce(
+route = replaceOrSkip(
   route,
   `import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
 
@@ -45,13 +52,18 @@ function coerceBoolean`,
 const governedComputeFetchJson = createGovernedComputeFetchJson();
 
 function coerceBoolean`,
+  `const governedComputeFetchJson = createGovernedComputeFetchJson();`,
   "governed compute fetch construction",
 );
 const verifierStart = route.indexOf("/** Canonical artifact materialization/readback. Provider SHA claims alone fail. */");
-const verifierEnd = route.indexOf("async function runServerlessScheduler", verifierStart);
-if (verifierStart < 0 || verifierEnd < 0) throw new Error("[one-shot] artifact verifier block not found");
-route = `${route.slice(0, verifierStart)}${route.slice(verifierEnd)}`;
-route = replaceOnce(
+if (verifierStart >= 0) {
+  const verifierEnd = route.indexOf("async function runServerlessScheduler", verifierStart);
+  if (verifierEnd < 0) throw new Error("[one-shot] artifact verifier block end not found");
+  route = `${route.slice(0, verifierStart)}${route.slice(verifierEnd)}`;
+} else if (!route.includes("verifyGovernedComputeArtifact")) {
+  throw new Error("[one-shot] neither unsafe nor governed artifact verifier found");
+}
+route = replaceOrSkip(
   route,
   `          fetchJson: async (url, init) => {
             const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
@@ -69,21 +81,23 @@ route = replaceOnce(
   `          // Every provider quote/allocation/status/cancel/release request
           // crosses the same DNS-pinned, bounded, operator-allowlisted policy.
           fetchJson: governedComputeFetchJson,`,
+  `fetchJson: governedComputeFetchJson,`,
   "inline compute fetch replacement",
 );
-route = replaceOnce(
+route = replaceOrSkip(
   route,
   `          verifyArtifact: verifyComputeArtifactBytes,`,
   `          // Artifact bytes are streamed through the same outbound policy;
           // local paths are restricted to governed roots and expected output.
           verifyArtifact: (artifact, workSpec) => verifyGovernedComputeArtifact({ artifact, workSpec }),`,
+  `verifyArtifact: (artifact, workSpec) => verifyGovernedComputeArtifact`,
   "artifact verifier wiring",
 );
 write(routePath, route);
 
 const executionPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-execution.js";
 let execution = read(executionPath);
-execution = replaceOnce(
+execution = replaceOrSkip(
   execution,
   `  const critical = ordered.filter((event) => criticalTypes.has(event.type));
   const latest = ordered.slice(-Math.max(0, MAX_EVENTS - critical.length));
@@ -105,9 +119,10 @@ execution = replaceOnce(
     .slice(-remaining);
   const keepIds = new Set([...criticalIds, ...nonCriticalTail.map(eventIdentity)]);
   return ordered.filter((event) => keepIds.has(eventIdentity(event))).slice(-MAX_EVENTS);`,
+  `Never recurse during compaction`,
   "non-recursive event compaction",
 );
-execution = replaceOnce(
+execution = replaceOrSkip(
   execution,
   `    evaluation: incoming?.evaluation?.source === "workspace-canonical"
       ? incoming.evaluation
@@ -121,9 +136,10 @@ execution = replaceOnce(
       : prior?.evaluation?.source === "workspace-canonical"
         ? prior.evaluation
         : null,`,
+  `Legacy/provider-authored evaluation is never carried forward`,
   "canonical evaluation-only merge",
 );
-execution = replaceOnce(
+execution = replaceOrSkip(
   execution,
   `function providerMayBeObserved(provider, policy, selectionMode, pinnedProviderId) {
   const providerId = str(provider?.providerId);
@@ -159,22 +175,24 @@ execution = replaceOnce(
   if (selectionMode === "explicit" && pinnedProviderId) return providerId === pinnedProviderId;
   return true;
 }`,
+  `Hard customer policy gates are evaluated before an explicit pin`,
   "policy-before-pin provider filtering",
 );
 write(executionPath, execution);
 
 const networkPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js";
 let network = read(networkPath);
-network = replaceOnce(
+network = replaceOrSkip(
   network,
   `const FORBIDDEN_METADATA_HOSTS = new Set([
   "169.254.169.254",`,
   `const FORBIDDEN_METADATA_HOSTS = new Set([
   "169.254.169.254",
   "100.100.100.200",`,
+  `"100.100.100.200"`,
   "additional metadata endpoint",
 );
-network = replaceOnce(
+network = replaceOrSkip(
   network,
   `  const privateRules = parseComputeHostAllowList(env?.[COMPUTE_PRIVATE_NETWORK_ALLOWLIST_ENV]);
   const privateApproved = hostMatches(hostname, privateRules);
@@ -197,24 +215,89 @@ network = replaceOnce(
     throw new Error(\`compute outbound hostname "\${hostname}" resolves to mixed public/private addresses\`);
   }
   if (privateAddresses.length > 0 && !privateApproved) {`,
+  `resolves to mixed public/private addresses`,
   "metadata and mixed-DNS refusal",
 );
 write(networkPath, network);
 
+const runpodPath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/adapters/compute/runpod-compute.js";
+let runpod = read(runpodPath);
+runpod = replaceOrSkip(
+  runpod,
+  `    if (config.mode === "serverless") {
+      const res = await ctx.fetchJson(\`${RUNPOD_SERVERLESS_BASE}/\${config.endpointId}/cancel/\${resourceId}\`, { method: "POST", headers: { Authorization: key } });
+      return [providerEvent({ type: "compute-cancelled", ctx, providerEventId: \`\${resourceId}:cancel\`, detail: str(res?.status || "CANCELLED") })];
+    }`,
+  `    if (config.mode === "serverless") {
+      const res = await ctx.fetchJson(\`${RUNPOD_SERVERLESS_BASE}/\${config.endpointId}/cancel/\${resourceId}\`, { method: "POST", headers: { Authorization: key } });
+      const status = str(res?.status).toUpperCase();
+      // A request acknowledgement is not cancellation evidence. Only an
+      // explicit terminal acknowledgement may advance the governed lifecycle.
+      if (!["CANCELLED", "CANCELED"].includes(status) && res?.cancelled !== true) return [];
+      return [providerEvent({ type: "compute-cancelled", ctx, providerEventId: \`\${resourceId}:cancel\`, detail: status || "CANCELLED" })];
+    }`,
+  `A request acknowledgement is not cancellation evidence`,
+  "Runpod serverless cancellation acknowledgement",
+);
+runpod = replaceOrSkip(
+  runpod,
+  `    if (config.mode === "serverless") {
+      // Scale-to-zero: a terminal job holds no capacity. Cancellation of a
+      // live job is the release path; a finished job releases implicitly.
+      return [providerEvent({ type: "compute-released", ctx, providerEventId: \`\${resourceId}:released\`, detail: "serverless workers scale to zero — no standing capacity to terminate" })];
+    }`,
+  `    if (config.mode === "serverless") {
+      const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED", "CANCELED", "TIMED_OUT"]);
+      const live = new Set(["IN_QUEUE", "IN_PROGRESS"]);
+      const failed = (detail) => [providerEvent({
+        type: "compute-release-failed",
+        ctx,
+        providerEventId: \`\${resourceId}:serverless-release-unverified\`,
+        detail: \`\${detail} — serverless job release is not confirmed; work may still be billing\`,
+        source: "workspace",
+      })];
+      try {
+        const observed = await ctx.fetchJson(\`${RUNPOD_SERVERLESS_BASE}/\${config.endpointId}/status/\${resourceId}\`, { headers: { Authorization: key } });
+        const status = str(observed?.status).toUpperCase();
+        if (terminal.has(status)) {
+          return [providerEvent({ type: "compute-released", ctx, providerEventId: \`\${resourceId}:serverless-released:\${status}\`, detail: \`serverless job \${status} — workers are terminal and scale to zero\` })];
+        }
+        if (!live.has(status)) return failed(\`provider state \"\${status || "unknown"}\" is not safely classifiable\`);
+
+        const cancelled = await ctx.fetchJson(\`${RUNPOD_SERVERLESS_BASE}/\${config.endpointId}/cancel/\${resourceId}\`, { method: "POST", headers: { Authorization: key } });
+        const cancelStatus = str(cancelled?.status).toUpperCase();
+        if (!["CANCELLED", "CANCELED"].includes(cancelStatus) && cancelled?.cancelled !== true) {
+          return failed(\`provider did not confirm cancellation (status \"\${cancelStatus || "unknown"}\")\`);
+        }
+        const confirmed = await ctx.fetchJson(\`${RUNPOD_SERVERLESS_BASE}/\${config.endpointId}/status/\${resourceId}\`, { headers: { Authorization: key } });
+        const finalStatus = str(confirmed?.status).toUpperCase();
+        if (!terminal.has(finalStatus)) return failed(\`post-cancel state \"\${finalStatus || "unknown"}\" is not terminal\`);
+        return [providerEvent({ type: "compute-released", ctx, providerEventId: \`\${resourceId}:serverless-released:\${finalStatus}\`, detail: \`serverless release verified in terminal state \${finalStatus}\` })];
+      } catch (error) {
+        return failed(\`serverless release not confirmed: \${str(error?.message).slice(0, 160)}\`);
+      }
+    }`,
+  `serverless release verified in terminal state`,
+  "Runpod serverless release verification",
+);
+write(runpodPath, runpod);
+
 const e2ePath = "scripts/e2e-compute-route-realization-loop.mjs";
 let e2e = read(e2ePath);
-e2e = replaceOnce(
-  e2e,
-  `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
+if (!e2e.includes("GROWTHUB_COMPUTE_NETWORK_ALLOWLIST")) {
+  e2e = replaceOnce(
+    e2e,
+    `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
 `,
-  `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
+    `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
         // The booted fake provider is intentionally loopback; production
         // permits private hosts only through explicit operator allowlists.
         GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "127.0.0.1",
         GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1",
 `,
-  "booted route private test allowlist",
-);
+    "booted route private test allowlist",
+  );
+}
 write(e2ePath, e2e);
 
 const certificationPath = "scripts/run-compute-certification.mjs";
@@ -227,9 +310,20 @@ if (!certification.includes("scripts/unit-compute-network-policy.test.mjs")) {
     `  "scripts/unit-compute-budget-policy.test.mjs",
   "scripts/unit-compute-network-policy.test.mjs",
 `,
-    "compute certification suite registration",
+    "compute network certification suite",
+  );
+}
+if (!certification.includes("scripts/unit-compute-runpod-release.test.mjs")) {
+  certification = replaceOnce(
+    certification,
+    `  "scripts/unit-compute-runpod.test.mjs",
+`,
+    `  "scripts/unit-compute-runpod.test.mjs",
+  "scripts/unit-compute-runpod-release.test.mjs",
+`,
+    "Runpod release certification suite",
   );
 }
 write(certificationPath, certification);
 
-console.log("[one-shot] governed network, executor compaction, canonical-evaluation merge, and policy filtering wired and ready for certification");
+console.log("[one-shot] governed network, executor safety, and Runpod release truth are wired and ready for certification");
