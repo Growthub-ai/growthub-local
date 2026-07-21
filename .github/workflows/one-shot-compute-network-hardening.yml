@@ -1,0 +1,53 @@
+name: One-shot compute network hardening
+
+on:
+  push:
+    branches:
+      - claude/compute-authority-evidence-pr296-0u5msd
+    paths:
+      - .github/workflows/one-shot-compute-network-hardening.yml
+      - scripts/apply-compute-network-hardening.mjs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-compute-network-hardening
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: claude/compute-authority-evidence-pr296-0u5msd
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Apply surgical source wiring
+        run: node scripts/apply-compute-network-hardening.mjs
+
+      - name: Verify focused network policy
+        run: node --test scripts/unit-compute-network-policy.test.mjs
+
+      - name: Verify full compute certification
+        run: npm run test:compute-certification
+
+      - name: Verify repository formatting
+        run: git diff --check
+
+      - name: Commit implementation to the active PR branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/app/api/workspace/sandbox-run/route.js \
+                  scripts/e2e-compute-route-realization-loop.mjs \
+                  scripts/run-compute-certification.mjs
+          git commit -m "fix(compute): enforce DNS-pinned outbound and streamed artifact verification"
+          git push origin HEAD:claude/compute-authority-evidence-pr296-0u5msd
