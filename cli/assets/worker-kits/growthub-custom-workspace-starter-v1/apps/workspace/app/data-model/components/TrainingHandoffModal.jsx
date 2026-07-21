@@ -55,7 +55,12 @@ import { deriveComputeCustomerState, computeAskForPolicy } from "../../../lib/co
 import { deriveCapacityPlan } from "../../../lib/compute-capacity-profiles.js";
 import { buildAdaptiveStudentPlan } from "../../../lib/distillation-student-plan.js";
 import { parseReceiptComputeBlock } from "../../../lib/compute-execution.js";
-import { buildComputeIntent, buildComputeWorkSpec, normalizeComputePolicy } from "../../../lib/compute-work-spec.js";
+// The browser persists ONLY the customer compute request snapshot
+// (growthub-compute-request-v1). Execution authority — intent, ordered
+// steps, work spec, hashes — is compiled and sealed SERVER-SIDE
+// (lib/compute-authority.js); nothing this modal writes is trusted as
+// authority, so it never builds or hashes an intent/work spec.
+import { buildComputeRequest, normalizeComputePolicy } from "../../../lib/compute-work-spec.js";
 import ComputeRealizationPanel from "./ComputeRealizationPanel.jsx";
 import { buildTrainingRunReceipt, TRAINING_RUN_OBJECT_ID, TRAINING_RUN_OBJECT_TYPE, TRAINING_PROGRESS_STAGES } from "../../../lib/training-run-receipts.js";
 import { deriveArtifactState } from "../../../lib/training-artifacts.js";
@@ -76,7 +81,9 @@ const RUN_COLUMNS = [
   // Quant proof (fp16 → quantized bytes) + live thin-delta progress / preflight
   // the local runner stamps each stage boundary. runKind/preinit distinguish
   // Finalize's pre-init probe receipts from real training runs.
-  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "compute", "schema",
+  // computeRequest is the CUSTOMER ask (PATCHable); compute is the server-
+  // owned evidence journal (echo-only through PATCH — sandbox-run writes it).
+  "artifactSourceBytes", "artifactArtifactBytes", "progress", "preflight", "blockedReason", "runKind", "preinit", "computeRequest", "compute", "schema",
 ];
 const SLUG = "workspace-local";
 /** Human labels for raw artifact types — the customer never sees bare "gguf". */
@@ -166,7 +173,11 @@ function runReceiptToRow(receipt) {
     // the declared level survived a manual/import path too, not just the runner.
     artifactSourceBytes: receipt.artifact?.sourceBytes || 0,
     artifactArtifactBytes: receipt.artifact?.artifactBytes || 0,
-    compute: receipt.compute ? JSON.stringify(receipt.compute) : "",
+    // The customer request snapshot is the ONLY compute-shaped column the
+    // browser writes. `compute` (the server evidence journal) is deliberately
+    // never emitted here: it is server-owned, PATCH-protected, and an upsert
+    // spreading it would wipe durable evidence.
+    ...(receipt.computeRequest ? { computeRequest: JSON.stringify(receipt.computeRequest) } : {}),
     schema: receipt.schema,
   };
 }
@@ -735,8 +746,21 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
   const preparedCapacityPlan = deriveCapacityPlan({ plan: adaptivePlan, preflight: readinessProbe?.preflight || null, workloadKind: "fine-tune" });
   const baseRunConfig = buildTrainingRunConfig({ profileId: profile.id, baseModel, datasetPath, outputModelTag: reservedTag, artifactPath: `${artifactRootPath}/${reservedTag}` });
   const computeAsk = computeAskForPolicy(computePolicy, { capacityProfileId: preparedCapacityPlan.capacityProfileId, portablePolicy: computePolicySnapshot });
-  const computeIntent = buildComputeIntent({ adaptivePlan, capacityPlan: preparedCapacityPlan, policy: computeAsk.policy, trainingRunConfig: baseRunConfig });
-  const runConfig = { ...baseRunConfig, compute: { ...computeAsk, intent: computeIntent, intentHash: computeIntent.intentHash, requirementsHash: computeIntent.requirementsHash, policy: computeIntent.policy } };
+  // Customer request snapshot only — what was asked for, not what may run.
+  // The server compiles/seals the actual execution authority from this plus
+  // the governed rows; a datasetExportId is bound in at prepare/run time.
+  const computeRequestDraft = buildComputeRequest({
+    policy: computeAsk.policy,
+    selectionMode: computeAsk.selectionMode,
+    providerRegistryId: computeAsk.providerRegistryId,
+    capacityProfileId: computeAsk.capacityProfileId,
+    trainingProfileId: profile.id,
+    baseModel,
+    datasetPath,
+    outputModelTag: reservedTag,
+    artifactPath: `${artifactRootPath}/${reservedTag}`,
+  });
+  const runConfig = { ...baseRunConfig, computeRequest: computeRequestDraft };
   // Plain-language run framing for the no-code profile step — the primary UX is
   // "what will this do + can it start", NOT the raw argv (that lives in Advanced).
   const floor = resourceFloorFor(baseModel);
@@ -967,16 +991,17 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
       // version row carries the dataset export + base model so the lifecycle links.
       versionRow.baseModel = baseModel;
       versionRow.lastExportId = exportId;
-      versionRow.computePolicy = JSON.stringify(normalizeComputePolicy(runConfig.compute?.policy));
-      let preparedReceipt = buildTrainingRunReceipt({
+      versionRow.computePolicy = JSON.stringify(normalizeComputePolicy(computeRequestDraft.policy));
+      const preparedReceipt = buildTrainingRunReceipt({
         modelTrainingRowId: SLUG, datasetExportId: exportId, baseModel,
         trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "prepared",
-        // The governed compute ask (null for the pure-local policy): the
-        // sandbox-run seam resolves it deterministically at execution time.
-        compute: runConfig.compute,
+        // The governed CUSTOMER compute request (still present for the pure-
+        // local policy, where it pins the local machine): the sandbox-run
+        // seam compiles the sealed server authority from it at execution
+        // time. No compute EVIDENCE is written from the browser — that
+        // journal is server-owned and PATCH-protected.
+        computeRequest: { ...computeRequestDraft, datasetExportId: exportId },
       });
-      const preparedWorkSpec = buildComputeWorkSpec({ intent: computeIntent, trainingRunConfig: runConfig, trainingRunId: preparedReceipt.trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId });
-      preparedReceipt = { ...preparedReceipt, compute: { ...preparedReceipt.compute, workSpec: preparedWorkSpec, workSpecHash: preparedWorkSpec.workSpecHash } };
       // Atomic proof-chain links on the API Registry row (§7/§11): the row
       // references the model-training row, the training run, and the tuned tag
       // the endpoint must serve to verify — so the chain is traceable from the
@@ -1273,15 +1298,14 @@ export default function TrainingHandoffModal({ open, onClose, workspaceConfig: p
     const trainingRunId = `trainrun_${startedAt.replace(/[:.]/g, "-")}`;
     const exportId = result.exportId || `ft_${result.version || version}_${startedAt.replace(/[:.]/g, "-")}`;
     try {
-      let runningReceipt = buildTrainingRunReceipt({
+      const runningReceipt = buildTrainingRunReceipt({
         trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId,
         baseModel, trainingProfile: profile.id, runnerMode: profile.runnerMode, status: "running", startedAt,
-        // Carry the governed compute ask onto the RUNNING receipt so the
-        // sandbox-run seam resolves placement for THIS run id.
-        compute: runConfig.compute,
+        // Carry the governed CUSTOMER compute request onto the RUNNING
+        // receipt so the sandbox-run seam compiles server authority and
+        // resolves placement for THIS run id. Never compute evidence.
+        computeRequest: { ...computeRequestDraft, datasetExportId: exportId },
       });
-      const runningWorkSpec = buildComputeWorkSpec({ intent: computeIntent, trainingRunConfig: runConfig, trainingRunId, modelTrainingRowId: SLUG, datasetExportId: exportId });
-      runningReceipt = { ...runningReceipt, compute: { ...runningReceipt.compute, workSpec: runningWorkSpec, workSpecHash: runningWorkSpec.workSpecHash } };
       const activeResult = { ...result, trainingRunId, exportId };
       setResult(activeResult);
       // One governed PATCH: running receipt + the runner sandbox row.

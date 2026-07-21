@@ -21,7 +21,7 @@
  *     exist / may cost still accrue?" explicitly.
  */
 
-import { fnv1a64 } from "./distillation-gateway.js";
+import { sha256Hex } from "./compute-work-spec.js";
 
 /** Runtime mirrors of the shared contract (tested for equality). */
 export const COMPUTE_EVENT_TYPES = [
@@ -66,7 +66,7 @@ function num(v, fallback = 0) {
  */
 export function computeIdempotencyKey({ trainingRunId = "", attempt = 1, capacityProfileId = "", providerId = "" } = {}) {
   const canonical = `${str(trainingRunId)}|${Math.max(1, Math.floor(num(attempt, 1)))}|${str(capacityProfileId)}|${str(providerId)}`;
-  return { key: canonical, hash: fnv1a64(canonical) };
+  return { key: canonical, hash: sha256Hex(canonical) };
 }
 
 // ---------------------------------------------------------------------------
@@ -181,12 +181,19 @@ export function normalizeComputeBlock(raw) {
     providerRegistryId: str(raw.providerRegistryId).trim(),
     selectionMode: raw.selectionMode === "explicit" ? "explicit" : "auto",
     idempotencyKeyHash: str(raw.idempotencyKeyHash).trim(),
-    intent: raw.intent && typeof raw.intent === "object" ? raw.intent : null,
-    intentHash: str(raw.intentHash || raw.intent?.intentHash).trim(),
-    requirementsHash: str(raw.requirementsHash || raw.intent?.requirementsHash).trim(),
-    workSpec: raw.workSpec && typeof raw.workSpec === "object" ? raw.workSpec : null,
-    workSpecHash: str(raw.workSpecHash || raw.workSpec?.workSpecHash).trim(),
-    policy: raw.policy && typeof raw.policy === "object" ? raw.policy : (raw.intent?.policy || null),
+    // The SERVER-compiled sealed authority envelope (growthub-compute-
+    // authority-v1). Carried verbatim as evidence; it is never trusted from
+    // this store — the execution seam recompiles and checks the seal
+    // (lib/compute-authority.js) before any provider boundary.
+    authority: raw.authority && typeof raw.authority === "object" ? raw.authority : null,
+    authorityHash: str(raw.authorityHash || raw.authority?.authorityHash).trim(),
+    authorityKeyId: str(raw.authorityKeyId || raw.authority?.keyId).trim(),
+    intent: raw.intent && typeof raw.intent === "object" ? raw.intent : (raw.authority?.intent || null),
+    intentHash: str(raw.intentHash || raw.intent?.intentHash || raw.authority?.intentHash).trim(),
+    requirementsHash: str(raw.requirementsHash || raw.intent?.requirementsHash || raw.authority?.requirementsHash).trim(),
+    workSpec: raw.workSpec && typeof raw.workSpec === "object" ? raw.workSpec : (raw.authority?.workSpec || null),
+    workSpecHash: str(raw.workSpecHash || raw.workSpec?.workSpecHash || raw.authority?.workSpecHash).trim(),
+    policy: raw.policy && typeof raw.policy === "object" ? raw.policy : (raw.intent?.policy || raw.authority?.intent?.policy || null),
     capabilities: raw.capabilities && typeof raw.capabilities === "object" ? raw.capabilities : null,
     evaluation: raw.evaluation && typeof raw.evaluation === "object" ? raw.evaluation : null,
     decision,

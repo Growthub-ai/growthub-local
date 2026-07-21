@@ -12,6 +12,7 @@ const suites = [
   "scripts/unit-compute-provider-registry.test.mjs",
   "scripts/unit-compute-resolver.test.mjs",
   "scripts/unit-compute-work-spec.test.mjs",
+  "scripts/unit-compute-authority.test.mjs",
   "scripts/unit-compute-execution.test.mjs",
   "scripts/unit-compute-runpod.test.mjs",
   "scripts/unit-compute-modal.test.mjs",

@@ -34,7 +34,8 @@ const {
   parseReceiptComputeBlock,
 } = await import(lib("compute-execution.js"));
 const { deriveComputeLifecycle, normalizeComputeCheckpoint, computeIdempotencyKey } = await import(lib("compute-evidence.js"));
-const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
+const { COMPUTE_AUTHORITY_SCHEMA } = await import(lib("compute-work-spec.js"));
+const { compileComputeAuthority, verifyComputeAuthoritySeal } = await import(lib("compute-authority.js"));
 const { default: localAdapter } = await import(lib("adapters/compute/default-local-machine.js"));
 
 const NOW0 = Date.parse("2026-07-20T12:00:00.000Z");
@@ -468,20 +469,68 @@ test("compute block round-trips through the governed receipt row (JSON column)",
   assert.ok(!JSON.stringify(parsed).includes("FAKE_REMOTE_KEY_VALUE"));
 });
 
-test("a run whose receipt carries a compute ask executes provider compute through the route hook", async () => {
+test("a receipt carrying a CUSTOMER compute request compiles SERVER authority and executes through the route hook", async () => {
   const adapter = fakeAdapter();
-  const requirements = { workloadKind: "fine-tune", acceleratorClass: "any-gpu", gpuCount: 1, minVramPerGpuGB: 24, minCpuCores: 4, minRamGB: 16, minDiskGB: 60, checkpointRequired: true, distributed: null, locality: { regions: [], dataResidency: "" }, estimatedDurationMinutes: 60 };
-  const runConfig = { profileId: "unsloth-qlora-quantize-pipeline", runnerMode: "pipeline", baseModel: "gemma3:4b", teacherModel: "", quantization: "q4_k_m", steps: [], datasetPath: "data/train.jsonl", outputModelTag: "workspace-tuned-v1", artifactPath: "artifacts/run" };
-  const intent = buildComputeIntent({ adaptivePlan: { mode: "train-local", tier: "test", baseModel: runConfig.baseModel }, capacityPlan: { capacityProfileId: "single-gpu-finetune", requirements }, policy: { mode: "cloud", excludeLocal: true }, trainingRunConfig: runConfig });
-  const workSpec = buildComputeWorkSpec({ intent, trainingRunConfig: runConfig, trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", datasetExportId: "dataset-test", corpusSha256: "a".repeat(64) });
+  const computeRequest = {
+    schema: "growthub-compute-request-v1",
+    policy: { mode: "cloud", excludeLocal: true },
+    selectionMode: "explicit",
+    providerRegistryId: "fake-remote",
+    capacityProfileId: "single-gpu-finetune",
+    trainingProfileId: "unsloth-qlora-quantize-pipeline",
+    baseModel: "gemma3:4b",
+    datasetExportId: "dataset-test",
+    datasetPath: "data/train.jsonl",
+    outputModelTag: "workspace-tuned-v1",
+    artifactPath: "artifacts/run",
+  };
+  const workspaceConfig = workspaceConfigWith({
+    receiptRow: {
+      ...receiptRowWith(null),
+      baseModel: "gemma3:4b",
+      trainingProfile: "unsloth-qlora-quantize-pipeline",
+      datasetExportId: "dataset-test",
+      computeRequest: JSON.stringify(computeRequest),
+    },
+  });
+  const io = {
+    ...makeIo(adapter),
+    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z" }),
+    verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority),
+  };
   const outcome = await maybeExecuteProviderComputeForSandboxRun({
-    workspaceConfig: workspaceConfigWith({ receiptRow: receiptRowWith({ capacityProfileId: "single-gpu-finetune", providerRegistryId: "fake-remote", selectionMode: "explicit", intent, workSpec, policy: intent.policy }) }),
+    workspaceConfig,
     objectId: "model-training-runner",
     name: RUN_ID,
-    io: makeIo(adapter),
+    io,
   });
-  assert.ok(outcome, "compute ask engages the provider-compute lane");
-  assert.equal(outcome.result.ok, true);
+  assert.ok(outcome, "customer request engages the provider-compute lane");
+  assert.equal(outcome.result.ok, true, outcome.result.error);
   assert.equal(outcome.computeBlock.decision.selectionMode, "explicit");
+  assert.equal(outcome.computeBlock.authority?.schema, COMPUTE_AUTHORITY_SCHEMA, "server-compiled authority journaled");
+  assert.ok(outcome.computeBlock.authority.seal, "authority is sealed");
+  assert.equal(verifyComputeAuthoritySeal(outcome.computeBlock.authority).ok, true, "journaled authority seal verifies");
   assert.equal(adapter.calls.release, 1, "capacity released after completion");
+});
+
+test("the route hook refuses a remote-capable request when no authority compiler is available", async () => {
+  const adapter = fakeAdapter();
+  const workspaceConfig = workspaceConfigWith({
+    receiptRow: {
+      ...receiptRowWith(null),
+      baseModel: "gemma3:4b",
+      trainingProfile: "unsloth-qlora-quantize-pipeline",
+      datasetExportId: "dataset-test",
+      computeRequest: JSON.stringify({ policy: { mode: "cloud" }, selectionMode: "explicit", providerRegistryId: "fake-remote", capacityProfileId: "single-gpu-finetune", outputModelTag: "workspace-tuned-v1" }),
+    },
+  });
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: makeIo(adapter), // no compileAuthority
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /authority compiler unavailable/);
+  assert.equal(adapter.calls.allocate, 0, "no provider call after authority refusal");
 });

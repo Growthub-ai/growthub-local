@@ -36,24 +36,29 @@ either composed proof is missing.
 | H. Evaluation boundary | verified remote artifact traverses the real route/receipt import and existing evaluation lineage; loss retains and a proven win promotes through Mothership authority | **Passed** | `e2e-compute-route-realization-loop.mjs` |
 | I. Recovery | governed resume uses a proven same-run/work-spec checkpoint and writes `compute-resuming`; foreign/wrong-work-spec checkpoints fail closed | **Passed** | `e2e-compute-route-realization-loop.mjs`, `unit-compute-adversarial` |
 | J. Lifecycle controls | governed cancel → provider cancel → release → durable reload truth; failed release retains capacity/cost risk | **Passed** | `e2e-compute-route-realization-loop.mjs`, `unit-compute-adversarial` |
+| K. Server-owned authority | the browser persists only a customer request snapshot; the booted route compiles + HMAC-seals its own intent/work-spec authority from governed rows; a self-consistent caller-planted spec is ignored; post-seal drift of policy/dataset/steps/output fails closed BEFORE provider submission; direct PATCH forgery of the evidence journal (authority, allocation, evaluation/promotion, artifact identity, erasure) is rejected 422 `training_evidence_field` while byte-identical echo stays writable | **Passed** | `unit-compute-authority`, `unit-compute-adversarial`, `unit-workspace-patch-policy`, `e2e-compute-route-realization-loop.mjs` |
 
 ## End-to-end causation proof
 
 The booted temporary-workspace harness proves the shipped route rather than
 independent library calls:
 
-`durable customer policy → exact adaptive plan → immutable intent/work spec →
+`durable customer policy + request snapshot → exact adaptive plan →
+SERVER-compiled, HMAC-sealed intent/work spec (compute authority) →
 deterministic resolver → durable decision/quote → durable allocation → adapter
 execute → progressive events/checkpoint → crash/reload adoption → resume/cancel/
 release → byte/SHA verification → existing training receipt import → existing
 evaluation → retain/promote → Mothership → reload truth`.
 
 Its large-model fixture requires multi-GPU/high-VRAM capacity and asserts one
-unchanged requirements/profile lineage across intent, receipt, resolver
-decision, provider submission, artifact, and evaluation evidence. The
-canonical packet also covers the portable cloud/local/reserved policy,
-hard-budget/locality gates, profile floors, UI route wiring, and remote-aware
-customer progress semantics across 12 focused suites.
+unchanged requirements/profile lineage across the sealed authority, receipt,
+resolver decision, provider submission, artifact, and evaluation evidence —
+a lineage the caller cannot author: the seeded rows carry only
+`growthub-compute-request-v1` snapshots and the booted server compiles the
+authority itself. The canonical packet also covers the portable
+cloud/local/reserved policy, hard-budget/locality gates, profile floors, UI
+route wiring, PATCH evidence protection, and remote-aware customer progress
+semantics across 13 focused suites.
 
 ## Live external evidence cells
 

@@ -45,7 +45,7 @@ import {
 } from "./compute-evidence.js";
 import { deriveComputeRequirements, normalizeRequirementsForProfile, resolveCapacityProfileForRequirements } from "./compute-capacity-profiles.js";
 import { LOCAL_PROVIDER_ID } from "./compute-provider-registry.js";
-import { normalizeComputePolicy, verifyComputeAuthority } from "./compute-work-spec.js";
+import { normalizeComputePolicy, normalizeComputeRequest, verifyComputeAuthority } from "./compute-work-spec.js";
 import { buildBenchmarkReceiptFields, deriveBenchmarkWins } from "./distillation-eval-harness.js";
 
 const DEFAULT_MAX_POLLS = 120;
@@ -156,24 +156,31 @@ export async function executeProviderComputeRun({
   attempt = 1,
   priorCompute = null,
   requireAuthority = false,
+  authority = null,
   io = null,
 } = {}) {
   if (!io || typeof io.getAdapter !== "function" || typeof io.now !== "function") {
     throw new Error("executeProviderComputeRun: io.getAdapter and io.now are required");
   }
   const ask = computeAsk && typeof computeAsk === "object" ? computeAsk : {};
-  const intent = ask.intent && typeof ask.intent === "object" ? ask.intent : priorCompute?.intent;
-  const workSpec = ask.workSpec && typeof ask.workSpec === "object" ? ask.workSpec : priorCompute?.workSpec;
-  const authority = verifyComputeAuthority({ intent, workSpec });
-  if (requireAuthority && !authority.ok) throw new Error("provider compute refused: immutable compute intent/work spec is missing or failed hash/lineage validation");
+  // Execution authority comes ONLY from the server-compiled sealed authority
+  // (lib/compute-authority.js), passed in by the route hook after compile +
+  // seal/drift verification. Caller-shaped intent/work-spec fields — on the
+  // ask, on the receipt row, anywhere reachable through PATCH — are never
+  // read here, however self-consistent their hashes are.
+  const sealedAuthority = authority && typeof authority === "object" ? authority : null;
+  const intent = sealedAuthority?.intent && typeof sealedAuthority.intent === "object" ? sealedAuthority.intent : null;
+  const workSpec = sealedAuthority?.workSpec && typeof sealedAuthority.workSpec === "object" ? sealedAuthority.workSpec : null;
+  const authorityOk = Boolean(sealedAuthority && verifyComputeAuthority({ intent, workSpec }).ok);
+  if (requireAuthority && !authorityOk) throw new Error("provider compute refused: server-compiled compute authority is missing or failed lineage validation — caller-supplied intent/work specs are never execution authority");
   const events = [];
   const checkpoints = [];
 
   // 1. Requirements + Capacity Profile.
-  const derived = authority.ok ? intent.requirements : (requirements && typeof requirements === "object" ? requirements : deriveComputeRequirements({ preflight, workloadKind: "fine-tune" }));
-  const capacityProfileId = authority.ok ? intent.capacityProfileId : (str(ask.capacityProfileId).trim() || resolveCapacityProfileForRequirements(derived).profile.id);
+  const derived = authorityOk ? intent.requirements : (requirements && typeof requirements === "object" ? requirements : deriveComputeRequirements({ preflight, workloadKind: "fine-tune" }));
+  const capacityProfileId = authorityOk ? intent.capacityProfileId : (str(ask.capacityProfileId).trim() || resolveCapacityProfileForRequirements(derived).profile.id);
   const req = normalizeRequirementsForProfile(derived, capacityProfileId);
-  const policy = authority.ok
+  const policy = authorityOk
     ? normalizeComputePolicy(intent.policy)
     : (ask.policy && typeof ask.policy === "object" ? normalizeComputePolicy(ask.policy) : null);
   const effectiveBudget = policy?.budget || budget;
@@ -212,7 +219,7 @@ export async function executeProviderComputeRun({
     pinnedProviderId: str(ask.providerRegistryId).trim(),
     now: io.now(),
   });
-  const decisionBlock = normalizeComputeBlock({ capacityProfileId, selectionMode: decision.selectionMode, decision, intent, workSpec, policy, evidenceObservedAt: eventNow(io) });
+  const decisionBlock = normalizeComputeBlock({ capacityProfileId, selectionMode: decision.selectionMode, decision, authority: sealedAuthority, intent, workSpec, policy, evidenceObservedAt: eventNow(io) });
   if (typeof io.persistCompute === "function") await io.persistCompute(decisionBlock);
 
   const selectedId = decision.selectedProviderId;
@@ -281,6 +288,7 @@ export async function executeProviderComputeRun({
     selectionMode: decision.selectionMode,
     idempotencyKeyHash,
     decision,
+    authority: sealedAuthority,
     intent,
     intentHash: intent?.intentHash,
     requirementsHash: intent?.requirementsHash,
@@ -341,11 +349,12 @@ export async function executeProviderComputeRun({
   await persist({ allocation });
 
   // Allocation and workload submission are separate adapter operations. The
-  // exact immutable portable work spec is the only workload authority.
-  if (!authority.ok && !requireAuthority) {
-    // Backward-compatible direct library callers have no prepared training
-    // authority. The shipped sandbox route always sets requireAuthority and
-    // therefore always crosses the explicit execute boundary with a work spec.
+  // exact server-compiled portable work spec is the only workload authority.
+  if (!authorityOk && !requireAuthority) {
+    // Backward-compatible direct library callers have no compiled server
+    // authority. The shipped sandbox route hook always sets requireAuthority
+    // for remote-capable asks and therefore always crosses the explicit
+    // execute boundary with a sealed work spec.
   } else if (typeof adapter.execute !== "function") {
     events.push(workspaceEvent(io, "compute-failed", runRef, "provider adapter has no execute operation"));
     await persist({ allocation });
@@ -522,11 +531,32 @@ function baseCtx({ io, provider, providerConfig, req, capacityProfileId, trainin
   };
 }
 
+/** Parse a JSON-string-or-object receipt column. */
+function parseJsonColumn(value) {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Route hook: decide whether this sandbox run is a provider-compute run and
  * execute it if so. Returns null to FALL THROUGH to the existing local path
- * unchanged (the default for every pre-compute workspace). Applicability is
- * evidence-based: the governed receipt must carry a compute ask.
+ * unchanged (the default for every pre-compute workspace).
+ *
+ * Applicability is request-based: the governed receipt row carries a
+ * CUSTOMER compute request snapshot (`computeRequest`, growthub-compute-
+ * request-v1) — or, for rows journaled before the request/authority split,
+ * the ask fields of the server-journaled compute block. Row-stored intent /
+ * work-spec objects are NEVER an ask and never authority: for any
+ * remote-capable request the server compiles and seals its own authority
+ * (io.compileAuthority → lib/compute-authority.js) and fails closed when
+ * compilation fails or when a previously sealed authority no longer matches
+ * the governed inputs — all before any provider boundary.
  */
 export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig = null, objectId = "", name = "", action = "run", checkpointId = "", io = null } = {}) {
   if (str(objectId) !== "model-training-runner") return null;
@@ -546,19 +576,84 @@ export async function maybeExecuteProviderComputeForSandboxRun({ workspaceConfig
     const ok = action === "cancel" ? controlled.cancelled : controlled.resumed;
     return { localFallthrough: false, computeBlock: controlled.computeBlock, result: { ok, exitCode: ok ? 0 : 1, durationMs: 0, stdout: JSON.stringify({ action, reason: controlled.reason }), stderr: "", ...(ok ? {} : { error: controlled.reason }), adapterMeta: { adapter: "provider-compute", providerId: prior.providerRegistryId, action } } };
   }
-  const ask = prior && (prior.capacityProfileId || prior.providerRegistryId)
-    ? { capacityProfileId: prior.capacityProfileId, providerRegistryId: prior.providerRegistryId, selectionMode: prior.selectionMode, intent: prior.intent, workSpec: prior.workSpec, policy: prior.policy }
-    : null;
-  if (!ask) return null; // no compute ask → existing local behavior, byte-for-byte
+
+  const request = normalizeComputeRequest(parseJsonColumn(row.computeRequest))
+    || (prior && (prior.capacityProfileId || prior.providerRegistryId)
+      ? normalizeComputeRequest({
+        policy: prior.policy,
+        selectionMode: prior.selectionMode,
+        providerRegistryId: prior.providerRegistryId,
+        capacityProfileId: prior.capacityProfileId,
+      })
+      : null);
+  if (!request) return null; // no compute ask → existing local behavior, byte-for-byte
+
   const preflight = row.preflight && typeof row.preflight === "object" ? row.preflight : null;
+  const ask = {
+    capacityProfileId: request.capacityProfileId,
+    providerRegistryId: request.providerRegistryId,
+    selectionMode: request.selectionMode,
+    policy: request.policy,
+  };
+  const refusal = (message) => ({
+    localFallthrough: false,
+    computeBlock: prior,
+    result: { ok: false, exitCode: null, durationMs: 0, stdout: "", stderr: "", error: message, adapterMeta: { adapter: "provider-compute", compute: { authorityRefused: true } } },
+  });
+
+  if (request.policy.mode === "local") {
+    // Pure-local ask: localOnly excludes every remote candidate in the
+    // resolver, so no provider boundary exists and no sealed authority is
+    // needed; the decision is journaled and execution falls through to the
+    // existing local pipeline byte-for-byte.
+    const outcome = await executeProviderComputeRun({
+      workspaceConfig,
+      trainingRunId,
+      computeAsk: ask,
+      preflight,
+      budget: request.policy.budget,
+      priorCompute: prior,
+      requireAuthority: false,
+      io,
+    });
+    if (outcome.localFallthrough) return null;
+    return outcome;
+  }
+
+  // Remote-capable ask: server-owned authority is mandatory, compiled fresh
+  // from authoritative records before any provider work.
+  if (typeof io.compileAuthority !== "function") {
+    return refusal("compute authority compiler unavailable — remote-capable compute is refused without server-owned authority");
+  }
+  const compiled = await io.compileAuthority({ trainingRunId, request });
+  if (!compiled?.ok || !compiled.authority) {
+    return refusal(`compute authority compilation failed (${str(compiled?.reasonCode) || "unknown"}): ${str(compiled?.reason) || "no detail"}`);
+  }
+  const authority = compiled.authority;
+  if (prior?.authority) {
+    const sealCheck = typeof io.verifyAuthoritySeal === "function"
+      ? io.verifyAuthoritySeal(prior.authority)
+      : { ok: false };
+    if (sealCheck?.ok && str(prior.authority.authorityHash).trim() !== str(authority.authorityHash).trim()) {
+      // The previously sealed authority no longer matches the governed
+      // inputs: training row, dataset identity, policy, ordered steps, or
+      // output identity changed after sealing. Fail closed before the
+      // provider boundary — the operator re-prepares the run explicitly.
+      return refusal("governed inputs changed after compute authority was sealed — refusing before provider submission; re-prepare the run to compile a new authority");
+    }
+    // A stored authority whose seal does not verify is untrusted evidence
+    // (restart, key rotation, or forgery); the freshly compiled authority
+    // governs and the stale object is superseded in the next journal write.
+  }
   const outcome = await executeProviderComputeRun({
     workspaceConfig,
     trainingRunId,
     computeAsk: ask,
     preflight,
-    budget: prior?.policy?.budget || prior?.decision?.budget || null,
+    budget: request.policy.budget,
     priorCompute: prior,
     requireAuthority: true,
+    authority,
     io,
   });
   if (outcome.localFallthrough) return null;

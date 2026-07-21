@@ -8,7 +8,7 @@ const lib = (name) => pathToFileURL(path.join(root, "cli/assets/worker-kits/grow
 const { buildAdaptiveStudentPlan } = await import(lib("distillation-student-plan.js"));
 const { deriveCapacityPlan, normalizeRequirementsForProfile } = await import(lib("compute-capacity-profiles.js"));
 const { buildTrainingRunConfig } = await import(lib("training-runtime-profiles.js"));
-const { buildComputeIntent, buildComputeWorkSpec, verifyComputeAuthority } = await import(lib("compute-work-spec.js"));
+const { buildComputeIntent, buildComputeRequest, buildComputeWorkSpec, sha256Hex, verifyComputeAuthority } = await import(lib("compute-work-spec.js"));
 
 test("large prepared plan has one immutable requirements/profile/work-spec lineage", () => {
   const preflight = { ramGB: 256, diskFreeGB: 2000, gpu: { present: true, name: "H100", vramFreeGB: 80 } };
@@ -31,6 +31,47 @@ test("profile floors tighten contradictory requirements and policy is immutable"
   assert.equal(tightened.gpuCount, 1);
   assert.equal(tightened.minVramPerGpuGB, 16);
   assert.equal(tightened.checkpointRequired, true);
+});
+
+test("authority/content identities are canonical SHA-256, not FNV-1a", async () => {
+  const { createHash } = await import("node:crypto");
+  for (const sample of ["", "abc", "governed compute", "☃ unicode ✓"]) {
+    assert.equal(sha256Hex(sample), createHash("sha256").update(sample, "utf8").digest("hex"));
+  }
+  const config = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "qwen3:14b", datasetPath: "d.jsonl", outputModelTag: "student", artifactPath: "artifacts/student" });
+  const capacity = deriveCapacityPlan({ plan: { mode: "train-local", baseModel: "qwen3:14b" }, preflight: {}, workloadKind: "fine-tune" });
+  const intent = buildComputeIntent({ adaptivePlan: { mode: "train-local", baseModel: "qwen3:14b" }, capacityPlan: capacity, policy: { mode: "cloud" }, trainingRunConfig: config });
+  assert.match(intent.intentHash, /^[0-9a-f]{64}$/);
+  assert.match(intent.requirementsHash, /^[0-9a-f]{64}$/);
+  const spec = buildComputeWorkSpec({ intent, trainingRunConfig: config, trainingRunId: "r", modelTrainingRowId: "m", datasetExportId: "d" });
+  assert.match(spec.workSpecHash, /^[0-9a-f]{64}$/);
+});
+
+test("the customer compute request is a normalized, grant-nothing snapshot", () => {
+  const request = buildComputeRequest({
+    policy: { mode: "cloud", budget: { mode: "hard-cap", maxTotalUsd: 25 } },
+    selectionMode: "explicit",
+    providerRegistryId: " provider-1 ",
+    capacityProfileId: "single-gpu-finetune",
+    trainingProfileId: "unsloth-qlora-quantize-pipeline",
+    baseModel: "qwen3:14b",
+    datasetExportId: "export-1",
+    outputModelTag: "tuned-v1",
+    // Authority-shaped fields a caller may try to smuggle are dropped.
+    intent: { intentHash: "forged" },
+    workSpec: { workSpecHash: "forged" },
+    workSpecHash: "forged",
+    allocation: { allocationId: "forged" },
+  });
+  assert.equal(request.schema, "growthub-compute-request-v1");
+  assert.equal(request.providerRegistryId, "provider-1");
+  assert.equal(request.policy.mode, "cloud");
+  assert.equal(request.policy.excludeLocal, true);
+  assert.equal(request.intent, undefined, "no intent field survives normalization");
+  assert.equal(request.workSpec, undefined, "no work-spec field survives normalization");
+  assert.equal(request.workSpecHash, undefined);
+  assert.equal(request.allocation, undefined);
+  assert.equal(buildComputeRequest(null), null);
 });
 
 test("tampered intent or work spec fails closed", () => {

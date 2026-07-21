@@ -49,3 +49,23 @@ All workspace paths below are rooted at
 4. Receipt lifecycle: `prepared → running → trained → imported` guarded by `classifyRunStatus` + `deriveArtifactState`; `deployed → verified → sandbox-ready → complete` guarded by API Registry test + `verifyTunedResponse` + sandbox `outputHash`.
 
 Compute extends step 1–3 with a `provider-compute` path resolved BEFORE execution; steps 4+ (artifact floors, verification, evaluation, promotion) are untouched authority.
+
+## Addendum — server-owned authority corrective pass (post-review)
+
+The review of head `34f2590a` established that browser-authored, self-hashed
+intent/work specs written through ordinary PATCH were being accepted as
+execution authority. Corrected in this pass:
+
+| Concern | Before | Now |
+| --- | --- | --- |
+| Who authors the intent/work spec | `TrainingHandoffModal.jsx` (browser), persisted via PATCH, self-hashed with FNV-1a | `lib/compute-authority.js` compiles it SERVER-SIDE from the governed rows + the customer request; SHA-256 lineage; HMAC-SHA256 seal (`GROWTHUB_COMPUTE_AUTHORITY_KEY`, ephemeral per-boot fallback) |
+| What the browser persists | full compute ask incl. intent/workSpec/hashes | `computeRequest` (`growthub-compute-request-v1`) only — policy, budget, locality, preemptible, provider preference, profile, export identity, output tag, duration estimate |
+| What verification proves | internal self-hash equality of a caller-supplied object | seal verification AND recompilation from current authoritative inputs (`verifyComputeAuthorityAgainstWorkspace`); drift of policy/dataset/steps/output fails closed before provider submission |
+| PATCH exposure of evidence | `model-training-run` evidence fields freely PATCHable | `compute` journal echo-only (`training_evidence_field`); success statuses + artifact identity echo-only on provider-compute rows; `distillation.benchmarkWins` echo-only everywhere; the local runner's receipt lane (no compute evidence) unchanged |
+
+Still open from the same review (tracked, honestly NOT claimed here):
+outbound provider/artifact network policy (SSRF boundary), canonical
+workspace-owned evaluation replacing provider-returned score rows, the
+remote corpus/artifact byte data plane, the provider-accepted-before-persist
+crash window + monotonic journal merge, asynchronous long-run observation,
+and strict hard-budget normalization.

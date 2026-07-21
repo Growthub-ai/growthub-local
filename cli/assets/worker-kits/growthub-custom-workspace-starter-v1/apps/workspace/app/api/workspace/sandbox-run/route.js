@@ -93,6 +93,14 @@ import {
   applyComputeBlockToReceiptRows,
   maybeExecuteProviderComputeForSandboxRun
 } from "@/lib/compute-execution";
+// Server-owned compute authority: compiled + HMAC-sealed inside the server
+// from authoritative workspace records. Client-shaped intent/work-spec
+// fields are never execution authority — the execution seam recompiles and
+// verifies through these two functions before any provider boundary.
+import {
+  compileComputeAuthority,
+  verifyComputeAuthoritySeal
+} from "@/lib/compute-authority";
 import {
   classifySandboxRunResult,
   runOrchestrationGraphIfPresent
@@ -980,6 +988,17 @@ async function executeSandboxRun(body, {
           },
           now: () => Date.now(),
           sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          // Server-owned authority seam: compile fresh execution authority
+          // from the governed rows (never from caller-supplied objects) and
+          // seal-verify anything read back from the caller-reachable store.
+          compileAuthority: ({ trainingRunId, request, datasetManifest }) => compileComputeAuthority({
+            workspaceConfig,
+            trainingRunId,
+            request,
+            datasetManifest,
+            now: new Date().toISOString(),
+          }),
+          verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority),
           persistCompute: (computeBlock) => persistComputeReceipt(rowForRun.Name || name, computeBlock),
           verifyArtifact: verifyComputeArtifactBytes,
           // Bound remote observation to the row's own timeout budget.

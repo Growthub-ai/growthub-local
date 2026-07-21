@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-/** Booted disposable workspace proof of the real sandbox-run compute path. */
+/**
+ * Booted disposable workspace proof of the real sandbox-run compute path.
+ *
+ * Server-owned authority edition: the seeded receipt rows carry ONLY the
+ * customer compute request snapshot (growthub-compute-request-v1). The
+ * booted route must compile + HMAC-seal its own execution authority from
+ * the governed rows, journal it durably, refuse duplicate paid allocation
+ * across an injected crash, cancel/resume from proven checkpoints, verify
+ * artifact bytes, and reject direct PATCH forgery of the evidence journal.
+ */
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -13,12 +22,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceApp = path.join(root, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
 const lib = (name) => pathToFileURL(path.join(sourceApp, "lib", name)).href;
-const { deriveCapacityPlan } = await import(lib("compute-capacity-profiles.js"));
-const { buildTrainingRunConfig } = await import(lib("training-runtime-profiles.js"));
-const { buildComputeIntent, buildComputeWorkSpec } = await import(lib("compute-work-spec.js"));
-const { normalizeComputeBlock } = await import(lib("compute-evidence.js"));
 const { buildMothershipProxyRow, deriveProxyServingState } = await import(lib("distillation-fleet.js"));
 
+const AUTHORITY_KEY = "route-proof-authority-key";
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "growthub-compute-route-"));
 const app = path.join(tmp, "workspace");
 const artifactBytes = Buffer.from("verified governed model artifact bytes\n");
@@ -47,7 +53,14 @@ const provider = http.createServer(async (req, res) => {
   if (url.pathname === "/health") return json(200, { ok: true });
   if (url.pathname === "/artifact") { res.writeHead(200, { "content-type": "application/octet-stream" }); return res.end(artifactBytes); }
   if (url.pathname === "/chat") return json(200, { model: "student-v1", choices: [{ message: { role: "assistant", content: "verified student" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 2 } });
-  if (url.pathname === "/submit") { submitCount += 1; assert.ok(body.workSpec?.workSpecHash); return json(200, { call_id: `call-${body.workSpec.trainingRunId}` }); }
+  if (url.pathname === "/submit") {
+    submitCount += 1;
+    // The provider must receive the SERVER-compiled work spec: SHA-256
+    // lineage hash plus the governed dataset/output identities.
+    assert.match(String(body.workSpec?.workSpecHash || ""), /^[0-9a-f]{64}$/);
+    assert.equal(body.workSpec?.output?.modelTag, "student-v1");
+    return json(200, { call_id: `call-${body.workSpec.trainingRunId}` });
+  }
   if (url.pathname === "/resume") { resumeCount += 1; assert.ok(body.workSpec?.workSpecHash && body.checkpoint?.sha256); return json(200, { call_id: `resume-${body.workSpec.trainingRunId}` }); }
   if (url.pathname === "/cancel") { cancelCount += 1; return json(200, { cancelled: true }); }
   if (url.pathname === "/status") {
@@ -87,15 +100,35 @@ try {
   else { api = { id: "api-registry", objectType: "api-registry", label: "API Registry", columns: [], rows: [providerRow, studentRow, mothership] }; objects.push(api); }
 
   const runIds = ["route-crash", "route-resume", "route-success"];
-  const runRows = runIds.map((trainingRunId) => {
-    const plan = { mode: "train-remote", tier: "large", baseModel: "qwen3:141b" };
-    const capacity = deriveCapacityPlan({ plan, preflight: { ramGB: 16, diskFreeGB: 100, gpu: { present: false } }, workloadKind: "fine-tune", paramsB: 141, estimatedDurationMinutes: 60 });
-    const runConfig = buildTrainingRunConfig({ profileId: "unsloth-qlora-quantize-pipeline", baseModel: "qwen3:141b", datasetPath: `data/${trainingRunId}.jsonl`, outputModelTag: "student-v1", artifactPath: `artifacts/${trainingRunId}` });
-    const intent = buildComputeIntent({ adaptivePlan: plan, capacityPlan: capacity, policy: { mode: "cloud", excludeLocal: true, budget: { mode: "hard-cap", maxTotalUsd: 50 }, locality: { regions: [], dataResidency: "" } }, trainingRunConfig: runConfig });
-    const workSpec = buildComputeWorkSpec({ intent, trainingRunConfig: runConfig, trainingRunId, modelTrainingRowId: "workspace-local", datasetExportId: `export-${trainingRunId}`, corpusSha256: "d".repeat(64) });
-    const compute = normalizeComputeBlock({ capacityProfileId: intent.capacityProfileId, providerRegistryId: providerRow.integrationId, selectionMode: "explicit", intent, workSpec, policy: intent.policy });
-    return { schema: "growthub-local-model-training-run-v1", trainingRunId, modelTrainingRowId: "workspace-local", datasetExportId: `export-${trainingRunId}`, baseModel: runConfig.baseModel, trainingProfile: runConfig.profileId, runnerMode: runConfig.runnerMode, status: "running", startedAt: new Date().toISOString(), compute: JSON.stringify(compute) };
-  });
+  // Seed ONLY customer request snapshots — no client-authored intent, work
+  // spec, hashes, or compute evidence. The booted server compiles and seals
+  // its own authority from these plus the governed row identities.
+  const runRows = runIds.map((trainingRunId) => ({
+    schema: "growthub-local-model-training-run-v1",
+    trainingRunId,
+    modelTrainingRowId: "workspace-local",
+    datasetExportId: `export-${trainingRunId}`,
+    baseModel: "qwen3:141b",
+    trainingProfile: "unsloth-qlora-quantize-pipeline",
+    runnerMode: "provider-compute",
+    status: "running",
+    startedAt: new Date().toISOString(),
+    preflight: { ramGB: 16, diskFreeGB: 100, gpu: { present: false, name: "", vramFreeGB: 0 } },
+    computeRequest: JSON.stringify({
+      schema: "growthub-compute-request-v1",
+      policy: { mode: "cloud", excludeLocal: true, budget: { mode: "hard-cap", maxTotalUsd: 50 }, locality: { regions: [], dataResidency: "" } },
+      selectionMode: "explicit",
+      providerRegistryId: "modal-route-test",
+      capacityProfileId: "multi-gpu-finetune",
+      trainingProfileId: "unsloth-qlora-quantize-pipeline",
+      baseModel: "qwen3:141b",
+      datasetExportId: `export-${trainingRunId}`,
+      datasetPath: `data/${trainingRunId}.jsonl`,
+      outputModelTag: "student-v1",
+      artifactPath: `artifacts/${trainingRunId}`,
+      estimatedDurationMinutes: 60,
+    }),
+  }));
   objects.push({ id: "model-training-run", objectType: "model-training-run", label: "Training runs", columns: [], rows: runRows });
   objects.push({ id: "model-training-runner", objectType: "sandbox-environment", label: "Training runner", columns: [], rows: runIds.map((Name) => ({ Name, runtime: "node", adapter: "local-process", runLocality: "local", command: "process.exit(0)", timeoutMs: Name === "route-crash" ? 60000 : Name === "route-resume" ? 1000 : 15000, status: "live" })) });
   cfg.dataModel = { ...(cfg.dataModel || {}), objects };
@@ -105,7 +138,7 @@ try {
   const appPort = await freePort();
   const base = `http://127.0.0.1:${appPort}`;
   const startNext = async () => {
-    next = spawn("npx", ["next", "dev", "--webpack", "-p", String(appPort), "-H", "127.0.0.1"], { cwd: app, detached: true, stdio: "ignore", env: { ...process.env, WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true", MODAL_KEY: "test-key", MODAL_SECRET: "test-secret", GROWTHUB_INFERENCE_TEST_ALLOWLIST: "127.0.0.1" } });
+    next = spawn("npx", ["next", "dev", "--webpack", "-p", String(appPort), "-H", "127.0.0.1"], { cwd: app, detached: true, stdio: "ignore", env: { ...process.env, WORKSPACE_CONFIG_ALLOW_FS_WRITE: "true", MODAL_KEY: "test-key", MODAL_SECRET: "test-secret", GROWTHUB_INFERENCE_TEST_ALLOWLIST: "127.0.0.1", GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY } });
     await waitHttp(`${base}/api/workspace`);
   };
   const run = (name, extra = {}) => fetch(`${base}/api/workspace/sandbox-run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ objectId: "model-training-runner", name, ...extra }) });
@@ -113,8 +146,15 @@ try {
 
   await startNext();
   void run("route-crash").catch(() => {});
-  for (let i = 0; i < 80; i += 1) { const compute = JSON.parse((await row("route-crash")).compute); if (compute.allocation?.allocationId) break; await sleep(100); }
-  assert.ok(JSON.parse((await row("route-crash")).compute).allocation?.allocationId, "allocation persisted before crash");
+  // The seeded row carries NO compute journal — it appears only once the
+  // server compiles authority and journals the decision/allocation.
+  for (let i = 0; i < 120; i += 1) { const c = (await row("route-crash")).compute; if (c && JSON.parse(c).allocation?.allocationId) break; await sleep(100); }
+  const crashCompute = JSON.parse((await row("route-crash")).compute || "null");
+  assert.ok(crashCompute?.allocation?.allocationId, "allocation persisted before crash");
+  // Server-compiled sealed authority journaled BEFORE the paid boundary.
+  assert.equal(crashCompute.authority?.schema, "growthub-compute-authority-v1");
+  assert.ok(crashCompute.authority?.seal, "authority is sealed");
+  assert.match(String(crashCompute.authority?.keyId || ""), /^env-/, "sealed under the operator-provided key");
   await stopNext("SIGKILL");
   await startNext();
   const replay = await (await run("route-crash")).json();
@@ -140,7 +180,31 @@ try {
   assert.equal(successRow.artifactSha256, artifactSha);
   assert.equal(successCompute.artifact.verifiedSha256, artifactSha);
   assert.equal(successCompute.evaluation.benchmarkWins.promoted, true);
-  assert.equal(successCompute.requirementsHash, successCompute.decision.requirements ? successCompute.intent.requirementsHash : "");
+  // The journaled lineage is the SERVER authority's lineage, end to end.
+  assert.equal(successCompute.authority?.schema, "growthub-compute-authority-v1");
+  assert.equal(successCompute.workSpecHash, successCompute.authority.workSpecHash);
+  assert.equal(successCompute.requirementsHash, successCompute.authority.requirementsHash);
+  assert.equal(successCompute.workSpec.output.modelTag, "student-v1");
+
+  // Direct PATCH cannot forge or modify the server-owned evidence journal.
+  const forgeState = await (await fetch(`${base}/api/workspace`, { cache: "no-store" })).json();
+  const forgeEvidence = (mutate) => forgeState.workspaceConfig.dataModel.objects.map((o) => o.objectType === "model-training-run"
+    ? { ...o, rows: o.rows.map((r) => (r.trainingRunId === "route-success" ? mutate(r) : r)) }
+    : o);
+  const forgeAttempts = [
+    ["forged evaluation/promotion inside compute", (r) => ({ ...r, compute: JSON.stringify({ ...JSON.parse(r.compute), evaluation: { benchmarkWins: { total: 6, wins: 6, winRatePct: 100, promoted: true }, reason: "forged" } }) })],
+    ["forged allocation identity inside compute", (r) => ({ ...r, compute: JSON.stringify({ ...JSON.parse(r.compute), allocation: { ...JSON.parse(r.compute).allocation, allocationId: "alloc-forged" } }) })],
+    ["erased compute journal", (r) => ({ ...r, compute: "" })],
+    ["rewritten verified artifact identity", (r) => ({ ...r, artifactSha256: "f".repeat(64) })],
+  ];
+  for (const [label, mutate] of forgeAttempts) {
+    const forged = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: { ...forgeState.workspaceConfig.dataModel, objects: forgeEvidence(mutate) } }) });
+    assert.equal(forged.status, 422, `${label}: PATCH forgery must be rejected`);
+    const verdict = await forged.json();
+    assert.ok((verdict.violations || []).some((v) => v.code === "training_evidence_field"), `${label}: named as training_evidence_field`);
+  }
+  const echoed = await fetch(`${base}/api/workspace`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataModel: forgeState.workspaceConfig.dataModel }) });
+  assert.equal(echoed.ok, true, "byte-identical echo of the evidence journal stays writable");
 
   const tested = await (await fetch(`${base}/api/workspace/test-source`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ integrationId: "student-model", prompt: "prove route" }) })).json();
   assert.equal(tested.ok, true);
@@ -151,7 +215,7 @@ try {
   const finalCfg = (await (await fetch(`${base}/api/workspace`)).json()).workspaceConfig;
   const serving = deriveProxyServingState({ workspaceConfig: finalCfg, baseModel: "base-v1" });
   assert.equal(serving.active?.target, "local-student");
-  console.log("compute route realization proof passed: durable crash recovery, no duplicate allocation, cancel/resume, verified artifact, evaluation-only promotion, Mothership reload truth");
+  console.log("compute route realization proof passed: server-compiled sealed authority, durable crash recovery, no duplicate allocation, cancel/resume, verified artifact, evaluation-only promotion, PATCH forgery rejected, Mothership reload truth");
 } finally {
   await stopNext();
   await new Promise((resolve) => provider.close(resolve));

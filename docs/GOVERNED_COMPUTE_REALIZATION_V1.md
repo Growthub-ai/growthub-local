@@ -17,14 +17,20 @@ invariants, and the banked proof set:
 | --- | --- |
 | Provider identity + secret references | ordinary `api-registry` rows carrying `metadata.computeProvider` (schema `growthub-compute-provider-v1`; env-var NAMES only — credential-shaped values invalidate the row, fail closed) |
 | Custom-model / training identity | `model-training` rows (untouched) |
-| Compute execution evidence | `model-training-run` receipts — additive `compute` block (`growthub-compute-evidence-v1`): decision, allocation, the 12 normalized events, checkpoints, artifact ref |
-| Execution authority | `POST /api/workspace/sandbox-run` (additive provider-compute branch; there is NO `/api/compute/run`) |
+| Customer compute request | `model-training-run` receipts — `computeRequest` column (`growthub-compute-request-v1`): policy mode, budget, locality, preemptible, provider preference, profile, export identity, output tag. PATCHable; grants nothing |
+| Compute execution authority (spec) | compiled + HMAC-sealed SERVER-SIDE by `lib/compute-authority.js` (`growthub-compute-authority-v1`: intent, exact ordered steps, dataset/output identity, SHA-256 lineage). Recompiled and seal-verified before every provider boundary; caller-supplied specs are never trusted |
+| Compute execution evidence | `model-training-run` receipts — additive `compute` block (`growthub-compute-evidence-v1`): sealed authority, decision, allocation, the 12 normalized events, checkpoints, artifact ref. Server-owned: echo-only through direct PATCH (`training_evidence_field`) |
+| Execution authority (route) | `POST /api/workspace/sandbox-run` (additive provider-compute branch; there is NO `/api/compute/run`) |
 | Read surface | `GET /api/workspace/compute` — derives adapters/providers/capacity, read-only by construction |
 | Artifact trust | existing `deriveArtifactState` floors; provider "completed" with no artifact / wrong sha256 is non-promotable |
 | Promotion | existing eval harness only (`promoted` is derived, never writable); Mothership routing unchanged |
 
 ## The chain
 
+customer request snapshot → server-compiled sealed compute authority
+(`compileComputeAuthority` / `verifyComputeAuthorityAgainstWorkspace`; drift
+of policy, dataset, ordered steps, or output identity after sealing fails
+closed before provider submission) →
 adaptive student plan → `deriveComputeRequirements` (one sizing ladder) →
 Capacity Profile (7 vendor-free shapes: harvest-only, serve-local,
 burst-gpu, warm-inference, single-gpu-finetune, multi-gpu-finetune,

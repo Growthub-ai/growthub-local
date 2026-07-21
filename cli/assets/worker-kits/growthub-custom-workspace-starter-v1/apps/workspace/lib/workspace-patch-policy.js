@@ -23,6 +23,17 @@
  *   5. Credential-shaped fields on sandbox rows are rejected here too, so
  *      `POST /api/workspace/patch/preflight` reports them without running
  *      full schema validation.
+ *   6. Training EVIDENCE on `model-training-run` rows is server-owned.
+ *      The `compute` block (sealed authority, decision/quote evidence,
+ *      allocation and resource ids, idempotency identities, events,
+ *      checkpoints, artifact verification, canonical evaluation) is
+ *      journaled only by server routes; direct PATCH may echo it but never
+ *      create, alter, or erase it. On a row that carries provider-compute
+ *      evidence, execution-derived success claims (status transitions into
+ *      completed/imported/verified, artifact identity fields) are also
+ *      echo-only. `distillation.benchmarkWins` (the promotion verdict) is
+ *      echo-only on every run row. The CUSTOMER compute request snapshot
+ *      (`computeRequest`) stays freely PATCHable — it grants nothing.
  *
  * Echo-safety: the Data Model grid and the Builder round-trip whole objects.
  * A field that is byte-identical (stable JSON) to the currently persisted
@@ -84,6 +95,37 @@ const HISTORY_BLOB_ROW_FIELDS = Object.freeze([
   "runHistory",
   "sourceRecords"
 ]);
+
+/**
+ * Server-owned evidence on `model-training-run` rows. `compute` carries the
+ * sealed compute authority, placement decision/quotes, allocation/resource
+ * identities, idempotency identities, normalized events, checkpoints,
+ * artifact byte-verification, and canonical evaluation evidence — all of it
+ * written exclusively by server routes (sandbox-run's progressive journal).
+ * Echo-only through direct PATCH.
+ */
+const TRAINING_EVIDENCE_ROW_FIELDS = Object.freeze(["compute"]);
+
+/**
+ * Execution-derived success claims that become server-owned once a run row
+ * carries provider-compute evidence: for a provider-compute run the ONLY
+ * writer of these is the route's verified-import stamp. Local-runner rows
+ * (no compute evidence) keep stamping them through the governed PATCH lane;
+ * their honesty is enforced by derivation (unprovable claims demote).
+ */
+const TRAINING_ARTIFACT_CLAIM_FIELDS = Object.freeze([
+  "artifactType",
+  "artifactModelTag",
+  "artifactPath",
+  "artifactSha256",
+  "artifactQuantization",
+  "artifactSourceBytes",
+  "artifactArtifactBytes",
+  "artifact"
+]);
+
+/** Statuses that claim execution success — see TRAINING_ARTIFACT_CLAIM_FIELDS. */
+const TRAINING_SUCCESS_STATUSES = Object.freeze(["completed", "imported", "verified"]);
 
 /** Top-level keys that signal "this is a whole workspace config, not a patch". */
 const FULL_CONFIG_SIGNATURE_FIELDS = Object.freeze([
@@ -256,6 +298,118 @@ function checkSandboxRow(row, currentRow, path, violations) {
   }
 }
 
+/** Parse a JSON-string-or-object column far enough to inspect it. */
+function parseJsonColumn(value) {
+  if (isPlainObject(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when a value would populate a field (non-empty by column convention). */
+function populatedColumn(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value.trim() !== "";
+  if (Array.isArray(value)) return value.length > 0;
+  if (isPlainObject(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+/**
+ * Does the persisted row carry server-journaled REMOTE provider-compute
+ * evidence? A decision that selected the local machine (automatic policy
+ * falling through to the local pipeline) journals a decision block too —
+ * that run still finishes through the local runner's PATCH lane, so only
+ * remote execution evidence (an allocation, provider events, or a non-local
+ * selected provider) locks the row's success claims.
+ */
+function hasServerComputeEvidence(currentRow) {
+  const compute = parseJsonColumn(currentRow?.compute);
+  if (!compute) return false;
+  if (isPlainObject(compute.allocation)) return true;
+  if (Array.isArray(compute.events) && compute.events.length > 0) return true;
+  const selected = String(compute.decision?.selectedProviderId ?? "").trim();
+  // "local-machine" is LOCAL_PROVIDER_ID in compute-provider-registry.js —
+  // duplicated here because this module is dependency-free by design.
+  return Boolean(selected && selected !== "local-machine");
+}
+
+function checkTrainingRunRow(row, currentRow, path, violations) {
+  const isNewRow = !currentRow;
+
+  // The server compute journal is never caller-writable: creating it,
+  // altering it, or erasing it through PATCH is forging (or destroying)
+  // execution evidence — sealed authority, decision, allocation, events,
+  // checkpoints, artifact verification, canonical evaluation all live here.
+  const incomingCompute = row.compute;
+  if (isNewRow) {
+    if (populatedColumn(incomingCompute)) {
+      violations.push(violation(
+        "training_evidence_field",
+        `${path}.compute`,
+        "compute evidence may not be created through direct PATCH — the sandbox-run route journals it " +
+          "server-side; persist only the customer computeRequest snapshot"
+      ));
+    }
+  } else if (incomingCompute !== undefined && !sameValue(incomingCompute, currentRow.compute)) {
+    // A populated persisted block may not be changed OR erased; an absent /
+    // empty persisted block may not be populated.
+    if (populatedColumn(incomingCompute) || populatedColumn(currentRow.compute)) {
+      violations.push(violation(
+        "training_evidence_field",
+        `${path}.compute`,
+        "compute evidence is server-owned — direct PATCH may only echo the persisted value; " +
+          "run/cancel/resume through POST /api/workspace/sandbox-run to change it"
+      ));
+    }
+  }
+
+  // The promotion verdict is a derived evaluation outcome, never an input:
+  // benchmarkWins (and with it `promoted`) is echo-only on every run row.
+  const incomingDistillation = parseJsonColumn(row.distillation);
+  const currentDistillation = parseJsonColumn(currentRow?.distillation);
+  const incomingWins = incomingDistillation?.benchmarkWins;
+  if (row.distillation !== undefined
+    && populatedColumn(incomingWins)
+    && !sameValue(incomingWins, currentDistillation?.benchmarkWins)) {
+    violations.push(violation(
+      "training_evidence_field",
+      `${path}.distillation.benchmarkWins`,
+      "benchmarkWins/promotion is a derived evaluation verdict — direct PATCH may only echo it; " +
+        "it is written by the evaluation boundary after a verified artifact import"
+    ));
+  }
+
+  // Once a row carries provider-compute evidence, its execution-derived
+  // success claims are server-stamped: a caller may not move the status into
+  // a success state or rewrite artifact identity out from under the journal.
+  if (!isNewRow && hasServerComputeEvidence(currentRow)) {
+    const incomingStatus = String(row.status ?? "").trim().toLowerCase();
+    const currentStatus = String(currentRow.status ?? "").trim().toLowerCase();
+    if (incomingStatus !== currentStatus && TRAINING_SUCCESS_STATUSES.includes(incomingStatus)) {
+      violations.push(violation(
+        "training_evidence_field",
+        `${path}.status`,
+        `status "${incomingStatus}" is execution-derived on a provider-compute run — only the sandbox-run ` +
+          "route may stamp it after verified artifact import"
+      ));
+    }
+    for (const field of TRAINING_ARTIFACT_CLAIM_FIELDS) {
+      if (row[field] !== undefined && !sameValue(row[field], currentRow[field])) {
+        violations.push(violation(
+          "training_evidence_field",
+          `${path}.${field}`,
+          `${field} is verification evidence on a provider-compute run — direct PATCH may only echo it`
+        ));
+      }
+    }
+  }
+}
+
 function checkDataModel(dataModel, currentConfig, violations) {
   if (dataModel === undefined) return;
   if (!isPlainObject(dataModel) || (dataModel.objects !== undefined && !Array.isArray(dataModel.objects))) {
@@ -288,14 +442,27 @@ function checkDataModel(dataModel, currentConfig, violations) {
     const currentRowsByName = new Map(
       currentRows.filter((r) => rowName(r)).map((r) => [rowName(r), r])
     );
+    // model-training-run rows carry their identity in trainingRunId, not Name.
+    const currentRowsByRunId = new Map(
+      currentRows
+        .filter((r) => String(r?.trainingRunId ?? "").trim())
+        .map((r) => [String(r.trainingRunId).trim(), r])
+    );
 
     rows.forEach((row, rowIndex) => {
       if (!isPlainObject(row)) return;
       const rowPath = `${path}.rows[${rowIndex}]`;
-      const currentRow = rowName(row) ? currentRowsByName.get(rowName(row)) ?? null : null;
+      let currentRow = rowName(row) ? currentRowsByName.get(rowName(row)) ?? null : null;
+      if (objectType === "model-training-run") {
+        const runId = String(row.trainingRunId ?? "").trim();
+        currentRow = runId ? currentRowsByRunId.get(runId) ?? null : null;
+      }
       checkRowSizes(row, currentRow, rowPath, violations);
       if (objectType === "sandbox-environment") {
         checkSandboxRow(row, currentRow, rowPath, violations);
+      }
+      if (objectType === "model-training-run") {
+        checkTrainingRunRow(row, currentRow, rowPath, violations);
       }
     });
   });
@@ -374,7 +541,8 @@ const REPAIR_PLANS = Object.freeze({
   history_smuggling: "Run/record history lives in growthub.source-records.json (written by sandbox-run / refresh-sources) — store only lastRunId/lastSourceId on the row.",
   credential_field: "Store the secret in the local CLI's own store and reference it via authRef / envRefs names only.",
   live_workflow_field: "Move the graph into orchestrationDraftConfig (or orchestrationDraftGraph), prove it with POST /api/workspace/sandbox-run {useDraft:true}, then promote it with POST /api/workspace/workflow/publish.",
-  live_publish_via_patch: "lifecycleStatus \"live\" is set only by POST /api/workspace/workflow/publish after a verified draft test."
+  live_publish_via_patch: "lifecycleStatus \"live\" is set only by POST /api/workspace/workflow/publish after a verified draft test.",
+  training_evidence_field: "Training evidence is server-owned: persist only the customer computeRequest snapshot through PATCH, then run/cancel/resume through POST /api/workspace/sandbox-run — the route journals authority, decision, allocation, events, checkpoints, artifact verification, and evaluation onto the receipt."
 });
 
 /** Ordered, deduplicated repair steps for a violation list. */
@@ -397,6 +565,9 @@ export {
   FULL_CONFIG_SIGNATURE_FIELDS,
   HISTORY_BLOB_ROW_FIELDS,
   LIVE_WORKFLOW_ROW_FIELDS,
+  TRAINING_ARTIFACT_CLAIM_FIELDS,
+  TRAINING_EVIDENCE_ROW_FIELDS,
+  TRAINING_SUCCESS_STATUSES,
   WORKSPACE_PATCH_ALLOWED_FIELDS,
   WORKSPACE_PATCH_LIMITS,
   evaluateWorkspacePatchPolicy,

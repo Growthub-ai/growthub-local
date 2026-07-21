@@ -23,6 +23,7 @@
 
 import { deriveArtifactState } from "./training-artifacts.js";
 import { normalizeComputeBlock } from "./compute-evidence.js";
+import { normalizeComputeRequest } from "./compute-work-spec.js";
 
 export const TRAINING_RUN_SCHEMA = "growthub-local-model-training-run-v1";
 export const TRAINING_RUN_SOURCE_PREFIX = "training-run:";
@@ -279,6 +280,7 @@ export function buildTrainingRunReceipt({
   runKind = "",
   distillation = null,
   compute = null,
+  computeRequest = null,
   now = "",
 } = {}) {
   const at = startedAt || now || new Date().toISOString();
@@ -321,9 +323,19 @@ export function buildTrainingRunReceipt({
     distillation: normalizeDistillationBlock(distillation),
     // Additive compute-realization evidence (growthub-compute-evidence-v1):
     // placement decision, allocation, normalized events, checkpoints,
-    // artifact ref. `null` for local/pre-compute receipts — readers are
-    // entirely unaffected, exactly like the distillation block.
+    // artifact ref, sealed server authority. `null` for local/pre-compute
+    // receipts — readers are entirely unaffected, exactly like the
+    // distillation block. SERVER-OWNED: the PATCH policy refuses caller
+    // writes to this field; only server routes journal it. Normalization
+    // carries caller-shaped evidence verbatim but never elevates it — the
+    // execution seam recompiles + seal-verifies authority before trusting.
     compute: normalizeComputeBlock(compute),
+    // The CUSTOMER-authored compute request snapshot (growthub-compute-
+    // request-v1): what was asked for — policy mode, budget, locality,
+    // preemptible, provider preference, profile, export identity, output
+    // tag. PATCHable by design; execution authority is compiled from it
+    // server-side (lib/compute-authority.js), never read from it directly.
+    computeRequest: normalizeComputeRequest(computeRequest),
     receipts: Array.isArray(receipts) ? receipts.map(String) : [],
   };
 }
