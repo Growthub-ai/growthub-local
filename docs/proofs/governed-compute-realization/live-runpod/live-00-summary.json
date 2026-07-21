@@ -1,0 +1,87 @@
+{
+  "mode": "live",
+  "observedAt": "2026-07-21T04:50:40.924Z",
+  "podId": "x09405suvupalc",
+  "stopped": false,
+  "checks": 5,
+  "observedEvents": [
+    {
+      "type": "compute-running",
+      "providerEventId": "x09405suvupalc:RUNNING:Rented by User: Tue Jul 21 2026 04:24:29 GMT+0000 (Coordinated Universal Time)",
+      "detail": "pod RUNNING"
+    }
+  ],
+  "computeBlock": {
+    "schema": "growthub-compute-evidence-v1",
+    "capacityProfileId": "single-gpu-finetune",
+    "providerRegistryId": "runpod-live",
+    "selectionMode": "explicit",
+    "idempotencyKeyHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "authority": null,
+    "authorityHash": "",
+    "authorityKeyId": "",
+    "intent": null,
+    "intentHash": "",
+    "requirementsHash": "",
+    "workSpec": null,
+    "workSpecHash": "",
+    "policy": null,
+    "capabilities": null,
+    "observation": null,
+    "evaluation": null,
+    "dataset": null,
+    "decision": null,
+    "allocation": {
+      "allocationId": "x09405suvupalc",
+      "runRef": {
+        "trainingRunId": "runpod-live-observation",
+        "modelTrainingRowId": "workspace-local",
+        "providerId": "runpod-live",
+        "capacityProfileId": "single-gpu-finetune",
+        "providerResourceId": "x09405suvupalc"
+      },
+      "status": "running",
+      "idempotencyKeyHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "availabilityMode": "on-demand",
+      "costBasis": {
+        "kind": "per-hour",
+        "unitUsd": 1.99,
+        "source": "runpod-live"
+      },
+      "requestedAt": "",
+      "allocatedAt": "2026-07-21T04:50:40.923Z",
+      "releasedAt": "",
+      "releaseConfirmed": false,
+      "allocated": {
+        "gpuType": "",
+        "gpuCount": 1,
+        "workers": 1,
+        "region": ""
+      },
+      "workSpecHash": "",
+      "reconciled": false
+    },
+    "events": [
+      {
+        "type": "compute-running",
+        "at": "2026-07-21T04:50:40.425Z",
+        "evidenceObservedAt": "2026-07-21T04:50:40.425Z",
+        "source": "provider",
+        "runRef": {
+          "trainingRunId": "runpod-live-observation",
+          "modelTrainingRowId": "workspace-local",
+          "providerId": "runpod-live",
+          "capacityProfileId": "single-gpu-finetune",
+          "providerResourceId": "x09405suvupalc"
+        },
+        "providerEventId": "x09405suvupalc:RUNNING:Rented by User: Tue Jul 21 2026 04:24:29 GMT+0000 (Coordinated Universal Time)",
+        "detail": "pod RUNNING",
+        "workSpecHash": "",
+        "requirementsHash": ""
+      }
+    ],
+    "checkpoints": [],
+    "artifact": null,
+    "evidenceObservedAt": "2026-07-21T04:50:40.923Z"
+  }
+}

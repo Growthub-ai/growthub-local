@@ -87,8 +87,17 @@ if (MODE_SCREENS) {
   const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
   assert.equal(summary.mode, "live", "screens render LIVE evidence only — refuse mock summaries");
   const { spawn } = await import("node:child_process");
-  const { chromium } = await import(pathToFileURL(path.join(kitApp, "node_modules/playwright/index.mjs")).href)
-    .catch(async () => import("playwright"));
+  const { chromium } = await import(pathToFileURL(path.join(kitApp, "node_modules/playwright-core/index.mjs")).href)
+    .catch(async () => import("playwright-core"));
+  const browserCandidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    "/opt/pw-browsers/chromium",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    chromium.executablePath(),
+  ].filter(Boolean);
+  const browserExecutable = browserCandidates.find((candidate) => fs.existsSync(candidate));
+  assert.ok(browserExecutable, "no Chromium/Chrome executable found; set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH");
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "runpod-live-screens-"));
   const app = path.join(tmp, "workspace");
@@ -131,7 +140,7 @@ if (MODE_SCREENS) {
   };
   try {
     await waitHttp(`${base}/api/workspace`);
-    const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", headless: true, args: ["--no-proxy-server", "--no-sandbox"] });
+    const browser = await chromium.launch({ executablePath: browserExecutable, headless: true, args: ["--no-proxy-server", "--no-sandbox"] });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     fs.mkdirSync(proofDir, { recursive: true });
     await page.goto(`${base}/data-model`, { waitUntil: "networkidle" });

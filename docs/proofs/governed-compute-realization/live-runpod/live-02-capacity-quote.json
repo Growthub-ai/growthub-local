@@ -1,0 +1,19 @@
+{
+  "mode": "live",
+  "quote": {
+    "providerId": "runpod-live",
+    "capacityProfileId": "single-gpu-finetune",
+    "available": true,
+    "availabilityMode": "on-demand",
+    "costBasis": {
+      "kind": "per-hour",
+      "unitUsd": 0.25,
+      "source": "runpod-graphql-lowestPrice"
+    },
+    "estimatedTotalUsd": 0.04,
+    "queueLatencySeconds": 60,
+    "quoteObservedAt": "2026-07-21T04:50:39.698Z",
+    "quoteExpiresAt": "2026-07-21T04:55:39.698Z",
+    "quoteRef": "NVIDIA RTX A4000"
+  }
+}

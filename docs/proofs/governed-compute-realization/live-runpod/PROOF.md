@@ -14,25 +14,23 @@ evidence here.
 | Stage | Status |
 | --- | --- |
 | Harness (`scripts/e2e-compute-runpod-live-proof.mjs`) | **Complete** — offline self-test green (`--mock`: 5 checks; `--mock --release`: 6 checks) |
-| Live execution | **Pending direct network egress** — see "Why not yet executed" |
-| Screenshots (`--screens`) | Pending live evidence |
+| Live execution | **Passed (live)** — 5 checks banked 2026-07-21 against the operator-deployed Runpod pod |
+| Screenshots (`--screens`) | Pending capture-route correction; no invalid screenshots are banked |
 
-## Why not yet executed
+## Live execution result
 
-The governed outbound transport is DNS-pinned by design (it resolves and
-pins the connection itself, refuses redirects, and cannot ride an HTTP
-CONNECT proxy — that indirection is exactly what the SSRF boundary
-forbids). The remote agent sandbox where this harness was authored routes
-ALL egress through a mandatory CONNECT proxy whose policy additionally
-denies `rest.runpod.io` — so the live run requires any machine with direct
-outbound HTTPS (an operator laptop, a CI runner without a mandatory proxy,
-or the test pod's own network).
+The governed DNS-pinned transport reached the real Runpod REST and GraphQL
+control planes from a direct-egress execution host. The observation adopted
+pod `x09405suvupalc` (`Growthub-local-compute`) while it was `RUNNING`, banked
+a non-zero live provider quote, normalized the lifecycle to
+`compute-running`, and proved that the pod-id set was byte-identical before
+and after execution. No pod was created, stopped, or terminated.
 
 SSH access to the pod is NOT required: the full observation lifecycle
 (inventory → quote → capabilities → status → optional reversible stop)
 rides the Runpod REST + GraphQL APIs through the governed transport.
 
-## How to execute the live proof
+## How to reproduce the live proof
 
 ```bash
 # 1. Live observation proof (creates NOTHING; adopts the deployed pod):
