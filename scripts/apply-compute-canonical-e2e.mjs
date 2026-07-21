@@ -21,9 +21,8 @@ if (!source.includes("provider self-scores intentionally prefer the base")) {
   student: { quality: 1, latencyMs: 1, costUsd: 0 },
   baseline: { quality: 0, latencyMs: 100, costUsd: 100 },
 }));`,
-    `// The provider self-scores intentionally prefer the base. If these rows
-// ever leak into promotion, the booted proof will fail because the canonical
-// workspace judge below independently prefers the tuned artifact.
+    `// The provider self-scores intentionally prefer the base. They are
+// untrusted diagnostics and can never create canonical benchmarkWins.
 const fabricatedEvaluationResults = Array.from({ length: 6 }, (_, index) => ({
   taskId: \`provider-controlled-\${index}\`,
   student: { quality: 0, latencyMs: 100, costUsd: 100 },
@@ -45,8 +44,10 @@ if (!source.includes("canonical evaluator judge")) {
     `  if (["/chat", "/v1/chat/completions", "/chat/completions"].includes(url.pathname)) {
     const requestedModel = String(body?.model || "");
     if (requestedModel === "teacher-v1") {
-      // The canonical evaluator judge compares the tuned/base outputs and
-      // emits the shipped eval-vs-base JSON verdict contract.
+      // The canonical evaluator judge contract is available, but the booted
+      // generic student endpoint is deliberately NOT allowed to claim exact
+      // artifact identity. Evaluation must remain pending until a proof-gated
+      // runtime independently resolves the returned artifact SHA.
       return json(200, {
         model: "teacher-v1",
         choices: [{ message: { role: "assistant", content: JSON.stringify({ winner: "tuned", score: 5, reason: "the tuned answer follows the governed workspace behavior more accurately" }) }, finish_reason: "stop" }],
@@ -64,7 +65,7 @@ if (!source.includes("canonical evaluator judge")) {
   );
 }
 
-if (!source.includes("providerId: \"teacher-test\"")) {
+if (!source.includes('providerId: "teacher-test"')) {
   replaceOnce(
     `  const mothership = buildMothershipProxyRow({
     modelTag: "student-v1",
@@ -111,11 +112,10 @@ if (!source.includes("Canonical evaluation holdouts")) {
 if (source.includes(`  assert.equal(recoveredCompute.evaluation, null, "provider-authored wins did not become canonical evaluation");`)) {
   replaceOnce(
     `  assert.equal(recoveredCompute.evaluation, null, "provider-authored wins did not become canonical evaluation");`,
-    `  assert.equal(recoveredCompute.evaluation?.source, "workspace-canonical");
-  assert.equal(recoveredCompute.evaluation?.benchmarkWins?.promoted, true);
-  assert.equal(recoveredCompute.evaluation?.taskCount, 6);
-  assert.match(String(recoveredCompute.evaluation?.taskSetHash || ""), /^[0-9a-f]{64}$/);`,
-    "recovered canonical evaluation assertions",
+    `  assert.equal(recoveredCompute.evaluation, null, "provider-authored wins did not become canonical evaluation");
+  assert.equal(recovered.response.adapterMeta.compute.canonicalEvaluationPending, true);
+  assert.match(String(recovered.response.adapterMeta.compute.evaluationPendingReason || ""), /independently verify|unbound candidate runtime/);`,
+    "recovered runtime-binding pending assertions",
   );
 }
 
@@ -130,25 +130,21 @@ if (source.includes(`  assert.equal(successCompute.evaluation, null);
     ? JSON.parse(successRow.distillation)
     : successRow.distillation;
   assert.equal(successDistillation?.benchmarkWins, undefined, "provider-controlled score rows never minted promotion");`,
-    `  assert.equal(successCompute.evaluation?.source, "workspace-canonical");
-  assert.equal(successCompute.evaluation?.evaluatorVersion, "custom-model-eval-vs-base-v1");
-  assert.equal(successCompute.evaluation?.artifactSha256, artifactSha);
-  assert.equal(successCompute.evaluation?.benchmarkWins?.promoted, true);
-  assert.equal(successCompute.evaluation?.taskCount, 6);
-  assert.equal(JSON.stringify(successCompute.evaluation).includes("Canonical evaluation holdout"), false, "raw holdout prompts stay out of the compute journal");
+    `  assert.equal(successCompute.evaluation, null, "tag-only endpoint cannot grade the returned artifact");
+  assert.equal(success.response.adapterMeta.compute.canonicalEvaluationPending, true);
+  assert.match(String(success.response.adapterMeta.compute.evaluationPendingReason || ""), /independently verify|unbound candidate runtime/);
   const successDistillation = typeof successRow.distillation === "string"
     ? JSON.parse(successRow.distillation)
     : successRow.distillation;
-  assert.equal(successDistillation?.benchmarkWins?.promoted, true);
-  assert.equal(successDistillation?.evaluationLineage?.source, "workspace-canonical");`,
-    "success canonical evaluation assertions",
+  assert.equal(successDistillation?.benchmarkWins, undefined, "provider-controlled score rows and tag-only runtime never minted promotion");`,
+    "success runtime-binding pending assertions",
   );
 }
 
 source = source.replace(
   "verified artifact, provider-score isolation, PATCH integrity, Mothership reload truth",
-  "verified artifact, workspace-owned canonical evaluation against losing provider self-scores, PATCH integrity, Mothership reload truth",
+  "verified artifact, provider-score isolation, proof-gated evaluation pending on an unbound runtime, PATCH integrity, Mothership reload truth",
 );
 
 fs.writeFileSync(file, source);
-console.log("[canonical-e2e] booted route proof now proves workspace-owned evaluation and provider-score isolation");
+console.log("[canonical-e2e] booted route proves provider-score isolation and fail-closed pending evaluation until exact runtime artifact binding");
