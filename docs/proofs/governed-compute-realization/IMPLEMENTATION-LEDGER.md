@@ -1,7 +1,7 @@
 # Governed Compute Realization V1 — Implementation Ledger (Sprint 0)
 
 Base SHA at freeze: `7520b8c72462797dcaf4ce6c64ccd1a9ede14eb8` (branch tip == `origin/main` tip).
-Package versions read from disk at freeze: `@growthub/cli` 0.14.28 · `@growthub/create-growthub-local` 0.14.28 · `@growthub/api-contract` 1.7.0.
+Package versions read from disk at final release proof: `@growthub/cli` 0.14.29 · `@growthub/create-growthub-local` 0.14.29 · `@growthub/api-contract` 1.8.0.
 
 Baseline test evidence (run at the base SHA, this container):
 
