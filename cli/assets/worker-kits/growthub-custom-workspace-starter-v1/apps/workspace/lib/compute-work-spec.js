@@ -1,24 +1,7 @@
 /**
- * Provider-neutral compute contracts, split by TRUST BOUNDARY:
- *
- *   growthub-compute-request-v1
- *     CUSTOMER-authored request inputs (policy mode, budget, locality,
- *     preemptible choice, provider preference, selected training profile,
- *     trace/export identity, requested output tag). PATCHable, replayable,
- *     never execution authority by itself.
- *
- *   growthub-compute-intent-v1 + growthub-training-execution-spec-v1
- *     SERVER-compiled execution authority. Compiled and HMAC-sealed in
- *     lib/compute-authority.js from authoritative workspace records plus the
- *     customer request. A caller-supplied intent/work-spec — even one whose
- *     self-hash matches — is NEVER trusted: verification recompiles from
- *     server inputs and checks the seal.
- *
- * The training planner remains the sole authority for workload semantics;
- * compute adapters receive the frozen server-compiled projection and may
- * only translate it. This module stays dependency-free (no node:crypto) so
- * the request builder and hash preview run in the browser too; sealing is
- * server-only and lives in compute-authority.js.
+ * Provider-neutral compute contracts split by trust boundary.
+ * Customer requests are PATCHable inputs; server-compiled intent/work-spec
+ * objects become authority only after compute-authority.js seals them.
  */
 import { resolveCapacityProfile, normalizeRequirementsForProfile } from "./compute-capacity-profiles.js";
 
@@ -32,18 +15,6 @@ export function stableComputeStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableComputeStringify).join(",")}]`;
   return `{${Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => `${JSON.stringify(key)}:${stableComputeStringify(value[key])}`).join(",")}}`;
 }
-
-// ---------------------------------------------------------------------------
-// Canonical SHA-256 (dependency-free, browser + node). Authority and content
-// identities use SHA-256, not FNV-1a: content identity must be collision
-// resistant when it participates in a sealed authority chain.
-//
-// Deliberately NOT the node:crypto sha256Hex from
-// lib/adapters/inference/contracts.js: this module is imported by the
-// client-side TrainingHandoffModal (for the request builder), so it must
-// not pull node:crypto into a browser bundle. Output equality with
-// node:crypto is pinned by scripts/unit-compute-work-spec.test.mjs.
-// ---------------------------------------------------------------------------
 
 const SHA256_K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -105,23 +76,83 @@ export function hashComputeValue(value) {
   return sha256Hex(stableComputeStringify(value));
 }
 
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function validatedMoneyField(budget, field) {
+  if (!hasOwn(budget, field) || budget[field] === "" || budget[field] === null || budget[field] === undefined) {
+    return { ok: true, present: false, value: 0 };
+  }
+  if (typeof budget[field] !== "number" || !Number.isFinite(budget[field])) {
+    return { ok: false, reasonCode: `budget-${field}-invalid`, reason: `${field} must be a finite JSON number; numeric strings, NaN and Infinity are refused` };
+  }
+  if (budget[field] < 0) {
+    return { ok: false, reasonCode: `budget-${field}-invalid`, reason: `${field} must be zero or greater` };
+  }
+  return { ok: true, present: true, value: budget[field] };
+}
+
+/**
+ * Validate and normalize the budget before it can enter sealed authority.
+ * A hard cap is a real ceiling: at least one positive numeric cap is required,
+ * zero is rejected rather than reinterpreted as unlimited, and unknown cost
+ * cannot be opted into while retaining the hard-cap label.
+ */
+export function validateComputeBudgetPolicy(raw = {}) {
+  const budget = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const mode = ["hard-cap", "advisory", "unlimited"].includes(budget.mode) ? budget.mode : "advisory";
+  const total = validatedMoneyField(budget, "maxTotalUsd");
+  if (!total.ok) return total;
+  const hourly = validatedMoneyField(budget, "maxHourlyUsd");
+  if (!hourly.ok) return hourly;
+
+  if (mode === "hard-cap") {
+    if (!total.present && !hourly.present) {
+      return { ok: false, reasonCode: "budget-cap-missing", reason: "hard-cap requires maxTotalUsd or maxHourlyUsd as a positive finite JSON number" };
+    }
+    if ((total.present && total.value <= 0) || (hourly.present && hourly.value <= 0)) {
+      return { ok: false, reasonCode: "budget-zero-cap", reason: "zero is not an unlimited sentinel under hard-cap; provide a positive cap or choose advisory/unlimited" };
+    }
+    if (budget.allowUnknownCost === true) {
+      return { ok: false, reasonCode: "budget-hard-cap-unknown-cost", reason: "allowUnknownCost cannot be true under hard-cap because an unknown price cannot be proven below the ceiling" };
+    }
+  }
+
+  return {
+    ok: true,
+    reasonCode: "",
+    reason: "budget valid",
+    value: {
+      mode,
+      maxTotalUsd: total.value,
+      maxHourlyUsd: hourly.value,
+      allowUnknownCost: mode === "hard-cap" ? false : budget.allowUnknownCost === true,
+    },
+  };
+}
+
+export class ComputeBudgetPolicyError extends TypeError {
+  constructor(verdict) {
+    super(verdict?.reason || "invalid compute budget policy");
+    this.name = "ComputeBudgetPolicyError";
+    this.code = verdict?.reasonCode || "budget-invalid";
+  }
+}
+
 export function normalizeComputePolicy(raw = {}) {
-  const p = raw && typeof raw === "object" ? raw : {};
+  const p = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const mode = ["automatic", "local", "cloud", "reserved-cluster"].includes(p.mode) ? p.mode : "automatic";
-  const budget = p.budget && typeof p.budget === "object" ? p.budget : {};
-  const locality = p.locality && typeof p.locality === "object" ? p.locality : {};
+  const locality = p.locality && typeof p.locality === "object" && !Array.isArray(p.locality) ? p.locality : {};
+  const budgetVerdict = validateComputeBudgetPolicy(p.budget);
+  if (!budgetVerdict.ok) throw new ComputeBudgetPolicyError(budgetVerdict);
   return {
     mode,
     excludeLocal: mode === "cloud" || p.excludeLocal === true,
     localOnly: mode === "local" || p.localOnly === true,
     reservedOnly: mode === "reserved-cluster" || p.reservedOnly === true,
     allowPreemptible: p.allowPreemptible === true,
-    budget: {
-      mode: ["hard-cap", "advisory", "unlimited"].includes(budget.mode) ? budget.mode : "advisory",
-      maxTotalUsd: Math.max(0, Number(budget.maxTotalUsd) || 0),
-      maxHourlyUsd: Math.max(0, Number(budget.maxHourlyUsd) || 0),
-      allowUnknownCost: budget.allowUnknownCost === true,
-    },
+    budget: budgetVerdict.value,
     locality: {
       regions: Array.isArray(locality.regions) ? locality.regions.map(String).filter(Boolean) : [],
       dataResidency: String(locality.dataResidency || ""),
@@ -129,15 +160,8 @@ export function normalizeComputePolicy(raw = {}) {
   };
 }
 
-/**
- * Normalize the CUSTOMER-authored compute request snapshot — the only
- * compute-shaped thing a browser or direct PATCH may persist. It records what
- * the customer asked for; it grants nothing. The server compiles execution
- * authority FROM it (compute-authority.js) and rejects it when the referenced
- * governed records disagree. Returns null for a non-object.
- */
 export function normalizeComputeRequest(raw) {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const s = (v) => String(v ?? "").trim();
   return {
     schema: COMPUTE_REQUEST_SCHEMA,
@@ -153,24 +177,15 @@ export function normalizeComputeRequest(raw) {
     datasetPath: s(raw.datasetPath),
     outputModelTag: s(raw.outputModelTag),
     artifactPath: s(raw.artifactPath),
-    // Customer's expected training duration — quote-estimation input only.
-    // Under a hard budget cap an absent estimate keeps cost UNKNOWN, and
-    // unknown cost fails closed in the resolver (never treated as zero).
     estimatedDurationMinutes: Math.max(0, Math.floor(Number(raw.estimatedDurationMinutes) || 0)),
     requestedAt: s(raw.requestedAt),
   };
 }
 
-/** Pure factory for the customer request snapshot (browser-safe). */
 export function buildComputeRequest(fields = {}) {
   return normalizeComputeRequest(fields);
 }
 
-/**
- * SERVER-side intent compiler. Callers outside compute-authority.js /
- * certification tests must not treat the return value as trusted authority —
- * only the sealed authority envelope compiled in compute-authority.js is.
- */
 export function buildComputeIntent({ adaptivePlan, capacityPlan, policy, trainingRunConfig } = {}) {
   const profileId = String(capacityPlan?.capacityProfileId || "");
   if (!resolveCapacityProfile(profileId)) throw new Error(`unknown capacity profile "${profileId}"`);
@@ -229,13 +244,6 @@ export function buildComputeWorkSpec({ intent, trainingRunConfig, trainingRunId,
   return { ...body, workSpecHash: hashComputeValue(body) };
 }
 
-/**
- * INTERNAL-CONSISTENCY check of a compiled intent/work-spec pair (schemas,
- * self-hashes, lineage binding). This is a necessary precondition, NEVER a
- * trust decision: a self-consistent pair supplied by a caller proves only
- * that the caller can hash. Trust requires the server seal + recompilation
- * check in compute-authority.js (verifyComputeAuthorityAgainstWorkspace).
- */
 export function verifyComputeAuthority({ intent, workSpec } = {}) {
   const intentOk = Boolean(intent?.schema === COMPUTE_INTENT_SCHEMA && intent.intentHash === hashComputeValue({ ...intent, intentHash: undefined }));
   const specOk = Boolean(workSpec?.schema === COMPUTE_WORK_SPEC_SCHEMA && workSpec.workSpecHash === hashComputeValue({ ...workSpec, workSpecHash: undefined }));
