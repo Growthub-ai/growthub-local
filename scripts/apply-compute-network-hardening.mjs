@@ -18,14 +18,33 @@ const routePath = "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/a
 let route = read(routePath);
 route = replaceOnce(
   route,
-  `import {\n  compileComputeAuthority,\n  verifyComputeAuthorityAgainstWorkspace\n} from "@/lib/compute-authority";`,
-  `import {\n  compileComputeAuthority,\n  verifyComputeAuthorityAgainstWorkspace\n} from "@/lib/compute-authority";\nimport {\n  createGovernedComputeFetchJson,\n  verifyGovernedComputeArtifact\n} from "@/lib/compute-network-policy";`,
+  `import {
+  compileComputeAuthority,
+  verifyComputeAuthorityAgainstWorkspace
+} from "@/lib/compute-authority";`,
+  `import {
+  compileComputeAuthority,
+  verifyComputeAuthorityAgainstWorkspace
+} from "@/lib/compute-authority";
+import {
+  createGovernedComputeFetchJson,
+  verifyGovernedComputeArtifact
+} from "@/lib/compute-network-policy";`,
   "compute network policy import",
 );
 route = replaceOnce(
   route,
-  `import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";`,
-  `import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";\n\nconst governedComputeFetchJson = createGovernedComputeFetchJson();`,
+  `import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
+
+function coerceBoolean`,
+  `import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
+
+// One server-owned outbound boundary for every compute provider and artifact
+// fetch. It applies operator allowlists, DNS pinning, redirect refusal,
+// private/metadata-address controls, response bounds, and streaming hashes.
+const governedComputeFetchJson = createGovernedComputeFetchJson();
+
+function coerceBoolean`,
   "governed compute fetch construction",
 );
 const verifierStart = route.indexOf("/** Canonical artifact materialization/readback. Provider SHA claims alone fail. */");
@@ -34,37 +53,63 @@ if (verifierStart < 0 || verifierEnd < 0) throw new Error("[one-shot] artifact v
 route = `${route.slice(0, verifierStart)}${route.slice(verifierEnd)}`;
 route = replaceOnce(
   route,
-  `          fetchJson: async (url, init) => {\n            const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });\n            const text = await res.text();\n            let parsed = null;\n            try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }\n            if (!res.ok) {\n              const detail = parsed?.message || parsed?.error || text.slice(0, 200);\n              const err = new Error(\`HTTP \${res.status}\${detail ? \`: \${detail}\` : ""}\`);\n              err.status = res.status;\n              throw err;\n            }\n            return parsed;\n          },`,
-  `          // One server-owned outbound boundary for every compute adapter:\n          // operator allowlists, DNS resolution pinned into the socket, no\n          // redirects, bounded responses, and no credential-bearing URLs.\n          fetchJson: governedComputeFetchJson,`,
+  `          fetchJson: async (url, init) => {
+            const res = await fetch(url, { ...init, signal: AbortSignal.timeout(30000) });
+            const text = await res.text();
+            let parsed = null;
+            try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
+            if (!res.ok) {
+              const detail = parsed?.message || parsed?.error || text.slice(0, 200);
+              const err = new Error(\`HTTP \${res.status}\${detail ? \`: \${detail}\` : ""}\`);
+              err.status = res.status;
+              throw err;
+            }
+            return parsed;
+          },`,
+  `          // Every provider quote/allocation/status/cancel/release request
+          // crosses the same DNS-pinned, bounded, operator-allowlisted policy.
+          fetchJson: governedComputeFetchJson,`,
   "inline compute fetch replacement",
 );
 route = replaceOnce(
   route,
   `          verifyArtifact: verifyComputeArtifactBytes,`,
-  `          verifyArtifact: (artifact, workSpec) => verifyGovernedComputeArtifact({ artifact, workSpec }),`,
+  `          // Artifact bytes are streamed through the same outbound policy;
+          // local paths are restricted to governed roots and expected output.
+          verifyArtifact: (artifact, workSpec) => verifyGovernedComputeArtifact({ artifact, workSpec }),`,
   "artifact verifier wiring",
 );
-if (!route.includes("createHash(")) route = route.replace('import { createHash } from "node:crypto";\n', "");
 write(routePath, route);
 
 const e2ePath = "scripts/e2e-compute-route-realization-loop.mjs";
 let e2e = read(e2ePath);
 e2e = replaceOnce(
   e2e,
-  `GROWTHUB_INFERENCE_TEST_ALLOWLIST: "127.0.0.1", GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY }`,
-  `GROWTHUB_INFERENCE_TEST_ALLOWLIST: "127.0.0.1", GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY, GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "127.0.0.1", GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1" }`,
+  `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
+`,
+  `        GROWTHUB_COMPUTE_AUTHORITY_KEY: AUTHORITY_KEY,
+        // The booted fake provider is intentionally loopback; production
+        // permits private hosts only through explicit operator allowlists.
+        GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "127.0.0.1",
+        GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1",
+`,
   "booted route private test allowlist",
 );
 write(e2ePath, e2e);
 
 const certificationPath = "scripts/run-compute-certification.mjs";
 let certification = read(certificationPath);
-certification = replaceOnce(
-  certification,
-  `  "scripts/unit-compute-budget-policy.test.mjs",\n`,
-  `  "scripts/unit-compute-budget-policy.test.mjs",\n  "scripts/unit-compute-network-policy.test.mjs",\n`,
-  "compute certification suite registration",
-);
+if (!certification.includes("scripts/unit-compute-network-policy.test.mjs")) {
+  certification = replaceOnce(
+    certification,
+    `  "scripts/unit-compute-budget-policy.test.mjs",
+`,
+    `  "scripts/unit-compute-budget-policy.test.mjs",
+  "scripts/unit-compute-network-policy.test.mjs",
+`,
+    "compute certification suite registration",
+  );
+}
 write(certificationPath, certification);
 
 console.log("[one-shot] governed compute network policy wired into sandbox-run, route proof, and certification");
