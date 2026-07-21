@@ -14,6 +14,7 @@ const {
   deriveCanonicalComputeEvaluationTasks,
   findCanonicalEvaluationPolicyRow,
   runCanonicalComputeEvaluation,
+  verifyCanonicalEvaluationRuntimeBinding,
 } = await import(moduleUrl);
 
 function traces(count, overrides = {}) {
@@ -74,6 +75,43 @@ const workSpec = {
   output: { modelTag: "student-v1", expectedKinds: ["gguf"] },
 };
 
+function verifiedTunedInvocation({ cacheStatus = "BYPASS", sha256 = artifact.sha256 } = {}) {
+  return {
+    route: "local-student",
+    receiptSha256: "d".repeat(64),
+    verificationReceipt: {
+      receipt_id: "infr-runtime-bound",
+      status: "verified",
+      identity: {
+        status: "verified",
+        base_model_sha256: sha256,
+        adapter_sha256: null,
+      },
+      cache: { cache_status: cacheStatus },
+      routing: { phases: [{ pool_ref: { instance_id: "llama-runtime-1" } }] },
+    },
+  };
+}
+
+function measuredExecution({ winner = "tuned", reason = "measured", sha256 = artifact.sha256, cacheStatus = "BYPASS", runId = "run" } = {}) {
+  return {
+    ok: true,
+    evaluation: {
+      tunedModel: "student-v1",
+      baseModel: "base-v1",
+      verdict: { winner, score: 5, reason },
+    },
+    receiptDag: {
+      schema: "growthub-receipt-dag-v1",
+      root_receipt_id: `${runId}-root`,
+      nodes: [{ receipt_id: `${runId}-tuned` }, { receipt_id: `${runId}-base` }, { receipt_id: `${runId}-judge` }],
+      edges: [],
+      acyclic: true,
+    },
+    invocations: [verifiedTunedInvocation({ sha256, cacheStatus }), { route: "local-base" }, { route: "teacher" }],
+  };
+}
+
 test("holdout derivation excludes exported training rows and is deterministic", () => {
   const rows = [
     ...traces(6),
@@ -112,33 +150,41 @@ test("exactly one matching Mothership policy is required", () => {
   assert.equal(findCanonicalEvaluationPolicyRow(workspaceConfig({ duplicatePolicy: true }), "student-v1"), null);
 });
 
+test("runtime binding requires one live, uncached, independently verified invocation of the exact artifact", () => {
+  const valid = verifyCanonicalEvaluationRuntimeBinding({ execution: measuredExecution(), artifactSha256: artifact.sha256 });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.binding.identityKind, "base-model");
+  assert.equal(valid.binding.artifactSha256, artifact.sha256);
+
+  const tagOnly = verifyCanonicalEvaluationRuntimeBinding({
+    execution: { invocations: [{ route: "local-student", verificationReceipt: { status: "partial", identity: { status: "unavailable" }, cache: { cache_status: "BYPASS" } } }] },
+    artifactSha256: artifact.sha256,
+  });
+  assert.equal(tagOnly.ok, false);
+  assert.match(tagOnly.reason, /independently verify/);
+
+  const cached = verifyCanonicalEvaluationRuntimeBinding({ execution: measuredExecution({ cacheStatus: "HIT" }), artifactSha256: artifact.sha256 });
+  assert.equal(cached.ok, false);
+  assert.match(cached.reason, /cached/);
+
+  const wrongArtifact = verifyCanonicalEvaluationRuntimeBinding({ execution: measuredExecution({ sha256: "f".repeat(64) }), artifactSha256: artifact.sha256 });
+  assert.equal(wrongArtifact.ok, false);
+  assert.match(wrongArtifact.reason, /does not match/);
+});
+
 test("verified artifact runs the existing eval-vs-base workflow and produces sealed canonical evidence", async () => {
   let calls = 0;
   const executeWorkflow = async ({ workflowVariant, inputPayload, runId }) => {
     calls += 1;
     assert.equal(workflowVariant, "eval-vs-base");
     assert.match(inputPayload.prompt, /Holdout prompt/);
+    assert.equal(inputPayload.inference.cache_policy.mode, "bypass");
     const tunedWins = calls <= 4;
-    return {
-      ok: true,
-      evaluation: {
-        tunedModel: "student-v1",
-        baseModel: "base-v1",
-        verdict: {
-          winner: tunedWins ? "tuned" : "base",
-          score: 5,
-          reason: tunedWins ? "tuned answer was better" : "base answer was better",
-        },
-      },
-      receiptDag: {
-        schema: "growthub-receipt-dag-v1",
-        root_receipt_id: `${runId}-root`,
-        nodes: [{ receipt_id: `${runId}-tuned` }, { receipt_id: `${runId}-base` }, { receipt_id: `${runId}-judge` }],
-        edges: [],
-        acyclic: true,
-      },
-      invocations: [{ route: "local-student" }, { route: "local-base" }, { route: "teacher" }],
-    };
+    return measuredExecution({
+      winner: tunedWins ? "tuned" : "base",
+      reason: tunedWins ? "tuned answer was better" : "base answer was better",
+      runId,
+    });
   };
   const outcome = await runCanonicalComputeEvaluation({
     workspaceConfig: workspaceConfig(),
@@ -162,10 +208,28 @@ test("verified artifact runs the existing eval-vs-base workflow and produces sea
   assert.equal(outcome.evaluation.benchmarkWins.promoted, true);
   assert.match(outcome.evaluation.taskSetHash, /^[0-9a-f]{64}$/);
   assert.match(outcome.evaluation.resultsHash, /^[0-9a-f]{64}$/);
+  assert.match(outcome.evaluation.runtimeBindingHash, /^[0-9a-f]{64}$/);
   assert.match(outcome.evaluation.evaluationHash, /^[0-9a-f]{64}$/);
   const serialized = JSON.stringify(outcome.evaluation);
   assert.equal(serialized.includes("Holdout prompt"), false);
   assert.equal(serialized.includes("tuned answer was better"), false, "judge prose is represented only by a hash");
+});
+
+test("tag-only candidate endpoint leaves evaluation pending and cannot mint promotion", async () => {
+  const outcome = await runCanonicalComputeEvaluation({
+    workspaceConfig: workspaceConfig(),
+    artifact,
+    workSpec,
+    trainingRunId: "trainrun-eval-unbound",
+    executeWorkflow: async ({ runId }) => ({
+      ...measuredExecution({ runId }),
+      invocations: [{ route: "local-student", verificationReceipt: { status: "partial", identity: { status: "unavailable" }, cache: { cache_status: "BYPASS" } } }, { route: "local-base" }, { route: "teacher" }],
+    }),
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.pending, true);
+  assert.equal(outcome.reasonCode, "evaluation-runtime-unbound");
+  assert.equal(outcome.evaluation, undefined);
 });
 
 test("one unmeasured task leaves canonical evaluation pending and writes no benchmark verdict", async () => {
@@ -175,10 +239,10 @@ test("one unmeasured task leaves canonical evaluation pending and writes no benc
     artifact,
     workSpec,
     trainingRunId: "trainrun-eval-pending",
-    executeWorkflow: async () => {
+    executeWorkflow: async ({ runId }) => {
       calls += 1;
       if (calls === 3) return { ok: false, error: "teacher unavailable" };
-      return { ok: true, evaluation: { tunedModel: "student-v1", baseModel: "base-v1", verdict: { winner: "tuned", score: 5, reason: "ok" } }, receiptDag: { nodes: [] }, invocations: [] };
+      return measuredExecution({ reason: "ok", runId });
     },
   });
   assert.equal(outcome.ok, false);
