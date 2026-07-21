@@ -28,22 +28,18 @@ permissions:
 
 concurrency:
   group: one-shot-compute-production-hardening
-  # Source commits are still landing in parallel. Cancel stale applicator runs;
-  # the newest exact-head run is the only run allowed to publish production wiring.
   cancel-in-progress: true
 
 jobs:
   apply:
-    # Direct user/connector pushes and the same-repo draft PR activate the
-    # one-shot. The bot-authored implementation commit is prevented from
-    # recursively starting another run.
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          show-progress: false
           ref: claude/compute-authority-evidence-pr296-0u5msd
 
       - uses: actions/setup-node@v4
