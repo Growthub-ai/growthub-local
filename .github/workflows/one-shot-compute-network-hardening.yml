@@ -14,7 +14,9 @@ permissions:
 
 concurrency:
   group: one-shot-compute-network-hardening
-  cancel-in-progress: false
+  # This workflow is an implementation bridge, not a permanent queue. Only
+  # the newest exact-head run may commit; stale attempts are cancelled.
+  cancel-in-progress: true
 
 jobs:
   apply:
