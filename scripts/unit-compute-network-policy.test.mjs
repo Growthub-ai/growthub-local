@@ -8,7 +8,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const moduleUrl = pathToFileURL(path.join(root, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace/lib/compute-network-policy.js")).href;
+const app = path.join(root, "cli/assets/worker-kits/growthub-custom-workspace-starter-v1/apps/workspace");
+const moduleUrl = pathToFileURL(path.join(app, "lib/compute-network-policy.js")).href;
 const {
   authorizeComputeUrl,
   createGovernedComputeFetchJson,
@@ -18,18 +19,23 @@ const {
 
 const listen = (server) => new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
 const close = (server) => new Promise((resolve) => server.close(resolve));
-
 const privateEnv = {
   GROWTHUB_COMPUTE_NETWORK_ALLOWLIST: "127.0.0.1",
   GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "127.0.0.1",
 };
+const workSpec = (output = {}) => ({
+  workSpecHash: "a".repeat(64),
+  output: { expectedKinds: ["gguf"], ...output },
+});
 
-test("private/reserved classifier covers loopback, cloud metadata, RFC1918, ULA and public", () => {
-  assert.equal(privateOrReservedAddress("127.0.0.1"), true);
-  assert.equal(privateOrReservedAddress("169.254.169.254"), true);
-  assert.equal(privateOrReservedAddress("100.100.100.200"), true);
-  assert.equal(privateOrReservedAddress("10.1.2.3"), true);
-  assert.equal(privateOrReservedAddress("fc00::1"), true);
+function artifact({ locator, sha256, sizeBytes = 0, kind = "gguf", workSpecHash = "a".repeat(64) }) {
+  return { locator, sha256, sizeBytes, kind, workSpecHash };
+}
+
+test("private/reserved classifier covers loopback, cloud metadata, RFC1918, documentation, ULA and public", () => {
+  for (const address of ["127.0.0.1", "169.254.169.254", "100.100.100.200", "10.1.2.3", "198.51.100.7", "203.0.113.9", "fc00::1", "2001:db8::1"]) {
+    assert.equal(privateOrReservedAddress(address), true, address);
+  }
   assert.equal(privateOrReservedAddress("8.8.8.8"), false);
 });
 
@@ -50,19 +56,13 @@ test("DNS answers cannot launder metadata or mixed public/private rebinding targ
     GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST: "allowed.example",
   };
   await assert.rejects(
-    () => authorizeComputeUrl("https://allowed.example/x", {
-      env,
-      resolveHostname: async () => [{ address: "100.100.100.200", family: 4 }],
-    }),
+    () => authorizeComputeUrl("https://allowed.example/x", { env, resolveHostname: async () => [{ address: "100.100.100.200", family: 4 }] }),
     /metadata-service/,
   );
   await assert.rejects(
     () => authorizeComputeUrl("https://allowed.example/x", {
       env,
-      resolveHostname: async () => [
-        { address: "8.8.8.8", family: 4 },
-        { address: "10.0.0.1", family: 4 },
-      ],
+      resolveHostname: async () => [{ address: "8.8.8.8", family: 4 }, { address: "10.0.0.1", family: 4 }],
     }),
     /mixed public\/private/,
   );
@@ -86,39 +86,46 @@ test("governed JSON fetch pins an approved address, refuses redirects and bounds
   }
 });
 
-test("artifact verification streams approved HTTP bytes and refuses a hash mismatch", async () => {
+test("artifact verification streams approved HTTP bytes and binds hash, size, kind and work-spec lineage", async () => {
   const bytes = Buffer.from("governed artifact bytes\n");
   const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const server = http.createServer((_req, res) => res.end(bytes));
   const port = await listen(server);
   try {
-    const verified = await verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/artifact`, sha256, sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env: privateEnv });
+    const locator = `http://127.0.0.1:${port}/artifact`;
+    const spec = workSpec();
+    const verified = await verifyGovernedComputeArtifact({ artifact: artifact({ locator, sha256, sizeBytes: bytes.length }), workSpec: spec, env: privateEnv });
     assert.equal(verified.verifiedSha256, sha256);
     assert.equal(verified.verificationKind, "governed-http-stream");
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/artifact`, sha256: "0".repeat(64), sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env: privateEnv }), /does not match/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator, sha256: "0".repeat(64), sizeBytes: bytes.length }), workSpec: spec, env: privateEnv }), /does not match/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator, sha256, sizeBytes: bytes.length + 1 }), workSpec: spec, env: privateEnv }), /size does not match/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator, sha256, sizeBytes: bytes.length, workSpecHash: "b".repeat(64) }), workSpec: spec, env: privateEnv }), /lineage mismatch/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator, sha256, kind: "unexpected" }), workSpec: spec, env: privateEnv }), /not allowed by the work spec/);
   } finally {
     await close(server);
   }
 });
 
-test("artifact verification refuses redirects, oversized bodies and ungoverned kinds", async () => {
+test("artifact verification refuses redirects, encoded responses and oversized bodies", async () => {
   const server = http.createServer((req, res) => {
     if (req.url === "/redirect") { res.statusCode = 302; res.setHeader("location", "/artifact"); res.end(); return; }
     if (req.url === "/large") { res.end(Buffer.alloc(2048)); return; }
+    if (req.url === "/encoded") { res.setHeader("content-encoding", "gzip"); res.end("not-really-gzip"); return; }
     res.end("x");
   });
   const port = await listen(server);
   try {
     const env = { ...privateEnv, GROWTHUB_COMPUTE_ARTIFACT_MAX_BYTES: "1024" };
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/redirect`, sha256: "0".repeat(64), kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /redirects are refused/);
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/large`, sha256: "0".repeat(64), kind: "gguf" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /exceeds 1024 bytes/);
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: `http://127.0.0.1:${port}/artifact`, sha256: "0".repeat(64), kind: "unexpected" }, workSpec: { output: { expectedKinds: ["gguf"] } }, env }), /not allowed by the work spec/);
+    const spec = workSpec();
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: `http://127.0.0.1:${port}/redirect`, sha256: "0".repeat(64) }), workSpec: spec, env }), /redirects are refused/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: `http://127.0.0.1:${port}/large`, sha256: "0".repeat(64) }), workSpec: spec, env }), /exceeds 1024 bytes/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: `http://127.0.0.1:${port}/encoded`, sha256: "0".repeat(64) }), workSpec: spec, env }), /content-encoding/);
   } finally {
     await close(server);
   }
 });
 
-test("local artifact verification enforces governed roots, expected output path, regular files and symlink escape", async () => {
+test("local artifact verification enforces governed roots, expected output path, regular files, traversal and symlink escape", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "growthub-compute-network-"));
   const rootDir = path.join(tmp, "artifacts");
   const outside = path.join(tmp, "outside");
@@ -131,16 +138,50 @@ test("local artifact verification enforces governed roots, expected output path,
   fs.writeFileSync(artifactPath, bytes);
   const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const env = { GROWTHUB_COMPUTE_ARTIFACT_ROOTS: rootDir, GROWTHUB_COMPUTE_ARTIFACT_MAX_BYTES: "1024" };
+  const spec = workSpec({ artifactPath: expectedDir });
   try {
-    const verified = await verifyGovernedComputeArtifact({ artifact: { locator: artifactPath, sha256, sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { artifactPath: expectedDir, expectedKinds: ["gguf"] } }, env });
+    const verified = await verifyGovernedComputeArtifact({ artifact: artifact({ locator: artifactPath, sha256, sizeBytes: bytes.length }), workSpec: spec, env });
     assert.equal(verified.verifiedSha256, sha256);
     const outsidePath = path.join(outside, "model.gguf");
     fs.writeFileSync(outsidePath, bytes);
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: outsidePath, sha256, sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { artifactPath: expectedDir, expectedKinds: ["gguf"] } }, env }), /outside/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: outsidePath, sha256, sizeBytes: bytes.length }), workSpec: spec, env }), /outside/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: `${expectedDir}/../run-1/model.gguf`, sha256, sizeBytes: bytes.length }), workSpec: spec, env }), /parent traversal/);
     const link = path.join(expectedDir, "link.gguf");
     fs.symlinkSync(outsidePath, link);
-    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: { locator: link, sha256, sizeBytes: bytes.length, kind: "gguf" }, workSpec: { output: { artifactPath: expectedDir, expectedKinds: ["gguf"] } }, env }), /symbolic link|escapes/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: link, sha256, sizeBytes: bytes.length }), workSpec: spec, env }), /symbolic link|escapes/);
+    await assert.rejects(() => verifyGovernedComputeArtifact({ artifact: artifact({ locator: expectedDir, sha256, sizeBytes: bytes.length }), workSpec: spec, env }), /regular file/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("registered remote adapters replace caller transport with the canonical governed fetch", async () => {
+  const registryUrl = pathToFileURL(path.join(app, "lib/adapters/compute/compute-adapter-registry.js")).href;
+  const { registerComputeProviderAdapter, getComputeProviderAdapter } = await import(registryUrl);
+  registerComputeProviderAdapter({
+    id: "canonical-network-policy-test",
+    locality: "remote",
+    describeCapabilities: () => ({}),
+    inspectCapacity: async (ctx) => ctx.fetchJson("http://127.0.0.1:9/private"),
+    allocate: async () => ({}), execute: async () => [], status: async () => [],
+    resume: async () => [], cancel: async () => [], release: async () => [],
+  });
+  const registered = getComputeProviderAdapter("canonical-network-policy-test");
+  let attackerFetchCalls = 0;
+  const previousPublic = process.env.GROWTHUB_COMPUTE_NETWORK_ALLOWLIST;
+  const previousPrivate = process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+  delete process.env.GROWTHUB_COMPUTE_NETWORK_ALLOWLIST;
+  delete process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+  try {
+    await assert.rejects(
+      () => registered.inspectCapacity({ fetchJson: async () => { attackerFetchCalls += 1; return { bypass: true }; } }),
+      /operator allowlist/,
+    );
+    assert.equal(attackerFetchCalls, 0, "caller-injected transport never executes");
+  } finally {
+    if (previousPublic === undefined) delete process.env.GROWTHUB_COMPUTE_NETWORK_ALLOWLIST;
+    else process.env.GROWTHUB_COMPUTE_NETWORK_ALLOWLIST = previousPublic;
+    if (previousPrivate === undefined) delete process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST;
+    else process.env.GROWTHUB_COMPUTE_PRIVATE_NETWORK_ALLOWLIST = previousPrivate;
   }
 });
