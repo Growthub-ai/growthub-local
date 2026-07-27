@@ -20,6 +20,8 @@ import {
   validateStructuredCompletion,
   validateToolCalls,
 } from "./contracts.js";
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import { CACHE_BYPASS_POISONED, getInferenceSemanticCache } from "./cache.js";
 import {
   buildReceiptLineage,
@@ -278,6 +280,9 @@ function aggregateChunk(state, payload) {
   if (choice.finish_reason != null) state.finishReason = choice.finish_reason;
   const delta = choice.delta || choice.message || {};
   if (typeof delta.content === "string") state.content += delta.content;
+  const reasoning = delta.reasoning ?? delta.reasoning_content ?? delta.thinking;
+  if (typeof reasoning === "string") state.reasoning += reasoning;
+  else if (reasoning != null) state.reasoningParts.push(reasoning);
   for (const part of Array.isArray(delta.tool_calls) ? delta.tool_calls : []) {
     const index = Number.isInteger(part?.index) ? part.index : state.toolCalls.length;
     state.toolCalls[index] = state.toolCalls[index] || { id: "", type: "function", function: { name: "", arguments: "" } };
@@ -289,35 +294,159 @@ function aggregateChunk(state, payload) {
   }
 }
 
-export async function readResponseTextBounded(response, { maxBytes = INFERENCE_MAX_RESPONSE_BYTES } = {}) {
+function sha256Bytes(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function classifyProviderChunk(value) {
+  const text = new TextDecoder().decode(value);
+  const explicitEvent = text.match(/(?:^|\r?\n)event:\s*([^\r\n]+)/)?.[1]?.trim();
+  if (explicitEvent) return explicitEvent.slice(0, 160);
+  const candidates = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .filter((line) => line && line !== "[DONE]");
+  if (candidates.length === 0) candidates.push(text.trim());
+  for (const candidate of candidates) {
+    try {
+      const payload = JSON.parse(candidate);
+      const eventType = String(payload?.type || "").trim();
+      if (eventType) return eventType.slice(0, 160);
+      const delta = payload?.choices?.[0]?.delta || payload?.choices?.[0]?.message || {};
+      if (delta.reasoning != null || delta.reasoning_content != null || delta.thinking != null) return "reasoning.delta";
+      if (Array.isArray(delta.tool_calls) && delta.tool_calls.length) return "tool.delta";
+      if (typeof delta.content === "string") return "text.delta";
+      if (payload?.usage) return "usage";
+      const objectType = String(payload?.object || "").trim();
+      if (objectType) return objectType.slice(0, 160);
+    } catch {
+      // A transport chunk may split an SSE event. The exact bytes are still
+      // retained; event classification is optional and must never rewrite it.
+    }
+  }
+  return null;
+}
+
+function captureProviderChunk(value, ordinal) {
+  const bytes = Buffer.from(value);
+  return {
+    schemaVersion: "1",
+    ordinal,
+    eventType: classifyProviderChunk(bytes),
+    payloadBase64: bytes.toString("base64"),
+    payloadByteLength: bytes.byteLength,
+    payloadHash: sha256Bytes(bytes),
+  };
+}
+
+function safeProviderResponseMetadata(response, rawChunks) {
+  const header = (name) => String(response?.headers?.get?.(name) || "").trim();
+  const metadata = {
+    httpStatus: Number(response?.status) || 0,
+    returnedByteLength: rawChunks.reduce((total, chunk) => total + chunk.payloadByteLength, 0),
+    returnedByteStreamSha256: sha256Bytes(Buffer.concat(rawChunks.map((chunk) => Buffer.from(chunk.payloadBase64, "base64")))),
+  };
+  const safeHeaders = [
+    ["requestId", "x-request-id"],
+    ["providerRequestId", "request-id"],
+    ["retryAfter", "retry-after"],
+    ["rateLimitLimitRequests", "x-ratelimit-limit-requests"],
+    ["rateLimitRemainingRequests", "x-ratelimit-remaining-requests"],
+    ["rateLimitResetRequests", "x-ratelimit-reset-requests"],
+    ["rateLimitLimitInput", "x-ratelimit-limit-input-tokens"],
+    ["rateLimitRemainingInput", "x-ratelimit-remaining-input-tokens"],
+    ["rateLimitResetInput", "x-ratelimit-reset-input-tokens"],
+    ["rateLimitLimitOutput", "x-ratelimit-limit-output-tokens"],
+    ["rateLimitRemainingOutput", "x-ratelimit-remaining-output-tokens"],
+    ["rateLimitResetOutput", "x-ratelimit-reset-output-tokens"],
+  ];
+  for (const [key, name] of safeHeaders) {
+    const value = header(name);
+    if (value) metadata[key] = value.slice(0, 500);
+  }
+  return metadata;
+}
+
+function buildProviderResponseStreamArchive({
+  response,
+  responseBody,
+  providerKind,
+  identity,
+  rawChunks,
+}) {
+  if (!Array.isArray(rawChunks) || rawChunks.length === 0) return null;
+  const chunks = rawChunks.map((chunk, ordinal) => ({ ...chunk, ordinal }));
+  const archiveBytes = Buffer.from(`${chunks.map((chunk) => stableStringify(chunk)).join("\n")}\n`, "utf8");
+  const providerModel = String(
+    responseBody?.model
+      || identity?.servedAlias
+      || identity?.model
+      || "unavailable",
+  ).trim() || "unavailable";
+  const providerResponseId = String(
+    responseBody?.id
+      || response?.headers?.get?.("x-request-id")
+      || response?.headers?.get?.("request-id")
+      || "",
+  ).trim() || null;
+  return {
+    schemaVersion: "growthub-provider-response-stream-v1",
+    providerId: String(providerKind || "openai-compatible").trim() || "openai-compatible",
+    providerModel,
+    providerResponseId,
+    mediaType: String(response?.headers?.get?.("content-type") || "application/octet-stream").slice(0, 160),
+    contentEncoding: String(response?.headers?.get?.("content-encoding") || "").trim().slice(0, 80) || null,
+    responseMetadata: safeProviderResponseMetadata(response, chunks),
+    chunks,
+    chunkCount: chunks.length,
+    chunkRootHash: sha256Hex({
+      schemaVersion: "growthub-provider-response-chunk-root-v1",
+      chunks: chunks.map((chunk) => ({ ordinal: chunk.ordinal, payloadHash: chunk.payloadHash })),
+    }),
+    streamHash: sha256Bytes(archiveBytes),
+    byteLength: archiveBytes.byteLength,
+  };
+}
+
+export async function readResponseBytesBounded(response, { maxBytes = INFERENCE_MAX_RESPONSE_BYTES } = {}) {
   const limit = Math.max(1024, Math.min(64 * 1024 * 1024, Math.floor(Number(maxBytes) || INFERENCE_MAX_RESPONSE_BYTES)));
   const declared = Number(response?.headers?.get?.("content-length"));
   if (Number.isFinite(declared) && declared > limit) throw new Error(`inference response exceeds ${limit} bytes`);
+  const rawChunks = [];
   if (!response?.body?.getReader) {
-    const text = await response.text();
-    if (Buffer.byteLength(text, "utf8") > limit) throw new Error(`inference response exceeds ${limit} bytes`);
-    return text;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength > limit) throw new Error(`inference response exceeds ${limit} bytes`);
+    if (bytes.byteLength) rawChunks.push(captureProviderChunk(bytes, 0));
+    return { bytes, rawChunks };
   }
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
+  let bytesRead = 0;
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      bytes += value?.byteLength || 0;
-      if (bytes > limit) {
+      const bytes = Buffer.from(value || []);
+      bytesRead += bytes.byteLength;
+      if (bytesRead > limit) {
         await reader.cancel("inference response byte limit exceeded").catch(() => {});
         throw new Error(`inference response exceeds ${limit} bytes`);
       }
-      text += decoder.decode(value, { stream: true });
+      if (bytes.byteLength) rawChunks.push(captureProviderChunk(bytes, rawChunks.length));
     }
-    text += decoder.decode();
-    return text;
   } finally {
     reader.releaseLock?.();
   }
+  return {
+    bytes: Buffer.concat(rawChunks.map((chunk) => Buffer.from(chunk.payloadBase64, "base64"))),
+    rawChunks,
+  };
+}
+
+export async function readResponseTextBounded(response, { maxBytes = INFERENCE_MAX_RESPONSE_BYTES } = {}) {
+  const captured = await readResponseBytesBounded(response, { maxBytes });
+  return new TextDecoder().decode(captured.bytes);
 }
 
 export async function readOpenAiStream(response, {
@@ -334,7 +463,8 @@ export async function readOpenAiStream(response, {
   let chunks = 0;
   const byteLimit = Math.max(1024, Math.min(64 * 1024 * 1024, Math.floor(Number(maxBytes) || INFERENCE_MAX_RESPONSE_BYTES)));
   const chunkLimit = Math.max(1, Math.min(1_000_000, Math.floor(Number(maxChunks) || INFERENCE_MAX_STREAM_CHUNKS)));
-  const state = { id: "", model: "", content: "", toolCalls: [], finishReason: null, usage: null };
+  const rawChunks = [];
+  const state = { id: "", model: "", content: "", reasoning: "", reasoningParts: [], toolCalls: [], finishReason: null, usage: null };
   const consume = (line) => {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) return;
@@ -353,8 +483,14 @@ export async function readOpenAiStream(response, {
       chunks += 1;
       if (bytes > byteLimit || chunks > chunkLimit) {
         await reader.cancel("inference stream limit exceeded").catch(() => {});
-        return { ok: false, error: `inference stream exceeds ${byteLimit} bytes or ${chunkLimit} chunks`, response: null };
+        return {
+          ok: false,
+          error: `inference stream exceeds ${byteLimit} bytes or ${chunkLimit} chunks`,
+          response: null,
+          rawChunks,
+        };
       }
+      if (value?.byteLength) rawChunks.push(captureProviderChunk(value, rawChunks.length));
       pending += decoder.decode(value, { stream: true });
       const lines = pending.split(/\r?\n/);
       pending = lines.pop() || "";
@@ -362,10 +498,19 @@ export async function readOpenAiStream(response, {
     }
     pending += decoder.decode();
     for (const line of pending.split(/\r?\n/)) consume(line);
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || "inference stream read failed"),
+      response: null,
+      rawChunks,
+    };
   } finally {
     reader.releaseLock?.();
   }
   const message = { role: "assistant", content: state.content };
+  if (state.reasoning) message.reasoning = state.reasoning;
+  if (state.reasoningParts.length) message.reasoning_parts = state.reasoningParts;
   if (state.toolCalls.length) message.tool_calls = state.toolCalls.filter(Boolean);
   return {
     ok: true,
@@ -376,6 +521,7 @@ export async function readOpenAiStream(response, {
       choices: [{ index: 0, message, finish_reason: state.finishReason }],
       ...(state.usage ? { usage: state.usage } : {}),
     },
+    rawChunks,
   };
 }
 
@@ -407,7 +553,8 @@ export function createOpenAiChatTransport({
         signal,
       });
       if (!request.stream) {
-        const text = await readResponseTextBounded(response, { maxBytes: maxResponseBytes });
+        const captured = await readResponseBytesBounded(response, { maxBytes: maxResponseBytes });
+        const text = new TextDecoder().decode(captured.bytes);
         let body;
         try { body = JSON.parse(text); } catch { body = text; }
         return {
@@ -421,9 +568,35 @@ export function createOpenAiChatTransport({
           identity,
           routing: { status: "unified", poolRole: "unified", instanceId: identity.instanceId || "", nativeDisaggregation: false },
           nativeCache: { enabled: false, cachedTokens: Number(body?.timings?.cache_n || body?.usage?.prompt_tokens_details?.cached_tokens) || 0 },
+          providerStream: buildProviderResponseStreamArchive({
+            response,
+            responseBody: body,
+            providerKind,
+            identity,
+            rawChunks: captured.rawChunks,
+          }),
         };
       }
-      if (!response.ok) return { ok: false, status: response.status, error: `HTTP ${response.status}`, response: null };
+      if (!response.ok) {
+        const captured = await readResponseBytesBounded(response, { maxBytes: maxResponseBytes });
+        const text = new TextDecoder().decode(captured.bytes);
+        let body;
+        try { body = JSON.parse(text); } catch { body = text; }
+        return {
+          ok: false,
+          status: response.status,
+          error: body?.error?.message || `HTTP ${response.status}`,
+          response: null,
+          providerKind,
+          providerStream: buildProviderResponseStreamArchive({
+            response,
+            responseBody: body,
+            providerKind,
+            identity,
+            rawChunks: captured.rawChunks,
+          }),
+        };
+      }
       const streamed = await readOpenAiStream(response, {
         onDelta,
         // Schema output is released only after final validation; tool-call
@@ -440,6 +613,13 @@ export function createOpenAiChatTransport({
         identity,
         routing: { status: "unified", poolRole: "unified", instanceId: identity.instanceId || "", nativeDisaggregation: false },
         nativeCache: { enabled: false, cachedTokens: Number(streamed.response?.timings?.cache_n || streamed.response?.usage?.prompt_tokens_details?.cached_tokens) || 0 },
+        providerStream: buildProviderResponseStreamArchive({
+          response,
+          responseBody: streamed.response,
+          providerKind,
+          identity,
+          rawChunks: streamed.rawChunks,
+        }),
       };
     } catch (error) {
       return { ok: false, status: 0, response: null, error: String(error?.message || "inference request failed") };
@@ -1669,5 +1849,6 @@ export async function executeInferenceGateway({
     } : {}),
     headers: cacheAllowed ? { "x-cache-key": cacheKey } : {},
     error: completedSuccessfully ? null : errors[0] || { code: "inference_failed", message: "inference failed" },
+    providerStream: transportResult?.providerStream ?? null,
   };
 }

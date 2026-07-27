@@ -17,7 +17,10 @@ import { compileInferenceManifest, signInferenceManifest } from "./adapters/infe
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { createLlamaCppTransport } from "./adapters/inference/llama-transport.js";
-import { normalizeDistillationTrace } from "./distillation-gateway.js";
+import {
+  normalizeDistillationTrace,
+  normalizeProviderResponseStreamArchive,
+} from "./distillation-gateway.js";
 import { deriveEndpointVerification } from "./training-verification.js";
 
 function registryRows(workspaceConfig) {
@@ -44,6 +47,32 @@ function promptFromInput(inputPayload) {
 
 function responseContent(body) {
   return String(body?.choices?.[0]?.message?.content || "");
+}
+
+function dataGenerationIntent(inputPayload) {
+  const value = inputPayload?.data_generation;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const intent = {
+    schemaVersion: String(value.schemaVersion || ""),
+    campaignId: String(value.campaignId || ""),
+    promptId: String(value.promptId || ""),
+    jobId: String(value.jobId || ""),
+    stage: String(value.stage || ""),
+    connectionRefHash: String(value.connectionRefHash || ""),
+    synthetic: value.synthetic === true,
+  };
+  if (
+    intent.schemaVersion !== "growthub-data-generation-workspace-intent-v1"
+    || !/^dgc_[a-f0-9]{24}$/.test(intent.campaignId)
+    || !/^dgp_[a-f0-9]{24}$/.test(intent.promptId)
+    || !/^dgj_[a-f0-9]{24}$/.test(intent.jobId)
+    || intent.stage !== "teacher-query"
+    || !/^[a-f0-9]{64}$/.test(intent.connectionRefHash)
+    || !intent.synthetic
+  ) {
+    throw new Error("data-generation Workspace intent is malformed or unbound");
+  }
+  return intent;
 }
 
 function isChatCompletion(body) {
@@ -369,6 +398,19 @@ export async function executeCustomModelInference({
   if (!prompt && !Array.isArray(inputPayload?.messages)) {
     return { ok: false, error: "custom-model inference requires a prompt or messages", attempts: [] };
   }
+  let governedDataGeneration = null;
+  try {
+    governedDataGeneration = dataGenerationIntent(inputPayload);
+  } catch (error) {
+    return {
+      ok: false,
+      error: String(error?.message || "data-generation Workspace intent is invalid"),
+      attempts: [],
+      invocations: [],
+      providerStreams: [],
+      traces: [],
+    };
+  }
 
   // Multi-tier economic routing controls. Cost is a token-count estimate
   // against each route's declared cost model (cents per million tokens);
@@ -409,6 +451,7 @@ export async function executeCustomModelInference({
 
   const attempts = [];
   const failedInvocations = [];
+  const failedProviderStreams = [];
   const targetAllow = Array.isArray(allowedTargets) && allowedTargets.length ? new Set(allowedTargets.map(String)) : null;
   // A first-invocation probe has to reach an unverified student in order to
   // create verification evidence. Keep that exception server-bounded: it is
@@ -596,6 +639,7 @@ export async function executeCustomModelInference({
       spentEstimateCents += thisRouteEstimate;
     }
     const body = result.response;
+    const providerStream = normalizeProviderResponseStreamArchive(result.providerStream);
     const servedModel = String(body?.model || "").trim();
     const validBody = result.ok && isChatCompletion(body);
     const identityMatches = target !== "local-student" || (
@@ -609,6 +653,7 @@ export async function executeCustomModelInference({
           : llamaCpp && result.receipt?.identity?.status !== "verified"
             ? String(result.receipt?.identity?.reason || "llama.cpp runtime could not prove the governed model/adapter hashes")
             : `student served ${servedModel || "an unnamed model"}; expected ${expectedModel}`;
+      if (providerStream) failedProviderStreams.push(providerStream);
       if (result.receipt) {
         failedInvocations.push({
           schema: "growthub-custom-model-invocation-v2",
@@ -626,6 +671,15 @@ export async function executeCustomModelInference({
           outcomeStatus: result.status || "failed",
           failureReason,
           completedAt: new Date().toISOString(),
+          ...(governedDataGeneration ? { dataGeneration: governedDataGeneration } : {}),
+          providerStreamEvidence: providerStream ? {
+            schema: providerStream.schemaVersion,
+            responseId: providerStream.providerResponseId,
+            streamHash: providerStream.streamHash,
+            chunkRootHash: providerStream.chunkRootHash,
+            chunkCount: providerStream.chunkCount,
+            byteLength: providerStream.byteLength,
+          } : null,
           verificationReceipt: result.receipt,
         });
       }
@@ -689,6 +743,15 @@ export async function executeCustomModelInference({
       spanKind: String(verificationReceipt?.lineage?.span_kind || "ROOT"),
       routingDecision: verificationReceipt?.routing_decision || null,
       redactionEventCount: Number(verificationReceipt?.redaction?.event_count) || 0,
+      ...(governedDataGeneration ? { dataGeneration: governedDataGeneration } : {}),
+      providerStreamEvidence: providerStream ? {
+        schema: providerStream.schemaVersion,
+        responseId: providerStream.providerResponseId,
+        streamHash: providerStream.streamHash,
+        chunkRootHash: providerStream.chunkRootHash,
+        chunkCount: providerStream.chunkCount,
+        byteLength: providerStream.byteLength,
+      } : null,
       ...(executionManifest ? { inferenceManifest: executionManifest } : {}),
       ...(compiledManifest.available ? {} : { inferenceManifestUnavailable: compiledManifest.reason }),
       verificationReceipt,
@@ -711,6 +774,15 @@ export async function executeCustomModelInference({
         prefixHash: String(verificationReceipt?.cache?.prefix_hash || ""),
         reusable: ["HIT", "MISS"].includes(String(verificationReceipt?.cache?.cache_status || "")),
       },
+      providerStream: providerStream ? {
+        schema: providerStream.schemaVersion,
+        responseId: providerStream.providerResponseId,
+        streamHash: providerStream.streamHash,
+        chunkRootHash: providerStream.chunkRootHash,
+        chunkCount: providerStream.chunkCount,
+        byteLength: providerStream.byteLength,
+      } : null,
+      ...(governedDataGeneration ? { dataGeneration: governedDataGeneration } : {}),
     });
     const qualityUnmet = String(verificationReceipt?.routing_decision?.quality || "") === "QUALITY_UNMET";
     const laterRoutes = routes.slice(routes.indexOf(route) + 1)
@@ -748,6 +820,8 @@ export async function executeCustomModelInference({
       attempts,
       invocation,
       trace,
+      providerStream,
+      providerStreams: providerStream ? [providerStream] : [],
       invocations: [
         ...failedInvocations,
         ...(stashedQualityEnvelope ? [stashedQualityEnvelope.invocation] : []),
@@ -785,6 +859,7 @@ export async function executeCustomModelInference({
     error: attempts.length ? attempts[attempts.length - 1].reason : "no mothership route is configured",
     attempts,
     invocations: failedInvocations,
+    providerStreams: failedProviderStreams,
     traces: [],
   };
 }
@@ -861,6 +936,9 @@ export function combineExecutions(executions, response, extra = {}) {
     invocations: executions.flatMap((entry) => Array.isArray(entry?.invocations)
       ? entry.invocations
       : entry?.invocation ? [entry.invocation] : []),
+    providerStreams: executions.flatMap((entry) => Array.isArray(entry?.providerStreams)
+      ? entry.providerStreams
+      : entry?.providerStream ? [entry.providerStream] : []),
     traces: executions.flatMap((entry) => Array.isArray(entry?.traces)
       ? entry.traces
       : entry?.trace ? [entry.trace] : []),
@@ -958,7 +1036,22 @@ export async function executeCustomModelWorkflow({
   if (workflowVariant === "chat") return call("", prompt);
 
   if (workflowVariant === "synthetic-scaling") {
-    const generated = await call("synthetic", `${prompt}\n\nReturn one diverse training example as JSON with instruction, input, and output fields. Do not include secrets or personal data.`);
+    let governedDataGeneration = null;
+    try {
+      governedDataGeneration = dataGenerationIntent(inputPayload);
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error?.message || "data-generation Workspace intent is invalid"),
+        attempts: [],
+        invocations: [],
+        providerStreams: [],
+        traces: [],
+      };
+    }
+    const generated = governedDataGeneration
+      ? await call("synthetic", prompt, { allowedTargets: ["teacher"] })
+      : await call("synthetic", `${prompt}\n\nReturn one diverse training example as JSON with instruction, input, and output fields. Do not include secrets or personal data.`);
     if (!generated.ok || needsToolResult(generated)) return generated;
     generated.trace = { ...generated.trace, synthetic: true, accepted: false, qualityStatus: "ungraded", redactionStatus: "pending" };
     generated.traces = [generated.trace];

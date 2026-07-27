@@ -98,6 +98,70 @@ test("production inference performs a strict OpenAI call and records real invoca
   assert.equal(f.requests.length, 1);
   assert.equal(f.requests[0].body.model, "workspace-tuned-v2");
   assert.equal(f.requests[0].body.messages[0].content, "Summarize the release");
+  assert.equal(result.providerStream.schemaVersion, "growthub-provider-response-stream-v1");
+  assert.equal(result.providerStream.chunkCount, 1);
+  assert.equal(result.providerStream.providerModel, "workspace-tuned-v2");
+  assert.equal(result.invocation.providerStreamEvidence.streamHash, result.providerStream.streamHash);
+  assert.equal(result.trace.providerStream.chunkRootHash, result.providerStream.chunkRootHash);
+});
+
+test("streaming inference preserves every returned byte, reasoning delta, usage, and unknown provider field", async () => {
+  const f = fixture();
+  const chunks = [
+    'data: {"id":"cmpl-stream","object":"chat.completion.chunk","model":"workspace-tuned-v2","choices":[{"index":0,"delta":{"reasoning":"inspect the proof "},"finish_reason":null}],"opaque_future":{"signature":"opaque-returned-value"}}\n\n',
+    'data: {"id":"cmpl-stream","object":"chat.completion.chunk","model":"workspace-tuned-v2","choices":[{"index":0,"delta":{"content":"Verified output"},"finish_reason":null}]}\n\n',
+    'data: {"id":"cmpl-stream","object":"chat.completion.chunk","model":"workspace-tuned-v2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13}}\n\n',
+    "data: [DONE]\n\n",
+  ];
+  f.fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    f.requests.push({ url: String(url), body, headers: init.headers });
+    const encoder = new TextEncoder();
+    return new Response(new ReadableStream({
+      start(controller) {
+        chunks.forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+        controller.close();
+      },
+    }), {
+      status: 200,
+      headers: { "content-type": "text/event-stream", "x-request-id": "req-stream-1" },
+    });
+  };
+  const result = await executeCustomModelInference({
+    ...f,
+    inputPayload: {
+      prompt: "Return a governed stream",
+      inference: {
+        stream: true,
+        cache_ttl: 0,
+        cache_policy: { mode: "bypass" },
+      },
+    },
+    runId: "run_stream_capture",
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.trace.response, "Verified output");
+  assert.equal(result.trace.reasoning, "inspect the proof ");
+  assert.equal(result.invocation.promptTokens, 9);
+  assert.equal(result.invocation.completionTokens, 4);
+  assert.equal(result.providerStream.chunkCount, chunks.length);
+  assert.deepEqual(
+    result.providerStream.chunks.map((chunk) => chunk.eventType),
+    ["reasoning.delta", "text.delta", "usage", null],
+  );
+  assert.deepEqual(
+    result.providerStream.chunks.map((chunk) => Buffer.from(chunk.payloadBase64, "base64").toString("utf8")),
+    chunks,
+  );
+  assert.match(
+    Buffer.from(result.providerStream.chunks[0].payloadBase64, "base64").toString("utf8"),
+    /opaque_future/,
+  );
+  assert.equal(
+    result.providerStream.responseMetadata.returnedByteLength,
+    Buffer.byteLength(chunks.join(""), "utf8"),
+  );
+  assert.equal(result.providerStreams[0].streamHash, result.providerStream.streamHash);
 });
 
 test("live student identity mismatch cannot impersonate the tuned model and falls back to base", async () => {
@@ -224,6 +288,71 @@ test("synthetic output is harvested but remains unaccepted until review", async 
   assert.equal(result.trace.accepted, false);
   assert.equal(result.trace.qualityStatus, "ungraded");
   assert.equal(result.trace.redactionStatus, "pending");
+});
+
+test("governed campaign synthetic execution preserves the exact prompt and uses only the teacher route", async () => {
+  const f = fixture();
+  const dataGeneration = {
+    schemaVersion: "growthub-data-generation-workspace-intent-v1",
+    campaignId: `dgc_${"a".repeat(24)}`,
+    promptId: `dgp_${"b".repeat(24)}`,
+    jobId: `dgj_${"c".repeat(24)}`,
+    stage: "teacher-query",
+    connectionRefHash: "d".repeat(64),
+    synthetic: true,
+  };
+  const result = await executeCustomModelWorkflow({
+    ...f,
+    inputPayload: {
+      prompt: "Exact frozen campaign prompt",
+      inference: {
+        stream: false,
+        cache_ttl: 0,
+        cache_policy: { mode: "bypass" },
+      },
+      data_generation: dataGeneration,
+    },
+    runId: "run_campaign_synthetic",
+    workflowVariant: "synthetic-scaling",
+  });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.requests[0].url, "http://127.0.0.1:4103/v1/chat/completions");
+  assert.equal(f.requests[0].body.messages[0].content, "Exact frozen campaign prompt");
+  assert.equal(f.requests[0].body.model, "teacher-v1");
+  assert.equal(result.invocation.route, "teacher");
+  assert.deepEqual(result.invocation.dataGeneration, dataGeneration);
+  assert.deepEqual(result.trace.dataGeneration, dataGeneration);
+  assert.equal(result.providerStreams.length, 1);
+  assert.equal(
+    result.invocation.providerStreamEvidence.streamHash,
+    result.providerStreams[0].streamHash,
+  );
+});
+
+test("malformed campaign Workspace intent fails before provider execution", async () => {
+  const f = fixture();
+  const result = await executeCustomModelWorkflow({
+    ...f,
+    inputPayload: {
+      prompt: "This must not execute",
+      data_generation: {
+        schemaVersion: "growthub-data-generation-workspace-intent-v1",
+        campaignId: "dgc_invalid",
+        promptId: `dgp_${"b".repeat(24)}`,
+        jobId: `dgj_${"c".repeat(24)}`,
+        stage: "teacher-query",
+        connectionRefHash: "d".repeat(64),
+        synthetic: true,
+      },
+    },
+    runId: "run_campaign_invalid",
+    workflowVariant: "synthetic-scaling",
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /malformed or unbound/);
+  assert.equal(f.requests.length, 0);
+  assert.deepEqual(result.providerStreams, []);
 });
 
 test("evaluation executes tuned, base, and teacher judge calls and returns the verdict", async () => {
