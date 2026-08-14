@@ -90,6 +90,7 @@ import {
 } from "@/lib/workspace-chart-values";
 import { selectObjectFilterableFields, selectObjectSortableFields } from "@/lib/workspace-metadata-selectors";
 import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
+import { deriveClientInterface } from "@/lib/client-interface";
 import {
   CODEX_SITES_OBJECT_ID,
   ensureCodexSitesDataModel,
@@ -4374,10 +4375,18 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
   const activationUiCache = useMemo(() => getWorkspaceUiCache(config), [config]);
   const activationButtonHidden = activationUiCache.finishSetupButtonHidden === true
     || String(activationUiCache.finishSetupButtonHidden || "") === "true";
-  const showFinishSetupButton = workspaceView === "dashboards" && activationStarted && !activationButtonHidden;
-  const showActivationPanel = workspaceView === "dashboards" && (
-    !activationStarted || activationPanelOpen
+  // Client-interface-v1: in client mode the Builder home is a read/consume
+  // surface — setup, creation, and import affordances are operator-only.
+  const builderClientMode = useMemo(
+    () => deriveClientInterface(config || {}).isClient,
+    [config],
   );
+  const showFinishSetupButton = !builderClientMode
+    && workspaceView === "dashboards" && activationStarted && !activationButtonHidden;
+  const showActivationPanel = !builderClientMode
+    && workspaceView === "dashboards" && (
+      !activationStarted || activationPanelOpen
+    );
   const resizeDragRef = useRef(null);
   const moveDragRef = useRef(null);
   const importInputRef = useRef(null);
@@ -6010,10 +6019,12 @@ function WorkspaceBuilder({ initialConfig, initialSourceRecords, adapterConfig, 
                 ) : null}
               </span>
             ) : null}
-            <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
-            <button type="button" onClick={createCodexSite} disabled={saving}><Rocket size={15} />New Codex Site</button>
-            <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
-            <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
+            {builderClientMode ? null : <>
+              <button type="button" onClick={addDashboard}><Plus size={15} />New Dashboard</button>
+              <button type="button" onClick={createCodexSite} disabled={saving}><Rocket size={15} />New Codex Site</button>
+              <button type="button" onClick={createWorkflow} disabled={saving}><GitBranch size={15} />New Workflow</button>
+              <button type="button" onClick={() => importInputRef.current?.click()}><Import size={15} />Import</button>
+            </>}
           </div>}
           <input
             ref={importInputRef}

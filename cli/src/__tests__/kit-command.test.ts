@@ -184,4 +184,39 @@ describe("kit interactive download flow", () => {
     expect(printedOutput).toContain("GTM OS Workspace Template");
     expect(printedOutput).toContain("--seed-config gtm-os");
   });
+
+  it("lists the Custom App Client workspace template through the same seeded-config pathway", async () => {
+    listBundledKitsMock.mockReturnValue([
+      {
+        id: "growthub-custom-workspace-starter-v1",
+        family: "studio",
+        name: "Growthub Custom Workspace Starter Kit",
+        version: "1.0.0",
+        description: "Canonical governed workspace starter.",
+        briefType: "custom-workspace-starter",
+        executionMode: "export",
+        activationModes: ["export"],
+        bundleId: "growthub-custom-workspace-starter-v1",
+        bundleVersion: "1.0.0",
+      },
+    ]);
+
+    selectMock
+      .mockResolvedValueOnce("studio")
+      .mockResolvedValueOnce("custom-app-client-workspace-template-v1")
+      .mockResolvedValueOnce("actions")
+      .mockResolvedValueOnce("inspect");
+    confirmMock
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+
+    const { runInteractivePicker } = await import("../commands/kit.js");
+    const result = await runInteractivePicker({});
+
+    expect(result).toBe("done");
+    expect(downloadBundledKitMock).not.toHaveBeenCalled();
+    const printedOutput = consoleLogSpy.mock.calls.flat().join("\n");
+    expect(printedOutput).toContain("Custom App Client Workspace Template");
+    expect(printedOutput).toContain("--seed-config custom-app-client");
+  });
 });

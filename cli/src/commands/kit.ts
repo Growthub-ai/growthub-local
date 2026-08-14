@@ -58,6 +58,21 @@ const GTM_OS_TEMPLATE: KitListItem = {
   briefType: "workspace-template",
 };
 
+const CUSTOM_APP_CLIENT_TEMPLATE_ID = "custom-app-client-workspace-template-v1";
+const CUSTOM_APP_CLIENT_TEMPLATE: KitListItem = {
+  id: CUSTOM_APP_CLIENT_TEMPLATE_ID,
+  version: "1.0.0",
+  name: "Custom App Client Workspace Template",
+  description: "Governed client-interface isolate: reduced surface (rail + home dashboard + workflow canvas) projecting capability-graph and custom-model utilization truth, with client-interface slots as governed Data Model rows. Built from the blank workspace starter with a sanitized custom-app-client seed.",
+  type: "worker",
+  family: "studio",
+  executionMode: "export",
+  activationModes: ["export"],
+  bundleId: "growthub-custom-workspace-starter-v1",
+  bundleVersion: "1.0.0",
+  briefType: "workspace-template",
+};
+
 /** One row per workspace template — the seeded-config pathway is the single
  * canonical mechanism (templates/seeded-configs/<slug>.config.json applied
  * over the blank starter by `growthub starter init --seed-config <slug>`). */
@@ -82,6 +97,13 @@ const WORKSPACE_TEMPLATES: WorkspaceTemplateSpec[] = [
     defaultOut: "./gtm-os-workspace",
     workspaceName: "GTM OS Workspace",
     aliases: [GTM_OS_TEMPLATE_ID, "gtm-os", "gtm-os-workspace"],
+  },
+  {
+    item: CUSTOM_APP_CLIENT_TEMPLATE,
+    seedSlug: "custom-app-client",
+    defaultOut: "./custom-app-client-workspace",
+    workspaceName: "Custom App Client Workspace",
+    aliases: [CUSTOM_APP_CLIENT_TEMPLATE_ID, "custom-app-client", "custom-app-client-workspace"],
   },
 ];
 

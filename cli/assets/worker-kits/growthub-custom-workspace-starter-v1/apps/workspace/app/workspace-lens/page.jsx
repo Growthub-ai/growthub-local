@@ -3,8 +3,10 @@ import Link from "next/link";
 import { readAdapterConfig } from "@/lib/adapters/env";
 import { describePersistenceMode, readWorkspaceConfig, readWorkspaceSourceRecords } from "@/lib/workspace-config";
 import { deriveWorkspaceActivationState } from "@/lib/workspace-activation";
+import { deriveClientInterface } from "@/lib/client-interface";
 import { WorkspaceRail } from "../workspace-rail.jsx";
 import { WorkspaceLensPanel } from "../components/WorkspaceLensPanel.jsx";
+import { ClientModeNotAvailable } from "../components/ClientModeNotAvailable.jsx";
 
 /**
  * /workspace-lens — the dedicated Workspace Lens surface.
@@ -21,6 +23,9 @@ async function WorkspaceLens() {
   const adapter = readAdapterConfig();
   const persistence = describePersistenceMode();
   const workspaceConfig = await readWorkspaceConfig();
+  if (deriveClientInterface(workspaceConfig).isClient) {
+    return <ClientModeNotAvailable surface="Workspace Lens" />;
+  }
   let workspaceSourceRecords = {};
   try {
     workspaceSourceRecords = (await readWorkspaceSourceRecords()) || {};
