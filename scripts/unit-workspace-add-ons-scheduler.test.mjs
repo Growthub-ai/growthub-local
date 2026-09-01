@@ -40,6 +40,7 @@ const {
   deriveScheduleId,
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
+  resolveWorkflowInvocationUrl,
   verifyQstashSignature,
   getSchedulerAdapter,
   isSchedulerProduct,
@@ -99,6 +100,56 @@ test("buildSchedulerCallbackUrls yields the three governed routes", () => {
   assert.equal(urls.destinationUrl, "https://ws.example.com/api/workspace/workflows/upstash");
   assert.equal(urls.callbackUrl, "https://ws.example.com/api/workspace/add-ons/upstash/callback");
   assert.equal(urls.failureCallbackUrl, "https://ws.example.com/api/workspace/add-ons/upstash/failure");
+});
+
+test("published workflow verification uses the frozen destination instead of deployment-specific VERCEL_URL", () => {
+  const frozenDestination = "https://claude-workers.vercel.app/api/workspace/workflows/upstash";
+  const expectedUrl = resolveWorkflowInvocationUrl({
+    frozenDestination,
+    providerId: "upstash",
+    env: { VERCEL_URL: "claude-workers-git-preview-abc.vercel.app" },
+    requestOrigin: "https://claude-workers-git-preview-abc.vercel.app",
+  });
+  assert.equal(expectedUrl, frozenDestination);
+
+  const rawBody = JSON.stringify({ objectId: "chat-scheduling", rowId: "PR1612 canonical chat live validation" });
+  const signature = makeSignature({ key: KEY, url: frozenDestination, body: rawBody });
+  assert.equal(
+    verifyQstashSignature({ signature, body: rawBody, signingKeys: [KEY], expectedUrl, currentTimeS: 1700000100 }).ok,
+    true,
+    "the published stable alias remains valid when the receiving deployment has a different VERCEL_URL",
+  );
+  assert.equal(
+    verifyQstashSignature({
+      signature,
+      body: rawBody,
+      signingKeys: [KEY],
+      expectedUrl: "https://claude-workers-git-preview-abc.vercel.app/api/workspace/workflows/upstash",
+      currentTimeS: 1700000100,
+    }).reason,
+    "subject-mismatch",
+    "the reproduced stale deployment-derived subject still fails",
+  );
+});
+
+test("workflow destination resolver rejects unsafe or wrong-provider frozen URLs", () => {
+  const fallback = "https://current-deployment.vercel.app/api/workspace/workflows/upstash";
+  assert.equal(
+    resolveWorkflowInvocationUrl({
+      frozenDestination: "http://localhost:3000/api/workspace/workflows/upstash",
+      providerId: "upstash",
+      env: { VERCEL_URL: "current-deployment.vercel.app" },
+    }),
+    fallback,
+  );
+  assert.equal(
+    resolveWorkflowInvocationUrl({
+      frozenDestination: "https://workspace.example.com/api/workspace/workflows/other-provider",
+      providerId: "upstash",
+      env: { VERCEL_URL: "current-deployment.vercel.app" },
+    }),
+    fallback,
+  );
 });
 
 /* ---------- adapter resolution ---------- */
