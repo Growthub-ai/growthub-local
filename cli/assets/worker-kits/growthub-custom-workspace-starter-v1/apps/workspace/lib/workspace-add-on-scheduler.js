@@ -109,33 +109,6 @@ function buildSchedulerCallbackUrls(baseUrl, providerId) {
   };
 }
 
-/**
- * Resolve the signed destination for an admitted workflow invocation.
- *
- * Once a Routine is published, its stored scheduler destination is the
- * authority QStash signed. A serverless deployment may receive that request on
- * a stable alias while `VERCEL_URL` names an immutable deployment, so rebuilding
- * the destination from the current process environment would reject a valid
- * delivery with `subject-mismatch`.
- *
- * Only a safe frozen URL for this exact provider route is accepted. Draft or
- * legacy rows without one retain the existing public-origin fallback.
- */
-function resolveWorkflowInvocationUrl({ frozenDestination, providerId, env = process.env, requestOrigin = "" } = {}) {
-  const providerPath = `/api/workspace/workflows/${encodeURIComponent(slugSegment(providerId))}`;
-  const frozen = clean(frozenDestination).replace(/\/+$/, "");
-  if (frozen && !isUnsafeCallbackUrl(frozen)) {
-    try {
-      const parsed = new URL(frozen);
-      if (parsed.pathname.replace(/\/+$/, "") === providerPath) return frozen;
-    } catch {
-      // Fall through to the existing public URL resolution for malformed rows.
-    }
-  }
-  const baseUrl = resolveWorkspacePublicUrl(env, requestOrigin);
-  return buildSchedulerCallbackUrls(baseUrl, providerId).destinationUrl;
-}
-
 function base64UrlToBuffer(value) {
   const normalized = clean(value).replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
@@ -537,7 +510,6 @@ export {
   deriveScheduleId,
   resolveWorkspacePublicUrl,
   buildSchedulerCallbackUrls,
-  resolveWorkflowInvocationUrl,
   verifyQstashSignature,
   isUnsafeCallbackUrl,
   getSchedulerAdapter,

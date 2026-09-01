@@ -38,7 +38,8 @@ import {
 import {
   getSchedulerAdapter,
   isSchedulerProduct,
-  resolveWorkflowInvocationUrl,
+  resolveWorkspacePublicUrl,
+  buildSchedulerCallbackUrls,
 } from "@/lib/workspace-add-on-scheduler";
 import {
   evaluateBindingMatch,
@@ -128,20 +129,9 @@ async function POST(request, context) {
   }
 
   const rawBody = await request.text();
-  // Resolve the governed run pointer before proof verification only to select
-  // the canonical, published destination QStash signed. No row state is exposed
-  // or mutated until the proof succeeds.
-  const payload = safeJsonParse(rawBody) || {};
-  const objectId = clean(payload.objectId || request.headers.get("x-growthub-object-id"));
-  const rowId = clean(payload.rowId || request.headers.get("x-growthub-row-id"));
-  const workspaceConfig = objectId && rowId ? await readWorkspaceConfig() : null;
-  const row = workspaceConfig ? findSandboxRow(workspaceConfig, objectId, rowId) : null;
-  const expectedUrl = resolveWorkflowInvocationUrl({
-    frozenDestination: row?.schedulerDestination,
-    providerId: provider.providerId,
-    env: process.env,
-    requestOrigin: requestOrigin(request),
-  });
+  // Signature must be minted for THIS destination route (anti-replay).
+  const baseUrl = resolveWorkspacePublicUrl(process.env, requestOrigin(request));
+  const expectedUrl = buildSchedulerCallbackUrls(baseUrl, provider.providerId).destinationUrl;
 
   // Method dispatch: a QStash-signed delivery takes the validated scheduler
   // path; otherwise the request's own proof material selects the inbound
@@ -179,10 +169,15 @@ async function POST(request, context) {
   // headers. QStash strips the `Upstash-Forward-` prefix, so these arrive as
   // `x-growthub-*` (NOT `upstash-forward-*`). Inbound callers send the same
   // header names or body fields directly.
+  const payload = safeJsonParse(rawBody) || {};
+  const objectId = clean(payload.objectId || request.headers.get("x-growthub-object-id"));
+  const rowId = clean(payload.rowId || request.headers.get("x-growthub-row-id"));
   if (!objectId || !rowId) {
     return NextResponse.json({ ok: false, error: "missing objectId/rowId run pointer" }, { status: 400 });
   }
 
+  const workspaceConfig = await readWorkspaceConfig();
+  const row = findSandboxRow(workspaceConfig, objectId, rowId);
   if (!row) {
     return NextResponse.json({ ok: false, error: `no sandbox row ${rowId} in object ${objectId}` }, { status: 404 });
   }
