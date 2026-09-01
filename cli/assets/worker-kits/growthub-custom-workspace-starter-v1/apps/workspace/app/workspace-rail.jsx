@@ -70,6 +70,7 @@ import {
   nextNavItemId,
 } from "@/lib/workspace-helper-apply";
 import { listAvailableWorkflows } from "@/lib/nav-workflows";
+import { deriveClientInterface } from "@/lib/client-interface";
 import { deriveLensWalkthroughState, LENS_WALKTHROUGH_DISMISS_FLAG } from "@/lib/workspace-activation";
 import { WorkspaceLensWalkthrough } from "./components/WorkspaceLensWalkthrough.jsx";
 import { isHelperConfigured, WorkspaceHelperSetupModal } from "./components/WorkspaceHelperSetupModal.jsx";
@@ -1532,8 +1533,25 @@ export function WorkspaceRail({
   // surface-agnostic.
   activationSlot,
 }) {
+  // Client-interface-v1: slot rows of the `client-interface` Data Model
+  // object decide whether this rail renders the reduced client surface.
+  // Operator mode (the default, including every existing workspace) is
+  // byte-for-byte the previous behaviour.
+  const clientInterface = useMemo(
+    () => deriveClientInterface(workspaceConfig || {}),
+    [workspaceConfig],
+  );
+  const clientMode = clientInterface.isClient;
   const branding = workspaceConfig?.branding || {};
-  const workspaceName = branding.name || workspaceConfig?.name || "Growthub Workspace";
+  const brandingTitle = clientMode
+    ? clientInterface.slotText("branding.title", branding.name || workspaceConfig?.name || "Client App")
+    : "";
+  const brandingAccent = clientMode
+    ? clientInterface.slotText("branding.accent", branding.accent || "")
+    : branding.accent || "";
+  const workspaceName = clientMode
+    ? brandingTitle
+    : branding.name || workspaceConfig?.name || "Growthub Workspace";
   const pathname = usePathname() || "/";
   const router = useRouter();
   // Private Agency Portal contract: Workspace Lens is an operating surface,
@@ -1738,8 +1756,8 @@ export function WorkspaceRail({
           <span
             className="workspace-mark"
             style={{
-              background: branding.logoUrl ? undefined : branding.accent || undefined,
-              color: branding.logoUrl ? undefined : textColorForAccent(branding.accent),
+              background: branding.logoUrl ? undefined : brandingAccent || undefined,
+              color: branding.logoUrl ? undefined : textColorForAccent(brandingAccent),
             }}
           >
             {branding.logoUrl ? <img src={branding.logoUrl} alt="" /> : workspaceName.slice(0, 1).toUpperCase()}
@@ -1772,15 +1790,17 @@ export function WorkspaceRail({
           >
             <Search size={13} />
           </button>
-          <button
-            type="button"
-            className="workspace-rail-icon-btn"
-            aria-label="Workspace settings"
-            title="Workspace settings"
-            onClick={() => router.push("/settings/general")}
-          >
-            <Settings size={13} />
-          </button>
+          {clientMode ? null : (
+            <button
+              type="button"
+              className="workspace-rail-icon-btn"
+              aria-label="Workspace settings"
+              title="Workspace settings"
+              onClick={() => router.push("/settings/general")}
+            >
+              <Settings size={13} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1798,30 +1818,34 @@ export function WorkspaceRail({
           >
             <Home size={15} />
           </button>
+          {clientMode ? null : (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "chat"}
+              className={"workspace-rail-tab" + (activeTab === "chat" ? " active" : "")}
+              onClick={() => setActiveTab("chat")}
+              aria-label="Helper conversations"
+              title="Helper conversations"
+            >
+              <MessageCircle size={15} />
+            </button>
+          )}
+        </div>
+        {clientMode ? null : (
           <button
             type="button"
-            role="tab"
-            aria-selected={activeTab === "chat"}
-            className={"workspace-rail-tab" + (activeTab === "chat" ? " active" : "")}
-            onClick={() => setActiveTab("chat")}
-            aria-label="Helper conversations"
-            title="Helper conversations"
+            className={"workspace-rail-helper-pill" + (helperOpen ? " active" : "")}
+            data-helper-trigger="rail"
+            aria-label={helperOpen ? "Close workspace helper" : "Open workspace helper"}
+            aria-pressed={helperOpen}
+            title={helperOpen ? "Close helper" : "Ask helper"}
+            onClick={handleAskHelperClick}
           >
-            <MessageCircle size={15} />
+            <MessageCirclePlus size={13} aria-hidden="true" />
+            <span>Ask helper</span>
           </button>
-        </div>
-        <button
-          type="button"
-          className={"workspace-rail-helper-pill" + (helperOpen ? " active" : "")}
-          data-helper-trigger="rail"
-          aria-label={helperOpen ? "Close workspace helper" : "Open workspace helper"}
-          aria-pressed={helperOpen}
-          title={helperOpen ? "Close helper" : "Ask helper"}
-          onClick={handleAskHelperClick}
-        >
-          <MessageCirclePlus size={13} aria-hidden="true" />
-          <span>Ask helper</span>
-        </button>
+        )}
       </div>
 
       {/* Custom Folders Navigation Module — sits directly below the tab
@@ -1852,7 +1876,7 @@ export function WorkspaceRail({
               <span className="workspace-nav-label">Builder</span>
             </Link>
           )}
-          {lensUnlocked ? (
+          {lensUnlocked && !clientMode ? (
             <div className="workspace-rail-lens-nav" ref={lensNavRef}>
               <Link
                 href="/workspace-lens"
@@ -1864,7 +1888,7 @@ export function WorkspaceRail({
               </Link>
             </div>
           ) : null}
-          {dataModelSlot ?? (
+          {clientMode ? null : dataModelSlot ?? (
             <Link
               href="/data-model"
               title="Management"
@@ -1874,7 +1898,7 @@ export function WorkspaceRail({
               <span className="workspace-nav-label">Management</span>
             </Link>
           )}
-          {settingsSlot ?? (
+          {clientMode ? null : settingsSlot ?? (
             <Link
               href="/settings/general"
               title="Workspace Settings"

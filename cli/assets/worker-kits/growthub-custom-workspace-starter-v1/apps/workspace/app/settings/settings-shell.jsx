@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { X } from "lucide-react";
+import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { deriveClientInterface } from "@/lib/client-interface";
+import { ClientModeNotAvailable } from "../components/ClientModeNotAvailable.jsx";
 
 const SETTINGS_TABS = [
   { href: "/settings/general", label: "General" },
@@ -9,7 +12,18 @@ const SETTINGS_TABS = [
   { href: "/settings/ownership", label: "Ownership" }
 ];
 
-function SettingsShell({ active, eyebrow, title, children, aside }) {
+// Server-rendered by every settings page — the one client-interface-v1 gate
+// that covers the whole /settings tree. Client mode renders the honest
+// not-available state instead of any settings chrome.
+async function SettingsShell({ active, eyebrow, title, children, aside }) {
+  let clientMode = false;
+  try {
+    const workspaceConfig = await readWorkspaceConfig();
+    clientMode = deriveClientInterface(workspaceConfig).isClient;
+  } catch {
+    clientMode = false; // operator continuity: config read errors surface downstream
+  }
+  if (clientMode) return <ClientModeNotAvailable surface="Workspace Settings" />;
   return <main className="workspace-settings-shell">
     <header className="workspace-settings-topbar">
       <Link className="workspace-settings-exit" href="/" aria-label="Exit settings" title="Exit Settings">

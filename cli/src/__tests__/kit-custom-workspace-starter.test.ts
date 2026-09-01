@@ -4145,6 +4145,55 @@ describe("workspace-activation — Customer Activation Layer V1", () => {
     }
   });
 
+  it("custom-app-client seed has provenance + uses the runtime rows schema", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/custom-app-client.config.json");
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    expect(seed.provenance).toBeDefined();
+    expect(seed.provenance.template).toBe("custom-app-client");
+    expect(seed.provenance.templateKind).toBe("workspace-template");
+    // The runtime contract uses dataModel.objects[].rows[], not .records[].
+    for (const object of seed.dataModel.objects) {
+      expect("records" in object).toBe(false);
+      expect(Array.isArray(object.rows)).toBe(true);
+    }
+    // Client-interface slots are governed Data Model rows — the mode slot
+    // must declare the reduced client surface.
+    const clientInterface = seed.dataModel.objects.find((o: { id?: string }) => o.id === "client-interface");
+    expect(clientInterface).toBeDefined();
+    const modeRow = clientInterface.rows.find((r: { slotId?: string }) => r.slotId === "interface.mode");
+    expect(modeRow?.value).toBe("client");
+    // The app registry row registers the client app against its surfaces.
+    const appRegistry = seed.dataModel.objects.find((o: { objectType?: string }) => o.objectType === "app-surface");
+    expect(appRegistry).toBeDefined();
+    expect(appRegistry.rows[0].appId).toBe("custom-app-client");
+    expect(appRegistry.rows[0].clientInterfaceMode).toBe("client");
+  });
+
+  it("custom-app-client seed ships no provider secrets or connection IDs", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const seedPath = path.join(root, "assets/worker-kits/growthub-custom-workspace-starter-v1/templates/seeded-configs/custom-app-client.config.json");
+    const seedJson = fs.readFileSync(seedPath, "utf8");
+    expect(seedJson).not.toMatch(/Bearer\s+\w+/);
+    expect(seedJson).not.toMatch(/sk-ant-[A-Za-z0-9_-]+/);
+    expect(seedJson).not.toMatch(/sk_(?:live|test)_[A-Za-z0-9]+/);
+    expect(seedJson).not.toMatch(/whsec_[A-Za-z0-9+/=]{10,}/);
+    // api-registry rows declare env-ref authRefs only and ship NO
+    // connectionIds — those are operator-owned post-OAuth.
+    const seed = JSON.parse(seedJson);
+    const registries = seed.dataModel.objects.filter((o: { objectType?: string }) => o.objectType === "api-registry");
+    expect(registries.length).toBeGreaterThan(0);
+    for (const registry of registries) {
+      for (const row of registry.rows) {
+        expect(row.status).toBe("needs-connection");
+        const connectionIds = typeof row.connectionIds === "string"
+          ? row.connectionIds.trim()
+          : row.connectionIds;
+        expect(connectionIds || "").toBe("");
+      }
+    }
+  });
+
   it("activation kit assets are listed as frozen assets in kit.json", () => {
     const kitJson = JSON.parse(readText("kit.json"));
     const frozen: string[] = kitJson.frozenAssetPaths ?? [];

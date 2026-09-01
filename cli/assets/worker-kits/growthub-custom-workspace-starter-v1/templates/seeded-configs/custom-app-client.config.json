@@ -1,0 +1,667 @@
+{
+  "id": "workspace-builder-default",
+  "name": "Custom App Client Workspace",
+  "description": "Governed client-interface isolate: a reduced workspace surface (rail + home dashboard + workflow canvas) that projects capability-graph and custom-model utilization truth for a customer-facing custom app. No Data Model administration, no operator surfaces.",
+  "branding": {
+    "name": "Client App",
+    "logoUrl": "",
+    "accent": "#3f68ff"
+  },
+  "capabilities": [
+    "dashboards",
+    "canvas",
+    "widgets",
+    "bindings",
+    "integrations",
+    "settings"
+  ],
+  "pipelines": [],
+  "integrations": [],
+  "dashboards": [
+    {
+      "id": "client-home",
+      "name": "Client Home",
+      "createdBy": "cli",
+      "updatedAt": "seed",
+      "status": "published",
+      "activeTabId": "tab-overview",
+      "tabs": [
+        {
+          "id": "tab-overview",
+          "name": "Overview",
+          "widgets": [
+            {
+              "id": "client-welcome",
+              "kind": "rich-text",
+              "title": "Welcome",
+              "position": {
+                "x": 0,
+                "y": 0,
+                "w": 12,
+                "h": 2
+              },
+              "config": {
+                "text": "This is your governed client workspace. Everything on this page is a live projection of the workspace configuration: app readiness, custom-model route status, and workflow lifecycle derive from governed objects — never from hand-entered copies."
+              }
+            },
+            {
+              "id": "app-readiness-view",
+              "kind": "view",
+              "title": "App Readiness",
+              "sourceObjectId": "workspace-app-registry",
+              "position": {
+                "x": 0,
+                "y": 2,
+                "w": 6,
+                "h": 4
+              },
+              "config": {
+                "source": "Workspace App Registry",
+                "columns": [
+                  "Name",
+                  "appId",
+                  "environment",
+                  "deployTarget",
+                  "dashboardIds",
+                  "workflowRefs",
+                  "registryIds"
+                ],
+                "rows": [],
+                "binding": {
+                  "mode": "manual",
+                  "source": "Workspace App Registry",
+                  "sourceType": "workspace-data-model",
+                  "sourceAuthority": "workspace-config",
+                  "objectId": "workspace-app-registry",
+                  "rows": []
+                }
+              }
+            },
+            {
+              "id": "custom-model-routes-view",
+              "kind": "view",
+              "title": "Custom Model Routes",
+              "sourceObjectId": "custom-model-serving-api",
+              "position": {
+                "x": 6,
+                "y": 2,
+                "w": 6,
+                "h": 4
+              },
+              "config": {
+                "source": "Custom Model Serving API",
+                "columns": [
+                  "integrationId",
+                  "authRef",
+                  "endpoint",
+                  "method",
+                  "status",
+                  "capabilities"
+                ],
+                "rows": [],
+                "binding": {
+                  "mode": "manual",
+                  "source": "Custom Model Serving API",
+                  "sourceType": "workspace-data-model",
+                  "sourceAuthority": "workspace-config",
+                  "objectId": "custom-model-serving-api",
+                  "rows": []
+                }
+              }
+            },
+            {
+              "id": "client-workflows-view",
+              "kind": "view",
+              "title": "Workflows",
+              "sourceObjectId": "client-workflows",
+              "position": {
+                "x": 0,
+                "y": 6,
+                "w": 12,
+                "h": 4
+              },
+              "config": {
+                "source": "Client Workflows",
+                "columns": [
+                  "Name",
+                  "lifecycleStatus",
+                  "version",
+                  "runLocality",
+                  "adapter",
+                  "status"
+                ],
+                "rows": [],
+                "binding": {
+                  "mode": "manual",
+                  "source": "Client Workflows",
+                  "sourceType": "workspace-data-model",
+                  "sourceAuthority": "workspace-config",
+                  "objectId": "client-workflows",
+                  "rows": []
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "tab-capability-graph",
+          "name": "Capability Graph",
+          "widgets": [
+            {
+              "id": "capability-graph-note",
+              "kind": "rich-text",
+              "title": "How this page derives truth",
+              "position": {
+                "x": 0,
+                "y": 0,
+                "w": 12,
+                "h": 2
+              },
+              "config": {
+                "text": "The tables below are capability-graph projections: the app registry row links this app to its dashboards, workflows, and custom-model serving routes by id; the workspace metadata graph derives readiness, blast radius, and stale surfaces from those links. Missing references render as blockers — never as healthy."
+              }
+            },
+            {
+              "id": "capability-app-links-view",
+              "kind": "view",
+              "title": "Governed App Links",
+              "sourceObjectId": "workspace-app-registry",
+              "position": {
+                "x": 0,
+                "y": 2,
+                "w": 12,
+                "h": 4
+              },
+              "config": {
+                "source": "Workspace App Registry",
+                "columns": [
+                  "Name",
+                  "appId",
+                  "surfacePath",
+                  "framework",
+                  "clientInterfaceMode",
+                  "templateId"
+                ],
+                "rows": [],
+                "binding": {
+                  "mode": "manual",
+                  "source": "Workspace App Registry",
+                  "sourceType": "workspace-data-model",
+                  "sourceAuthority": "workspace-config",
+                  "objectId": "workspace-app-registry",
+                  "rows": []
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "widgets": []
+    }
+  ],
+  "widgetTypes": [
+    {
+      "kind": "chart",
+      "label": "Chart",
+      "icon": "C"
+    },
+    {
+      "kind": "view",
+      "label": "View",
+      "icon": "V"
+    },
+    {
+      "kind": "iframe",
+      "label": "iFrame",
+      "icon": "I"
+    },
+    {
+      "kind": "rich-text",
+      "label": "Rich Text",
+      "icon": "T"
+    }
+  ],
+  "canvas": {
+    "id": "workspace-canvas",
+    "name": "Tab 1",
+    "scope": "workspace",
+    "layout": {
+      "columns": 12,
+      "rowHeight": 64,
+      "gap": 16,
+      "responsive": true
+    },
+    "widgets": [],
+    "bindings": {
+      "chatToCanvas": true,
+      "workflowOutputsToArtifacts": true,
+      "sessionContext": true,
+      "configDrivenCanvas": true
+    }
+  },
+  "provenance": {
+    "createdBy": "cli",
+    "mirrors": "growthub-custom-workspace-starter-v1",
+    "note": "Client-interface isolate seed: reduced surface (rail + home dashboard + workflow canvas) projecting capability-graph and custom-model utilization truth. The model-training object is intentionally absent — the GH App governed bootstrap owns that injection.",
+    "template": "custom-app-client",
+    "templateKind": "workspace-template",
+    "seedTemplate": {
+      "generatedBy": "scripts/export-workspace-seed-template.mjs",
+      "generatedFrom": "custom-app-client.variant.json",
+      "contract": "Non-secret seeded starter: object schemas, dashboards, canvas tabs, workflow definitions, and API Registry env-key refs preserved; PII rows, run receipts, and test evidence stripped. Secrets stay in uncommitted .env.local, resolved by authRef env key name."
+    }
+  },
+  "dataModel": {
+    "objects": [
+      {
+        "id": "client-interface",
+        "label": "Client Interface",
+        "source": "Data Model",
+        "objectType": "custom",
+        "icon": "PanelsTopLeft",
+        "columns": [
+          "Name",
+          "slotId",
+          "kind",
+          "value",
+          "surface",
+          "description"
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "slotId",
+            "kind",
+            "value",
+            "surface",
+            "description"
+          ]
+        },
+        "rows": [
+          {
+            "id": "interface.mode",
+            "Name": "interface.mode",
+            "slotId": "interface.mode",
+            "kind": "mode",
+            "value": "client",
+            "surface": "runtime",
+            "description": "client | operator — when client, the runtime renders only the reduced client surface (rail + home dashboard + workflow canvas) and admin routes fail closed."
+          },
+          {
+            "id": "branding.title",
+            "Name": "branding.title",
+            "slotId": "branding.title",
+            "kind": "text",
+            "value": "Client App",
+            "surface": "rail",
+            "description": "Portal display name shown in the rail header."
+          },
+          {
+            "id": "branding.accent",
+            "Name": "branding.accent",
+            "slotId": "branding.accent",
+            "kind": "color",
+            "value": "#3f68ff",
+            "surface": "rail",
+            "description": "Accent color applied to the client surfaces."
+          },
+          {
+            "id": "nav.home.label",
+            "Name": "nav.home.label",
+            "slotId": "nav.home.label",
+            "kind": "text",
+            "value": "Home",
+            "surface": "rail",
+            "description": "Label of the client home dashboard nav item."
+          },
+          {
+            "id": "nav.workflows.label",
+            "Name": "nav.workflows.label",
+            "slotId": "nav.workflows.label",
+            "kind": "text",
+            "value": "Workflows",
+            "surface": "rail",
+            "description": "Label of the client workflows nav item."
+          },
+          {
+            "id": "surface.workflows",
+            "Name": "surface.workflows",
+            "slotId": "surface.workflows",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "workflows",
+            "description": "Expose the workflow canvas surface to the client."
+          },
+          {
+            "id": "surface.canvas",
+            "Name": "surface.canvas",
+            "slotId": "surface.canvas",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "dashboard",
+            "description": "Expose the home dashboard canvas to the client."
+          },
+          {
+            "id": "widget.client-welcome",
+            "Name": "widget.client-welcome",
+            "slotId": "widget.client-welcome",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "dashboard",
+            "description": "Show the welcome panel on the client home."
+          },
+          {
+            "id": "widget.app-readiness-view",
+            "Name": "widget.app-readiness-view",
+            "slotId": "widget.app-readiness-view",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "dashboard",
+            "description": "Show the governed app readiness projection."
+          },
+          {
+            "id": "widget.custom-model-routes-view",
+            "Name": "widget.custom-model-routes-view",
+            "slotId": "widget.custom-model-routes-view",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "dashboard",
+            "description": "Show the custom-model serving route status."
+          },
+          {
+            "id": "widget.client-workflows-view",
+            "Name": "widget.client-workflows-view",
+            "slotId": "widget.client-workflows-view",
+            "kind": "toggle",
+            "value": "true",
+            "surface": "dashboard",
+            "description": "Show the client workflow lifecycle table."
+          }
+        ]
+      },
+      {
+        "id": "workspace-app-registry",
+        "label": "Workspace App Registry",
+        "source": "Data Model",
+        "objectType": "app-surface",
+        "icon": "AppWindow",
+        "columns": [
+          "Name",
+          "appId",
+          "surfacePath",
+          "framework",
+          "environment",
+          "deployTarget",
+          "dashboardIds",
+          "workflowRefs",
+          "dataSourceIds",
+          "registryIds",
+          "clientInterfaceMode",
+          "templateId",
+          "templateVersionId",
+          "customerAppId"
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "appId",
+            "surfacePath",
+            "framework",
+            "environment",
+            "deployTarget",
+            "dashboardIds",
+            "workflowRefs",
+            "dataSourceIds",
+            "registryIds",
+            "clientInterfaceMode",
+            "templateId",
+            "templateVersionId",
+            "customerAppId"
+          ]
+        },
+        "rows": [
+          {
+            "id": "custom-app-client",
+            "Name": "Custom App Client",
+            "appId": "custom-app-client",
+            "surfacePath": "apps/workspace",
+            "framework": "nextjs",
+            "environment": "production",
+            "deployTarget": "vercel",
+            "dashboardIds": "client-home",
+            "workflowRefs": "client-workflows:client-insight-run",
+            "dataSourceIds": "",
+            "registryIds": "custom-model-serving-api",
+            "clientInterfaceMode": "client",
+            "templateId": "custom-app-client",
+            "templateVersionId": "",
+            "customerAppId": ""
+          }
+        ]
+      },
+      {
+        "id": "custom-model-serving-api",
+        "label": "Custom Model Serving API",
+        "source": "Data Model",
+        "objectType": "api-registry",
+        "icon": "BrainCircuit",
+        "columns": [
+          "integrationId",
+          "authRef",
+          "baseUrl",
+          "endpoint",
+          "method",
+          "status",
+          "entityTypes",
+          "description",
+          "connectorKind",
+          "resolverTemplateId",
+          "schemaVersion",
+          "capabilities",
+          "executionLane",
+          "connectionIds"
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "integrationId",
+            "authRef",
+            "baseUrl",
+            "endpoint",
+            "method",
+            "status",
+            "entityTypes",
+            "description",
+            "connectorKind",
+            "resolverTemplateId",
+            "schemaVersion",
+            "capabilities",
+            "executionLane",
+            "connectionIds"
+          ]
+        },
+        "rows": [
+          {
+            "integrationId": "custom-model-serving",
+            "authRef": "CUSTOM_MODEL_SERVING_API_KEY",
+            "baseUrl": "",
+            "endpoint": "/v1/chat/completions",
+            "method": "POST",
+            "status": "needs-connection",
+            "entityTypes": "custom-model.serving",
+            "description": "Governed serving route for the workspace custom model; bound to the released provider route during provider setup.",
+            "connectorKind": "custom-model-serving",
+            "resolverTemplateId": "",
+            "schemaVersion": "v1",
+            "capabilities": "invoke test-source",
+            "executionLane": "hosted",
+            "connectionIds": ""
+          },
+          {
+            "integrationId": "mothership-proxy",
+            "authRef": "MOTHERSHIP_PROXY_API_KEY",
+            "baseUrl": "",
+            "endpoint": "/v1/chat/completions",
+            "method": "POST",
+            "status": "needs-connection",
+            "entityTypes": "custom-model.mothership",
+            "description": "Mothership proxy fallback route used while the student model route is unreleased.",
+            "connectorKind": "custom-model-mothership",
+            "resolverTemplateId": "",
+            "schemaVersion": "v1",
+            "capabilities": "invoke",
+            "executionLane": "hosted",
+            "connectionIds": ""
+          }
+        ]
+      },
+      {
+        "id": "client-workflows",
+        "label": "Client Workflows",
+        "source": "Data Model",
+        "objectType": "sandbox-environment",
+        "icon": "Workflow",
+        "columns": [
+          "Name",
+          "lifecycleStatus",
+          "version",
+          "runLocality",
+          "schedulerRegistryId",
+          "runtime",
+          "adapter",
+          "agentHost",
+          "localModel",
+          "localEndpoint",
+          "intelligenceAdapterMode",
+          "envRefs",
+          "networkAllow",
+          "allowList",
+          "instructions",
+          "command",
+          "timeoutMs",
+          "status",
+          "orchestrationConfig",
+          "description",
+          "connectorKind",
+          "executionLane"
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Data Model"
+        },
+        "fieldSettings": {
+          "hidden": [],
+          "order": [
+            "Name",
+            "lifecycleStatus",
+            "version",
+            "runLocality",
+            "schedulerRegistryId",
+            "runtime",
+            "adapter",
+            "agentHost",
+            "localModel",
+            "localEndpoint",
+            "intelligenceAdapterMode",
+            "envRefs",
+            "networkAllow",
+            "allowList",
+            "instructions",
+            "command",
+            "timeoutMs",
+            "status",
+            "orchestrationConfig",
+            "description",
+            "connectorKind",
+            "executionLane"
+          ]
+        },
+        "rows": [
+          {
+            "Name": "client-insight-run",
+            "lifecycleStatus": "draft",
+            "version": "1",
+            "runLocality": "local",
+            "schedulerRegistryId": "",
+            "runtime": "node",
+            "adapter": "local-agent-host",
+            "agentHost": "",
+            "localModel": "",
+            "localEndpoint": "",
+            "intelligenceAdapterMode": "",
+            "envRefs": "",
+            "networkAllow": "false",
+            "allowList": "",
+            "instructions": "Run the client insight workflow: read the governed app registry row, the custom-model serving route status, and the workflow lifecycle rows, then produce a client-readable status summary. Execution flows only through POST /api/workspace/sandbox-run.",
+            "command": "",
+            "timeoutMs": "",
+            "status": "needs-run",
+            "orchestrationConfig": "",
+            "description": "Client-facing insight workflow definition; published through workflow/publish only.",
+            "connectorKind": "",
+            "executionLane": "hosted"
+          }
+        ]
+      },
+      {
+        "id": "nav-folders",
+        "label": "Custom Folders",
+        "source": "Custom Folders",
+        "objectType": "custom",
+        "icon": "Folder",
+        "columns": [
+          "name",
+          "order",
+          "collapsed",
+          "items"
+        ],
+        "binding": {
+          "mode": "manual",
+          "source": "Custom Folders"
+        },
+        "rows": [
+          {
+            "id": "fld_client_app",
+            "name": "Client App",
+            "order": 0,
+            "collapsed": false,
+            "items": [
+              {
+                "id": "item_client_home",
+                "type": "dashboard",
+                "refId": "client-home",
+                "label": "Home",
+                "icon": "LayoutDashboard",
+                "color": "#3b82f6",
+                "iconBg": "#eff6ff"
+              },
+              {
+                "id": "item_client_workflows",
+                "type": "view",
+                "objectId": "client-workflows",
+                "label": "Workflows",
+                "icon": "Workflow",
+                "color": "#8b5cf6",
+                "iconBg": "#f5f3ff"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

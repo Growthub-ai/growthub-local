@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useState } from "react";
 import { HelperSidecar } from "../data-model/components/HelperSidecar.jsx";
 import TrainingLedger from "../data-model/components/TrainingLedger.jsx";
+import { ClientModeGuard } from "../components/ClientModeGuard.jsx";
 
 /**
  * /training — the continued-training ledger, full-width. Same component the
@@ -14,6 +15,7 @@ export default function TrainingPage() {
   const [helperPrompt, setHelperPrompt] = useState("");
 
   return (
+    <ClientModeGuard surface="Training">
     <Suspense fallback={null}>
       <main className="dm-sidecar-body dm-swarm-body" data-training-page="" style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px" }}>
         <h1 className="dm-sidecar-title" style={{ display: "block", marginBottom: 16 }}>Training</h1>
@@ -31,5 +33,6 @@ export default function TrainingPage() {
         />
       </main>
     </Suspense>
+    </ClientModeGuard>
   );
 }

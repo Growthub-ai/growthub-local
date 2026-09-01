@@ -4,7 +4,9 @@ import { readAdapterConfig } from "@/lib/adapters/env";
 import { describeIntegrationAdapter, listGovernedWorkspaceIntegrations } from "@/lib/adapters/integrations";
 import { groupIntegrationsByLane } from "@/lib/domain/integrations";
 import { readWorkspaceConfig } from "@/lib/workspace-config";
+import { deriveClientInterface } from "@/lib/client-interface";
 import { WorkspaceRail } from "../../workspace-rail.jsx";
+import { ClientModeNotAvailable } from "../../components/ClientModeNotAvailable.jsx";
 
 function countConnected(rows) {
   return rows.filter((item) => item.isConnected || item.status === "connected").length;
@@ -53,6 +55,9 @@ async function IntegrationsSettingsPage() {
   const config = readAdapterConfig();
   const adapter = describeIntegrationAdapter();
   const workspaceConfig = await readWorkspaceConfig();
+  if (deriveClientInterface(workspaceConfig).isClient) {
+    return <ClientModeNotAvailable surface="Integrations" />;
+  }
   const branding = workspaceConfig.branding || {};
   const workspaceName = branding.name || workspaceConfig.name || "Growthub Workspace";
   const grouped = groupIntegrationsByLane(await listGovernedWorkspaceIntegrations());
