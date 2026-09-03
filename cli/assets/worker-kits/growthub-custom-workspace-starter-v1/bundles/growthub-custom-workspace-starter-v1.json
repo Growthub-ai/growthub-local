@@ -58,6 +58,7 @@
     "apps/workspace/lib/adapters/integrations/index.js",
     "apps/workspace/lib/adapters/integrations/growthub-connection-normalizer.js",
     "apps/workspace/lib/domain/integrations.js",
+    "apps/workspace/lib/workspace-control-plane-auth.js",
     "growthub-meta/README.md",
     "growthub-meta/kit-standard.md",
     "docs/governed-workspace-primitives.md"
