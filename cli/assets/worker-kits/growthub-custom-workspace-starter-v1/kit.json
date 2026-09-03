@@ -143,7 +143,6 @@
     "apps/workspace/lib/workspace-helper-apply.js",
     "apps/workspace/app/api/workspace/helper/query/route.js",
     "apps/workspace/app/api/workspace/helper/apply/route.js",
-    "apps/workspace/lib/workspace-helper-response.js",
     "apps/workspace/app/api/workspace/helper/receipts/route.js",
     "apps/workspace/app/data-model/page.jsx",
     "apps/workspace/app/data-model/components/DataModelShell.jsx",
