@@ -1,5 +1,19 @@
 # @growthub/cli
 
+## 0.14.30
+
+### Patch Changes
+
+- Adds a reusable, keyless Workspace control-plane ingress verifier to the
+  exported custom-workspace starter. Customer proxies can authorize exact,
+  short-lived Vercel OIDC identities on the narrow governed Workspace action
+  allowlist while preserving their existing browser-session boundary and
+  failing closed for unrelated routes, invalid claims, or incomplete trust
+  configuration.
+- Adds cryptographic allowlist tests, exported dependency metadata, deployment
+  guidance, and frozen-asset coverage. No customer identity, credential, or
+  bearer token is shipped in the starter.
+
 ## 0.14.28
 
 ### Patch Changes
