@@ -36,7 +36,6 @@ import {
   describePersistenceMode,
 } from "@/lib/workspace-config";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
-import { buildWorkspaceHelperApplyResponse } from "@/lib/workspace-helper-response";
 import { buildAppScopeViolation } from "@/lib/workspace-app-registry";
 import {
   applyProposalToConfig,
@@ -623,14 +622,14 @@ async function POST(request) {
       : {})
   });
 
-  return NextResponse.json(buildWorkspaceHelperApplyResponse({
-    responseMode: body.responseMode,
+  return NextResponse.json({
+    ok: true,
     threadId,
     applied,
     skipped,
     workspaceConfig: workingConfig,
     messages: messagesAfterApply,
-  }));
+  });
 }
 
 export { POST };

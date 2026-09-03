@@ -38,9 +38,6 @@ jobs:
       - name: Validate bundled worker kit contracts
         run: node scripts/check-worker-kits.mjs
 
-      - name: Validate workspace helper response profiles
-        run: npm run test:workspace-helper-response
-
       - name: Validate Claude Code plugin marketplace surface
         run: node scripts/check-claude-plugin.mjs
 

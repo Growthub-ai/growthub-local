@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "@growthub/cli@0.14.31",
+        "@growthub/cli@0.14.30",
         "serve",
         "--mcp",
         "--fork",
