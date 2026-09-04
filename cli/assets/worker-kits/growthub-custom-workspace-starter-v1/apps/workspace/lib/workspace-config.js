@@ -670,15 +670,18 @@ async function ensureWorkspaceConfigTable(client) {
   `);
 }
 
-async function readDatabaseWorkspaceConfigRaw() {
+async function readDatabaseWorkspaceConfigRaw({ includeAuxiliarySourceRecords = true } = {}) {
   const owner = await readWorkspaceOwner();
   const seed = JSON.parse(await fs.readFile(resolveWorkspaceConfigPath(), "utf8"));
   const workspaceId = process.env.GROWTHUB_WORKSPACE_CONFIG_ID || seed.id || "default";
   const client = await connectPostgres();
   try {
     await ensureWorkspaceConfigTable(client);
+    const configExpression = includeAuxiliarySourceRecords
+      ? "config"
+      : "config - 'auxiliarySourceRecords'";
     const result = await client.query(
-      `select config from ${WORKSPACE_CONFIG_TABLE} where owner_id = $1 and workspace_id = $2 limit 1`,
+      `select ${configExpression} as config from ${WORKSPACE_CONFIG_TABLE} where owner_id = $1 and workspace_id = $2 limit 1`,
       [owner.ownerId, workspaceId]
     );
     if (result.rows[0]?.config) {
@@ -697,7 +700,9 @@ async function readDatabaseWorkspaceConfigRaw() {
 }
 
 async function readDatabaseWorkspaceConfig() {
-  const config = normalizeConfigForPersistence(await readDatabaseWorkspaceConfigRaw());
+  const config = normalizeConfigForPersistence(
+    await readDatabaseWorkspaceConfigRaw({ includeAuxiliarySourceRecords: false })
+  );
   if (config.dataModel) config.dataModel = healDataModelObjects(config.dataModel);
   return config;
 }
@@ -724,11 +729,56 @@ async function writeDatabaseWorkspaceConfig(config) {
   }
 }
 
-/**
- * Read normalized live rows for a refresh `sourceId` / object id from
- * `dataModel.objects[]` (same document as workspace config — Postgres JSONB or
- * growthub.config.json). No sidecar files or auxiliary tables.
- */
+async function resolveDatabaseWorkspaceKey() {
+  const owner = await readWorkspaceOwner();
+  let workspaceId = String(process.env.GROWTHUB_WORKSPACE_CONFIG_ID || "").trim();
+  if (!workspaceId) {
+    const seed = JSON.parse(await fs.readFile(resolveWorkspaceConfigPath(), "utf8"));
+    workspaceId = String(seed.id || "default");
+  }
+  return { owner, workspaceId };
+}
+
+function isAtomicAuxiliarySourceId(sourceId) {
+  return sourceId === "workspace:agent-outcomes" || sourceId.startsWith("sandbox:");
+}
+
+async function readDatabaseAuxiliarySourceRecord(sourceId) {
+  const { owner, workspaceId } = await resolveDatabaseWorkspaceKey();
+  const client = await connectPostgres();
+  try {
+    const result = await client.query(
+      `select config #> array['auxiliarySourceRecords', $3] as entry
+         from ${WORKSPACE_CONFIG_TABLE}
+        where owner_id = $1 and workspace_id = $2
+        limit 1`,
+      [owner.ownerId, workspaceId, sourceId]
+    );
+    return result.rows[0]?.entry || null;
+  } finally {
+    await client.end();
+  }
+}
+
+async function writeDatabaseAuxiliarySourceRecord(sourceId, entry) {
+  const { owner, workspaceId } = await resolveDatabaseWorkspaceKey();
+  const client = await connectPostgres();
+  try {
+    const result = await client.query(
+      `update ${WORKSPACE_CONFIG_TABLE}
+          set config = jsonb_set(config, array['auxiliarySourceRecords', $3], $4::jsonb, true),
+              updated_at = now()
+        where owner_id = $1 and workspace_id = $2
+        returning config #> array['auxiliarySourceRecords', $3] as entry`,
+      [owner.ownerId, workspaceId, sourceId, JSON.stringify(entry)]
+    );
+    if (!result.rows[0]?.entry) throw new Error(`workspace row not found for auxiliary source ${sourceId}`);
+    return result.rows[0].entry;
+  } finally {
+    await client.end();
+  }
+}
+
 async function readLiveDataModelBundle(sourceId) {
   const config = await readWorkspaceConfig();
   const objects = config.dataModel?.objects || [];
@@ -885,6 +935,9 @@ async function readWorkspaceSourceRecords(sourceId) {
   }
 
   const sid = sourceId.trim();
+  if (shouldUseDatabasePersistence() && isAtomicAuxiliarySourceId(sid)) {
+    return readDatabaseAuxiliarySourceRecord(sid);
+  }
   const liveOne = await readLiveDataModelBundle(sid);
   if (liveOne && typeof liveOne === "object") return liveOne;
 
@@ -940,6 +993,10 @@ async function writeWorkspaceSourceRecords(sourceId, records, metadata = {}) {
     fetchedAt,
     recordCount: records.length
   };
+
+  if (persistence.mode === PERSISTENCE_ADAPTERS.DATABASE && isAtomicAuxiliarySourceId(sid)) {
+    return writeDatabaseAuxiliarySourceRecord(sid, entry);
+  }
 
   const basis = shouldUseDatabasePersistence()
     ? await readDatabaseWorkspaceConfigRaw()

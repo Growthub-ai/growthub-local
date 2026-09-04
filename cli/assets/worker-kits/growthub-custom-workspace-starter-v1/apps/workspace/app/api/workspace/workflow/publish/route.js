@@ -7,7 +7,7 @@ import { scanServerlessReadiness, READINESS_KIND } from "@/lib/serverless-readin
 import { resolveWorkflowFieldNames } from "@/lib/orchestration-publish";
 import { appendOutcomeReceipt } from "@/lib/workspace-outcome-receipts";
 import { requireAppScope, checkScopedWorkflowAccess } from "@/lib/workspace-app-registry";
-import { evaluateDraftPromotion } from "@/lib/workflow-publish-promotion";
+import { evaluateDraftPromotion, findVerifiedDraftRunRecord } from "@/lib/workflow-publish-promotion";
 
 /**
  * POST /api/workspace/workflow/publish
@@ -121,6 +121,7 @@ async function POST(request) {
     const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const requestedField = typeof body?.field === "string" ? body.field.trim() : "";
+    const receiptOnly = body?.responseMode === "receipt";
     if (!objectId || !name) {
         return NextResponse.json({
             ok: false,
@@ -279,7 +280,15 @@ async function POST(request) {
     const sourceId = sandboxRunSourceId(objectId, row.Name || name);
     const history = !serverlessSchedulerProofPassed && sourceId ? await readWorkspaceSourceRecords(sourceId) : null;
     const records = Array.isArray(history?.records) ? history.records : [];
-    const runRecord = serverlessSchedulerProofPassed ? null : records.find((record)=>String(record?.runId ?? "") === draftRunId);
+    // A transport failure can precede the recovered terminal record for the
+    // same native run. Select the newest exact successful draft execution so
+    // stale transport state cannot override durable provider completion.
+    const runRecord = serverlessSchedulerProofPassed ? null : findVerifiedDraftRunRecord({
+        records,
+        draftRunId,
+        draft,
+        outputHash: row.routineEnvironmentOutputHash
+    });
     if (!serverlessSchedulerProofPassed) {
         if (!runRecord) {
             return publishBlocked(409, {
@@ -336,9 +345,36 @@ async function POST(request) {
     }
     const { next, publishedAt, nextVersion, publishedSha256, previousDeltas, nodeDeltas } = promotion;
     const expectedSha256 = publishedSha256;
+    const routineEnvironmentId = String(row.routineEnvironmentId || "").trim();
+    const routineArtifactSha256 = String(row.routineEnvironmentArtifactSha256 || "").trim();
+    const routineReleaseId = routineEnvironmentId && routineArtifactSha256 === publishedSha256
+        ? `routine-release-${publishedSha256}`
+        : null;
+    // The publish route already owns the draft→live transition. When the row
+    // is a proven Routine environment, stamp its frozen release identity in
+    // that same server-authoritative write so the deployed sandbox record and
+    // GH control-plane projection read back one environment/release lineage.
+    const publishConfig = routineReleaseId
+        ? {
+            ...next,
+            dataModel: {
+                ...next.dataModel,
+                objects: next.dataModel.objects.map((entry)=>entry.id !== objectId ? entry : {
+                    ...entry,
+                    rows: (Array.isArray(entry.rows) ? entry.rows : []).map((candidate, index)=>index !== rowIndex ? candidate : {
+                        ...candidate,
+                        routineEnvironmentStatus: "published",
+                        routineEnvironmentPublishedSha256: publishedSha256,
+                        routineEnvironmentReleaseId: routineReleaseId,
+                        routineEnvironmentPublishedAt: publishedAt
+                    })
+                })
+            }
+        }
+        : next;
     try {
         const persisted = await writeWorkspaceConfig({
-            dataModel: next.dataModel
+            dataModel: publishConfig.dataModel
         });
         const { receipt } = await appendOutcomeReceipt({
             kind: "workflow-publish",
@@ -381,7 +417,11 @@ async function POST(request) {
             liveField,
             publishedSha256,
             receiptId: receipt.receiptId,
-            workspaceConfig: persisted
+            ...(routineReleaseId ? {
+                environmentId: routineEnvironmentId,
+                releaseId: routineReleaseId
+            } : {}),
+            ...(!receiptOnly ? { workspaceConfig: persisted } : {})
         });
     } catch (error) {
         if (error.code === "WORKSPACE_PERSISTENCE_READ_ONLY") {

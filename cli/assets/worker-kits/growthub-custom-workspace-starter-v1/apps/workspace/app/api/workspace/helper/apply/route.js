@@ -65,6 +65,10 @@ import {
   CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE,
   normalizeCustomModelWorkflowProposal,
 } from "@/lib/custom-model-workflow-proposal";
+import {
+  ROUTINE_ENVIRONMENT_PROPOSAL_TYPE,
+  normalizeRoutineEnvironmentProposal,
+} from "@/lib/routine-environment-proposal";
 
 const HELPER_APPLY_SOURCE_KEY = "helper:apply:receipts";
 
@@ -282,12 +286,19 @@ async function POST(request) {
   const customModelWorkflowProposals = normalizedProposals.filter(
     (p) => p?.type === CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE
   );
+  // Server-built Routine environment proposals are partitioned here, before
+  // generic validation, so they never reach validateProposalForApply and are
+  // never mistaken for an AI-generated WORKSPACE_HELPER_PROPOSAL_TYPES entry.
+  const routineEnvironmentProposals = normalizedProposals.filter(
+    (p) => p?.type === ROUTINE_ENVIRONMENT_PROPOSAL_TYPE
+  );
   const configProposals = normalizedProposals.filter(
     (p) =>
       p?.type !== RESOLVER_PROPOSAL_TYPE &&
       !SWARM_PROPOSAL_TYPES.includes(p?.type) &&
       p?.type !== CEO_BOOTSTRAP_COMPLETE_PROPOSAL_TYPE &&
-      p?.type !== CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE
+      p?.type !== CUSTOM_MODEL_WORKFLOW_PROPOSAL_TYPE &&
+      p?.type !== ROUTINE_ENVIRONMENT_PROPOSAL_TYPE
   );
 
   // The custom-model workflow lane re-derives from governed evidence, which
@@ -371,6 +382,33 @@ async function POST(request) {
     const result = normalizeCustomModelWorkflowProposal(proposal, workingConfig, workspaceSourceRecords);
     if (!result.ok) {
       skipped.push({ proposal, reason: result.error || "invalid custom-model workflow proposal" });
+      continue;
+    }
+    workingConfig = result.config;
+    applied.push({
+      ...buildApplyReceipt({ ...proposal, affectedField: "dataModel" }, appliedAt, reviewedBy, sessionId),
+      artifact: result.artifact,
+      summary: result.summary,
+    });
+  }
+
+  // Routine environment lane — a server-built, credential-free bridge from
+  // the GH control plane into this already-bound Workspace. Draft proposals
+  // upsert one exact sandbox row. Attestation proposals are accepted only
+  // after this server reads and verifies the corresponding sandbox-run source
+  // record; a client cannot assert success or import a whole Workspace.
+  for (const proposal of routineEnvironmentProposals) {
+    let sourceRecords = null;
+    if (proposal?.payload?.stage === "attest") {
+      try {
+        sourceRecords = await readWorkspaceSourceRecords(String(proposal.payload.sourceId || "").trim());
+      } catch {
+        sourceRecords = null;
+      }
+    }
+    const result = normalizeRoutineEnvironmentProposal(proposal, workingConfig, sourceRecords);
+    if (!result.ok) {
+      skipped.push({ proposal, reason: result.error || "invalid Routine environment proposal" });
       continue;
     }
     workingConfig = result.config;

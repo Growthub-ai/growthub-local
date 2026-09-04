@@ -55,7 +55,7 @@
  *   }
  */
 
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -116,7 +116,9 @@ import { parseJsonColumn } from "@/lib/compute-evidence";
 import { hashComputeValue, normalizeComputeRequest } from "@/lib/compute-work-spec";
 import {
   classifySandboxRunResult,
-  runOrchestrationGraphIfPresent
+  isRecoverableProviderContinuationRecord,
+  runOrchestrationGraphIfPresent,
+  sandboxRunHttpProjection
 } from "@/lib/orchestration-graph-runner";
 import { parseOrchestrationGraph } from "@/lib/orchestration-graph";
 import { stableStringify } from "@/lib/workspace-patch-policy";
@@ -146,6 +148,10 @@ import {
   verifyComputeObservationRequest
 } from "@/lib/compute-observation-scheduler";
 import { buildInferenceTrustContext } from "@/lib/sandbox-execution-context";
+import { routineEnvironmentUsesBoundAdapter } from "@/lib/routine-environment-proposal";
+import { normalizeRoutineProviderProof } from "@/lib/routine-provider-proof";
+
+export const maxDuration = 800;
 
 // All provider control-plane requests cross one server-owned DNS-pinned,
 // redirect-refusing, bounded outbound boundary.
@@ -426,6 +432,10 @@ function applyRunCompletionTruth(response, completion) {
     response.continuation = response?.continuation && typeof response.continuation === "object"
       ? response.continuation
       : { kind: "tool_result", status: "pending" };
+  }
+  if (completion.awaitingProvider) {
+    response.executionStatus = "awaiting_provider";
+    response.pending = true;
   }
   if (completion.auditUnpersisted) {
     response.executionStatus = "audit_unpersisted";
@@ -757,6 +767,7 @@ function buildRunResponse({
   runInputs
 }) {
   const completion = classifySandboxRunResult(result);
+  const routineProviderProof = normalizeRoutineProviderProof(result?.routineProviderProof, runId);
   const base = {
     runId,
     ranAt,
@@ -794,14 +805,14 @@ function buildRunResponse({
     browserAccess,
     adapterMeta: result.adapterMeta || null
   };
-  if (completion.awaitingToolResult) {
-    base.executionStatus = "awaiting_tool_result";
-    base.awaitingToolResult = true;
-    base.pending = true;
-    base.continuation = result?.continuation && typeof result.continuation === "object"
-      ? result.continuation
-      : { kind: "tool_result", status: "pending" };
+  if (routineProviderProof) Object.assign(base, routineProviderProof);
+  // Preserve nonterminal continuation truth through the normalized record.
+  // Without this, a valid provider HTTP 202 retains only nested adapterMeta
+  // and is subsequently misclassified and persisted as a failed run.
+  if (completion.awaitingProvider && result?.continuation && typeof result.continuation === "object") {
+    base.continuation = result.continuation;
   }
+  applyRunCompletionTruth(base, completion);
   if (row && (row.resolverTemplateId || row.connectorKind || row.executionLane)) {
     base.templateTrace = {
       resolverTemplateId: row.resolverTemplateId ? String(row.resolverTemplateId) : null,
@@ -843,10 +854,368 @@ function findSandboxRow(workspaceConfig, objectId, name) {
   return { object, row: rows[rowIndex], rowIndex };
 }
 
+function createSandboxRunId() {
+  return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function durableSandboxRunId({ objectId, name, proofKey }) {
+  const digest = createHash("sha256").update(stableStringify({
+    schema: "growthub-sandbox-run-id-v1",
+    objectId,
+    name,
+    proofKey,
+  }), "utf8").digest("hex");
+  return `run_${digest.slice(0, 32)}`;
+}
+
+function latestRecoverableTransportRun(records, admission, exactRunId = "") {
+  return [...records].reverse().find((record) => (
+    record?.kind !== "growthub-sandbox-run-handle-v1"
+    && String(record?.runId || "").trim()
+    && (!exactRunId || String(record?.runId || "").trim() === exactRunId)
+    && record?.useDraft === true
+    && String(record?.draftSha256 || "") === admission.draftSha256
+    && String(record?.adapter || "") === admission.adapterId
+    && (
+      /fetch failed|timed out/i.test(String(record?.error || ""))
+      || isRecoverableProviderContinuationRecord(record)
+    )
+  )) || null;
+}
+
+async function appendSandboxRunHandle({ objectId, name, record }) {
+  const sourceId = sandboxRunSourceId(objectId, name);
+  if (!sourceId) throw new Error("could not derive sandbox sourceId");
+  await appendWorkspaceSourceRecords(sourceId, [record], {
+    integrationId: sourceId,
+    fetchedAt: record.updatedAt || new Date().toISOString()
+  }, { maxRecords: 50 });
+  return sourceId;
+}
+
+async function durableRunAdmission(body) {
+  const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  if (!objectId || !name) return { ok: false, error: "objectId and name are required", status: 400 };
+  const workspaceConfig = await readWorkspaceConfig();
+  const { row } = findSandboxRow(workspaceConfig, objectId, name);
+  if (!row) return { ok: false, error: `no sandbox row named ${name} in object ${objectId}`, status: 404 };
+  const draftGraph = body?.useDraft === true
+    ? parseOrchestrationGraph(body?.draftGraph || row.orchestrationDraftConfig || row.orchestrationDraftGraph)
+    : null;
+  const draftSha256 = draftGraph
+    ? createHash("sha256").update(stableStringify(draftGraph), "utf8").digest("hex")
+    : String(row.routineEnvironmentDraftSha256 || "").trim();
+  await ensureSandboxAdaptersLoaded();
+  const adapterId = typeof row.adapter === "string" && row.adapter.trim() ? row.adapter.trim() : DEFAULT_SANDBOX_ADAPTER;
+  const adapter = getSandboxAdapter(adapterId);
+  if (!routineEnvironmentUsesBoundAdapter(row, adapterId) || typeof adapter?.status !== "function") {
+    return { ok: false, error: "This sandbox adapter does not expose durable result read-back", status: 409 };
+  }
+  if (!draftSha256 || String(row.routineEnvironmentProofKey || "").trim().length !== 64) {
+    return { ok: false, error: "Routine execution identity is incomplete", status: 409 };
+  }
+  return {
+    ok: true,
+    objectId,
+    name,
+    row,
+    adapter,
+    adapterId,
+    draftSha256,
+    request: {
+      objectId,
+      name,
+      useDraft: body?.useDraft === true,
+      ...(draftGraph ? { draftGraph } : {}),
+      ...(body?.runInputs && typeof body.runInputs === "object" && !Array.isArray(body.runInputs)
+        ? { runInputs: body.runInputs }
+        : {}),
+      ...(typeof body?.intent === "string" ? { intent: body.intent } : {}),
+      ...(typeof body?.actor === "string" ? { actor: body.actor } : {}),
+    },
+  };
+}
+
+function durableAdapterRequest(admission, runId, recoveredWorkflowRunId = "") {
+  return {
+    runId,
+    timeoutMs: Number(admission.row.timeoutMs) || SANDBOX_DEFAULT_TIMEOUT_MS,
+    runInputs: admission.request.runInputs || {},
+    routineEnvironmentContract: admission.row.routineEnvironmentContract || null,
+    routineEnvironmentProofKey: admission.row.routineEnvironmentProofKey || "",
+    routineEnvironmentDraftSha256: admission.draftSha256,
+    ...(recoveredWorkflowRunId ? { recoveredWorkflowRunId } : {}),
+  };
+}
+
+async function appendTerminalHandle({ admission, runId, acceptedAt, payload, sourceId }) {
+  const completedAt = new Date().toISOString();
+  const completed = payload?.ok === true;
+  await appendSandboxRunHandle({
+    objectId: admission.objectId,
+    name: admission.name,
+    record: {
+      kind: "growthub-sandbox-run-handle-v1",
+      runId,
+      objectId: admission.objectId,
+      name: admission.name,
+      state: completed ? "completed" : "failed",
+      acceptedAt,
+      updatedAt: completedAt,
+      completedAt,
+      terminal: true,
+      result: {
+        ok: completed,
+        status: payload?.status || null,
+        exitCode: payload?.exitCode ?? payload?.response?.exitCode ?? null,
+        durationMs: payload?.durationMs ?? payload?.response?.durationMs ?? null,
+        sourceId: payload?.sourceId || sourceId,
+        error: payload?.response?.error || payload?.error || null,
+      },
+    },
+  });
+}
+
+async function startDurableSandboxRun(body) {
+  const admission = await durableRunAdmission(body);
+  if (!admission.ok) return NextResponse.json({ ok: false, error: admission.error }, { status: admission.status });
+  const requestedRecoveryRunId = typeof body?.recoverRunId === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/.test(body.recoverRunId.trim())
+    ? body.recoverRunId.trim()
+    : "";
+  if (body?.recoverRunId !== undefined && !requestedRecoveryRunId) {
+    return NextResponse.json({ ok: false, error: "recoverRunId is invalid" }, { status: 400 });
+  }
+  const requestedRecoveryWorkflowRunId = typeof body?.recoverWorkflowRunId === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/.test(body.recoverWorkflowRunId.trim())
+    ? body.recoverWorkflowRunId.trim()
+    : "";
+  if (requestedRecoveryRunId && !requestedRecoveryWorkflowRunId) {
+    return NextResponse.json({ ok: false, error: "recoverWorkflowRunId is required for exact recovery" }, { status: 400 });
+  }
+  if (!requestedRecoveryRunId && body?.recoverWorkflowRunId !== undefined) {
+    return NextResponse.json({ ok: false, error: "recoverWorkflowRunId requires recoverRunId" }, { status: 400 });
+  }
+  const runId = durableSandboxRunId({
+    objectId: admission.objectId,
+    name: admission.name,
+    proofKey: admission.row.routineEnvironmentProofKey,
+  });
+  const acceptedAt = new Date().toISOString();
+  const existingSourceId = sandboxRunSourceId(admission.objectId, admission.name);
+  const existing = existingSourceId ? await readWorkspaceSourceRecords(existingSourceId) : null;
+  const existingRecords = Array.isArray(existing?.records) ? existing.records : [];
+  if (requestedRecoveryRunId) {
+    const recoveredTerminal = [...existingRecords].reverse().find((record) => (
+      record?.kind !== "growthub-sandbox-run-handle-v1"
+      && String(record?.runId || "").trim() === requestedRecoveryRunId
+      && record?.useDraft === true
+      && String(record?.draftSha256 || "") === admission.draftSha256
+      && String(record?.workflowRunId || "") === requestedRecoveryWorkflowRunId
+      && Number(record?.exitCode) === 0
+      && Boolean(record?.outputHash)
+    ));
+    if (recoveredTerminal) {
+      return NextResponse.json({
+        ok: true,
+        accepted: true,
+        recoveryOnly: true,
+        state: "completed",
+        terminal: true,
+        runId: requestedRecoveryRunId,
+        sourceId: existingSourceId,
+        statusUrl: `/api/workspace/sandbox-run?objectId=${encodeURIComponent(admission.objectId)}&name=${encodeURIComponent(admission.name)}&runId=${encodeURIComponent(requestedRecoveryRunId)}`,
+      }, { status: 202 });
+    }
+    const recoverable = latestRecoverableTransportRun(existingRecords, admission, requestedRecoveryRunId);
+    if (!recoverable) {
+      return NextResponse.json({
+        ok: false,
+        recoveryOnly: true,
+        error: "The supplied Routine run has no exact recoverable transport record",
+      }, { status: 409 });
+    }
+    const observed = await admission.adapter.status(
+      durableAdapterRequest(admission, requestedRecoveryRunId, requestedRecoveryWorkflowRunId),
+    );
+    if (observed?.terminal !== true || observed?.result?.ok !== true) {
+      return NextResponse.json({
+        ok: false,
+        recoveryOnly: true,
+        retryable: true,
+        error: observed?.error || "The supplied Routine result is not yet available for reconciliation",
+      }, { status: 503 });
+    }
+    const response = await executeSandboxRun(admission.request, {
+      forcedRunId: requestedRecoveryRunId,
+      resolvedAdapterResult: observed.result,
+    });
+    const payload = await response.json().catch(() => ({ ok: false, error: "terminal response unreadable" }));
+    if (payload?.ok !== true) {
+      return NextResponse.json({
+        ok: false,
+        recoveryOnly: true,
+        error: payload?.error || payload?.response?.error || "The supplied Routine result could not be persisted",
+      }, { status: 422 });
+    }
+    await appendTerminalHandle({
+      admission,
+      runId: requestedRecoveryRunId,
+      acceptedAt,
+      payload,
+      sourceId: existingSourceId,
+    });
+    return NextResponse.json({
+      ok: true,
+      accepted: true,
+      recoveryOnly: true,
+      state: "completed",
+      terminal: true,
+      runId: requestedRecoveryRunId,
+      sourceId: existingSourceId,
+      statusUrl: `/api/workspace/sandbox-run?objectId=${encodeURIComponent(admission.objectId)}&name=${encodeURIComponent(admission.name)}&runId=${encodeURIComponent(requestedRecoveryRunId)}`,
+    }, { status: 202 });
+  }
+  const existingRun = [...existingRecords].reverse().find((record) => (
+    String(record?.runId || "") === runId
+    && (
+      record?.kind === "growthub-sandbox-run-handle-v1"
+      || String(record?.draftSha256 || "") === admission.draftSha256
+    )
+  ));
+  if (existingRun) {
+    return NextResponse.json({
+      ok: true,
+      accepted: true,
+      state: existingRun?.state || (existingRun?.terminal === true ? "completed" : "running"),
+      terminal: existingRun?.terminal === true,
+      runId,
+      sourceId: existingSourceId,
+      statusUrl: `/api/workspace/sandbox-run?objectId=${encodeURIComponent(admission.objectId)}&name=${encodeURIComponent(admission.name)}&runId=${encodeURIComponent(runId)}`,
+    }, { status: 202 });
+  }
+  const recoverable = latestRecoverableTransportRun(existingRecords, admission);
+  if (recoverable) {
+    const observed = await admission.adapter.status(
+      durableAdapterRequest(admission, String(recoverable.runId)),
+    );
+    if (observed?.terminal === true && observed?.result?.ok === true) {
+      const response = await executeSandboxRun(admission.request, {
+        forcedRunId: String(recoverable.runId),
+        resolvedAdapterResult: observed.result,
+      });
+      const payload = await response.json().catch(() => ({ ok: false, error: "terminal response unreadable" }));
+      if (payload?.ok === true) {
+        await appendTerminalHandle({
+          admission,
+          runId: String(recoverable.runId),
+          acceptedAt,
+          payload,
+          sourceId: existingSourceId,
+        });
+        return NextResponse.json({
+          ok: true,
+          accepted: true,
+          state: "completed",
+          terminal: true,
+          runId: String(recoverable.runId),
+          sourceId: existingSourceId,
+          statusUrl: `/api/workspace/sandbox-run?objectId=${encodeURIComponent(admission.objectId)}&name=${encodeURIComponent(admission.name)}&runId=${encodeURIComponent(String(recoverable.runId))}`,
+        }, { status: 202 });
+      }
+    }
+  }
+  const sourceId = await appendSandboxRunHandle({
+    objectId: admission.objectId,
+    name: admission.name,
+    record: {
+      kind: "growthub-sandbox-run-handle-v1",
+      runId,
+      objectId: admission.objectId,
+      name: admission.name,
+      state: "running",
+      acceptedAt,
+      updatedAt: acceptedAt,
+      terminal: false,
+      draftSha256: admission.draftSha256,
+      proofKey: admission.row.routineEnvironmentProofKey,
+      request: admission.request,
+    },
+  });
+  const task = executeSandboxRun(admission.request, { forcedRunId: runId })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => ({ ok: false, error: "terminal response unreadable" }));
+      const transportTimedOut = payload?.adapter === admission.adapterId
+        && /timed out/i.test(String(payload?.response?.error || payload?.error || ""));
+      const providerPending = payload?.response?.pending === true
+        && payload?.response?.executionStatus === "awaiting_provider"
+        && payload?.response?.adapterMeta?.providerContinuation?.pending === true;
+      if (transportTimedOut || providerPending) return payload;
+      await appendTerminalHandle({ admission, runId, acceptedAt, payload, sourceId });
+      return payload;
+    })
+    .catch(async (error) => {
+      await appendTerminalHandle({
+        admission,
+        runId,
+        acceptedAt,
+        sourceId,
+        payload: { ok: false, error: error?.message || "sandbox run failed" },
+      }).catch(() => {});
+    });
+  // Next.js after() guarantees the provider callback starts inside the
+  // request lifecycle. Completion is never entrusted to this function's
+  // lifetime: status probes reconcile the same runId from canonical control-
+  // plane persistence if the platform ends this invocation first.
+  after(async () => { await task; });
+  return NextResponse.json({
+    ok: true,
+    accepted: true,
+    state: "running",
+    terminal: false,
+    runId,
+    sourceId,
+    statusUrl: `/api/workspace/sandbox-run?objectId=${encodeURIComponent(admission.objectId)}&name=${encodeURIComponent(admission.name)}&runId=${encodeURIComponent(runId)}`,
+  }, { status: 202 });
+}
+
+async function reconcileDurableSandboxRun({ objectId, name, runId, handle, sourceId }) {
+  const admission = await durableRunAdmission(handle.request || {});
+  if (!admission.ok) return { ok: false, error: admission.error, status: admission.status };
+  if (
+    admission.draftSha256 !== handle.draftSha256
+    || String(admission.row.routineEnvironmentProofKey || "") !== String(handle.proofKey || "")
+  ) {
+    return { ok: false, error: "The canonical Routine draft changed before result reconciliation", status: 409 };
+  }
+  const observed = await admission.adapter.status(durableAdapterRequest(admission, runId));
+  if (!observed?.terminal) return { ok: true, terminal: false, state: "running" };
+  const response = await executeSandboxRun(admission.request, {
+    forcedRunId: runId,
+    resolvedAdapterResult: observed.result,
+  });
+  const payload = await response.json().catch(() => ({ ok: false, error: "terminal response unreadable" }));
+  await appendTerminalHandle({
+    admission,
+    runId,
+    acceptedAt: handle.acceptedAt,
+    payload,
+    sourceId,
+  });
+  return {
+    ok: true,
+    terminal: true,
+    state: payload?.ok ? "completed" : "failed",
+    payload,
+  };
+}
+
 async function GET(request) {
   const { searchParams } = new URL(request.url);
   const objectId = String(searchParams.get("objectId") || "").trim();
   const name = String(searchParams.get("name") || "").trim();
+  const runId = String(searchParams.get("runId") || "").trim();
   if (!objectId || !name) {
     return NextResponse.json({ ok: false, error: "objectId and name are required" }, { status: 400 });
   }
@@ -858,6 +1227,63 @@ async function GET(request) {
 
   const existing = await readWorkspaceSourceRecords(sourceId);
   const records = Array.isArray(existing?.records) ? existing.records : [];
+  if (runId) {
+    const persistedRun = [...records].reverse().find((record) => (
+      record?.kind !== "growthub-sandbox-run-handle-v1"
+      && String(record?.runId || "") === runId
+      && !(
+        record?.pending === true
+        && record?.executionStatus === "awaiting_provider"
+        && record?.adapterMeta?.providerContinuation?.pending === true
+      )
+    ));
+    if (persistedRun) {
+      const completed = Number(persistedRun.exitCode) === 0 && Boolean(persistedRun.outputHash);
+      return NextResponse.json({
+        ok: true,
+        runId,
+        sourceId,
+        state: completed ? "completed" : "failed",
+        terminal: true,
+        record: persistedRun,
+      });
+    }
+    const handles = records.filter((record) => record?.kind === "growthub-sandbox-run-handle-v1" && String(record?.runId || "") === runId);
+    if (!handles.length) {
+      // Advertise the durable contract on the miss so the GH control plane can
+      // choose admission + status read-back over the single-invocation lane.
+      // Attestation selects the newest exact terminal execution record and
+      // ignores admission handles (see routine-environment-proposal.js).
+      return NextResponse.json({
+        ok: false,
+        error: "run handle not found",
+        runId,
+        sourceId,
+        durableContract: "growthub-sandbox-durable-run-v2",
+        attestationRecordSelection: "latest-terminal-record",
+      }, { status: 404 });
+    }
+    let latest = handles.at(-1);
+    if (latest?.terminal !== true) {
+      const reconciled = await reconcileDurableSandboxRun({ objectId, name, runId, handle: latest, sourceId });
+      if (!reconciled.ok) {
+        return NextResponse.json({ ok: false, error: reconciled.error, runId, sourceId }, { status: reconciled.status || 503 });
+      }
+      if (reconciled.terminal) {
+        const refreshed = await readWorkspaceSourceRecords(sourceId);
+        const refreshedRecords = Array.isArray(refreshed?.records) ? refreshed.records : [];
+        latest = refreshedRecords.filter((record) => record?.kind === "growthub-sandbox-run-handle-v1" && String(record?.runId || "") === runId).at(-1) || latest;
+      }
+    }
+    return NextResponse.json({
+      ok: true,
+      runId,
+      sourceId,
+      state: latest?.state || "running",
+      terminal: latest?.terminal === true,
+      record: latest,
+    });
+  }
   return NextResponse.json({
     ok: true,
     sourceId,
@@ -873,6 +1299,8 @@ async function executeSandboxRun(body, {
   appScope = "",
   requestOrigin = "",
   signal,
+  forcedRunId,
+  resolvedAdapterResult,
 } = {}) {
   const objectId = typeof body?.objectId === "string" ? body.objectId.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -1001,14 +1429,20 @@ async function executeSandboxRun(body, {
     }
   }
 
-  const runId = `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const runId = forcedRunId || createSandboxRunId();
   const ranAt = new Date().toISOString();
 
-  let result;
+  let result = resolvedAdapterResult && typeof resolvedAdapterResult === "object"
+    ? resolvedAdapterResult
+    : undefined;
   let effectiveAdapterId = adapterId;
 
   const hasNativeGraph = Boolean(parseOrchestrationGraph(rowForRun.orchestrationGraph || rowForRun.orchestrationConfig));
-  if (hasNativeGraph && runLocality !== "serverless") {
+  const adapterOwnsRoutineExecution = routineEnvironmentUsesBoundAdapter(rowForRun, adapterId);
+  if (result && !adapterOwnsRoutineExecution) {
+    return NextResponse.json({ ok: false, error: "Resolved result does not match this Routine adapter" }, { status: 409 });
+  }
+  if (hasNativeGraph && runLocality !== "serverless" && !adapterOwnsRoutineExecution) {
     const graphResult = await runOrchestrationGraphIfPresent({
       workspaceConfig,
       row: rowForRun,
@@ -1252,6 +1686,11 @@ async function executeSandboxRun(body, {
         workdir,
         ranAt,
         ...(intelligenceSandbox ? { intelligenceSandbox } : {}),
+        orchestrationGraph: rowForRun.orchestrationGraph || rowForRun.orchestrationConfig || null,
+        runInputs: normalizedRunInputs || {},
+        routineEnvironmentContract: rowForRun.routineEnvironmentContract || null,
+        routineEnvironmentProofKey: rowForRun.routineEnvironmentProofKey || "",
+        routineEnvironmentDraftSha256: draftSha256 || rowForRun.routineEnvironmentDraftSha256 || "",
       });
     } catch (error) {
       result = {
@@ -1420,11 +1859,15 @@ async function executeSandboxRun(body, {
     ? "failed audit persistence"
     : completion.awaitingToolResult
       ? "is awaiting a governed tool result"
+      : completion.awaitingProvider
+        ? "is waiting for the exact saved CLI provider"
       : runOk ? "passed" : "failed";
   const nextActions = completion.auditUnpersisted
     ? ["Restore writable workspace persistence, then rerun so the verification receipt and run record are durable."]
     : completion.awaitingToolResult
       ? ["Submit the correlated governed tool result, then resume this inference turn; the draft remains untested and unpublishable."]
+      : completion.awaitingProvider
+        ? ["Keep the exact saved CLI provider available; completion will resume this same run identity."]
       : runOk && useDraft
         ? ["Attest the tested draft (orchestrationDraftTestPassed + orchestrationDraftTestedConfig), then POST /api/workspace/workflow/publish"]
         : [];
@@ -1444,11 +1887,16 @@ async function executeSandboxRun(body, {
   });
 
   const observationStatus = String(providerComputeBlock?.observation?.status || "");
-  const httpStatus = observationStatus === "schedule-failed" ? 503 : 200;
+  const transport = sandboxRunHttpProjection(completion, { observationStatus });
   return NextResponse.json({
-    ok: runOk,
+    ok: transport.ok,
+    ...(transport.accepted ? {
+      accepted: true,
+      pending: true,
+      terminal: false,
+    } : {}),
     status,
-    ...(!runOk && (completion.awaitingToolResult || completion.auditUnpersisted)
+    ...(!runOk && (completion.awaitingToolResult || completion.awaitingProvider || completion.auditUnpersisted)
       ? { executionStatus: completion.executionStatus }
       : {}),
     runId,
@@ -1460,7 +1908,7 @@ async function executeSandboxRun(body, {
     persistError,
     sourceId,
     response
-  }, { status: httpStatus });
+  }, { status: transport.httpStatus });
 }
 
 async function POST(request) {
@@ -1520,6 +1968,9 @@ async function POST(request) {
   }
 
   const wantsStream = body?.stream === true || accept.includes("application/x-ndjson");
+  if (body?.async === true) {
+    return startDurableSandboxRun(body);
+  }
   if (!wantsStream) {
     return executeSandboxRun(body, {
       traceparent: incomingTraceparent,

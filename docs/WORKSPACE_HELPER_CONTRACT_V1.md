@@ -130,6 +130,44 @@ Returns the last N apply receipts. Used by review UI and fine-tune loop.
 | `repair.binding` | `dataModel` | Patches `binding` on an existing object |
 | `explain.object` | `dataModel` | Informational — no config write |
 
+### Server-built proposal lanes (not in `WORKSPACE_HELPER_PROPOSAL_TYPES`)
+
+Some proposals are never produced by the model. They are built by a trusted
+server and carried through `POST /api/workspace/helper/apply` only because that
+route is the one governed, receipted mutation surface. `helper/apply`
+partitions them **before** generic validation, so they never reach
+`validateProposalForApply` and are never added to the AI-facing type list.
+
+| Type | PATCH field | Lane |
+|---|---|---|
+| `custom-model.workflow.create` | `dataModel` | `lib/custom-model-workflow-proposal.js` — rebuilds a governed workflow row from Workspace evidence |
+| `routine.environment.upsert` | `dataModel` | `lib/routine-environment-proposal.js` — GH App Routine environment bridge |
+
+`routine.environment.upsert` is a closed, credential-free, two-stage
+transaction owned by the GH control plane:
+
+1. `stage: "draft"` — the payload carries one exact `sandbox-environment` row
+   (`routineEnvironmentContract`, draft/artifact digests, proof key). The lane
+   re-hashes the orchestration draft, re-derives the proof key, refuses any
+   credential-shaped value, and upserts that single row. Nothing executes.
+2. `POST /api/workspace/sandbox-run` on that row invokes its bound
+   `vercel-function` adapter, which hands the exact pinned workflow back to the
+   authenticated control plane and persists the returned run in the row's
+   canonical `sandbox:` source-record stream (`?async=true` admits a durable run
+   handle; `GET ...&runId=` reads it back).
+3. `stage: "attest"` — the payload names `runId`, `sourceId`, `outputHash`. The
+   lane loads that source record itself, selects the newest exact terminal
+   execution record (never an admission handle), and promotes the same row to
+   `sandbox-verified` only when every frozen identity matches. A client cannot
+   assert success.
+4. `POST /api/workspace/workflow/publish` consumes the attested row and stamps
+   `routineEnvironmentStatus: "published"` plus the release identity.
+
+No Routine definition, schedule, provider binding, or credential is stored in
+the Workspace; the row is execution evidence only. Callers that set
+`responseMode: "receipt"` get `{ ok, threadId, applied, skipped }` without the
+full `workspaceConfig`.
+
 ## Intent → system-prompt specialization
 
 Each intent maps to a distinct system-prompt variant in `lib/workspace-helper.js::buildHelperSystemPrompt`. The prompt injects:

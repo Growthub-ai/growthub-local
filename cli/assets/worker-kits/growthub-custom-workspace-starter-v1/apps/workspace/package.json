@@ -12,6 +12,7 @@
   "dependencies": {
     "@nangohq/node": "^0.70.4",
     "@tanstack/react-table": "^8.21.3",
+    "@vercel/oidc": "^2.0.2",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "jose": "^6.1.3",

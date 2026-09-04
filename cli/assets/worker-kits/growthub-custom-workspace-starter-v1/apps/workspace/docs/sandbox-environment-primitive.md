@@ -56,6 +56,15 @@ Workspace Builder excludes **`sandbox-environment`** from View widget bindings (
 ## Extension points
 
 - Custom adapters: `apps/workspace/lib/adapters/sandboxes/adapters/` (see `README.md` there).
+- `vercel-function` adapter (`adapters/vercel-function.js`): remote adapter bound to
+  rows whose `routineEnvironmentContract.schema` is
+  `growthub-routine-cloud-environment-v1`. Those rows are written only by the
+  server-built `routine.environment.upsert` lane in `helper/apply`
+  (`lib/routine-environment-proposal.js`). The adapter presents this deployment's
+  short-lived Vercel OIDC identity to the GH control plane, which re-reads and
+  executes the exact pinned workflow; the ordinary `sandbox-run` route persists the
+  returned evidence. The Workspace never stores the Routine, its schedule, its
+  provider binding, or any credential — only the run record.
 
 ## Local agent auth onboarding
 

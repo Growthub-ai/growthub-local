@@ -29,6 +29,21 @@ import { syncTriggerNodeForSchedule } from "./workspace-add-ons.js";
 import { getNodeDeltaRecords, normalizeDeltaTags, patchSandboxRowInConfig } from "./orchestration-publish.js";
 import { expectedManifestIntegrations, verifyWorkflowManifestsAtPublish } from "./adapters/inference/manifest.js";
 
+export function findVerifiedDraftRunRecord({ records, draftRunId, draft, outputHash = "" } = {}) {
+  const parsedDraft = parseOrchestrationGraph(draft);
+  const expectedDraftSha256 = createHash("sha256").update(stableStringify(parsedDraft), "utf8").digest("hex");
+  const expectedOutputHash = String(outputHash || "").trim();
+  return [...(Array.isArray(records) ? records : [])].reverse().find((record) => (
+    record?.kind !== "growthub-sandbox-run-handle-v1"
+    && String(record?.runId ?? "").trim() === String(draftRunId ?? "").trim()
+    && record?.exitCode === 0
+    && !record?.error
+    && record?.useDraft === true
+    && record?.draftSha256 === expectedDraftSha256
+    && (!expectedOutputHash || String(record?.outputHash ?? "").trim() === expectedOutputHash)
+  )) ?? null;
+}
+
 export function evaluateDraftPromotion({
   workspaceConfig,
   objectId,
