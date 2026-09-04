@@ -1,6 +1,6 @@
 {
   "name": "growthub-governed-console",
-  "version": "0.14.31",
+  "version": "0.14.32",
   "description": "Agent-facing operating console for governed Growthub workspaces: 14 read/dry-run/hand-off MCP tools over the workspace metadata graph (describe, topology, blast radius, lineage, readiness, preflight_patch, next_actions), plus operator skills for the governed mutation boundary. Read + dry-run + governed hand-off — never a mutation tool.",
   "author": {
     "name": "Growthub",
