@@ -1,5 +1,27 @@
 # @growthub/cli
 
+## 0.14.32
+
+### Patch Changes
+
+- Adds the `routine.environment.upsert` governed helper lane to the exported
+  custom-workspace starter. GH App's closed, credential-free Routine
+  environment proposal is partitioned in `helper/apply` before generic
+  proposal validation instead of being skipped as an unknown proposal type.
+  `draft` re-hashes the exact secret-free row and upserts one
+  `sandbox-environment` row; `attest` reads the canonical `sandbox:` source
+  record itself and promotes the same row only when every frozen identity
+  matches. The type is not added to `WORKSPACE_HELPER_PROPOSAL_TYPES` and never
+  passes through `workspace-helper-apply.js`.
+- Adds the `vercel-function` sandbox adapter and provider-proof normalizer,
+  durable `sandbox-run` admission and status read-back
+  (`growthub-sandbox-durable-run-v2`, `latest-terminal-record`), provider
+  continuation classification, publish release stamping, and atomic `sandbox:`
+  source-record persistence in Postgres mode. No Routine definition, schedule,
+  provider binding, or credential is stored in the Workspace.
+- Proven live on 2026-09-04: a real Claude Code CLI Routine ran draft →
+  sandbox → attest → publish → Active through the bound Workspace.
+
 ## 0.14.30
 
 ### Patch Changes

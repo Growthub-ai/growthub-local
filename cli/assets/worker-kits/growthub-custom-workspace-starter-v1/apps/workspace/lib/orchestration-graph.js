@@ -24,6 +24,14 @@ const KNOWN_NODE_TYPES = new Set([
   "flow-control",
   "core-action",
   "human-input",
+  // GH App's canonical workflow engine executes registered CMS primitives.
+  // A deployed Workspace may publish this type only as a graph node; the
+  // row's governed sandbox adapter still owns remote execution and proof.
+  "cmsNode",
+  // Account-provider Routine steps keep the canonical GH workflow node type.
+  // The Workspace adapter never executes this node directly; it delegates the
+  // attested graph to Agent Runtime v2 with the exact frozen provider binding.
+  "textModel",
   "supabase-data",
   "stripe-commerce",
   "resend-email"
@@ -137,9 +145,11 @@ function validateOrchestrationGraph(graph) {
       const hasThinAdapter = graph.nodes.some((n) => n?.type === "thinAdapter");
       const hasApi = graph.nodes.some((n) => n?.type === "api-registry-call" || CAPABILITY_NODE_TYPES.includes(n?.type));
       const hasAiAgent = graph.nodes.some((n) => n?.type === "ai-agent");
+      const hasCmsNode = graph.nodes.some((n) => n?.type === "cmsNode");
+      const hasProviderNode = graph.nodes.some((n) => n?.type === "textModel");
       const hasResult = graph.nodes.some((n) => n?.type === "tool-result");
-      if (!hasThinAdapter && !hasApi && !hasAiAgent) errors.push("orchestrationGraph requires an executable node");
-      if (!hasThinAdapter && !hasAiAgent && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
+      if (!hasThinAdapter && !hasApi && !hasAiAgent && !hasCmsNode && !hasProviderNode) errors.push("orchestrationGraph requires an executable node");
+      if (!hasThinAdapter && !hasAiAgent && !hasCmsNode && !hasProviderNode && !hasResult) errors.push("orchestrationGraph requires a tool-result node");
     }
   }
   if (!Array.isArray(graph.edges)) {

@@ -144,26 +144,65 @@ function isAwaitingToolResult(result) {
     || String(customModel?.gatewayStatus || "") === "awaiting_tool_result";
 }
 
+function isAwaitingProvider(result) {
+  return result?.pending === true
+    && (
+      String(result?.executionStatus || "") === "awaiting_provider"
+      || result?.adapterMeta?.providerContinuation?.pending === true
+    );
+}
+
+function isRecoverableProviderContinuationRecord(result) {
+  return isAwaitingProvider(result)
+    || (
+      String(result?.error || "") === "control-plane workflow execution returned HTTP 202"
+      && Number(result?.adapterMeta?.httpStatus) === 202
+    );
+}
+
 /** Pure terminal classifier shared by the runner and sandbox route. */
 function classifySandboxRunResult(result, { auditRequired = false, auditPersisted = true } = {}) {
   const awaitingToolResult = isAwaitingToolResult(result);
+  const awaitingProvider = !awaitingToolResult && isAwaitingProvider(result);
   const auditUnpersisted = auditRequired && !auditPersisted;
   // A pending provider-compute continuation is a live governed run, not a
   // terminal outcome: the paid allocation is journaled and observation
   // continues through the same route. It must never classify as failed.
   const computePending = !awaitingToolResult
+    && !awaitingProvider
     && !auditUnpersisted
     && result?.adapterMeta?.compute?.pending === true
     && !result?.error;
-  const runOk = !awaitingToolResult && !auditUnpersisted && (computePending || (result?.exitCode === 0 && !result?.error));
+  const runOk = !awaitingToolResult
+    && !awaitingProvider
+    && !auditUnpersisted
+    && (computePending || (result?.exitCode === 0 && !result?.error));
   return {
     awaitingToolResult,
+    awaitingProvider,
     auditUnpersisted,
     computePending,
     runOk,
-    executionStatus: auditUnpersisted ? "audit_unpersisted" : awaitingToolResult ? "awaiting_tool_result" : computePending ? "pending" : runOk ? "completed" : "failed",
-    rowStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "pending" : computePending ? "pending" : runOk ? "connected" : "failed",
-    outcomeStatus: auditUnpersisted ? "failed" : awaitingToolResult ? "drafted" : computePending ? "drafted" : runOk ? "tested" : "failed",
+    executionStatus: auditUnpersisted ? "audit_unpersisted" : awaitingToolResult ? "awaiting_tool_result" : awaitingProvider ? "awaiting_provider" : computePending ? "pending" : runOk ? "completed" : "failed",
+    rowStatus: auditUnpersisted ? "failed" : awaitingToolResult || awaitingProvider ? "pending" : computePending ? "pending" : runOk ? "connected" : "failed",
+    outcomeStatus: auditUnpersisted ? "failed" : awaitingToolResult || awaitingProvider ? "drafted" : computePending ? "drafted" : runOk ? "tested" : "failed",
+  };
+}
+
+/**
+ * Project canonical completion truth onto the HTTP contract consumed by the
+ * control plane. A provider continuation is accepted work, but it is neither
+ * terminal nor publishable until durable reconciliation observes its result.
+ */
+function sandboxRunHttpProjection(completion, { observationStatus = "" } = {}) {
+  const awaitingProvider = completion?.awaitingProvider === true;
+  const scheduleFailed = String(observationStatus || "") === "schedule-failed";
+  return {
+    ok: completion?.runOk === true || awaitingProvider,
+    httpStatus: scheduleFailed ? 503 : awaitingProvider ? 202 : 200,
+    accepted: awaitingProvider,
+    pending: awaitingProvider,
+    terminal: !awaitingProvider,
   };
 }
 
@@ -1161,5 +1200,8 @@ export {
   executeStripeCommerce,
   executeSupabaseData,
   isAwaitingToolResult,
+  isAwaitingProvider,
+  isRecoverableProviderContinuationRecord,
   runOrchestrationGraphIfPresent,
+  sandboxRunHttpProjection,
 };
