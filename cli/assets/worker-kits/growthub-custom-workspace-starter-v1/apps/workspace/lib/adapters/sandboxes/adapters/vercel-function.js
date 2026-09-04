@@ -10,7 +10,6 @@
  */
 
 import { registerSandboxAdapter } from "../sandbox-adapter-registry.js";
-import { getVercelOidcToken } from "@vercel/oidc";
 import { normalizeRoutineProviderProof } from "../../../routine-provider-proof.js";
 
 const CALLBACK_PATH = "/api/workspaces/routine-environments/execute";
@@ -78,11 +77,29 @@ function callbackBody(request) {
   };
 }
 
+// `@vercel/oidc` is a dependency of the deployed Workspace, not of the starter
+// kit's host repository. Loading it lazily keeps the adapter registry importable
+// in template checks and unit tests where the package is not installed, while a
+// deployed Workspace still fails closed when its OIDC identity is unavailable.
+async function deployedVercelOidcToken() {
+  let mod;
+  try {
+    mod = await import("@vercel/oidc");
+  } catch {
+    return "";
+  }
+  try {
+    return await mod.getVercelOidcToken();
+  } catch {
+    return "";
+  }
+}
+
 async function callbackIdentity(request, options = {}) {
   const url = callbackUrl(request?.routineEnvironmentContract);
   const resolveOidcToken = typeof options.getOidcToken === "function"
     ? options.getOidcToken
-    : getVercelOidcToken;
+    : deployedVercelOidcToken;
   const token = clean(await resolveOidcToken(), 16_384);
   const body = callbackBody(request);
   if (Object.values(body).some((value) => typeof value === "string" && !value)) {
