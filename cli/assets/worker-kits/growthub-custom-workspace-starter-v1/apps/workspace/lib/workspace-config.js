@@ -344,8 +344,7 @@ async function writeWorkspaceConfig(patch) {
   const persistence = describePersistenceMode();
   const adapter = readAdapterConfig();
   if (persistence.mode === PERSISTENCE_ADAPTERS.DATABASE && persistence.canSave) {
-    const rawCurrent = await readDatabaseWorkspaceConfigRaw();
-    const current = normalizeConfigForPersistence(rawCurrent);
+    const current = await readDatabaseWorkspaceConfigRaw({ includeAuxiliarySourceRecords: false });
     const next = normalizeConfigForPersistence(applyWorkspaceConfigPatch(current, patch));
     validateWorkspaceConfig({
       dashboards: next.dashboards,
@@ -353,7 +352,7 @@ async function writeWorkspaceConfig(patch) {
       canvas: next.canvas,
       dataModel: next.dataModel
     });
-    await writeDatabaseWorkspaceConfig(withAuxiliarySourceRecords(next, rawCurrent));
+    await writeDatabaseWorkspaceConfig(next, { preserveAuxiliarySourceRecords: true });
     return next;
   }
   if (persistence.mode !== PERSISTENCE_ADAPTERS.FILESYSTEM || !persistence.canSave) {
@@ -707,7 +706,7 @@ async function readDatabaseWorkspaceConfig() {
   return config;
 }
 
-async function writeDatabaseWorkspaceConfig(config) {
+async function writeDatabaseWorkspaceConfig(config, { preserveAuxiliarySourceRecords = false } = {}) {
   const owner = await readWorkspaceOwner();
   const workspaceId = process.env.GROWTHUB_WORKSPACE_CONFIG_ID || config.id || "default";
   const client = await connectPostgres();
@@ -720,9 +719,13 @@ async function writeDatabaseWorkspaceConfig(config) {
        do update set
          owner_email = excluded.owner_email,
          hosted_base_url = excluded.hosted_base_url,
-         config = excluded.config,
+         config = case when $6::boolean then
+           excluded.config || case when ${WORKSPACE_CONFIG_TABLE}.config ? 'auxiliarySourceRecords'
+             then jsonb_build_object('auxiliarySourceRecords', ${WORKSPACE_CONFIG_TABLE}.config->'auxiliarySourceRecords')
+             else '{}'::jsonb end
+           else excluded.config end,
          updated_at = now()`,
-      [owner.ownerId, workspaceId, owner.ownerEmail, owner.hostedBaseUrl, JSON.stringify(config)]
+      [owner.ownerId, workspaceId, owner.ownerEmail, owner.hostedBaseUrl, JSON.stringify(config), preserveAuxiliarySourceRecords]
     );
   } finally {
     await client.end();
