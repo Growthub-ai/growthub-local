@@ -16,6 +16,11 @@ Use the selected Character's native Routine controls when already open. Keep the
 existing authentication and publication process; do not create new credentials,
 wrap a private browser session or call guessed mutation endpoints.
 
+Routines require a Project; Inbox threads cannot own them. Establish the intended
+Project before authoring. Preserve the useful Inbox result and use the existing
+copy/Project controls when a dedicated Project is needed; do not move active
+customer work or silently create another cadence.
+
 The presently verified CEO MCP has no Routine lifecycle tools. Do not invent
 `create_routine`, `publish_routine` or `run_routine` calls. On a surface with the
 user's authorized browser/computer access, complete the existing UI journey,

@@ -19,6 +19,11 @@ selector. A Brand Kit identifier/hash alone is not its content. If content was
 supplied by the user, label that provenance instead of claiming a direct read.
 Never request credentials in chat or change grants to pass a readiness check.
 
+Native Growthub execution can materialize an approved Brand Kit snapshot and
+manifest into the provider workspace. Read only the exact host-supplied references
+when that is the selected context path; a blanket ban on file reads prevents this
+supported brand workflow. Do not search unrelated files or export host credentials.
+
 Establish one destination for the reviewable output: the Character conversation,
 an existing authorized Knowledge record, or a named business-tool draft. Report
 missing inputs before dispatch. A draft in the conversation can still be useful
