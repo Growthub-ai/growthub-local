@@ -83,3 +83,8 @@ to the report. These have no HTTP delivery status and cannot replace CDN logs.
 User-Agent identity is explicitly unverified. `probe:true` events from controlled
 QA are counted separately and excluded from observed render totals. Cached edge
 hits may never reach the origin. Neither source establishes citations.
+
+Marked controlled request rows may carry `probe:true`; the report counts them
+separately and excludes them from ordinary request totals as well. Preserve this
+marker when normalizing known QA request IDs. A missing marker does not establish
+that a request was human, organic or a verified provider crawler.

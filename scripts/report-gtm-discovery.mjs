@@ -40,7 +40,8 @@ if (options.requests) await rows(options.requests, row => {
   if (!path || !Number.isFinite(Date.parse(row.observedAt)) || !Number.isInteger(row.status) || row.status < 100 || row.status > 599) throw Error('Incomplete request observation');
   if (typeof row.requestId === 'string' && row.requestId) { if (seen.has(row.requestId)) { report.duplicateRequestIds++; return; } seen.add(row.requestId); }
   const type = bot(row.userAgent), ref = referral(row.referrer);
-  const item = report.requests[path] ??= { observedRecords: 0, status: {}, userAgentClasses: {}, aiReferrers: {} };
+  const item = report.requests[path] ??= { observedRecords: 0, qaProbeRecords: 0, status: {}, userAgentClasses: {}, aiReferrers: {} };
+  if (row.probe === true) { item.qaProbeRecords++; return; }
   item.observedRecords++; item.status[row.status] = (item.status[row.status] ?? 0) + 1;
   if (type) item.userAgentClasses[type] = (item.userAgentClasses[type] ?? 0) + 1;
   if (ref) item.aiReferrers[ref] = (item.aiReferrers[ref] ?? 0) + 1;
