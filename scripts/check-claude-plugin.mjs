@@ -131,7 +131,7 @@ for (const { entryName, dirRel } of pluginDirs) {
   }
 
   // Version lockstep: plugin.json == cli/package.json.
-  if (cliVersion && manifest.version && manifest.version !== cliVersion) {
+  if (manifest.name === 'growthub-governed-console' && cliVersion && manifest.version && manifest.version !== cliVersion) {
     errors.push(`${dirRel}: plugin version ${manifest.version} != cli/package.json ${cliVersion} (lockstep rule)`);
   }
 

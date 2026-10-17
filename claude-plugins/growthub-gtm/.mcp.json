@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "growthub-brand-kit": {
+      "type": "http",
+      "url": "https://www.growthub.ai/api/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${GROWTHUB_API_TOKEN}"
+      }
+    },
+    "growthub-ceo": {
+      "type": "http",
+      "url": "https://www.growthub.ai/api/v1/mcp/ceo",
+      "headers": {
+        "Authorization": "Bearer ${GROWTHUB_API_TOKEN}"
+      }
+    },
+    "growthub-knowledge": {
+      "type": "http",
+      "url": "https://www.growthub.ai/api/v1/mcp/knowledge",
+      "headers": {
+        "Authorization": "Bearer ${GROWTHUB_API_TOKEN}"
+      }
+    }
+  }
+}
