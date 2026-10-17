@@ -24,5 +24,6 @@
   "publisherIdentity": "not-verified-in-portal",
   "countries": "not-supplied",
   "commerce": "Existing Growthub and connected services; publisher must confirm current declarations.",
-  "publicApiKeyConnection": "Documented public-form limitation; no authentication changes or false readiness claim."
+  "publicApiKeyConnection": "Documented public-form limitation; no authentication changes or false readiness claim.",
+  "publicDependencyReview": "Verify eligible existing app versions for all three servers. A public OpenAI bundle may have at most one owned non-template app requiring initial review; stage reviews or reuse eligible versions before submission."
 }

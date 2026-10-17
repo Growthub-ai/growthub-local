@@ -32,3 +32,11 @@ portal. Do not modify Growthub authentication to make a listing pass.
 
 Routine execution remains in the existing Growthub controls. See the repeat
 skill for the real customer journey and truthful continuation behavior.
+
+For public OpenAI review, verify each dependency's actual eligible app version.
+The submission workflow permits at most one owned non-template app needing
+initial review per bundle. The three-server source package is therefore a
+prepared distribution artifact, not proof that the public-review dependency
+requirements are satisfied. Reuse verified existing app versions where eligible;
+otherwise stage review through the existing provider process before composing
+the full public bundle. Do not create duplicate app identities or change auth.
