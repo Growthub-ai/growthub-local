@@ -16,7 +16,8 @@ an explicit user action through existing settings, not an authentication change.
 Claude Code supports the HTTP configuration in .mcp.json with the environment
 reference. Codex compatibility uses its supported plugin MCP configuration; verify
 the actual connection, not only the manifest. The portable mcp.json carries the
-same existing endpoints and environment references for compatible runtimes.
+same existing endpoints and provider authentication declarations. Environment
+references belong to the provider-specific compatibility configurations.
 
 Brand Kit also has its existing public OAuth path; on an OAuth-only web surface
 use that existing connection for its actual approved Brand Kit capabilities.
