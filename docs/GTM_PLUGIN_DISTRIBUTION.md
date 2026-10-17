@@ -73,3 +73,13 @@ checks answer bytes and deduplicates request IDs. It aggregates data without
 retaining IPs, emails, query strings or answer text. It does not schedule work,
 claim global AI visibility, infer installs or attribute revenue from a crawl.
 No measured baseline is available until actual exports/answers are supplied.
+
+### Origin-render observations
+
+The companion app emits `growthub.template-discovery.v1` runtime log events for
+recognized bot tokens on template origin renders. Export only the structured
+event objects into a private JSONL file and pass `--renders /private/renders.jsonl`
+to the report. These have no HTTP delivery status and cannot replace CDN logs.
+User-Agent identity is explicitly unverified. `probe:true` events from controlled
+QA are counted separately and excluded from observed render totals. Cached edge
+hits may never reach the origin. Neither source establishes citations.
