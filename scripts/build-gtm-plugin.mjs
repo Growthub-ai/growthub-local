@@ -8,7 +8,9 @@ const target = resolve(root, 'claude-plugins/growthub-gtm');
 // Only this generated plugin directory is replaced; never installed user config.
 rmSync(target, { recursive: true, force: true });
 mkdirSync(target, { recursive: true });
-for (const name of ['skills', 'references', 'scripts', 'assets', 'README.md', 'LICENSE', 'review', '.mcp.json']) cpSync(resolve(source,name), resolve(target,name), { recursive: true });
+for (const name of ['skills', 'references', 'scripts', 'assets', 'README.md', 'LICENSE', 'review']) cpSync(resolve(source,name), resolve(target,name), { recursive: true });
+const nativeMcp = JSON.parse(readFileSync(resolve(source,'.mcp.json'),'utf8'));
+writeFileSync(resolve(target,'.mcp.json'),JSON.stringify({mcpServers:Object.fromEntries(Object.entries(nativeMcp.mcpServers).map(([name,server]) => [name,{type:'http',url:server.url,headers:{Authorization:'Bearer ${GROWTHUB_API_TOKEN}'}}]))},null,2)+'\n');
 const portable = JSON.parse(readFileSync(resolve(source,'plugin.json'),'utf8'));
 const { $schema, extensions, ...identity } = portable;
 mkdirSync(resolve(target,'.claude-plugin'),{recursive:true});

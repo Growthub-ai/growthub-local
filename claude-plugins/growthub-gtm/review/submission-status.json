@@ -1,0 +1,28 @@
+{
+  "state": "prepared-not-run",
+  "perServer": {
+    "growthub-brand-kit": {
+      "positive": 5,
+      "negative": 3,
+      "result": "not-run",
+      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
+    },
+    "growthub-ceo": {
+      "positive": 5,
+      "negative": 3,
+      "result": "not-run",
+      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
+    },
+    "growthub-knowledge": {
+      "positive": 5,
+      "negative": 3,
+      "result": "not-run",
+      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
+    }
+  },
+  "demo": "not-recorded",
+  "publisherIdentity": "not-verified-in-portal",
+  "countries": "not-supplied",
+  "commerce": "Existing Growthub and connected services; publisher must confirm current declarations.",
+  "publicApiKeyConnection": "Documented public-form limitation; no authentication changes or false readiness claim."
+}
