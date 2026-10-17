@@ -35,9 +35,9 @@
     "privacyPolicyURL": "https://thegrowthub.com/policies/privacy-policy",
     "termsOfServiceURL": "https://thegrowthub.com/policies/terms-of-service",
     "defaultPrompt": [
-      "Have my Growthub team research a campaign and return a reviewable brief.",
-      "Ask my saved Character to do the next growth task and show its saved result.",
-      "Help me repeat an accepted Growthub task through my existing Routine controls."
+      "Help a new signup finish their first useful growth task and return the saved activation packet.",
+      "Prepare a grounded customer winback draft with my saved Character and show its saved result.",
+      "Prepare this week\u2019s GTM brief from actual results, then help me repeat accepted work in Growthub."
     ],
     "brandColor": "#1079A8",
     "logo": "./assets/icon.png",

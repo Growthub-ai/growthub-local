@@ -47,7 +47,11 @@ to generate the Claude variant. It contains no hooks or automatic install-time
 execution. Version 0.1.0 is independent of @growthub/cli because it wraps hosted
 contracts and does not ship or pin that CLI.
 
-The three skills use the current service owners. Tools are not entitlement or
+The four skills use the current service owners. The growth-outcomes method adds
+signup activation packets, customer winback drafts and weekly GTM briefs with
+readiness checks, saved-result readback and cross-provider continuation. These
+methods require live provider acceptance before release claims.
+Tools are not entitlement or
 send authority. A result needs the exact saved reply and destination readback;
 an install, dispatch or digest alone does not establish business value.
 

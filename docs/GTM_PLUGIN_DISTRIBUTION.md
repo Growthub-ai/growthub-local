@@ -6,6 +6,14 @@ The governed console remains at its existing version, CLI pin and contract.
 
 ## Customer acceptance
 
+The `growth-outcomes` method provides three initial jobs: a signup activation
+packet, customer winback draft and weekly GTM brief. Each defines inputs,
+completion evidence and unknowns. It checks capability and brand provenance
+before dispatch, retrieves an exact saved result, and lets another provider
+continue from the same message instead of rebuilding context. Readiness and
+acceptance of these methods must be recorded per installed provider; their
+presence in an archive is not execution proof.
+
 Qualify each advertised external surface independently. A supported manifest
 is not an installed connection. A connection is not a completed growth task.
 Record the exact package hash, provider, saved Character/method revision,

@@ -34,6 +34,10 @@ provider. Continue independent authorized brand/context work. A user can open
 https://www.growthub.ai/dashboard/workflow/chat to use their existing native team.
 
 Starter methods and real examples:
+
+For signup activation, customer winback drafts and weekly GTM briefs, use
+[growth-outcomes](../growth-outcomes/SKILL.md) for the required inputs, useful
+deliverable, result readback and cross-provider continuation.
 - Claude and Codex: https://www.growthub.ai/f/playbook/slack-team-brief
 - Codex: https://www.growthub.ai/f/playbook/local-lead-finder
 - Codex: https://www.growthub.ai/f/playbook/ad-creative-studio
