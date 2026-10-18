@@ -96,7 +96,12 @@ for (const { entryName, dirRel } of pluginDirs) {
     errors.push(`${dirRel}: plugin.json interface needs displayName, shortDescription, and longDescription`);
   }
   if (manifest.hooks) errors.push(`${dirRel}: plugin.json must not declare unsupported top-level hooks; use default hooks/hooks.json discovery`);
-  if (cliVersion && manifest.version && manifest.version !== cliVersion) {
+  if (manifest.name === 'growthub-gtm') {
+    for (const publicFile of ['plugin.json', 'mcp.json']) {
+      if (fs.existsSync(path.join(repoRoot, dirRel, publicFile))) errors.push(`${dirRel}: native installation projection must not include public submission ${publicFile}`);
+    }
+  }
+  if (manifest.name === 'growthub-governed-console' && cliVersion && manifest.version && manifest.version !== cliVersion) {
     errors.push(`${dirRel}: plugin version ${manifest.version} != cli/package.json ${cliVersion} (lockstep rule)`);
   }
 
@@ -121,8 +126,8 @@ for (const { entryName, dirRel } of pluginDirs) {
     for (const [serverName, server] of Object.entries(mcp.mcpServers)) {
       if (!server.command && !server.url) errors.push(`${dirRel}: MCP server "${serverName}" has neither command nor url`);
       const pin = (server.args ?? []).find((a) => typeof a === "string" && a.startsWith("@growthub/cli"));
-      if (!pin) errors.push(`${dirRel}: MCP server "${serverName}" must pin @growthub/cli exactly`);
-      else {
+      if (!pin && manifest.name === 'growthub-governed-console') errors.push(`${dirRel}: MCP server "${serverName}" must pin @growthub/cli exactly`);
+      else if (pin) {
         const pinned = pin.split("@")[2] ?? null;
         if (!pinned) errors.push(`${dirRel}: MCP server "${serverName}" must pin an exact @growthub/cli version (got "${pin}")`);
         else if (cliVersion && pinned !== cliVersion) errors.push(`${dirRel}: MCP server "${serverName}" pins @growthub/cli@${pinned} != cli/package.json ${cliVersion}`);

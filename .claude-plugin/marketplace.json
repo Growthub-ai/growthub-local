@@ -20,6 +20,17 @@
         "governed-workspace",
         "causal-impact"
       ]
+    },
+    {
+      "name": "growthub-gtm",
+      "source": "./claude-plugins/growthub-gtm",
+      "description": "Use Growthub\u2019s CEO, saved Characters, brand context and connected tools for real go-to-market work. Retrieve saved results and repeat accepted work through existing Routines.",
+      "category": "productivity",
+      "keywords": [
+        "growthub",
+        "gtm",
+        "marketing"
+      ]
     }
   ]
 }

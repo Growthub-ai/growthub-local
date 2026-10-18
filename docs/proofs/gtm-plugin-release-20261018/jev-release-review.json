@@ -1,0 +1,394 @@
+{
+  "schema": "growthub.release-jev-review.v1",
+  "observedAt": "2026-10-18T16:48:48.793Z",
+  "scope": "Final source architecture and release tooling; advisory review, not deployment proof or independent human approval.",
+  "inputSha256": "df0d803edae75e522e6dc13f02f2f8d78924f78d1bd519e9764aeb43b86e628c",
+  "derivedReceiptExcluded": true,
+  "sourceFiles": [
+    {
+      "repository": "app",
+      "base": "ae260f86f9d2a3a037d2b6c56fe3087093be23cf",
+      "head": "f9cc0a949c2050a64f6724c98b39668b585bb71e",
+      "files": [
+        {
+          "path": "AGENTS.md",
+          "sha256": "0f0b19df87b79e01f79a6e52bb20734f1cf2cf6dc4ea9351eeb1373fd5f6daee"
+        },
+        {
+          "path": "docs/README.md",
+          "sha256": "9d0ec112151d5206a2381015ac0085c87893c1ead05a0327ef233b2adf778dab"
+        },
+        {
+          "path": "docs/plans/2026-10-09-growth-activation-control-plane.md",
+          "sha256": "e48a31a6cfad6810b7325f29f6a632dff14d9c1a36eddbdad2f98e2ab4d47dab"
+        },
+        {
+          "path": "roadmap.md",
+          "sha256": "f4129edfdd79f2af3836969836c679d1910b81c7403a6e7b847596d89f124e32"
+        },
+        {
+          "path": "docs/architecture/gtm-provider-distribution/README.md",
+          "sha256": "737e1d21f7aff6d2084d6fbfecfe4482c991770c147bb6a63d4122da7fb17d15"
+        },
+        {
+          "path": "docs/evidence/gtm-provider-distribution-2026-10-18/README.md",
+          "sha256": "a9b4d9ad20edf70662851b6289575acf58858bd2271237e25abbf7177e5a9d14"
+        },
+        {
+          "path": "docs/evidence/gtm-provider-distribution-2026-10-18/private-evidence-hashes.json",
+          "sha256": "66673fb1812f35172c23c643375fa11d198582da612d8c2e22a1f4818ad2b086"
+        }
+      ]
+    },
+    {
+      "repository": "packages",
+      "base": "64ffcd51320bd06d170a3c08eb9f4e1c3fa5c1ec",
+      "head": "91d9fd997b3652e54bac36f2e7d707d7bd29ac45",
+      "files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "sha256": "4aa7c60c2d37c1a5e3c05207f6eb68b2d78476aac5abfc2d38def06ffd1df9ff"
+        },
+        {
+          "path": "AGENTS.md",
+          "sha256": "e1432df158265c992fde5af767c38f53b52e5ecc6da9dc6290b0fbb4cb0e1bbc"
+        },
+        {
+          "path": "README.md",
+          "sha256": "0fd6042bcfd1a5ba4c7e346b246464c93b58dc0f7788f341bb250e7e1f793525"
+        },
+        {
+          "path": "docs/ARTIFACT_VERSIONS.md",
+          "sha256": "e9ab4acc2a53c690b0eb2071ac5c9bcd2abaa009ae96cc0791a217bc98562106"
+        },
+        {
+          "path": "docs/GTM_PLUGIN_DISTRIBUTION.md",
+          "sha256": "51dc85ac30bb58c3e82f86a95da574a6e884cd83fb250e16b10d61c5ccad14d7"
+        },
+        {
+          "path": "docs/GTM_PLUGIN_RELEASE_STANDARD.md",
+          "sha256": "8ed5c750788a8fb29f719133ab4ec6df9587cadd693aff6efca2bd5a782f8d30"
+        },
+        {
+          "path": "docs/proofs/gtm-plugin-release-20261018/evidence-index.json",
+          "sha256": "66673fb1812f35172c23c643375fa11d198582da612d8c2e22a1f4818ad2b086"
+        },
+        {
+          "path": "plugins/gtm-release.json",
+          "sha256": "832ed51cf4cc261ef83861bc30347edacea07ac7fb5c6591d76050cc74adcedf"
+        },
+        {
+          "path": "scripts/package-gtm-release.py",
+          "sha256": "710a83fc30d26be46df550473502e9b8b75c6a89da51992f8e4f9af11305ffac"
+        }
+      ]
+    }
+  ],
+  "initialRequestId": "req_01a14fe46e2f7330baa4741fc5793064",
+  "provider": "typesafe",
+  "requestedModel": "jev-1.13.0",
+  "model": "jev-1.13.0",
+  "requestId": "req_01a14fea780d74e59bb9ae2612c5c2b9",
+  "requestSha256": "6b21ed5c35a11ec6bf0d596ad57acffe7603fec23efdd93b9aacae9861d28ac2",
+  "latencyMs": 159,
+  "usage": {
+    "input_tokens": 2205,
+    "output_tokens": 82
+  },
+  "answers": {
+    "contract_risk": {
+      "type": "noul",
+      "probability": 0.08
+    },
+    "version_identity_risk": {
+      "type": "noul",
+      "probability": 0.11
+    },
+    "evidence_risk": {
+      "type": "noul",
+      "probability": 0.1
+    },
+    "release_integrity_risk": {
+      "type": "noul",
+      "probability": 0.23
+    }
+  },
+  "sourceReviews": [
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea74297a1f9524422167d63f52",
+      "requestSha256": "49e6702f54256e27b41d9958c89e21d84840c9a7d95a5108e879f27305788ad2",
+      "latencyMs": 270,
+      "usage": {
+        "input_tokens": 2583,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.09
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.22
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea74d473368357f98d1376319a",
+      "requestSha256": "d0b5a27b150104afd30e818867c73f47bbd4d42105bcfced84dfa0249ece3652",
+      "latencyMs": 77,
+      "usage": {
+        "input_tokens": 2489,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.18
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea752070beb6212dfd6b2a68b0",
+      "requestSha256": "c750792ebf656601028e3440d742edfbe6e779a1e0e895aaf5a0c1cf1318362c",
+      "latencyMs": 80,
+      "usage": {
+        "input_tokens": 2445,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.16
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea75757837837e92a66a5219cd",
+      "requestSha256": "505a4208847668be82bc75ba837973a4f6b296d800bb7985a73b2b962942527d",
+      "latencyMs": 123,
+      "usage": {
+        "input_tokens": 3487,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.2
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea75f37a85b81b6e811e089dd2",
+      "requestSha256": "10ebf33957c4fb455349c1ec0c38dde198d8f328198e0df206eee305cafbae36",
+      "latencyMs": 124,
+      "usage": {
+        "input_tokens": 2402,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.18
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea767b73c181f0a09cb972de0e",
+      "requestSha256": "a59677eb53678cca1420d177e46583ea2ce9dae280813c287b2ed67417799b69",
+      "latencyMs": 122,
+      "usage": {
+        "input_tokens": 2820,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.06
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.07
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.21
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea76eb7e039564e794c10e54a9",
+      "requestSha256": "830ef1af5fe5eda7c83ec3640ffbe92f964e082ce4d9f75739ba23753d6f26bd",
+      "latencyMs": 83,
+      "usage": {
+        "input_tokens": 1988,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.13
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.13
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.24
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea774874e8877e505764ab4e55",
+      "requestSha256": "36f149d0a57afc1317d35305d31fb21e05470c14e727500fd508370c482f0bef",
+      "latencyMs": 115,
+      "usage": {
+        "input_tokens": 2670,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.11
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.11
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.27
+        }
+      }
+    },
+    {
+      "provider": "typesafe",
+      "requestedModel": "jev-1.13.0",
+      "model": "jev-1.13.0",
+      "requestId": "req_01a14fea77aa7cbfa97825643ada5bf2",
+      "requestSha256": "d7ecc76517f452884bb7bae0de9fa996e796d29c2c61cae464beb915c0b7a862",
+      "latencyMs": 98,
+      "usage": {
+        "input_tokens": 1218,
+        "output_tokens": 82
+      },
+      "answers": {
+        "contract_risk": {
+          "type": "noul",
+          "probability": 0.08
+        },
+        "version_identity_risk": {
+          "type": "noul",
+          "probability": 0.11
+        },
+        "evidence_risk": {
+          "type": "noul",
+          "probability": 0.1
+        },
+        "release_integrity_risk": {
+          "type": "noul",
+          "probability": 0.22
+        }
+      }
+    }
+  ],
+  "dispositions": {
+    "contract_risk": "Preserve all auth, provider, Routine and execution source. Finalization changes only repository release tool/CI and documentation; installed 0.1.1 payloads match accepted archive bytes.",
+    "version_identity_risk": "Canonical package version, stable internal family and per-provider names are explicit; MCP and legacy CLI have independent version axes. Build refuses overwrite; verify checks exact members and hashes.",
+    "evidence_risk": "Dated evidence separates native QA, exact-preview analytics, supplemental authenticated UI and later production release. Original transcription failure and correction retained. No directory approval or organic revenue claimed.",
+    "release_integrity_risk": "Run contribution gates and remote checks; maintainer authorization does not fabricate GitHub review. Preserve protection configuration. Bind immutable downloadable archives to exact merged source; verify canonical production after deployment."
+  }
+}
