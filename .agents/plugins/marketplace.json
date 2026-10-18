@@ -20,7 +20,7 @@
       "name": "growthub-gtm",
       "source": {
         "source": "local",
-        "path": "./plugins/growthub-gtm"
+        "path": "./codex-plugins/growthub-gtm"
       },
       "policy": {
         "installation": "AVAILABLE",

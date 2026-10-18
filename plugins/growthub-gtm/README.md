@@ -42,9 +42,14 @@ rewrite authentication. See [connections](references/connections.md).
 
 ## Development and review
 
-plugins/growthub-gtm is the single source. Run `node scripts/build-gtm-plugin.mjs`
-to generate the Claude variant. It contains no hooks or automatic install-time
-execution. Version 0.1.0 is independent of @growthub/cli because it wraps hosted
+plugins/growthub-gtm is the single source and public OpenAI submission package.
+Run `node scripts/build-gtm-plugin.mjs` to generate the native installation
+projections in codex-plugins/growthub-gtm and claude-plugins/growthub-gtm.
+The Codex marketplace uses its compatibility projection: public review metadata
+in portable mcp.json is not native runtime configuration. Install through the
+marketplace rather than loading the public submission folder directly.
+The package contains no hooks or automatic install-time
+execution. Version 0.1.1 is independent of @growthub/cli because it wraps hosted
 contracts and does not ship or pin that CLI.
 
 The four skills use the current service owners. The growth-outcomes method adds

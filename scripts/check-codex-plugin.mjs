@@ -96,6 +96,11 @@ for (const { entryName, dirRel } of pluginDirs) {
     errors.push(`${dirRel}: plugin.json interface needs displayName, shortDescription, and longDescription`);
   }
   if (manifest.hooks) errors.push(`${dirRel}: plugin.json must not declare unsupported top-level hooks; use default hooks/hooks.json discovery`);
+  if (manifest.name === 'growthub-gtm') {
+    for (const publicFile of ['plugin.json', 'mcp.json']) {
+      if (fs.existsSync(path.join(repoRoot, dirRel, publicFile))) errors.push(`${dirRel}: native installation projection must not include public submission ${publicFile}`);
+    }
+  }
   if (manifest.name === 'growthub-governed-console' && cliVersion && manifest.version && manifest.version !== cliVersion) {
     errors.push(`${dirRel}: plugin version ${manifest.version} != cli/package.json ${cliVersion} (lockstep rule)`);
   }
