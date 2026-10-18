@@ -7,6 +7,8 @@
 
 **Quick links:** [Architecture thesis](#-the-architectural-thesis) · [Operational loop](#-the-operational-loop) · [Core features](#-core-features) · [Installation](#-installation) · [Quick start](#-quick-start) · [Documentation](#-documentation) · [Contributing](#-contributing)
 
+Hosted Growthub GTM companion: [provider distribution and acceptance](docs/GTM_PLUGIN_DISTRIBUTION.md) · [architecture, stable identity and release standard](docs/GTM_PLUGIN_RELEASE_STANDARD.md). This companion uses the existing hosted control plane and has its own package version; the governed console/CLI remains an independent release.
+
 Growthub Local is not a framework. It is not a platform. It is a **governed operating system for agent-native development**—a workspace where humans and AI agents collaborate through deterministic, auditable primitives.
 
 ---

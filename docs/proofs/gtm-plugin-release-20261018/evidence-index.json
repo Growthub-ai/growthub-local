@@ -1,0 +1,44 @@
+{
+  "schema": "growthub.sanitized-evidence-index.v1",
+  "observationDate": "2026-10-18",
+  "privateEvidenceRetained": true,
+  "hashesProveIntegrityNotExecutionByThemselves": true,
+  "records": [
+    {
+      "class": "installed-native-ceo-acceptance",
+      "file": "installed-ceo-end-to-end-validation.json",
+      "sha256": "1567f849e98f522e0eb6620faca18c0ef57da81fa2f44d485876672a68ca4871",
+      "bytes": 11927
+    },
+    {
+      "class": "both-provider-gtm-outcomes",
+      "file": "full-outcomes-production-qa.json",
+      "sha256": "a90bf2450ea8ee0001b0f43cd324c3fcb20ba7571dcc5e8cf2bbd6cb0f8acca0",
+      "bytes": 44227
+    },
+    {
+      "class": "attested-knowledge-both-providers",
+      "file": "native-knowledge-both-providers-final.json",
+      "sha256": "aaa7911b0a38825040062c7ec6f5962001a0003a5d8920e421d42fdb7e20cacf",
+      "bytes": 67506
+    },
+    {
+      "class": "exact-preview-analytics",
+      "file": "rebuilt-posthog-canonical-readback.json",
+      "sha256": "70eb807409470cc171a4d288e875e1ebbd89de8b3a006839e5ec184d99d2ead4",
+      "bytes": 4204
+    },
+    {
+      "class": "approved-asset-bytes",
+      "file": "production-approved-asset-byte-receipts.json",
+      "sha256": "4b80a712b814d5aac4a74fe5e98647c03731f8788acacb638c868d590cd80f5f",
+      "bytes": 5270
+    },
+    {
+      "class": "release-archive-functional-checks",
+      "file": "release-standard-functional-validation.json",
+      "sha256": "de34cb0466afa008ef269e7dc842140aecb49eb4804b82c180becd6670b85a31",
+      "bytes": 301
+    }
+  ]
+}

@@ -10,8 +10,14 @@ Agents and contributors **must not** treat version numbers in prose, chat logs, 
 | Installer package semver | `packages/create-growthub-local/package.json` | `"version"` |
 | Installer pin to CLI | `packages/create-growthub-local/package.json` | `dependencies["@growthub/cli"]` |
 | `@growthub/api-contract` semver | `packages/api-contract/package.json` | `"version"` |
+| GTM plugin package SemVer | `plugins/growthub-gtm/plugin.json` | `"version"`; separate from CLI SemVer |
+| GTM stable IDs, variants and MCP compatibility | `plugins/gtm-release.json` | Release catalog; [release standard](GTM_PLUGIN_RELEASE_STANDARD.md) |
 
 CI **`smoke`** already fails if the installer pin and `cli/package.json` **version** diverge.
+
+The GTM provider projections follow their canonical package version. Run
+`python3 scripts/package-gtm-release.py check` to detect identity, version,
+projection or endpoint drift. A GTM-only release does not publish the npm CLI.
 
 Before you **state** a version in a PR description, issue comment, or internal note, **open those files on your branch / commit** and copy the values from disk.
 

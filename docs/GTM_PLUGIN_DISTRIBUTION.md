@@ -1,8 +1,16 @@
 # Growthub GTM plugin distribution
 
 The canonical package is `plugins/growthub-gtm`; `node scripts/build-gtm-plugin.mjs`
-generates its Claude variant. Both existing marketplaces contain the companion.
+generates its separate native Codex and Claude projections. Both repository
+marketplaces contain the companion. Public provider-directory acceptance is a
+separate publication state.
 The governed console remains at its existing version, CLI pin and contract.
+
+The [architecture and release standard](GTM_PLUGIN_RELEASE_STANDARD.md) defines
+the stable identities, independent version axes, immutable archives, JEV review,
+acceptance provenance, publication order and rollback. The executable release
+catalog is [`plugins/gtm-release.json`](../plugins/gtm-release.json). Run
+`python3 scripts/package-gtm-release.py check` before release.
 
 ## Customer acceptance
 

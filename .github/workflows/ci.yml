@@ -47,6 +47,9 @@ jobs:
       - name: Validate Codex plugin marketplace surface
         run: node scripts/check-codex-plugin.mjs
 
+      - name: Validate GTM provider release identities and payload parity
+        run: python3 scripts/package-gtm-release.py check
+
       - name: Validate resolver registry (drift guard + unit tests)
         run: |
           node scripts/check-resolver-registry.mjs

@@ -1,0 +1,20 @@
+{
+  "schema": "growthub.plugin-release.v1",
+  "releaseId": "ai.growthub.gtm",
+  "pluginName": "growthub-gtm",
+  "marketplaceName": "growthub",
+  "versionSource": "plugins/growthub-gtm/plugin.json",
+  "tagPrefix": "growthub-gtm-v",
+  "archiveTimestamp": [2026, 10, 17, 0, 0, 0],
+  "variants": {
+    "openai": "plugins/growthub-gtm",
+    "codex-native": "codex-plugins/growthub-gtm",
+    "claude": "claude-plugins/growthub-gtm"
+  },
+  "mcpServers": {
+    "growthub-brand-kit": {"url": "https://www.growthub.ai/api/v1/mcp", "serverVersion": "1.0.0"},
+    "growthub-ceo": {"url": "https://www.growthub.ai/api/v1/mcp/ceo", "serverVersion": "1.0.0"},
+    "growthub-knowledge": {"url": "https://www.growthub.ai/api/v1/mcp/knowledge", "serverVersion": "1.0.0"}
+  },
+  "legacyPluginName": "growthub-governed-console"
+}

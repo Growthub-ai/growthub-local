@@ -127,6 +127,7 @@ Pointers:
 - `docs/SKILLS_MCP_DISCOVERY.md` — skill/MCP primitive reference.
 - `docs/CLAUDE_CODE_PLUGIN_MARKETPLACE_V1.md` — the installable Claude Code plugin/marketplace surface (`.claude-plugin/` + `claude-plugins/`) that packages `growthub serve --mcp` for end users.
 - `docs/CODEX_PLUGIN_MARKETPLACE_V1.md` — the installable Codex plugin/marketplace surface (`.agents/plugins/` + `plugins/`) that packages the same governed console for Codex app/CLI/IDE users.
+- `docs/GTM_PLUGIN_RELEASE_STANDARD.md` — hosted GTM companion architecture, stable IDs, independent package/MCP/CLI versions, immutable releases and both-provider acceptance. `plugins/gtm-release.json` and `python3 scripts/package-gtm-release.py check` enforce the distribution contract; preserve legacy console and all authentication/Routine owners.
 - `cli/README.md` — CLI-specific usage.
 
 ## Governed-workspace primitives (v1.2)
