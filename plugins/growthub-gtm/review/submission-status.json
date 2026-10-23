@@ -1,32 +1,20 @@
 {
-  "state": "prepared-not-run",
+  "state": "candidate-awaiting-live-public-connection-qualification",
   "perServer": {
-    "growthub-brand-kit": {
+    "growthub-gtm": {
       "positive": 5,
       "negative": 3,
-      "result": "not-run",
-      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
-    },
-    "growthub-ceo": {
-      "positive": 5,
-      "negative": 3,
-      "result": "not-run",
-      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
-    },
-    "growthub-knowledge": {
-      "positive": 5,
-      "negative": 3,
-      "result": "not-run",
-      "requiredSetup": "Dedicated reviewer-owned Project/Character/Brand Kit/Knowledge and existing scoped connections; details only in secure portal fields."
+      "result": "not-run-in-portal",
+      "requiredSetup": "Dedicated isolated reviewer account and sample Project, Character, private Brand Kit and Knowledge have been prepared and read back. Credentials remain outside package and source."
     }
   },
-  "demo": "not-recorded",
+  "demo": "25-second product showcase completed with voice/music and uploaded to Drive; functional public-connection walkthrough remains a separate review artifact",
   "publisherIdentity": "Growthub organization selected. Individual Approved and Business Approved independently observed in the authenticated publisher portal on 2026-10-23. This is identity verification, not plugin approval.",
   "countries": "Owner requests markets permitted by OpenAI availability and existing Growthub/Stripe sale restrictions; final portal allowlist not yet verified.",
   "commerce": "Existing Growthub subscription plans through external Stripe checkout; no card collection or embedded checkout.",
-  "publicApiKeyConnection": "Documented public-form limitation; no authentication changes or false readiness claim.",
-  "publicDependencyReview": "Official guidance checked 2026-10-23: multiple server declarations are allowed, but only one MCP server can be connected per plugin. Verify exact existing bindings and portal eligibility; never remove server declarations or weaken auth to claim readiness.",
-  "packageVersion": "0.1.2",
+  "publicApiKeyConnection": "Resolved in candidate architecture: public package declares one explicit-consent OAuth GTM connection. Native packages retain all three original API-token connections.",
+  "publicDependencyReview": "One GTM server composes all original 21 tool handlers. No existing native server is removed or remapped.",
+  "packageVersion": "0.2.0",
   "readOnlyOnboarding": {
     "observedAt": "2026-10-23",
     "identityHttpStatus": 200,
@@ -37,5 +25,35 @@
       "growthub-knowledge": 4
     },
     "scope": "Existing saved token; metadata/list reads only. This does not establish native fresh-install, task execution or public portal acceptance."
+  },
+  "publicConnectionAcceptance": {
+    "deployment": "dpl_5C7qYAeM7PdYyaKjATDKD4oUcSBS",
+    "sourceCommit": "e286229cfa004d650c709b5cb72324e04636fbce",
+    "result": "observed-pass on exact final preview",
+    "checks": [
+      "OAuth signed consent and PKCE exchange",
+      "single-use authorization code",
+      "all 21 tool schemas/descriptions/annotations exactly match original servers",
+      "reviewer-owned Character discovery/delegation and Knowledge read",
+      "CEO decision refused before delegation",
+      "CEO approval through existing shared decision owner; API and database agree on applied immutable Brand Kit 1.0.2",
+      "cross-resource token replay refused",
+      "old Brand Kit resource refuses write scopes",
+      "revoked parent invalidates OAuth child and refresh"
+    ],
+    "scope": "Isolated reviewer sample only; final Chrome consent/landing readback and live protocol observed. No native provider execution or customer data. App PR #1819 merged at 59161ea8bd218aa800a862d7668cc7856fcacf0f; production and portal states are verified separately."
+  },
+  "nativeInstallAcceptance": {
+    "codex": "Actual isolated CLI installation of 0.2.0; installed API helper identity and Brand Kit versions returned HTTP 200 for the sample account.",
+    "claude": "Actual isolated project-scope update from 0.1.2 to 0.2.0; installed API helper identity and Brand Kit versions returned HTTP 200 for the sample account.",
+    "authority": "Original three native endpoints and token references unchanged; no provider credentials copied or native execution claim."
+  },
+  "productionAcceptance": {
+    "sourceCommit": "59161ea8bd218aa800a862d7668cc7856fcacf0f",
+    "deployment": "dpl_JCPUR1Hns2hhS76u9YVQgytMvnjH",
+    "canonicalOrigin": "https://www.growthub.ai",
+    "result": "observed-pass",
+    "checks": "Same OAuth, 21-tool compatibility, reviewer data/delegation/Knowledge, delegated CEO approval, audience and revocation checks passed on canonical production. Sample Brand Kit advanced to 1.0.3 with matching applied/active version. Setup tokens revoked and approval defaults restored.",
+    "scope": "Self-contained fictional reviewer data only; separate from marketplace review/publish and native provider execution."
   }
 }

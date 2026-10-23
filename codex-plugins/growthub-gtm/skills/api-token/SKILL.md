@@ -20,7 +20,11 @@ make API-only capabilities into MCP tools or add web-client authentication.
 5. Submit a change proposal only after an explicit request, against a freshly
    read active version with a stable idempotency key. Read back pending status.
 6. Never approve, publish, archive, retire or change sharing through this skill.
-   A proposal is review-only. A human decision remains in existing controls.
+   A proposal is review-only through this API-token skill. Decisions remain in
+   Growthub’s existing controls: the person decides by default, or the CEO can
+   decide when the user has enabled Settings → CEO → Growthub API requests.
+   Use the separate CEO review/decision tools for that delegated workflow; this
+   helper never gains decision authority.
 7. Verify the saved result and return its exact destination. Stop on 401/403;
    reconcile uncertain writes before retrying. Do not automatically retry creation.
 

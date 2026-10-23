@@ -1,6 +1,6 @@
 {
   "name": "growthub-gtm",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Use Growthub\u2019s CEO, saved Characters, brand context and connected tools for real go-to-market work. Retrieve saved results and repeat accepted work through existing Routines.",
   "author": {
     "name": "Growthub",
@@ -24,7 +24,7 @@
     "shortDescription": "Your growth team, connected",
     "longDescription": "Bring your saved Growthub team, approved brand context and business knowledge into real growth work. Direct a Character, retrieve its saved result and continue across supported Claude and Codex environments. Use existing scoped Growthub API tokens for supported MCP and API workflows, including private Brand Kit creation and review-only change proposals. Optional connected tools require their own existing accounts and permissions. Routine setup and publication stay in Growthub. ChatGPT web currently supports the existing Brand Kit OAuth connection; full CEO and Knowledge token connections depend on host support and public submission eligibility. See the connection guide before installing.",
     "developerName": "Growthub",
-    "category": "Productivity",
+    "category": "Business & Operations",
     "capabilities": [
       "Direct saved Characters",
       "Use approved brand context",

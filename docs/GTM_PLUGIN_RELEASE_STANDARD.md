@@ -55,7 +55,10 @@ bearer environment reference. All shared skill/reference/helper/asset bytes must
 match the canonical package. Edit canonical payloads, regenerate projections,
 and inspect the resulting diff; never hand-edit installed user directories.
 
-The public package declares existing API-key connection metadata. That does not
+The 0.2.0 public package declares one OAuth GTM connection at `/api/v1/mcp/gtm`,
+composing the existing 21 tool handlers. Native projections retain the three
+original server identities and API-token references. The new OAuth resource
+requires explicit consent and never expands an old Brand Kit-only grant. That does not
 establish support or approval on every ChatGPT surface. Consult the bundled
 connection support matrix. Existing Growthub sign-in, API-token portal, provider
 accounts, first-party credential issuance and per-tool approvals retain authority.
@@ -74,7 +77,8 @@ Neither path bypasses record permissions, revision checks or payload-bound retri
 
 Routine publication and repeat execution stay in their existing owners and UI.
 This package adds no Routine implementation, scheduler, provider daemon, business
-credential broker, customer campaign publication or new authentication path.
+credential broker or customer campaign publication. The additive public OAuth
+resource reuses the existing consent, PKCE, revocation and token lifecycle.
 
 ## Reproducible release artifacts
 
@@ -125,7 +129,10 @@ Do not trigger that npm workflow or move npm `latest` for a GTM-only release.
 3. Require native Codex and Claude installation plus real saved-Character work,
    exact command/reply identities, destination readback and appropriate negative
    cases. Archive-only or fixture validation cannot substitute for these.
-4. Merge the package PR before shipping the app page's main-branch README link.
+4. Qualify and deploy the additive public OAuth endpoint before publishing a
+   package that depends on it. The landing page uses the existing release index
+   until the new package is released. Preserve required independent package review.
+   Merge the approved package PR.
    Publish and independently download/verify immutable release assets.
 5. Merge the app PR; wait for the exact production build, verify its canonical
    domain, public entry, current MCP inventory and persisted attribution. Check

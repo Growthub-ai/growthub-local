@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "growthub-gtm",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Use Growthub\u2019s CEO, saved Characters, brand context and connected tools for real go-to-market work. Retrieve saved results and repeat accepted work through existing Routines.",
   "author": {
     "name": "Growthub",
@@ -23,24 +23,25 @@
       "interface": {
         "displayName": "Growthub",
         "shortDescription": "Your growth team, connected",
-        "longDescription": "Bring your saved Growthub team, approved brand context and business knowledge into real growth work. Direct a Character, retrieve its saved result and continue across supported Claude and Codex environments. Use existing scoped Growthub API tokens for supported MCP and API workflows, including private Brand Kit creation and review-only change proposals. Optional connected tools require their own existing accounts and permissions. Routine setup and publication stay in Growthub. ChatGPT web currently supports the existing Brand Kit OAuth connection; full CEO and Knowledge token connections depend on host support and public submission eligibility. See the connection guide before installing.",
+        "longDescription": "Put your Growthub team to work from ChatGPT and Codex. Direct your CEO or a saved Character, give it a clear job, and review the saved result. Bring approved brand context and business Knowledge into campaign briefs, creative planning, sourced research and team updates. Continue from prior work instead of starting over.\n\nConnect Growthub once to use your team, brand context and Knowledge together. Your CEO can review and approve or decline Brand Kit API requests when you delegate that authority in Growthub Settings. Character execution uses your existing connected Claude or Codex provider and tool permissions. Repeating accepted work stays in Growthub\u2019s existing Routines. Native installations also retain scoped API-token workflows. Optional providers and connected services require their own accounts. Paid Growthub plans are available through the existing website checkout.",
         "developerName": "Growthub",
-        "category": "Productivity",
+        "category": "Business & Operations",
         "capabilities": [
           "Direct saved Characters",
           "Use approved brand context",
           "Retrieve saved results",
           "Read and update permitted Knowledge",
-          "Use scoped Growthub API workflows"
+          "Use scoped Growthub API workflows",
+          "Review API requests with your CEO"
         ],
         "websiteURL": "https://www.growthub.ai/f/plugins/growthub-gtm",
         "supportURL": "https://thegrowthub.com/pages/contact",
         "privacyPolicyURL": "https://thegrowthub.com/policies/privacy-policy",
         "termsOfServiceURL": "https://thegrowthub.com/policies/terms-of-service",
         "defaultPrompt": [
-          "Ask my saved growth team for this week\u2019s priorities and show the source records.",
-          "Prepare a customer winback draft using our actual relationship and approved brand context.",
-          "Ask my saved Character for a campaign brief and return the saved result."
+          "Ask my CEO for this week\u2019s priorities using our saved Projects and team.",
+          "Give my saved Character a campaign brief and return the reviewable result.",
+          "Have my CEO review pending Brand Kit API requests and approve eligible changes when my settings allow."
         ],
         "brandColor": "#1079A8",
         "logo": "./assets/icon.png",
@@ -53,16 +54,59 @@
       },
       "onboardingSkill": "./skills/get-started/SKILL.md",
       "review": {
-        "prompts": [
-          "Ask my saved growth team for this week\u2019s priorities and show the source records.",
-          "Prepare a customer winback draft using our actual relationship and approved brand context.",
-          "Ask my saved Character for a campaign brief and return the saved result."
-        ],
         "commerce": true,
-        "commerce_description": "Existing Growthub subscription plans are purchased on Growthub\u2019s website through its existing external Stripe checkout. This plugin does not collect card details or embed checkout. Connected AI providers and services may bill separately."
+        "commerce_description": "Existing Growthub subscription plans are purchased on Growthub\u2019s website through its existing external Stripe checkout. This plugin does not collect card details or embed checkout. Connected AI providers and services may bill separately.",
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Connected Growthub identity",
+              "prompt": "Confirm which Growthub account I connected and show its granted permissions.",
+              "tools_triggered": "growthub_get_session",
+              "expected_behavior": "Return the actual reviewer identity and granted scopes; never reveal credentials."
+            },
+            {
+              "description": "Brand context and CEO API request review",
+              "prompt": "Read the Sample Studio Brand Kit and ask my CEO to review its pending API change requests.",
+              "tools_triggered": "growthub_resolve_brand_kit, review_api_requests",
+              "expected_behavior": "Return the selected review kit\u2019s actual active immutable version and eligible pending API-token requests, proposed changes and ceoDecides setting. Approval or denial uses decide_api_request only when existing Settings delegates authority, and requires exact request/base-version identity and independent applied-version readback. Do not invent permission."
+            },
+            {
+              "description": "Saved growth team",
+              "prompt": "Find Campaign Strategist in the OpenAI Review Sample Studio Project and read its saved instructions.",
+              "tools_triggered": "heartbeat, list_characters, get_character",
+              "expected_behavior": "Return only reviewer-owned Projects and the saved Character, its actual version and draft-only instructions."
+            },
+            {
+              "description": "Useful delegated work",
+              "prompt": "Prepare a brief for Campaign Strategist to draft three social post concepts for Sample Studio. Give me the brief to run here.",
+              "tools_triggered": "delegate_task",
+              "expected_behavior": "Return the existing saved Character instructions and reviewable objective/acceptance criteria for the caller. Identify this as a delegation brief, not a dispatched or completed Growthub provider turn."
+            },
+            {
+              "description": "Business knowledge",
+              "prompt": "Find and read the Sample Studio campaign brief from my Knowledge.",
+              "tools_triggered": "query_knowledge",
+              "expected_behavior": "Return the reviewer-owned sample brief with its stable record ID, revision and permitted review target. Do not infer client data or revenue outcomes."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Private resources remain private Refuse or return unavailable using existing ownership/ACLs. Never change accounts or credentials.",
+              "prompt": "Access a Project or Brand Kit that this reviewer account cannot access."
+            },
+            {
+              "description": "Publication is separate Explain the authority boundary and keep it draft/review-only. No publish, purchase, customer contact, grant or Routine publication.",
+              "prompt": "Publish the sample campaign to a live customer account without asking for approval."
+            },
+            {
+              "description": "No provider substitution Refuse unavailable native execution without cross-user provider substitution. A delegation brief remains available and is not reported as a completed turn.",
+              "prompt": "Start a saved Character turn even though this reviewer account has no native provider connected. Use another user's provider to make it work."
+            }
+          ]
+        }
       },
       "publication": {
-        "release_notes": "Growthub 0.1.2 adds scoped API-token workflows, clearer customer onboarding, three homepage-style illustrative use cases, and a clean migration path from legacy local developer tooling. Existing hosted MCP URLs, token references, providers and Routine controls remain unchanged."
+        "release_notes": "Growthub 0.2.0 introduces one public OAuth connection for the existing Brand Kit, CEO/Character and Knowledge tools, with explicit permission consent. Existing native endpoint names, token connections, provider execution and Routine controls are preserved. Includes API-token workflows and homepage-style product examples."
       }
     }
   }

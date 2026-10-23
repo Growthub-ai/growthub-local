@@ -31,12 +31,12 @@ uses the saved Character's provider, tool grants and current available device.
 |---|---|
 | Claude Code | Bundled remote MCP configuration with an existing token; installation and real task acceptance must be recorded for the released artifact. |
 | Codex / compatible Work execution | Portable and Codex-compatible package plus existing token settings; CLI helper works where shell execution is available. Record installed-host acceptance separately. |
-| ChatGPT or Claude OAuth-only chat | Existing Brand Kit OAuth works for approved brand reads. Full CEO/Knowledge access must use a demonstrated provider-supported existing connection; it is not implied by Brand Kit access. |
+| ChatGPT or Claude OAuth-only chat | One GTM OAuth connection exposes the existing Brand Kit, CEO/Character and Knowledge tools under explicit consent and current record permissions. Existing native providers remain required for saved-Character execution. |
 | Routines | Existing Growthub UI and publication/runtime owners. The current CEO MCP does not expose Routine lifecycle operations. |
 
-The public OpenAI submission form's API-key connection limitation and the
-existing token's actual scopes are release-readiness items, not reasons to
-rewrite authentication. See [connections](references/connections.md).
+The public package uses OAuth and a combined GTM endpoint. Native packages retain
+the original three endpoints and token references. Existing connections are not
+automatically migrated or granted additional scopes. See [connections](references/connections.md).
 
 ## Development and review
 
@@ -47,7 +47,7 @@ The Codex marketplace uses its compatibility projection: public review metadata
 in portable mcp.json is not native runtime configuration. Install through the
 marketplace rather than loading the public submission folder directly.
 The package contains no hooks or automatic install-time
-execution. Version 0.1.2 is independent of @growthub/cli because it wraps hosted
+execution. Version 0.2.0 is independent of @growthub/cli because it wraps hosted
 contracts and does not ship or pin that CLI.
 
 The five skills use the current service owners. The growth-outcomes method adds
@@ -74,3 +74,12 @@ The listing graphics are illustrative workflows, not execution receipts. Real on
 ![Direct your saved team](assets/use-case-team.png)
 ![Keep client context connected](assets/use-case-context.png)
 ![Repeat accepted work](assets/use-case-repeat.png)
+
+## Your CEO and Brand Kit API requests
+
+Your CEO can review pending Brand Kit changes submitted through Growthub API
+tokens, then approve or decline them when you enable Growthub API requests in
+Settings → CEO. This uses the same existing Brand Kit decision and immutable
+version receipts as your own review. The public GTM connection includes both
+review_api_requests and decide_api_request; it does not reduce the CEO to a
+Brand Kit reader or automatically delegate your approval authority.
