@@ -34,8 +34,10 @@ are valid package metadata but do not complete its connection form. Do not embed
 a secret header, declare a protected server unauthenticated, create duplicate app
 identities or silently drop the CEO/Knowledge capabilities to work around this.
 
-The owner selected the publisher account; the portal still requires authenticated
-access and verified identity readback. Dedicated reviewer access, five positive
+The owner selected antonio@growthub.app in the Growthub organization. Live portal
+readback on 23 October shows both Individual Approved and Business Approved.
+This completes publisher identity verification, not plugin review or publication.
+Dedicated reviewer access, five positive
 and three negative cases per initial review, a real accessible demo recording,
 legal attestations and the exact approved publication remain separate milestones.
 Existing checked-in cases are drafts until actually run on the saved version.

@@ -21,7 +21,7 @@
     }
   },
   "demo": "not-recorded",
-  "publisherIdentity": "Account selected by owner; verified identity not yet read back in portal",
+  "publisherIdentity": "Growthub organization selected. Individual Approved and Business Approved independently observed in the authenticated publisher portal on 2026-10-23. This is identity verification, not plugin approval.",
   "countries": "Owner requests markets permitted by OpenAI availability and existing Growthub/Stripe sale restrictions; final portal allowlist not yet verified.",
   "commerce": "Existing Growthub subscription plans through external Stripe checkout; no card collection or embedded checkout.",
   "publicApiKeyConnection": "Documented public-form limitation; no authentication changes or false readiness claim.",
