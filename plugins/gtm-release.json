@@ -47,5 +47,12 @@
         "offline_access"
       ]
     }
+  },
+  "claudeDirectory": {
+    "source": "claude-directory-plugins/growthub-gtm",
+    "generator": "scripts/build-claude-directory-plugin.mjs",
+    "versionSource": "plugins/growthub-gtm/plugin.json",
+    "serverUrl": "https://www.growthub.ai/api/v1/mcp/gtm",
+    "firstPublicProjection": true
   }
 }
