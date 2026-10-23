@@ -63,14 +63,27 @@ def checked_source():
         require(spec['serverVersion'] == '1.0.0', 'Review a separate MCP compatibility change')
     native = read_json('plugins/growthub-gtm/.mcp.json')['mcpServers']
     public = read_json('plugins/growthub-gtm/mcp.json')['mcpServers']
-    require(set(native) == set(public) == set(expected_servers), 'MCP inventory drift')
+    require(set(native) == set(expected_servers), 'Native MCP inventory drift')
     for name, spec in native.items():
         require(spec == {'url': expected_servers[name]['url'],
                          'bearer_token_env_var': 'GROWTHUB_API_TOKEN'}, 'Native auth/URL drift')
-        require(public[name]['url'] == spec['url'], 'Public MCP URL drift')
-        require(public[name]['type'] == 'streamable-http', 'Public MCP transport drift')
-        require(public[name]['extensions']['com.openai']['auth'] ==
-                {'type': 'api_key', 'headerScheme': 'bearer'}, 'Public auth contract drift')
+    require(set(public) == {'growthub-gtm'}, 'Public submission requires one combined GTM connection')
+    public_spec = public['growthub-gtm']
+    require(public_spec['url'] == 'https://www.growthub.ai/api/v1/mcp/gtm', 'Public GTM URL drift')
+    require(public_spec['type'] == 'streamable-http', 'Public MCP transport drift')
+    public_auth = public_spec['extensions']['com.openai']['auth']
+    require(public_auth == {
+        'type': 'oauth', 'client': {'mode': 'dcr'},
+        'authorizationUrl': 'https://www.growthub.ai/api/v1/mcp/oauth/authorize',
+        'tokenUrl': 'https://www.growthub.ai/api/v1/mcp/oauth/token',
+        'registrationUrl': 'https://www.growthub.ai/api/v1/mcp/oauth/register',
+        'resource': 'https://www.growthub.ai/api/v1/mcp/gtm',
+        'baseScopes': ['brand_kits:read', 'brand_assets:read', 'ceo:read', 'ceo:write',
+                       'knowledge_items:read', 'knowledge_items:write', 'offline_access'],
+    }, 'Public OAuth contract drift')
+    require(catalog['publicMcpServers'] == {'growthub-gtm': {
+        'url': public_spec['url'], 'serverVersion': '1.0.0', 'oauthScopes': public_auth['baseScopes'],
+    }}, 'Public release catalog drift')
     for variant, files in variants.items():
         manifest_name = '.claude-plugin/plugin.json' if variant == 'claude' else '.codex-plugin/plugin.json'
         manifest = json.loads(files[manifest_name])

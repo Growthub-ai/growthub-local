@@ -10,7 +10,9 @@ Character and connected tools over creating another agent or configuration.
 Read [supported surfaces](../../references/connections.md) only if connection
 setup or capability availability is relevant.
 
-1. Use the installed Growthub tools. Call `growthub_get_session` once to confirm
+1. On the public directory, connect Growthub GTM through its explicit OAuth consent.
+   Native Claude/Codex installations keep their existing scoped API-token setup.
+   Use the installed Growthub tools. Call `growthub_get_session` once to confirm
    the connected identity and scopes. Never request a token in chat, read an env
    file into a transcript, change permissions or switch to another account.
 2. With CEO access, use `heartbeat` once and `list_characters` for the selected
@@ -28,7 +30,7 @@ setup or capability availability is relevant.
    [repeat-growth-work](../repeat-growth-work/SKILL.md). Keep recurrence in Growthub.
 
 If CEO scope is missing, name the missing scope and point to the existing
-Growthub Settings → API tokens or installed connection settings. Do not modify
+Growthub GTM OAuth connection settings, or Growthub Settings → API tokens on native token installations. Do not modify
 an existing credential, mint one, change authentication code or substitute a
 provider. Continue independent authorized brand/context work. A user can open
 https://www.growthub.ai/dashboard/workflow/chat to use their existing native team.
@@ -45,3 +47,5 @@ deliverable, result readback and cross-provider continuation.
 
 Do not infer that a method supports another provider from general chat support.
 A plugin install is setup, not a completed task or granted send authority.
+
+For existing API-token workflows beyond the installed MCP contracts, use [api-token](../api-token/SKILL.md). Never ask for a credential in chat. On a host without a configured token/executor, continue through supported connection settings or the relevant Growthub destination.

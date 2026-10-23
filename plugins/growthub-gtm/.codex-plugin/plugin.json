@@ -1,6 +1,6 @@
 {
   "name": "growthub-gtm",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Use Growthub\u2019s CEO, saved Characters, brand context and connected tools for real go-to-market work. Retrieve saved results and repeat accepted work through existing Routines.",
   "author": {
     "name": "Growthub",
@@ -20,28 +20,35 @@
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Growthub GTM Execution",
-    "shortDescription": "Your team. Real growth work.",
-    "longDescription": "Direct your Growthub CEO and saved Characters, use approved Brand Kit context and connected business tools, and retrieve saved results. Package workflows for research, campaigns, content and repeat work using your existing Growthub setup. Existing plan, provider account, device availability, scopes and approvals apply. Routine scheduling and publication use the existing Growthub controls. API-token-backed CEO and Knowledge access require a provider surface that supports the existing token connection. See the support matrix before installation.",
+    "displayName": "Growthub",
+    "shortDescription": "Your growth team, connected",
+    "longDescription": "Bring your saved Growthub team, approved brand context and business knowledge into real growth work. Direct a Character, retrieve its saved result and continue across supported Claude and Codex environments. Use existing scoped Growthub API tokens for supported MCP and API workflows, including private Brand Kit creation and review-only change proposals. Optional connected tools require their own existing accounts and permissions. Routine setup and publication stay in Growthub. ChatGPT web currently supports the existing Brand Kit OAuth connection; full CEO and Knowledge token connections depend on host support and public submission eligibility. See the connection guide before installing.",
     "developerName": "Growthub",
-    "category": "Productivity",
+    "category": "Business & Operations",
     "capabilities": [
-      "Read brand context",
       "Direct saved Characters",
-      "Read completed work"
+      "Use approved brand context",
+      "Retrieve saved results",
+      "Read and update permitted Knowledge",
+      "Use scoped Growthub API workflows"
     ],
     "websiteURL": "https://www.growthub.ai/f/plugins/growthub-gtm",
     "supportURL": "https://thegrowthub.com/pages/contact",
     "privacyPolicyURL": "https://thegrowthub.com/policies/privacy-policy",
     "termsOfServiceURL": "https://thegrowthub.com/policies/terms-of-service",
     "defaultPrompt": [
-      "Help a new signup finish their first useful growth task and return the saved activation packet.",
-      "Prepare a grounded customer winback draft with my saved Character and show its saved result.",
-      "Prepare this week\u2019s GTM brief from actual results, then help me repeat accepted work in Growthub."
+      "Ask my saved growth team for this week\u2019s priorities and show the source records.",
+      "Prepare a customer winback draft using our actual relationship and approved brand context.",
+      "Ask my saved Character for a campaign brief and return the saved result."
     ],
     "brandColor": "#1079A8",
     "logo": "./assets/icon.png",
-    "composerIcon": "./assets/icon.png"
+    "composerIcon": "./assets/icon.png",
+    "screenshots": [
+      "./assets/use-case-team.png",
+      "./assets/use-case-context.png",
+      "./assets/use-case-repeat.png"
+    ]
   },
   "extensions": {
     "com.openai": {

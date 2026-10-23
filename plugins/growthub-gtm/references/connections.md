@@ -1,42 +1,54 @@
-# Existing Growthub connections
+# Connect your Growthub team
 
-This package configures existing production Streamable HTTP MCP endpoints:
+## Public ChatGPT and Codex directory
 
-| Server | Endpoint | Existing permission |
+The public package connects one Growthub GTM server at
+https://www.growthub.ai/api/v1/mcp/gtm through the existing Growthub OAuth service.
+The connection exposes the existing 21 Brand Kit, CEO/Character and Knowledge
+tools together. The consent page names each requested permission. Connect your
+own Growthub account; access remains bounded by its record permissions.
+
+Start with growthub_get_session, then heartbeat and list_characters. Use the
+actual Project and Character returned. delegate_task prepares work for the
+calling assistant; message_character runs a saved Character only through that
+account's existing available native provider and grants. Read the exact saved
+reply before claiming completion. Use query_knowledge before a version-checked
+Knowledge edit. Brand Kit reads serve the current approved version.
+The CEO also exposes `review_api_requests` and `decide_api_request`: it can
+approve or decline eligible token-submitted Brand Kit changes only when the
+user has delegated this in Settings → CEO → Growthub API requests. The same
+existing decision owner produces the applied immutable version and receipt;
+other users, pending states and default human decisions retain their boundaries.
+
+An old Brand Kit-only OAuth grant does not gain CEO or Knowledge permissions.
+Connect the new GTM server with explicit consent to use the full workflow.
+The older connector remains compatible for existing installations; it is not
+the public package's feature boundary.
+
+## Existing native API-token connections
+
+Native Claude and Codex packages retain these server identities and URLs:
+
+| Server | Endpoint | Permission |
 |---|---|---|
-| Brand Kit | https://www.growthub.ai/api/v1/mcp | brand_kits:read and brand_assets:read |
-| CEO / Characters | https://www.growthub.ai/api/v1/mcp/ceo | ceo:read; ceo:write for mutations |
-| Knowledge | https://www.growthub.ai/api/v1/mcp/knowledge | knowledge_items:read; knowledge_items:write for edits |
+| growthub-brand-kit | https://www.growthub.ai/api/v1/mcp | brand_kits:read and brand_assets:read |
+| growthub-ceo | https://www.growthub.ai/api/v1/mcp/ceo | ceo:read; ceo:write for mutations |
+| growthub-knowledge | https://www.growthub.ai/api/v1/mcp/knowledge | knowledge_items:read; knowledge_items:write for edits |
 
-Use an independently authorized existing Growthub API token in the provider's
-supported credential settings or GROWTHUB_API_TOKEN environment. Never copy a
-host-minted first-party credential or a browser cookie. Missing scopes require
-an explicit user action through existing settings, not an authentication change.
+Use your independently authorized token through the host's credential settings
+or GROWTHUB_API_TOKEN environment. Do not copy attested host credentials, browser
+cookies or another account's token. Public OAuth does not replace native token
+connections. The packaged API-token workflow retains its broader supported API
+operations, including private Brand Kit creation and review-only proposals.
 
-Claude Code supports the HTTP configuration in .mcp.json with the environment
-reference. Codex compatibility uses its supported plugin MCP configuration; verify
-the actual connection, not only the manifest. The portable mcp.json carries the
-same existing endpoints and provider authentication declarations. Environment
-references belong to the provider-specific compatibility configurations.
+## Existing execution and commerce
 
-Brand Kit also has its existing public OAuth path; on an OAuth-only web surface
-use that existing connection for its actual approved Brand Kit capabilities.
-Do not treat that Brand Kit grant as CEO/Knowledge authority. Configure those
-connections only where the provider supports their existing token-based path.
+Characters keep their saved provider, model and tool permissions. Installing a
+plugin does not connect a provider or grant access to customer systems. Routines
+retain their existing Growthub authoring, publication and execution controls.
+Purchases stay on Growthub's existing plan/Stripe checkout. No card collection,
+embedded checkout or new subscription is introduced by the plugin.
 
-OpenAI documents fixed-token declarations but its public submission connection
-form does not currently support API-key configuration. A package validator pass
-cannot resolve that limitation. The full CEO/Knowledge web listing remains
-unqualified until the existing connection path is demonstrated in the publisher
-portal. Do not modify Growthub authentication to make a listing pass.
-
-Routine execution remains in the existing Growthub controls. See the repeat
-skill for the real customer journey and truthful continuation behavior.
-
-For public OpenAI review, verify each dependency's actual eligible app version.
-The submission workflow permits at most one owned non-template app needing
-initial review per bundle. The three-server source package is therefore a
-prepared distribution artifact, not proof that the public-review dependency
-requirements are satisfied. Reuse verified existing app versions where eligible;
-otherwise stage review through the existing provider process before composing
-the full public bundle. Do not create duplicate app identities or change auth.
+The public endpoint uses one OAuth connection as required by the current portal:
+https://developers.openai.com/plugins/deploy/submission . Existing native
+endpoints retain their own authentication and are not silently migrated.
