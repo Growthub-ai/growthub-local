@@ -11,7 +11,7 @@ rmSync(target, { recursive: true, force: true });
 mkdirSync(resolve(target, '.claude-plugin'), { recursive: true });
 for (const name of ['skills', 'assets', 'LICENSE']) cpSync(resolve(source, name), resolve(target, name), { recursive: true });
 mkdirSync(resolve(target, 'references'), { recursive: true });
-writeFileSync(resolve(target, '.claude-plugin/plugin.json'), JSON.stringify(identity, null, 2) + '\n');
+writeFileSync(resolve(target, '.claude-plugin/plugin.json'), JSON.stringify({ ...identity, displayName: 'Growthub', privacyPolicyUrl: extensions.com.openai.interface.privacyPolicyURL, supportUrl: extensions.com.openai.interface.supportURL, documentationUrl: identity.homepage, termsOfServiceUrl: extensions.com.openai.interface.termsOfServiceURL }, null, 2) + '\n');
 writeFileSync(resolve(target, '.mcp.json'), JSON.stringify({ mcpServers: { 'growthub-gtm': { type: 'http', url: 'https://www.growthub.ai/api/v1/mcp/gtm' } } }, null, 2) + '\n');
 function replace(file, before, after) {
   const path = resolve(target, file), text = readFileSync(path, 'utf8');
