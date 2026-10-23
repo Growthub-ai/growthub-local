@@ -1,9 +1,8 @@
-# Growthub GTM Execution
+# Growthub
 
 Bring your saved Growthub team, brand context and business tools to growth work.
 Direct a Character, retrieve its saved result and repeat accepted work through
-Growthub's existing Routines. This is a companion to the governed workspace
-console; its existing identity and 14-tool no-write contract remain unchanged.
+Growthub's existing Routines. The legacy governed console is separate local developer tooling; existing installations and its no-write contract remain unchanged.
 
 ## Install and use
 
@@ -15,8 +14,7 @@ From the existing public repository marketplace in Claude Code:
 ```
 
 For Codex, use the repository's existing Growthub marketplace and select
-Growthub GTM Execution. Use the new branch/release as a local marketplace while
-review is pending; a local entry is not a public directory listing.
+Growthub GTM Execution. Repository marketplace distribution and official OpenAI directory publication are separate. Use the published release and verify the supported connection path for your host.
 
 Use your current Growthub account and existing token/connection settings. Where
 supported, expose an already authorized token as GROWTHUB_API_TOKEN in the
@@ -49,10 +47,10 @@ The Codex marketplace uses its compatibility projection: public review metadata
 in portable mcp.json is not native runtime configuration. Install through the
 marketplace rather than loading the public submission folder directly.
 The package contains no hooks or automatic install-time
-execution. Version 0.1.1 is independent of @growthub/cli because it wraps hosted
+execution. Version 0.1.2 is independent of @growthub/cli because it wraps hosted
 contracts and does not ship or pin that CLI.
 
-The four skills use the current service owners. The growth-outcomes method adds
+The five skills use the current service owners. The growth-outcomes method adds
 signup activation packets, customer winback drafts and weekly GTM briefs with
 readiness checks, saved-result readback and cross-provider continuation. These
 methods require live provider acceptance before release claims.
@@ -64,3 +62,15 @@ an install, dispatch or digest alone does not establish business value.
 [Support](https://thegrowthub.com/pages/contact) ·
 [Privacy](https://thegrowthub.com/policies/privacy-policy) ·
 [Terms](https://thegrowthub.com/policies/terms-of-service)
+
+## API-token workflows
+
+The bundled [API-token skill](skills/api-token/SKILL.md) and helper preserve the broader scoped API path for private Brand Kit creation, assets, Knowledge, gallery, usage and review-only proposals. These require a supported execution host and existing credentials; they are not implied MCP tools or ChatGPT web permissions.
+
+## Visual examples
+
+The listing graphics are illustrative workflows, not execution receipts. Real onboarding results are recorded separately.
+
+![Direct your saved team](assets/use-case-team.png)
+![Keep client context connected](assets/use-case-context.png)
+![Repeat accepted work](assets/use-case-repeat.png)

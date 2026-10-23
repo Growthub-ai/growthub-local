@@ -34,9 +34,12 @@ Routine execution remains in the existing Growthub controls. See the repeat
 skill for the real customer journey and truthful continuation behavior.
 
 For public OpenAI review, verify each dependency's actual eligible app version.
-The submission workflow permits at most one owned non-template app needing
-initial review per bundle. The three-server source package is therefore a
+Current official guidance says the package may declare multiple servers but only one MCP server can be connected per plugin. Verify the existing eligible app bindings and exact saved portal behavior. The three-server source package is therefore a
 prepared distribution artifact, not proof that the public-review dependency
 requirements are satisfied. Reuse verified existing app versions where eligible;
 otherwise stage review through the existing provider process before composing
 the full public bundle. Do not create duplicate app identities or change auth.
+
+Official guidance checked 2026-10-23: https://developers.openai.com/plugins/deploy/submission . The publisher portal requires sign-in and verified identity. A valid multi-server archive is not evidence that all three servers are publicly connected. Do not remove an existing server or weaken authentication to pass submission.
+
+Purchases stay on Growthub’s existing plan/Stripe checkout. Do not collect card details in prompts or create an embedded checkout. Availability follows OpenAI-supported countries and actual Growthub/Stripe sale restrictions; a Stripe merchant-country list is not a customer-country allowlist.

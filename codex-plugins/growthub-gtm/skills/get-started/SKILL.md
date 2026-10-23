@@ -45,3 +45,5 @@ deliverable, result readback and cross-provider continuation.
 
 Do not infer that a method supports another provider from general chat support.
 A plugin install is setup, not a completed task or granted send authority.
+
+For existing API-token workflows beyond the installed MCP contracts, use [api-token](../api-token/SKILL.md). Never ask for a credential in chat. On a host without a configured token/executor, continue through supported connection settings or the relevant Growthub destination.

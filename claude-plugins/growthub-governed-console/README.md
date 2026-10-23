@@ -1,5 +1,7 @@
 # Growthub Governed Console — Claude Code plugin
 
+> Legacy local workspace developer tooling. For the hosted growth team, Brand Kits, Knowledge and scoped API workflows, use [Growthub GTM](../../plugins/growthub-gtm/README.md). Existing governed-console installations and contracts remain supported.
+
 ![Growthub logo](./assets/ghlogo.jpg)
 
 The agent-facing operating console for governed Growthub workspaces
